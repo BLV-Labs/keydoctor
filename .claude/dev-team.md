@@ -1,17 +1,17 @@
 # dev-team profile
 
-npm workspaces monorepo (planned, GĐ0): `packages/key-doctor` (pure TS library, `fetch` only) + `apps/worker` (Cloudflare Worker, D1, Telegram bot, MCP, crons) + `apps/dashboard` (static Cloudflare Pages site). Repo harness (`AGENTS.md`, `docs/HARNESS.md`) outranks the generic skill where they differ; `CLAUDE.md` and `docs/final-idea.md` outrank both.
+npm workspaces monorepo: `packages/key-doctor` (pure TS library, `fetch` only) + `apps/worker` (Cloudflare Worker, D1, Telegram bot, MCP, crons) + `apps/dashboard` (static Cloudflare Pages site). Repo harness (`AGENTS.md`, `docs/HARNESS.md`) outranks the generic skill where they differ; `CLAUDE.md` and `docs/final-idea.md` outrank both.
 
 ```yaml
 integration_branch: main           # inferred: only long-lived remote branch
 deploy_branch: main                # inferred: no CI/deploy workflows yet
 worktree_root: ..
-package_manager: npm               # inferred: CLAUDE.md "npm/pnpm workspaces", `npm test`; no lockfile yet
+package_manager: npm
 commands:
-  setup: npm install               # FAILS: no package.json yet (created in GĐ0)
-  typecheck: none                  # not set up yet; add `npm run typecheck` in GĐ0
-  lint: none                       # not set up yet
-  test: npm test                   # FAILS: no package.json yet (created in GĐ0)
+  setup: npm install
+  typecheck: npm run typecheck    # library src is checked without Node types (fetch-only rule)
+  lint: none                       # no linter yet
+  test: npm test                   # node:test; one package: npm test -w key-doctor
 areas:
   backend: [packages/key-doctor, apps/worker, scripts]   # inferred: from docs/final-idea.md §12
   frontend: [apps/dashboard]                             # inferred: from docs/final-idea.md §12

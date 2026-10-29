@@ -1,0 +1,20 @@
+{
+  "name": "key-doctor",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Key Doctor library: scan NEAR accounts and Sputnik DAO councils, watch proposals, diff reports. Uses only fetch.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./fixtures/*": "./fixtures/*"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.src.json && tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "@types/node": "22.19.1"
+  }
+}

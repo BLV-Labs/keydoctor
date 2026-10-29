@@ -1,0 +1,16 @@
+{
+  "name": "keydoctor",
+  "private": true,
+  "description": "Key Doctor On Call: NEAR access-key health checks and DAO proposal alerts",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}

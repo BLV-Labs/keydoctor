@@ -50,4 +50,4 @@ AI judges (Claude Code and Codex) check that "the repo runs and matches the READ
 
 ## Dev workflow
 
-Workflow: `/dev-harness:dev-team` — project profile: `.claude/dev-team.md`.
+Workflow: `/dev-team` (repo copy in `.claude/skills/dev-team`, agents in `.claude/agents/`; the `dev-harness` plugin is also enabled) — project profile: `.claude/dev-team.md`.

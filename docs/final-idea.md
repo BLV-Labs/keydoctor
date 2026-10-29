@@ -862,7 +862,7 @@ Ghi rõ trong README: agent không chấm điểm, mọi kết luận từ rule;
 
 | GĐ | Nội dung | Mức | Phụ thuộc | Xong khi | Ngày dự kiến |
 |---|---|---|---|---|---|
-| **0** | Repo monorepo, `types.ts` (mục 4), fixture mẫu, `npm test` chạy được | P0 | | Repo build được, test rỗng pass | 1/11 |
+| **0** ✅ | Repo monorepo, `types.ts` (mục 4), fixture mẫu, `npm test` chạy được | P0 | | Repo build được, test rỗng pass | 1/11 (xong 29/10) |
 | **1** | Thư viện quét: `rpc.ts`, `scanAccount`, `scanDao`, bộ rule mục 5.1, `messages` | P0 | GĐ0 | Quét đúng 20 account của prototype; mỗi rule có test | 1 đến 3/11 |
 | **2** | `diffReports`, `toSummary` | P0 | GĐ0 | Test đủ các trường hợp mục 4.3 | 2 đến 3/11 |
 | **3** | Worker: nâng `kd-hello` thành MCP thật với `diagnose`, `compare`; D1 `snapshots` | P0 | GĐ1, GĐ2 | Claude Code và `curl` gọi được; mốc không bị dời khi `update_baseline: false` | 4/11 |

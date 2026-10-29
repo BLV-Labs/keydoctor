@@ -1,0 +1,15 @@
+{
+  "id": 3,
+  "proposer": "a.kd-demo.testnet",
+  "description": "Add d to council$$$$",
+  "kind": {
+    "AddMemberToRole": {
+      "member_id": "d.kd-demo.testnet",
+      "role": "council"
+    }
+  },
+  "status": "InProgress",
+  "vote_counts": {},
+  "votes": {},
+  "submission_time": "1793669400000000000"
+}
