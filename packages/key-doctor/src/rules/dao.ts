@@ -1,5 +1,6 @@
 import type { DaoRole, KeyInfo, TransferVotePolicy } from "../types.ts";
 import type { Policy, PolicyRole } from "../parse.ts";
+import { roleLabel, roleTokenWeightLimitation, rolePolicyLimitation, roleTransferLimitation } from "../messages.ts";
 import type { RuleHit } from "./key.ts";
 import { ADMIN_APPROVALS, ADMIN_LABELS, COUNCIL_SMALL_MAX } from "./thresholds.ts";
 
@@ -34,10 +35,6 @@ function approvalsNeeded(policy: Policy, role: PolicyRole, label: string): numbe
   return Number(vp.quorum > w ? vp.quorum : w);
 }
 
-// Role names are chain text: only a plain short name is echoed into a limitation line.
-const roleLabel = (name: string, index: number): string =>
-  /^[A-Za-z0-9 _.-]{1,32}$/.test(name) ? name : `#${index + 1}`;
-
 export function analyzePolicy(policy: Policy): PolicyAnalysis {
   const roles: DaoRole[] = [];
   const transferVotePolicy: TransferVotePolicy[] = [];
@@ -63,16 +60,16 @@ export function analyzePolicy(policy: Policy): PolicyAnalysis {
         approvals_needed: approvalsNeeded(policy, role, "transfer"),
       });
       if (role.kind !== "group") {
-        limitations.push(`Role ${label} lets non-listed accounts approve transfers; they are not scanned.`);
+        limitations.push(roleTransferLimitation(label));
       }
     }
     if (adminLabels.length > 0 && role.kind !== "group") {
-      limitations.push(`Role ${label} lets non-listed accounts approve policy changes; they are not scanned.`);
+      limitations.push(rolePolicyLimitation(label));
     }
     if (role.kind === "group") {
       isAdmin = adminLabels.some((l) => approvalsNeeded(policy, role, l) === ADMIN_APPROVALS);
       if ((canTransfer && tokenWeighted("transfer")) || adminLabels.some(tokenWeighted)) {
-        limitations.push(`Role ${label} votes by token weight; its approvals needed and admin status are not computed.`);
+        limitations.push(roleTokenWeightLimitation(label));
       }
       for (const m of role.members) {
         memberRoles.set(m, [...(memberRoles.get(m) ?? []).filter((n) => n !== role.name), role.name]);

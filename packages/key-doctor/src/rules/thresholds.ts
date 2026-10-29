@@ -67,6 +67,10 @@ export const REQUEST_BUDGET = 45;
 export const MAX_MEMBERS = 21;
 export const MAX_ROLES = 50;
 export const MAX_KEYS = 100;
+// Total Group entries across all policy roles, council or not.
+export const MAX_GROUP_ENTRIES = 500;
+// Longest role name echoed into a limitation line.
+export const ROLE_LABEL_MAX_LEN = 32;
 export const CONCURRENCY_DEFAULT = 4;
 export const CONCURRENCY_MIN = 1;
 export const CONCURRENCY_MAX = 8;

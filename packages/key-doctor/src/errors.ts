@@ -1,7 +1,7 @@
 import type { KdError, KdErrorCode } from "./types.ts";
-import { MAX_KEYS, MAX_MEMBERS, MAX_ROLES } from "./rules/thresholds.ts";
+import { MAX_GROUP_ENTRIES, MAX_KEYS, MAX_MEMBERS, MAX_ROLES } from "./rules/thresholds.ts";
 
-export type KdErrorVariant = "eth_implicit" | "network_conflict" | "block_height" | "keys" | "members" | "roles";
+type KdErrorVariant = "eth_implicit" | "network_conflict" | "block_height" | "keys" | "members" | "roles";
 
 type Text = { vi: string; en: string };
 
@@ -62,8 +62,8 @@ const VARIANT_TEXT: Record<KdErrorVariant, Text> = {
     en: `This DAO has more than ${MAX_MEMBERS} council members; Key Doctor scans at most ${MAX_MEMBERS}.`,
   },
   roles: {
-    vi: `Policy có hơn ${MAX_ROLES} role; Key Doctor chỉ quét tối đa ${MAX_ROLES} role.`,
-    en: `This policy has more than ${MAX_ROLES} roles; Key Doctor scans at most ${MAX_ROLES}.`,
+    vi: `Policy có hơn ${MAX_ROLES} role hoặc hơn ${MAX_GROUP_ENTRIES} thành viên trong các nhóm; Key Doctor chỉ quét tối đa ${MAX_ROLES} role và ${MAX_GROUP_ENTRIES} thành viên nhóm.`,
+    en: `This policy has more than ${MAX_ROLES} roles or more than ${MAX_GROUP_ENTRIES} group entries; Key Doctor scans at most ${MAX_ROLES} roles and ${MAX_GROUP_ENTRIES} group entries.`,
   },
 };
 
@@ -78,7 +78,7 @@ const RETRYABLE_DEFAULT: Record<KdErrorCode, boolean> = {
   EXPIRED: false,
 };
 
-export function kdError(code: KdErrorCode, opts: { retryable?: boolean; variant?: KdErrorVariant } = {}): KdError {
+function kdError(code: KdErrorCode, opts: { retryable?: boolean; variant?: KdErrorVariant } = {}): KdError {
   return {
     schema_version: "kd.error.v1",
     code,
@@ -98,7 +98,6 @@ export class KdErrorException extends Error {
 }
 
 export function isKdError(e: unknown): e is KdErrorException {
-  if (e instanceof KdErrorException) return true;
   const kd = (e as { kd?: { schema_version?: unknown } } | null | undefined)?.kd;
   return e instanceof Error && kd?.schema_version === "kd.error.v1";
 }

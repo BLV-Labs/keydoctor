@@ -9,7 +9,7 @@ import {
 } from "./messages.ts";
 import { accountKind, parsePolicy, resolveTarget, toKeyInfo, type RawKey } from "./parse.ts";
 import { createRpc, DEFAULT_RPC_URL, type Rpc } from "./rpc.ts";
-import { countKeys } from "./rules/account.ts";
+import { countKeys, isPqReady } from "./rules/account.ts";
 import { analyzePolicy } from "./rules/dao.ts";
 import { daoLevelFlags, evaluateKeys } from "./rules/index.ts";
 import {
@@ -17,6 +17,7 @@ import {
   CONCURRENCY_DEFAULT,
   CONCURRENCY_MAX,
   CONCURRENCY_MIN,
+  MAX_GROUP_ENTRIES,
   MAX_KEYS,
   MAX_MEMBERS,
   MAX_ROLES,
@@ -51,7 +52,7 @@ export function buildMember(input: MemberInput): Member {
     account_kind: input.account_kind,
     roles: input.roles,
     status,
-    pq_ready: c.nMl >= 1 && c.nEd === 0,
+    pq_ready: isPqReady(c),
     counts: { full_access: c.fullAccess, function_call: c.functionCall, ml_dsa: c.nMl, unused: c.unused },
     keys,
     flags,
@@ -210,6 +211,8 @@ export async function scanDao(id: string, opts: ScanOptions = {}): Promise<KdRep
   let used = 2;
 
   if (policy.roles.length > MAX_ROLES) throw fail("LIMIT_EXCEEDED", { variant: "roles" });
+  const groupEntries = policy.roles.reduce((n, r) => n + (r.kind === "group" ? r.members.length : 0), 0);
+  if (groupEntries > MAX_GROUP_ENTRIES) throw fail("LIMIT_EXCEEDED", { variant: "roles" });
   const analysis = analyzePolicy(policy);
   if (analysis.council.length > MAX_MEMBERS) throw fail("LIMIT_EXCEEDED", { variant: "members" });
 

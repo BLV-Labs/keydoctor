@@ -17,7 +17,9 @@ const NAMED_ID = new RegExp(
 const IMPLICIT_ID = /^[0-9a-f]{64}$/;
 const ETH_IMPLICIT_ID = /^0x[0-9a-f]{40}$/;
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+export const isDigits = (v: unknown): v is string => typeof v === "string" && /^\d+$/.test(v);
+
+export const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /** Strict (no trimming, no lowercasing): chain data must already be canonical. */
 export function accountKind(id: string): AccountKind | null {
@@ -73,7 +75,7 @@ export function parseRawKey(raw: unknown): RawKey | null {
   const { nonce, permission } = raw.access_key;
   let nonceStr: string;
   if (typeof nonce === "number" && Number.isSafeInteger(nonce) && nonce >= 0) nonceStr = String(nonce);
-  else if (typeof nonce === "string" && /^\d+$/.test(nonce)) nonceStr = nonce;
+  else if (isDigits(nonce)) nonceStr = nonce;
   else return null;
   const perm = parsePermission(permission);
   return perm === null ? null : { publicKey: raw.public_key, nonce: nonceStr, permission: perm };
@@ -123,8 +125,6 @@ export interface Policy {
   defaultVotePolicy: VotePolicy;
   proposalBond: string;
 }
-
-const isDigits = (v: unknown): v is string => typeof v === "string" && /^\d+$/.test(v);
 
 function parseVotePolicy(raw: unknown): VotePolicy | null {
   if (!isRecord(raw) || typeof raw.weight_kind !== "string") return null;

@@ -1,7 +1,7 @@
 import type { Network } from "./types.ts";
 import type { HeadBlock } from "./age.ts";
 import { fail } from "./errors.ts";
-import { parseRawKey, type RawKey } from "./parse.ts";
+import { isDigits, isRecord, parseRawKey, type RawKey } from "./parse.ts";
 import { RPC_TIMEOUT_MS } from "./rules/thresholds.ts";
 
 export const DEFAULT_RPC_URL: Record<Network, string> = {
@@ -23,8 +23,6 @@ export interface Rpc {
    */
   callFunction(accountId: string, blockId: number, methodName: string, args: unknown): Promise<unknown>;
 }
-
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /** Error text is fixed per code: never the URL, the body, `error.data` or `error.message`. */
 function unwrap(body: unknown, blockPinnedByCaller: boolean, contractFailureIsNotADao: boolean): Record<string, unknown> {
@@ -94,7 +92,7 @@ export function createRpc(cfg: { url: string; fetchImpl?: FetchLike }): Rpc {
       if (!isRecord(header)) throw fail("RPC_ERROR");
       const ns = header.timestamp_nanosec;
       if (!Number.isSafeInteger(header.height) || (header.height as number) < 1) throw fail("RPC_ERROR");
-      if (typeof ns !== "string" || !/^\d+$/.test(ns)) throw fail("RPC_ERROR");
+      if (!isDigits(ns)) throw fail("RPC_ERROR");
       return { height: header.height as number, timestampMs: Number(BigInt(ns) / 1_000_000n) };
     },
 

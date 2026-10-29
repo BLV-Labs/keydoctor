@@ -14,6 +14,10 @@ export function countKeys(keys: KeyInfo[]) {
   };
 }
 
+/** An account is PQ-ready when it has an ML-DSA key and no full-access ed25519 key left. */
+export const isPqReady = (counts: Pick<ReturnType<typeof countKeys>, "nMl" | "nEd">): boolean =>
+  counts.nMl >= 1 && counts.nEd === 0;
+
 /** Rules over the whole key set of one account. */
 export function accountRules(keys: KeyInfo[]): RuleHit[] {
   const { edKeys, nEd, nMl } = countKeys(keys);

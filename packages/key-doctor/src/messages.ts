@@ -1,5 +1,5 @@
 import type { Messages } from "./types.ts";
-import { BLOCK_TIME_MS, FA_OLD_DAYS, MAX_KEYS } from "./rules/thresholds.ts";
+import { BLOCK_TIME_MS, FA_OLD_DAYS, MAX_KEYS, ROLE_LABEL_MAX_LEN } from "./rules/thresholds.ts";
 
 type Evidence = Record<string, unknown>;
 /** Chain-sourced ids the text may name; null when the id failed the account-id regex. */
@@ -73,7 +73,7 @@ const BUILDERS = {
       },
     };
   },
-  KEY_UNUSED: (_e: Evidence): Messages => ({
+  KEY_UNUSED: (): Messages => ({
     vi: {
       title: "Khóa chưa từng dùng",
       explain: "Khóa này chưa ký giao dịch nào.",
@@ -97,7 +97,7 @@ const BUILDERS = {
       fix: "If it is a bot or agent, replace it with a restricted function-call key.",
     },
   }),
-  FC_UNLIMITED_ALLOWANCE: (_e: Evidence): Messages => ({
+  FC_UNLIMITED_ALLOWANCE: (): Messages => ({
     vi: {
       title: "Khóa ứng dụng chi không giới hạn",
       explain: "Khóa này trả phí gas không giới hạn từ account.",
@@ -169,7 +169,7 @@ const BUILDERS = {
       fix: "Consider adding more council members.",
     },
   }),
-  PQ_NONE: (_e: Evidence): Messages => ({
+  PQ_NONE: (): Messages => ({
     vi: {
       title: "Chưa có khóa chống lượng tử",
       explain: "Account chưa có khóa ML-DSA.",
@@ -206,6 +206,19 @@ export const MEMBER_ERROR_TEXT: Record<MemberErrorCode, { vi: string; en: string
     en: `This account has more than ${MAX_KEYS} keys; Key Doctor scans at most ${MAX_KEYS}. Its risk is unknown, not low.`,
   },
 };
+
+export const roleTransferLimitation = (label: string): string =>
+  `Role ${label} lets non-listed accounts approve transfers; they are not scanned.`;
+
+export const rolePolicyLimitation = (label: string): string =>
+  `Role ${label} lets non-listed accounts approve policy changes; they are not scanned.`;
+
+export const roleTokenWeightLimitation = (label: string): string =>
+  `Role ${label} votes by token weight; its approvals needed and admin status are not computed.`;
+
+// Role names are chain text: only a plain short name is echoed into a limitation line.
+const ROLE_LABEL = new RegExp(`^[A-Za-z0-9 _.-]{1,${ROLE_LABEL_MAX_LEN}}$`);
+export const roleLabel = (name: string, index: number): string => (ROLE_LABEL.test(name) ? name : `#${index + 1}`);
 
 export const missingMemberLimitation = (id: string): string =>
   `Council member ${id} does not exist; anyone who creates it gains its vote.`;
