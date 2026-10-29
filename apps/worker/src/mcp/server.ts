@@ -3,6 +3,7 @@ import { isKdError, type KdError } from "key-doctor";
 import type { Env } from "../env.ts";
 import { compare, diagnose } from "../core.ts";
 import { json, kdErrorBody, readJson } from "../http.ts";
+import { createWatchLink } from "../watch-link.ts";
 
 const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const SERVER_INFO = { name: "key-doctor", version: "0.1.0" };
@@ -40,6 +41,14 @@ export const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
   },
+  {
+    name: "watch",
+    title: "Get Telegram alert links for a target",
+    description:
+      "Returns kd.watch_link.v1: two one-time Telegram links (private chat, or add the bot to a council group) that subscribe to alerts for the target. Nothing is subscribed until the user opens a link; links expire after 30 minutes. Give both links to the user.",
+    inputSchema: { type: "object", properties: { ...targetProps }, required: ["target"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+  },
 ];
 
 type Id = string | number | null;
@@ -50,7 +59,7 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object
 
 /** Validates tool arguments; returns an error message for the agent, or null when valid. */
 function badArgs(name: string, args: Record<string, unknown>): string | null {
-  const allowed = new Set(["target", "network", name === "diagnose" ? "detail" : "update_baseline"]);
+  const allowed = new Set(["target", "network", ...(name === "diagnose" ? ["detail"] : name === "compare" ? ["update_baseline"] : [])]);
   for (const k of Object.keys(args)) if (!allowed.has(k)) return `Unknown argument: ${k}`;
   if (typeof args.target !== "string" || args.target.length === 0 || args.target.length > TARGET_MAX_LEN) return "target must be a NEAR account name";
   if (args.network !== undefined && args.network !== "mainnet" && args.network !== "testnet") return "network must be mainnet or testnet";
@@ -65,11 +74,12 @@ const toolResult = (payload: unknown, isError = false) => ({
   ...(isError && { isError: true }),
 });
 
-async function callTool(name: string, args: Record<string, unknown>, env: Env) {
+async function callTool(name: "diagnose" | "compare" | "watch", args: Record<string, unknown>, env: Env) {
   const bad = badArgs(name, args);
   if (bad !== null) return toolResult(kdErrorBody("INVALID_TARGET", { vi: bad, en: bad }), true);
   try {
     if (name === "diagnose") return toolResult(await diagnose(args as unknown as Parameters<typeof diagnose>[0], env));
+    if (name === "watch") return toolResult(await createWatchLink(args as unknown as Parameters<typeof createWatchLink>[0], env));
     return toolResult(await compare(args as unknown as Parameters<typeof compare>[0], env));
   } catch (e) {
     if (isKdError(e)) return toolResult(e.kd, true);
@@ -110,7 +120,7 @@ export async function handleMcp(request: Request, env: Env): Promise<Response> {
       return json(rpcResult(id, { tools: TOOLS }));
     case "tools/call": {
       const name = params.name;
-      if (name !== "diagnose" && name !== "compare") return json(rpcError(id, -32602, "Unknown tool"));
+      if (name !== "diagnose" && name !== "compare" && name !== "watch") return json(rpcError(id, -32602, "Unknown tool"));
       const args = isObj(params.arguments) ? params.arguments : {};
       return json(rpcResult(id, await callTool(name, args, env)));
     }

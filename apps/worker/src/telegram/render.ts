@@ -226,6 +226,12 @@ export const TEXT = {
           : "This chat watches nothing yet. Send /watch <account or DAO> to start."
         : [lang === "vi" ? "Chat này đang theo dõi:" : "This chat watches:", ...items.map((i) => `- ${i.target} (${i.target_type})`)].join("\n"),
   }),
+  linkExpired: (lang: Lang): Outgoing => ({
+    text:
+      lang === "vi"
+        ? "Link đã hết hạn hoặc đã được dùng. Tạo lại trên dashboard hoặc nhờ agent, hoặc gửi /watch <account hoặc DAO>."
+        : "This link has expired or was already used. Create a new one on the dashboard or through your agent, or send /watch <account or DAO>.",
+  }),
   internal: (lang: Lang): Outgoing => ({
     text: lang === "vi" ? "Có lỗi khi xử lý. Hãy thử lại sau." : "Something went wrong. Try again later.",
   }),

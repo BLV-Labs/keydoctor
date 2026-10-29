@@ -76,7 +76,7 @@ describe("GĐ3 MCP protocol", () => {
     assert.deepEqual((await rpc(env, "ping")).body.result, {});
 
     const list = await rpc(env, "tools/list");
-    assert.deepEqual(list.body.result.tools.map((x: any) => x.name), ["diagnose", "compare"]);
+    assert.deepEqual(list.body.result.tools.map((x: any) => x.name), ["diagnose", "compare", "watch"]);
     assert.match(TOOLS[1]!.description, /Only set update_baseline=true when explicitly asked; by default the baseline does not move\./);
     assert.equal((await rpc(env, "nope")).body.error.code, -32601);
   });
@@ -124,7 +124,7 @@ describe("GĐ3 diagnose", () => {
     assert.equal(conflict.structuredContent.code, "INVALID_TARGET");
     const extra = await call(env, "diagnose", { target: DAO, sneaky: 1 });
     assert.equal(extra.isError, true);
-    assert.equal((await rpc(env, "tools/call", { name: "watch", arguments: {} })).body.error.code, -32602);
+    assert.equal((await rpc(env, "tools/call", { name: "nope", arguments: {} })).body.error.code, -32602);
   });
 });
 

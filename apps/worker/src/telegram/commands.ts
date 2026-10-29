@@ -1,5 +1,5 @@
 // Bot commands (§8.2). /check and /changes share core.ts with the MCP tools.
-import { checkProposals, isKdError, type KdError } from "key-doctor";
+import { checkProposals, isKdError, type KdError, type Network } from "key-doctor";
 import type { Env } from "../env.ts";
 import { compare, resolve, scan } from "../core.ts";
 import { getProposalState, saveProposalState } from "../store/proposal-state.ts";
@@ -13,11 +13,14 @@ import {
 } from "../store/subscriptions.ts";
 import { sendMessage, sendTyping, TelegramError, type Outgoing } from "./api.ts";
 import { langOf, renderChanges, renderCheck, renderHelp, TEXT, type Lang } from "./render.ts";
+import { takePending } from "../store/pending.ts";
+import { isCode } from "../watch-link.ts";
 
 export const MAX_SUBS_PER_CHAT = 20;
 
 export type Command =
   | { name: "check" | "changes" | "watch" | "unwatch"; target: string | null }
+  | { name: "start"; code: string }
   | { name: "list" | "help" }
   | { name: "ignore" };
 
@@ -50,6 +53,8 @@ export function parseCommand(text: string, isGroup: boolean): Command {
     case "list":
       return { name: "list" };
     case "start":
+      // Deep links (UC5, P1): t.me/<bot>?start=<code> sends "/start <code>".
+      return arg !== null && isCode(arg) ? { name: "start", code: arg } : { name: "help" };
     case "help":
       return { name: "help" };
     default:
@@ -88,6 +93,12 @@ async function run(cmd: Command, inc: Incoming, env: Env, typing: () => void): P
       return renderHelp(lang);
     case "list":
       return TEXT.list(lang, await listSubscriptions(env.DB, chatId));
+    case "start": {
+      const pending = await takePending(env.DB, cmd.code, new Date());
+      if (pending === null) return TEXT.linkExpired(lang);
+      const p = resolve({ target: pending.target, network: pending.network }, env);
+      return watchTarget(p.id, p.network, p.rpcUrl, inc, env, typing);
+    }
   }
   if (cmd.target === null) return TEXT.usage(lang, cmd.name);
   const t = resolve({ target: cmd.target }, env);
@@ -101,30 +112,42 @@ async function run(cmd: Command, inc: Incoming, env: Env, typing: () => void): P
       return renderChanges(lang, await compare({ target: t.id, update_baseline: false }, env), env.DASHBOARD_URL);
     case "unwatch":
       return (await removeSubscription(env.DB, t.id, t.network, chatId)) ? TEXT.unwatched(lang, t.id) : TEXT.notWatched(lang, t.id);
-    case "watch": {
-      if ((await countSubscriptions(env.DB, chatId)) >= MAX_SUBS_PER_CHAT) return TEXT.tooMany(lang, MAX_SUBS_PER_CHAT);
-      typing();
-      const report = await scan({ target: t.id }, env);
-      const type = report.target.type;
-      const added = await addSubscription(env.DB, {
-        target: t.id,
-        network: t.network,
-        target_type: type,
-        chat_id: chatId,
-        chat_type: inc.chatType,
-        created_at: new Date().toISOString(),
-      });
-      if (!added) return TEXT.alreadyWatched(lang, t.id);
-      // First subscription to a target with no baseline: this scan becomes the baseline (one of the two baseline writers).
-      if ((await latestSnapshot(env.DB, t.id, t.network)) === null) await saveSnapshot(env.DB, report);
-      // A DAO is watched only from now on: record the current last proposal, no alerts.
-      if (type === "dao" && (await getProposalState(env.DB, t.id, t.network)) === null) {
-        const { state } = await checkProposals(t.id, null, { network: t.network, ...(t.rpcUrl && { rpcUrl: t.rpcUrl }) });
-        await saveProposalState(env.DB, t.id, t.network, state);
-      }
-      return TEXT.watched(lang, t.id, type);
-    }
+    case "watch":
+      return watchTarget(t.id, t.network, t.rpcUrl, inc, env, typing);
   }
+}
+
+/** UC4 and the /start deep link: subscribe this chat, write the first baseline and, for a DAO, the proposal state. */
+async function watchTarget(
+  id: string,
+  network: Network,
+  rpcUrl: string | undefined,
+  inc: Incoming,
+  env: Env,
+  typing: () => void,
+): Promise<Outgoing> {
+  const { lang, chatId } = inc;
+  if ((await countSubscriptions(env.DB, chatId)) >= MAX_SUBS_PER_CHAT) return TEXT.tooMany(lang, MAX_SUBS_PER_CHAT);
+  typing();
+  const report = await scan({ target: id, network }, env);
+  const type = report.target.type;
+  const added = await addSubscription(env.DB, {
+    target: id,
+    network,
+    target_type: type,
+    chat_id: chatId,
+    chat_type: inc.chatType,
+    created_at: new Date().toISOString(),
+  });
+  if (!added) return TEXT.alreadyWatched(lang, id);
+  // First subscription to a target with no baseline: this scan becomes the baseline (one of the two baseline writers).
+  if ((await latestSnapshot(env.DB, id, network)) === null) await saveSnapshot(env.DB, report);
+  // A DAO is watched only from now on: record the current last proposal, no alerts.
+  if (type === "dao" && (await getProposalState(env.DB, id, network)) === null) {
+    const { state } = await checkProposals(id, null, { network, ...(rpcUrl && { rpcUrl }) });
+    await saveProposalState(env.DB, id, network, state);
+  }
+  return TEXT.watched(lang, id, type);
 }
 
 /** Handles one update end to end. Runs inside ctx.waitUntil, so it never throws. */

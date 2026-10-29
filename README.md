@@ -65,7 +65,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
    claude mcp add --transport http key-doctor http://localhost:8787/mcp --header "Authorization: Bearer change-me-mcp"
    ```
 
-   Then ask "check the keys of verdict-panel-p8n6.sputnik-v2.testnet". The agent calls `diagnose`. `compare` returns `kd.diff.v1` against the stored baseline and moves the baseline only when you ask (`update_baseline: true`).
+   Then ask "check the keys of verdict-panel-p8n6.sputnik-v2.testnet". The agent calls `diagnose`. `compare` returns `kd.diff.v1` against the stored baseline and moves the baseline only when you ask (`update_baseline: true`). `watch` returns two one-time Telegram links (`kd.watch_link.v1`): opening one subscribes that chat.
 
 5. **Telegram bot and the testnet demo** (needs a deployed Worker, see [Deploy](#deploy))
 
@@ -96,7 +96,8 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 | GĐ8 | Cleanup plan | Plan page and delete guards built. Signing deletes inside the dashboard waits on a Meteor signing test; until then keys are removed in Meteor Wallet |
 | GĐ9 | Daily key diff (02:00 UTC) | Built; not deployed |
 | GĐ10 | Network stats script | Built; numbers pending a live run |
-| GĐ11–13 | History backtest, watch links, NearBlocks key dates | Not built (Roadmap) |
+| GĐ12 | One-tap watch links: `POST /api/watch-link`, MCP `watch`, `/start <code>`, dashboard "Create links" | Built; not deployed |
+| GĐ11, GĐ13 | History backtest, NearBlocks key dates | Not built (Roadmap) |
 
 ## How it works
 
@@ -111,6 +112,7 @@ apps/worker           one Cloudflare Worker + D1
   POST /mcp           MCP Streamable HTTP, Bearer MCP_TOKEN
   POST /telegram      bot webhook, secret-token header, 200 at once + waitUntil
   POST /run-check     runs a cron job now, Bearer RUN_CHECK_TOKEN
+  POST /api/watch-link  one-time /start links, CORS only for DASHBOARD_ORIGIN
   crons               */15 proposal watch, 0 2 * * * daily key diff
 ```
 
@@ -159,7 +161,6 @@ On post-quantum keys: no quantum computer breaks these keys today. The reason to
 
 - Sign key deletions in the dashboard through wallet-selector (several app keys in one signature), once the Meteor signing test passes.
 - Backtest the proposal rules on 12 months of history (`kd.backtest.v1`), using NearBlocks for keys added and later removed.
-- Watch links: `/start` deep links, `POST /api/watch-link` and an MCP `watch` tool.
 - Exact key creation dates from NearBlocks, and more rules.
 - **Agent Guard:** a Sputnik role that approves only in-policy transfers, moving from "detect and warn" to "block".
 - Link a Telegram user to a NEAR account by signature to mention voters by name. Discord and email alerts. Near-real-time watching through an indexer.
@@ -178,7 +179,7 @@ On post-quantum keys: no quantum computer breaks these keys today. The reason to
      -d url=https://<your-worker>.workers.dev/telegram -d secret_token=$TELEGRAM_WEBHOOK_SECRET -d 'allowed_updates=["message"]'
    ```
 
-6. `pnpm --filter dashboard build` and publish `apps/dashboard/dist/` on Cloudflare Pages. `public/_headers` sets the CSP. Set `DASHBOARD_URL` on the Worker for the "View on dashboard" buttons.
+6. `KD_WORKER_URL=https://<your-worker>.workers.dev pnpm --filter dashboard build` and publish `apps/dashboard/dist/` on Cloudflare Pages. `KD_WORKER_URL` turns on the dashboard's one-tap watch links and adds the Worker to the CSP in `_headers`; leave it out for the copy-the-command dialog only. On the Worker, set `DASHBOARD_URL` (for the "View on dashboard" buttons) and `DASHBOARD_ORIGIN` (the Pages origin allowed to call `/api/watch-link`).
 
 ## Libraries, AI-written code and prepared data
 

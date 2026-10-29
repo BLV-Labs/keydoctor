@@ -31,7 +31,7 @@ Current state:
 | 7 | GĐ8 🔨 | Cleanup plan, Delete / Revoke through Meteor | Plan page and delete guards built 2026-10-29. In-dashboard signing still blocked on the §13.5 wallet-selector + Meteor signing test |
 | 8 | GĐ9 🔨 | Daily key diff job (02:00 UTC) | Built 2026-10-29 with GĐ6 (shared delivery). Done after deploy |
 | 9 | GĐ10 🔨 | Network stats + reproduce script | Built 2026-10-29 (`pnpm stats`). Done after the owner runs it and the table goes into the README |
-| 10 | GĐ11 → GĐ13 → GĐ12 | P1: history replay, NearBlocks key dates, watch-link | Cut order if late: GĐ11 → GĐ13 → GĐ12 → GĐ9 |
+| 10 | GĐ11 → GĐ13 → GĐ12 | P1: history replay, NearBlocks key dates, watch-link | GĐ12 built 2026-10-29. GĐ11 and GĐ13 need NearBlocks and live RPC. Cut order if late: GĐ11 → GĐ13 → GĐ12 → GĐ9 |
 | 11 | GĐ14 | README, video, submission | Last; never cut |
 
 Open question for the owner (2026-10-29): `/changes` and MCP `compare` on a target with no baseline save one as the first baseline (`docs/final-idea.md` §8.3, UC3). CLAUDE.md names only the daily job and the first subscription as baseline writers. The code follows the spec, and snapshots are pruned to 7 per target. Should `/changes` for an unwatched target answer "no baseline yet" without writing instead?

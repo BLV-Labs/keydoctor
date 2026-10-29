@@ -884,7 +884,7 @@ Ghi rõ trong README: agent không chấm điểm, mọi kết luận từ rule;
 | **9** | Job so khóa hằng ngày (UC7) | P0 | GĐ3, GĐ4 | Thêm khóa vào account test, lần chạy sau nhận tin | 10/11 · **Đã build 29/10**, chờ deploy |
 | **10** | Số liệu toàn mạng + script tái lập | P0 | GĐ1 | Một lệnh ra đúng bảng số trong README | Chạy nền từ sau GĐ1, xong trước 10/11 · **Đã build 29/10** (`pnpm stats`), chờ chạy với RPC thật |
 | **11** | Chạy ngược rule trên lịch sử (mục 14.1) | P1 | GĐ5 | `summary.json` tái lập được | 11/11 |
-| **12** | Tool `watch` + `/start` deep link; `/api/watch-link`; nút dashboard bản P1 | P1 | GĐ4, GĐ7 | Bấm link là đăng ký xong | 11/11 |
+| **12** | Tool `watch` + `/start` deep link; `/api/watch-link`; nút dashboard bản P1 | P1 | GĐ4, GĐ7 | Bấm link là đăng ký xong | 11/11 · **Đã build 29/10**, chờ deploy |
 | **13** | Ngày tạo khóa từ NearBlocks; rule mở rộng | P1 | GĐ1 | | 11/11 |
 | **14** | README, ví dụ MCP + `curl`, quay video, post X, nộp form | P0 | Mọi P0 | Claude Code chạy lại được repo theo README | 12 đến 14/11 |
 
