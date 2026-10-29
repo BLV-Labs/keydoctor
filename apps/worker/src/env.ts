@@ -19,6 +19,11 @@ export interface ExecutionContext {
   waitUntil(promise: Promise<unknown>): void;
 }
 
+export interface ScheduledController {
+  cron: string;
+  scheduledTime: number;
+}
+
 export interface Env {
   DB: D1Database;
   MCP_TOKEN?: string;
@@ -31,6 +36,8 @@ export interface Env {
   DASHBOARD_URL?: string;
   DASHBOARD_ORIGIN?: string;
   PROPOSAL_UI_URL_TEMPLATE?: string;
+  /** Language of cron messages: vi, en or both (default). */
+  ALERT_LANG?: string;
   RPC_URL_TESTNET?: string;
   RPC_URL_MAINNET?: string;
 }

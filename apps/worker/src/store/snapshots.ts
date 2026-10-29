@@ -21,3 +21,14 @@ export async function saveSnapshot(db: D1Database, report: KdReport): Promise<vo
     .bind(report.target.id, report.chain.network, report.generated_at, report.chain.block_height, JSON.stringify(report))
     .run();
 }
+
+/** Keeps the newest `keep` snapshots of a target. */
+export async function pruneSnapshots(db: D1Database, target: string, network: Network, keep = 7): Promise<void> {
+  await db
+    .prepare(
+      `DELETE FROM snapshots WHERE target = ? AND network = ? AND generated_at NOT IN (
+         SELECT generated_at FROM snapshots WHERE target = ? AND network = ? ORDER BY block_height DESC, generated_at DESC LIMIT ?)`,
+    )
+    .bind(target, network, target, network, keep)
+    .run();
+}

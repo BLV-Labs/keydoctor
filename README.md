@@ -13,7 +13,9 @@ Built for the NEAR HACKATHON (1–14 Nov 2026). The design is in `docs/final-ide
 - GĐ7 built: the dashboard (`apps/dashboard`) with the check form, the council report, the account profile and the Telegram alerts dialog. Not deployed to Pages yet.
 - GĐ3 built: the Worker (`apps/worker`) with the MCP server (`diagnose`, `compare`) and D1 baselines. Not deployed yet.
 - GĐ4 built: the Telegram bot (`/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help`; plain messages with one `*.near` / `*.testnet` name run `/check`). Not deployed yet.
-- Not built yet: the proposal-watch job and `/run-check` (GĐ6), the daily key diff (GĐ9) and the key cleanup plan (GĐ8).
+- GĐ6 built: the proposal-watch job (cron every 15 minutes, once per DAO, send first then record `alerts_sent`), `POST /run-check`, and `scripts/demo-testnet/demo.sh`. Waiting on a live testnet run.
+- GĐ9 built: the daily key diff (cron at 02:00 UTC; it moves the baseline and alerts only on changes).
+- Not built yet: the key cleanup plan (GĐ8, waiting on the Meteor signing test) and network stats (GĐ10).
 
 ## Try it
 
@@ -72,6 +74,20 @@ curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
 ```
 
 Then send `/check kd-demo.sputnik-v2.testnet` (or any testnet DAO) to the bot.
+
+## Testnet demo (after deploy)
+
+`scripts/demo-testnet/demo.sh` builds a 3-member DAO that needs 2 votes, then plays the attack one step at a time with near-cli-rs and your own testnet keys. The header of the script lists the steps and the 48-hour timing note.
+
+```bash
+export KD_DEMO_PREFIX=kdd$(date +%s) KD_WORKER_URL=https://<your-worker>.workers.dev RUN_CHECK_TOKEN=<token>
+scripts/demo-testnet/demo.sh accounts && scripts/demo-testnet/demo.sh dao
+# Telegram: add the bot to a group, send /watch <dao printed above>
+scripts/demo-testnet/demo.sh transfer && scripts/demo-testnet/demo.sh compromise && scripts/demo-testnet/demo.sh vote
+scripts/demo-testnet/demo.sh run-check   # the group gets the alert that names the members who have not voted
+```
+
+`POST /run-check` with `{"job": "proposals" | "daily", "target"?}` runs the same function as the cron and returns `{job, targets_checked, alerts_sent, alerts, errors}`.
 
 ## License
 

@@ -15,6 +15,7 @@ Current state:
 - GĐ2 is done (`packages/key-doctor/test/diff.test.ts`).
 - GĐ3 is built (`apps/worker`, `test/mcp.test.ts`). It is done after deploy.
 - GĐ4 is built (`apps/worker/src/telegram`, `test/telegram.test.ts`). It is done after deploy and a real group test.
+- GĐ6 and GĐ9 are built (`apps/worker/src/jobs`, `test/jobs.test.ts`, `scripts/demo-testnet/demo.sh`). They are done after the live demo run.
 - GĐ5 is built (`packages/key-doctor/test/proposals.test.ts`). It is done once the owner checks the four Sputnik facts in `fixtures/README.md` on a testnet DAO.
 - GĐ1 is done: the live-run checklist was recorded on 2026-10-29.
 - GĐ7 is built. It is not deployed yet.
@@ -25,15 +26,16 @@ Current state:
 | 2 | GĐ5 🔨 | `checkProposals` + `get_proposal` fixture tests | Built 2026-10-29; done after the GĐ5 live-run list in `fixtures/README.md` |
 | 3 | GĐ3 🔨 | Worker: MCP `diagnose`, `compare`, Bearer auth, D1 `snapshots` | Built 2026-10-29 (local workerd run OK). Done after deploy plus a live `curl` and Claude Code call |
 | 4 | GĐ4 🔨 | Bot: webhook, `/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help`, `subscriptions` | Built 2026-10-29. Done after deploy plus a group test. **Checkpoint 5/11:** GĐ1–4 must run end to end |
-| 5 | GĐ6 | Proposal-watch job (15 min), `proposal_state`, `alerts_sent`, `/run-check`, `scripts/demo-testnet` | Main demo scene. **Milestone 8/11:** if it does not run, stop everything else |
+| 5 | GĐ6 🔨 | Proposal-watch job (15 min), `proposal_state`, `alerts_sent`, `/run-check`, `scripts/demo-testnet` | Built 2026-10-29. Done after the demo runs end to end on testnet. **Milestone 8/11:** if it does not run, stop everything else |
 | 6 | GĐ7 close-out | Deploy to Pages; check that the dashboard report matches `/check` | Needs GĐ4 |
 | 7 | GĐ8 | Cleanup plan, Delete / Revoke through Meteor | Blocked on the §13.5 wallet-selector + Meteor signing test |
-| 8 | GĐ9 | Daily key diff job (02:00 UTC) | Needs GĐ3, GĐ4 |
+| 8 | GĐ9 🔨 | Daily key diff job (02:00 UTC) | Built 2026-10-29 with GĐ6 (shared delivery). Done after deploy |
 | 9 | GĐ10 | Network stats + reproduce script | Can run in the background any time; finish before 10/11 |
 | 10 | GĐ11 → GĐ13 → GĐ12 | P1: history replay, NearBlocks key dates, watch-link | Cut order if late: GĐ11 → GĐ13 → GĐ12 → GĐ9 |
 | 11 | GĐ14 | README, video, submission | Last; never cut |
 
 Owner-only tasks that block steps above:
+- Run `scripts/demo-testnet/demo.sh` on testnet (mind the 48-hour note in its header). It has not been run: there is no RPC route from the build container.
 - Check the GĐ5 live-run list (four Sputnik proposal facts) in `packages/key-doctor/fixtures/README.md`.
 - Create `@KeyDoctorOnCallBot`, the Cloudflare account and D1, then deploy the Worker: `wrangler d1 create key-doctor`, put the id in `apps/worker/wrangler.toml`, run `pnpm --filter worker db:migrate:remote`, set the secrets with `wrangler secret put`, then `pnpm --filter worker deploy`. Steps 3 to 6 need this.
 - Run the wallet-selector + Meteor signing test. It decides the scope of step 7.
