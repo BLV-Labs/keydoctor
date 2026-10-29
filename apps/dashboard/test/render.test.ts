@@ -9,7 +9,7 @@ import { renderError, renderHome } from "../src/pages.ts";
 import { renderAccount, renderCouncil } from "../src/report.ts";
 import { parseRoute, routeHref } from "../src/route.ts";
 import { groupFlags, keyMix, mainReason, recentFullAccessKeys, sortMembers } from "../src/view.ts";
-import { renderWatchDialog } from "../src/watch.ts";
+import { renderWatchDialog, renderWatchLinks } from "../src/watch.ts";
 
 const require = createRequire(import.meta.url);
 const load = (name: string): KdReport =>
@@ -157,5 +157,25 @@ describe("pages", () => {
       }),
     );
     assert.match(err, /Scan failed Could not read chain data right now\. Try again/);
+  });
+});
+
+describe("GĐ12 one-tap watch links (dashboard P1)", () => {
+  it("the dialog offers links only when the build sets a Worker URL", () => {
+    assert.doesNotMatch(renderWatchDialog("a.kd-demo.testnet", "account").value, /data-action="watch-links"/);
+    assert.match(renderWatchDialog("a.kd-demo.testnet", "account", "https://kd.example").value, /data-action="watch-links" data-target="a\.kd-demo\.testnet"/);
+  });
+
+  it("renders only t.me start links; anything else falls back to the command", () => {
+    const ok = renderWatchLinks({
+      link_private: "https://t.me/KeyDoctorOnCallBot?start=Ab12Cd34Ef56Gh78",
+      link_group: "https://t.me/KeyDoctorOnCallBot?startgroup=Ab12Cd34Ef56Gh78",
+      expires_at: "2026-11-03T03:45:00Z",
+    }).value;
+    assert.match(ok, /href="https:\/\/t\.me\/KeyDoctorOnCallBot\?start=Ab12Cd34Ef56Gh78" target="_blank" rel="noopener"/);
+    assert.match(ok, /expire at 2026-11-03 03:45:00 UTC/);
+    const bad = renderWatchLinks({ link_private: "javascript:alert(1)", link_group: "https://evil.example", expires_at: "x" }).value;
+    assert.doesNotMatch(bad, /href/);
+    assert.match(bad, /Use the command above/);
   });
 });

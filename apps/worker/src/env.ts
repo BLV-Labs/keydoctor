@@ -38,6 +38,8 @@ export interface Env {
   PROPOSAL_UI_URL_TEMPLATE?: string;
   /** Language of cron messages: vi, en or both (default). */
   ALERT_LANG?: string;
+  /** Telegram bot username for deep links (default KeyDoctorOnCallBot). */
+  BOT_USERNAME?: string;
   RPC_URL_TESTNET?: string;
   RPC_URL_MAINNET?: string;
 }

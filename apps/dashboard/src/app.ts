@@ -5,7 +5,11 @@ import { renderError, renderHome, renderLayout, renderScanning } from "./pages.t
 import { renderCleanup } from "./cleanup-view.ts";
 import { renderAccount, renderCouncil } from "./report.ts";
 import { parseRoute, routeHref, type Route } from "./route.ts";
-import { renderWatchDialog } from "./watch.ts";
+import { renderWatchDialog, renderWatchLinks } from "./watch.ts";
+
+declare const __KD_WORKER_URL__: string;
+/** Set at build time (KD_WORKER_URL); empty means the MVP dialog with no Worker call. */
+const WORKER_URL = typeof __KD_WORKER_URL__ === "string" ? __KD_WORKER_URL__.replace(/\/+$/, "") : "";
 
 const root = document.getElementById("app") as HTMLElement;
 let scanSeq = 0;
@@ -49,7 +53,7 @@ async function render(focusMain: boolean): Promise<void> {
           ? renderCleanup(report, route.from, route.level)
           : renderAccount(report, route.from);
     paint(body, `${target} · Key Doctor`, false);
-    root.insertAdjacentHTML("beforeend", renderWatchDialog(target, report.target.type).value);
+    root.insertAdjacentHTML("beforeend", renderWatchDialog(target, report.target.type, WORKER_URL).value);
   } catch (e) {
     if (seq !== scanSeq) return;
     if (!isKdError(e)) console.error("scan failed", { target, error: e });
@@ -98,6 +102,24 @@ root.addEventListener("click", (event) => {
         })
         .catch(() => {
           if (label) label.textContent = "Select and copy";
+        });
+      break;
+    }
+    case "watch-links": {
+      const box = document.getElementById("watch-links");
+      if (!box || !WORKER_URL) break;
+      (el as HTMLButtonElement).disabled = true;
+      fetch(`${WORKER_URL}/api/watch-link`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ target: el.dataset.target }),
+      })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+        .then((link) => {
+          box.innerHTML = renderWatchLinks(link as Parameters<typeof renderWatchLinks>[0]).value;
+        })
+        .catch(() => {
+          box.innerHTML = renderWatchLinks({ link_private: "", link_group: "", expires_at: "" }).value;
         });
       break;
     }
