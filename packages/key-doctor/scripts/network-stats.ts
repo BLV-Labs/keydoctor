@@ -1,5 +1,5 @@
 // GĐ10: network-wide numbers, one command. Run from the repo root:
-//   pnpm stats -- [--network mainnet|testnet] [--block N] [--rpc URL] [--active-days 365] [--limit N]
+//   pnpm stats [--network mainnet|testnet] [--block N] [--rpc URL] [--active-days 365] [--limit N]
 // Every query is pinned to one block. Raw RPC answers are cached under data/raw/ (gitignored), so a rerun with
 // the same --block reads the cache. An old --block needs an archival RPC (--rpc https://archival-rpc.mainnet.near.org).
 // Writes data/network-stats.json and data/network-stats.md (aggregates only, no names).
@@ -14,7 +14,10 @@ import { aggregate, toMarkdown } from "./network-stats-lib.ts";
 
 const FACTORY: Record<Network, string> = { mainnet: "sputnik-dao.near", testnet: "sputnik-v2.testnet" };
 
+// pnpm forwards a literal "--"; drop it so both `pnpm stats --block N` and `pnpm stats -- --block N` work.
+const argv = process.argv.slice(2);
 const { values } = parseArgs({
+  args: argv[0] === "--" ? argv.slice(1) : argv,
   options: {
     network: { type: "string", default: "mainnet" },
     block: { type: "string" },

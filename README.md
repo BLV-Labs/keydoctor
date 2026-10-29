@@ -1,103 +1,197 @@
 # Key Doctor On Call
 
-Key Doctor checks the access keys of a NEAR account or a Sputnik DAO council, and stays on call: it alerts the council on Telegram when a voter on a pending proposal has a freshly added full-access key.
+Key Doctor checks the access keys of a NEAR account, or of every council member of a Sputnik DAO, and scores the risk with fixed rules. It also stays on call: when a member who just voted on a pending DAO proposal has a freshly added full-access key, the council's Telegram group gets a warning **before the final vote**.
 
-Built for the NEAR HACKATHON (1–14 Nov 2026). The design is in `docs/final-idea.md` (Vietnamese).
+Built at NEAR HACKATHON (1–14 Nov 2026). Tracks: `social` (Sputnik DAO and treasury councils) and `security` (access keys, function-call keys). The design documents are in `docs/` (in Vietnamese; `docs/final-idea.md` is the main one).
+
+## The problem
+
+On NEAR every public key of every account is public. When someone takes over a council member's account, a common move is to **add a full-access key of their own**, then approve a payout or a rule change. Wallets show only your own account. They do not watch DAO proposals, and they do not connect a new key to a vote.
+
+Network-wide numbers come from one reproducible command (`pnpm stats`, see below). They go here once the script has run against live mainnet RPC.
+
+## What it does
+
+| Part | What you get | Where |
+|---|---|---|
+| Check | Every key of an account or a whole council, with the reason each one matters and a fixed-rule risk score | Dashboard, Telegram `/check`, MCP `diagnose` |
+| On Call | A warning before the final vote when a voter has a new full-access key. Warnings for proposals that change members, policy or contract code. A daily key-change message | Telegram bot (cron every 15 minutes and at 02:00 UTC) |
+| Clean up | A step-by-step plan in a safe order, ticked from chain data when you rescan | Dashboard (`view=cleanup`), changes signed by you in Meteor Wallet |
+| Compare | What changed since the last baseline | Telegram `/changes`, MCP `compare` |
+
+Fixed rules make every conclusion. **No AI is used in the product**, and Key Doctor **never signs transactions or holds keys**.
+
+## Try it: do X, see Y
+
+Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version pinned in `package.json`.
+
+1. **Install and test**
+
+   ```bash
+   pnpm install
+   pnpm test
+   ```
+
+   You see `# fail 0` for `packages/key-doctor`, `apps/dashboard` and `apps/worker`. The tests run on fixtures and never call a live RPC. `pnpm typecheck` checks all three packages. The library source is checked without Node types, because it may only use `fetch`.
+
+2. **Scan a testnet DAO in the dashboard**
+
+   ```bash
+   pnpm --filter dashboard dev
+   ```
+
+   Open `http://localhost:8788/?target=verdict-panel-p8n6.sputnik-v2.testnet`. The scan runs in your browser against public NEAR RPC. You see the council report: status, council size and votes needed for a transfer, members sorted by risk, voting rules and the limits of the scan. Click a member to see its key profile. On an account, **Open cleanup plan** shows the cleanup steps. **Get Telegram alerts** shows the `/watch` command to copy.
+
+3. **Ask the MCP server for the same verdict**
+
+   ```bash
+   cp apps/worker/.dev.vars.example apps/worker/.dev.vars
+   pnpm --filter worker db:migrate:local
+   pnpm --filter worker dev
+   ```
+
+   In another shell:
+
+   ```bash
+   curl -s http://localhost:8787/mcp -H 'authorization: Bearer change-me-mcp' -H 'content-type: application/json' \
+     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"diagnose","arguments":{"target":"verdict-panel-p8n6.sputnik-v2.testnet"}}}'
+   ```
+
+   You get `kd.report_summary.v1` with the same `summary.status` and member statuses as the dashboard. Without the header the answer is `401` with `kd.error.v1` `UNAUTHORIZED`.
+
+4. **Use it from an agent (Claude Code)**
+
+   ```bash
+   claude mcp add --transport http key-doctor http://localhost:8787/mcp --header "Authorization: Bearer change-me-mcp"
+   ```
+
+   Then ask "check the keys of verdict-panel-p8n6.sputnik-v2.testnet". The agent calls `diagnose`. `compare` returns `kd.diff.v1` against the stored baseline and moves the baseline only when you ask (`update_baseline: true`).
+
+5. **Telegram bot and the testnet demo** (needs a deployed Worker, see [Deploy](#deploy))
+
+   - Send `/check <dao>` to `@KeyDoctorOnCallBot` and see the summary. `/watch <dao>` in a group subscribes it. `/list` and `/unwatch` manage subscriptions.
+   - `scripts/demo-testnet/demo.sh` builds a 3-member DAO that needs 2 votes. Member a gets a new full-access key and approves a transfer. Then `scripts/demo-testnet/demo.sh run-check` (`POST /run-check`), and the group gets a warning that names b and c, who have not voted yet. A governance proposal gets its own warning. Running it again sends nothing new.
+
+6. **Reproduce the network numbers**
+
+   ```bash
+   pnpm stats
+   pnpm stats --block <height> --rpc https://archival-rpc.mainnet.near.org
+   ```
+
+   The first command pins the latest final block. The second reruns the scan at a fixed block. The script prints a Markdown table and writes `data/network-stats.json` and `data/network-stats.md`, with aggregates only and no account names.
 
 ## Status
 
-- GĐ0 done: the pnpm workspaces monorepo, the data contracts (`packages/key-doctor/src/types.ts`) and sample fixtures.
-- GĐ1 done: the scan library (`scanAccount`, `scanDao`, the key rules), checked against live testnet RPC.
-- GĐ2 done: `diffReports` and `toSummary` (pure; compare two scans, drop key lists).
-- GĐ5 built: `checkProposals` (proposal watch: governance, code-upgrade and new-key-voter alerts). Waiting on a live testnet check.
-- GĐ7 built: the dashboard (`apps/dashboard`) with the check form, the council report, the account profile and the Telegram alerts dialog. Not deployed to Pages yet.
-- GĐ3 built: the Worker (`apps/worker`) with the MCP server (`diagnose`, `compare`) and D1 baselines. Not deployed yet.
-- GĐ4 built: the Telegram bot (`/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help`; plain messages with one `*.near` / `*.testnet` name run `/check`). Not deployed yet.
-- GĐ6 built: the proposal-watch job (cron every 15 minutes, once per DAO, send first then record `alerts_sent`), `POST /run-check`, and `scripts/demo-testnet/demo.sh`. Waiting on a live testnet run.
-- GĐ9 built: the daily key diff (cron at 02:00 UTC; it moves the baseline and alerts only on changes).
-- GĐ10 built: `pnpm stats` measures the network-wide numbers and writes `data/network-stats.json` and `data/network-stats.md`. The numbers are not in this README until the owner runs it against live RPC.
-- GĐ8 partly built: the cleanup plan (`?target=<account>&view=cleanup`, button "Open cleanup plan" on the account profile). It shows the UC8 steps in a safe order, each step ticked from chain data when you rescan, the keys to remove with their reasons, and Meteor Wallet links. Keys are removed in Meteor Wallet for now. Signing the deletes in the dashboard waits on the wallet-selector + Meteor signing test; the delete guards for it are built and tested (never the last full-access key, never the signing key).
+| Phase | What | State |
+|---|---|---|
+| GĐ0 | pnpm monorepo, data contracts (`packages/key-doctor/src/types.ts`), fixtures | Done |
+| GĐ1 | Scan library: `scanAccount`, `scanDao`, `scanTarget`, 13 rules, vi/en messages | Done (checked against live testnet RPC) |
+| GĐ2 | `diffReports`, `toSummary` | Done |
+| GĐ3 | Worker: MCP `diagnose`, `compare`, D1 baselines, Bearer auth | Built, runs on local workerd; not deployed |
+| GĐ4 | Telegram bot: `/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help` | Built; not deployed |
+| GĐ5 | `checkProposals` | Built; four Sputnik proposal facts still to confirm live (`packages/key-doctor/fixtures/README.md`) |
+| GĐ6 | Proposal watch cron, `alerts_sent`, `/run-check`, demo script | Built; demo not yet run on testnet |
+| GĐ7 | Dashboard: check, council, account, alerts dialog | Built; not deployed to Pages |
+| GĐ8 | Cleanup plan | Plan page and delete guards built. Signing deletes inside the dashboard waits on a Meteor signing test; until then keys are removed in Meteor Wallet |
+| GĐ9 | Daily key diff (02:00 UTC) | Built; not deployed |
+| GĐ10 | Network stats script | Built; numbers pending a live run |
+| GĐ11–13 | History backtest, watch links, NearBlocks key dates | Not built (Roadmap) |
 
-## Try it
+## How it works
 
-Requires Node.js 22.18 or newer and pnpm 10 (`corepack enable` installs the pinned version).
-
-```bash
-pnpm install
-pnpm test        # library and dashboard tests
-pnpm typecheck   # library source is checked without Node types (fetch only)
+```
+packages/key-doctor   pure TypeScript library, fetch only (browser, Node, Workers)
+  scanAccount / scanDao / scanTarget → kd.report.v1
+  diffReports(prev, curr)            → kd.diff.v1
+  toSummary(report)                  → kd.report_summary.v1
+  checkProposals(dao, state)         → kd.alert.v1[] + new state (reads RPC only)
+apps/dashboard        static site (Cloudflare Pages), scans in the browser
+apps/worker           one Cloudflare Worker + D1
+  POST /mcp           MCP Streamable HTTP, Bearer MCP_TOKEN
+  POST /telegram      bot webhook, secret-token header, 200 at once + waitUntil
+  POST /run-check     runs a cron job now, Bearer RUN_CHECK_TOKEN
+  crons               */15 proposal watch, 0 2 * * * daily key diff
 ```
 
-Run the dashboard locally:
+- **One block per scan.** Every RPC query in a scan is pinned to the same block height.
+- **Key age** comes from the access-key nonce: `floor(nonce / 10^6)` is the block where the key was added.
+- **Per-member failures** go into `members[].error` with the text "risk is unknown, not low". They never fail the whole scan.
+- **Data contracts** (`kd.report.v1`, `kd.diff.v1`, `kd.alert.v1`, `kd.error.v1`, ...) are in `packages/key-doctor/src/types.ts`.
+- **Only the Worker writes subscriptions.** Baselines are written only by the daily job, the first subscription to a target, and `compare` with `update_baseline: true` (or when no baseline exists yet).
+- **Proposal job:** one `checkProposals` per DAO. Each alert is sent first and recorded in `alerts_sent` after, so a crash causes a duplicate, never a missed alert. A failed send keeps the old state and retries on the next run.
 
-```bash
-pnpm --filter dashboard dev   # http://localhost:8788
-```
+### Rules (ruleset `2026-11-01`)
 
-Open `http://localhost:8788/?target=<account or DAO>`, for example a `.testnet` account. Key Doctor scans it in your browser through public NEAR RPC. A Sputnik DAO shows its council report. Any other account shows its key profile. `pnpm --filter dashboard build` writes the static site to `apps/dashboard/dist/`.
+| Rule | Severity | Fires when |
+|---|---|---|
+| `FA_MANY` | high | 5 or more Ed25519 full-access keys |
+| `DAO_ADMIN` | high | One council member can pass a policy change alone |
+| `FC_DAO_VOTE` | high | An app key on the DAO contract can call `act_proposal` (vote) |
+| `FA_MULTIPLE` | cleanup | 2 to 4 Ed25519 full-access keys |
+| `PQ_PARTIAL` | cleanup | Has an ML-DSA key but still Ed25519 full-access keys |
+| `FA_OLD` | cleanup | Full-access key older than 730 days, or of unknown age |
+| `KEY_UNUSED` | cleanup | Key never used |
+| `FC_UNLIMITED_ALLOWANCE` | cleanup | App key with unlimited gas allowance |
+| `FC_ANY_METHOD` | cleanup | App key may call any method |
+| `FC_DEAD_RECEIVER` | cleanup | App key points to an account that does not exist |
+| `FA_BOT_LIKE` | cleanup | Full-access key used 1,000 times or more |
+| `PQ_NONE` | note | No ML-DSA (post-quantum) key |
+| `COUNCIL_SMALL` | note | Council of 2 or fewer |
 
-## MCP server (local)
+Proposal watch (`checkProposals`): a voter with a full-access key added in the last 48 hours raises a high alert. So does a new `add_member_to_role`, `remove_member_from_role`, `policy*` or `config` proposal (governance), and a new `upgrade_self` or `upgrade_remote` proposal (code upgrade).
 
-The Worker serves MCP over Streamable HTTP at `POST /mcp` with `Authorization: Bearer <MCP_TOKEN>`. Tools:
-- `diagnose {target, network?, detail?}` returns `kd.report_summary.v1`, or `kd.report.v1` with `detail: "full"`. It stores nothing.
-- `compare {target, network?, update_baseline?}` returns `kd.diff.v1` against the stored baseline. The baseline moves only on the first call or with `update_baseline: true`.
+On post-quantum keys: no quantum computer breaks these keys today. The reason to start now is that moving keys takes years, and every public key on NEAR is already public.
 
-Run it locally with a local D1:
+## Limitations
 
-```bash
-cp apps/worker/.dev.vars.example apps/worker/.dev.vars
-pnpm --filter worker db:migrate:local
-pnpm --filter worker dev   # http://localhost:8787
-```
+- A DAO that needs one vote executes a proposal at once, so Key Doctor can only warn after the fact (`after_the_fact: true`).
+- Alerts arrive up to one cron period late (15 minutes). Sputnik does not store vote times.
+- Alerts reach only chats that subscribed with `/watch`. There is no way to message a NEAR account.
+- A key added and then removed between two scans is not seen. Key age is an estimate from the nonce and a 1.2 s block time.
+- Public RPC rate-limits heavy use. The Cloudflare free plan limits outbound requests per run, so the proposal job handles at most `MAX_DAOS_PER_RUN` DAOs per run (default 5), at most 12 proposals and 8 voter scans per DAO.
+- Scan caps: 100 keys per account, 21 council members, 50 roles.
+- Four Sputnik v2 facts that `checkProposals` relies on (proposal-id semantics, proposal JSON, status values, kind labels) were taken from the contract source and still need a live check.
+- The dashboard does not yet sign key deletions itself. The cleanup plan sends you to Meteor Wallet.
+- Cron messages are bilingual by default (`ALERT_LANG`), because subscriptions do not store a language.
 
-Call `diagnose`:
+## Roadmap
 
-```bash
-curl -s http://localhost:8787/mcp \
-  -H 'authorization: Bearer change-me-mcp' -H 'content-type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"diagnose","arguments":{"target":"verdict-panel-p8n6.sputnik-v2.testnet"}}}'
-```
+- Sign key deletions in the dashboard through wallet-selector (several app keys in one signature), once the Meteor signing test passes.
+- Backtest the proposal rules on 12 months of history (`kd.backtest.v1`), using NearBlocks for keys added and later removed.
+- Watch links: `/start` deep links, `POST /api/watch-link` and an MCP `watch` tool.
+- Exact key creation dates from NearBlocks, and more rules.
+- **Agent Guard:** a Sputnik role that approves only in-policy transfers, moving from "detect and warn" to "block".
+- Link a Telegram user to a NEAR account by signature to mention voters by name. Discord and email alerts. Near-real-time watching through an indexer.
+- Add ML-DSA keys in the dashboard when wallet-selector supports them. Integration with wallets and treasury tools.
 
-Add it to Claude Code:
+## Deploy
 
-```bash
-claude mcp add --transport http key-doctor http://localhost:8787/mcp --header "Authorization: Bearer change-me-mcp"
-```
+1. `wrangler d1 create key-doctor` and put the id into `apps/worker/wrangler.toml`.
+2. `pnpm --filter worker db:migrate:remote`.
+3. `wrangler secret put` for `MCP_TOKEN`, `RUN_CHECK_TOKEN`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET`.
+4. `pnpm --filter worker deploy`.
+5. Register the bot webhook:
 
-## Telegram bot (after deploy)
+   ```bash
+   curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
+     -d url=https://<your-worker>.workers.dev/telegram -d secret_token=$TELEGRAM_WEBHOOK_SECRET -d 'allowed_updates=["message"]'
+   ```
 
-The bot runs in the same Worker at `POST /telegram`. Each update must carry the `X-Telegram-Bot-Api-Secret-Token` header. The Worker answers 200 at once and does the work in `ctx.waitUntil`. Replies are plain text in Vietnamese or English, based on the user's Telegram language. After `wrangler secret put TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET`, register the webhook:
+6. `pnpm --filter dashboard build` and publish `apps/dashboard/dist/` on Cloudflare Pages. `public/_headers` sets the CSP. Set `DASHBOARD_URL` on the Worker for the "View on dashboard" buttons.
 
-```bash
-curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
-  -d url=https://<your-worker>.workers.dev/telegram \
-  -d secret_token=$TELEGRAM_WEBHOOK_SECRET -d 'allowed_updates=["message"]'
-```
+## Libraries, AI-written code and prepared data
 
-Then send `/check kd-demo.sputnik-v2.testnet` (or any testnet DAO) to the bot.
-
-## Testnet demo (after deploy)
-
-`scripts/demo-testnet/demo.sh` builds a 3-member DAO that needs 2 votes, then plays the attack one step at a time with near-cli-rs and your own testnet keys. The header of the script lists the steps and the 48-hour timing note.
-
-```bash
-export KD_DEMO_PREFIX=kdd$(date +%s) KD_WORKER_URL=https://<your-worker>.workers.dev RUN_CHECK_TOKEN=<token>
-scripts/demo-testnet/demo.sh accounts && scripts/demo-testnet/demo.sh dao
-# Telegram: add the bot to a group, send /watch <dao printed above>
-scripts/demo-testnet/demo.sh transfer && scripts/demo-testnet/demo.sh compromise && scripts/demo-testnet/demo.sh vote
-scripts/demo-testnet/demo.sh run-check   # the group gets the alert that names the members who have not voted
-```
-
-`POST /run-check` with `{"job": "proposals" | "daily", "target"?}` runs the same function as the cron and returns `{job, targets_checked, alerts_sent, alerts, errors}`.
-
-## Network stats (reproducible)
-
-```bash
-pnpm stats                      # mainnet Sputnik DAOs, pinned to the latest final block
-pnpm stats -- --block <height> --rpc https://archival-rpc.mainnet.near.org   # rerun at a fixed block
-```
-
-The script lists every DAO from the factory and keeps the ones with a proposal in the last 365 days (`--active-days`). It scans their councils with the same library, all at one block, and prints the Markdown table. It writes `data/network-stats.json` (`kd.network_stats.v1`) and `data/network-stats.md`. Only aggregates are written: no DAO or account names. Raw RPC answers are cached under `data/raw/` (gitignored), so a rerun at the same block is offline.
+- **Runtime:** none. The library and the Worker use only web platform APIs (`fetch`, `crypto.subtle`).
+- **Fonts:** Fira Sans and Fira Code from Google Fonts.
+- **Build and dev tools:**
+  - TypeScript
+  - esbuild (dashboard bundle)
+  - wrangler (Worker dev and deploy, with `undici` pinned to 7.30.1 for a security fix)
+  - `@types/node`
+- **Tests:** Node's built-in `node:test`, and `node:sqlite` as a stand-in for D1.
+- **AI-written code:** all code, tests and English docs in this repo were written by Claude Code (Anthropic) from the team's Vietnamese specs (`docs/final-idea.md`, `docs/usecase.md`). The team wrote the specs, approved the design mockup (`docs/design/dashboard/`) and ran the live testnet checks recorded in `packages/key-doctor/fixtures/README.md`.
+- **Prepared data:** the fixtures in `packages/key-doctor/fixtures/` are hand-built with testnet names only. Their public keys are random. The dashboard design handoff was made before the build.
 
 ## License
 
