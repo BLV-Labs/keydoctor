@@ -138,6 +138,8 @@ The mockup predates ed127bd. Follow this README where the two differ.
 
 ## Open items
 
+- **DAO suffix on testnet:** the testnet Sputnik factory is `sputnik-v2.testnet`, so testnet DAOs are `<name>.sputnik-v2.testnet` (seen in the GĐ1 live run). `kd-demo.sputnik-dao.testnet` in the mockup, the fixtures and the dashboard example chip does not exist on chain. Point the example at the GĐ6 demo DAO once `scripts/demo-testnet` creates it. The library does not depend on the suffix.
+
 - **Fixture drift (in progress in GĐ1):** the mockup gives `a.kd-demo.testnet` one app key (`game.kd-demo.testnet`, any method, unlimited allowance). It also gives `FA_OLD` to its two keys older than 2 years. Update `dao-kd-demo.report.json` to match.
 - **Test-sign first (`docs/final-idea.md` §13.5):** through wallet-selector and Meteor, sign one transaction with several `DeleteKey` actions for app keys. Sign one `DeleteKey` for a full-access key on a testnet account with at least 2 full-access keys. Connect the wallet without a new function-call key. Also check if the wallet reports the public key it signs with (safety rule 2). The result sets the GĐ8 scope and closes T6.
 - **Q2 (`docs/final-idea.md` §16):** does Meteor sign `DeleteKey` (app key, full-access key) through wallet-selector? If not, step 1 and step 2 become Meteor guides.

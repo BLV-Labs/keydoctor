@@ -47,6 +47,6 @@ Owner runs `packages/key-doctor/scripts/scan.ts --save-raw`. Only that run chang
 | 2 | An empty key list (not `UNKNOWN_ACCOUNT`) for a missing account | confirmed (2026-10-29): `view_access_key_list` answered with no `error` and no `result.error`. This is why `scanAccount` follows an empty list with `view_account` | `kd-does-not-exist-9z.testnet` (missing) | final (not recorded) |
 | 3 | `mldsa65:` key prefix | differs: `ml-dsa-65-hash:` (2026-10-29, a full-access key added in Meteor Wallet). `parse.ts` now matches `ml-dsa-`, and the fixtures use the real prefix | the owner's testnet wallet account | final (not recorded) |
 | 4 | `GENESIS_HEIGHT` mainnet 9820210, testnet 42376888 | confirmed (2026-10-29, `EXPERIMENTAL_genesis_config`: testnet 42376888, mainnet 9820210) | n/a (no account) | n/a (genesis config) |
-| 5 | `policy.rs` permission matching and vote-policy fallback | unconfirmed | | |
-| 6 | `to_weight` formula | unconfirmed | | |
+| 5 | `policy.rs` permission matching and vote-policy fallback | partial (2026-10-29): the fallback is confirmed. The `council` role has an empty `vote_policy` `{}`, and Key Doctor used `default_vote_policy` (RoleWeight, ratio 1/2, quorum 0). Permission matching is not checked yet, because the run did not print `roles[].permissions` | `verdict-panel-p8n6.sputnik-v2.testnet` (third-party testnet DAO, council of 2) | 275337332 |
+| 6 | `to_weight` formula | confirmed (2026-10-29): ratio 1/2 with 2 members gives min(1·2/2 + 1, 2) = 2, quorum 0, and the scan reported `approvals_needed: 2` | `verdict-panel-p8n6.sputnik-v2.testnet` | 275337332 |
 | 7 | `DEFAULT_RPC_URL` values answer JSON-RPC | confirmed (2026-10-29, `block` with `finality: final`) | n/a (no account) | testnet 275336292, mainnet 222159657 |
