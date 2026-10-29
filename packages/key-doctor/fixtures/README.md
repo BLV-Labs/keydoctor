@@ -50,4 +50,4 @@ Owner runs `packages/key-doctor/scripts/scan.ts --save-raw`. Only that run chang
 | 4 | `GENESIS_HEIGHT` mainnet 9820210, testnet 42376888 | unconfirmed | | |
 | 5 | `policy.rs` permission matching and vote-policy fallback | unconfirmed | | |
 | 6 | `to_weight` formula | unconfirmed | | |
-| 7 | `DEFAULT_RPC_URL` values answer JSON-RPC | unconfirmed | | |
+| 7 | `DEFAULT_RPC_URL` values answer JSON-RPC | confirmed (2026-10-29, `block` with `finality: final`) | n/a (no account) | testnet 275336292, mainnet 222159657 |
