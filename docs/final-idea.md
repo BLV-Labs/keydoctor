@@ -873,18 +873,18 @@ Ghi rõ trong README: agent không chấm điểm, mọi kết luận từ rule;
 | **0** | Repo monorepo pnpm workspaces, `types.ts` (mục 4), fixture mẫu, `pnpm test` chạy được | P0 | | Repo build được, test rỗng pass | 1/11 · **Xong** (chuyển npm → pnpm 29/10) |
 | **1** | Thư viện quét: `rpc.ts`, `scanAccount`, `scanDao`, bộ rule mục 5.1, `messages` | P0 | GĐ0 | Quét đúng 20 account của prototype; mỗi rule có test | 1 đến 3/11 · **Xong 29/10** |
 | **2** | `diffReports`, `toSummary` | P0 | GĐ0 | Test đủ các trường hợp mục 4.3 | 2 đến 3/11 · **Xong 29/10** |
-| **3** | Worker: nâng `kd-hello` thành MCP thật với `diagnose`, `compare`; D1 `snapshots` | P0 | GĐ1, GĐ2 | Claude Code và `curl` gọi được; mốc không bị dời khi `update_baseline: false` | 4/11 |
-| **4** | Bot: webhook, `/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help`; `subscriptions`; lấy mốc khi đăng ký | P0 | GĐ3 | Đăng ký trong nhóm Telegram, `/check` trả tóm tắt | 5/11 |
+| **3** | Worker: nâng `kd-hello` thành MCP thật với `diagnose`, `compare`; D1 `snapshots` | P0 | GĐ1, GĐ2 | Claude Code và `curl` gọi được; mốc không bị dời khi `update_baseline: false` | 4/11 · **Đã build 29/10**, chờ deploy |
+| **4** | Bot: webhook, `/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help`; `subscriptions`; lấy mốc khi đăng ký | P0 | GĐ3 | Đăng ký trong nhóm Telegram, `/check` trả tóm tắt | 5/11 · **Đã build 29/10**, chờ deploy và tạo bot |
 | ⛔ | **Điểm dừng 5/11:** GĐ1 đến GĐ4 chưa chạy từ đầu đến cuối thì dồn sức vào đây | | | | |
-| **5** | `checkProposals` (mục 4.5, 5.2) | P0 | GĐ1 | Test với fixture `get_proposal`; chạy được trên DAO testnet | 6 đến 7/11 |
-| **6** | Job canh đề xuất (mục 8.5), `proposal_state`, `alerts_sent`, `/run-check`; script dựng DAO testnet 2 phiếu | P0 | GĐ4, GĐ5 | Kịch bản demo chạy trọn: cảnh báo đến trước phiếu thứ hai | 8/11 |
+| **5** | `checkProposals` (mục 4.5, 5.2) | P0 | GĐ1 | Test với fixture `get_proposal`; chạy được trên DAO testnet | 6 đến 7/11 · **Đã build 29/10**, chờ chạy thử testnet |
+| **6** | Job canh đề xuất (mục 8.5), `proposal_state`, `alerts_sent`, `/run-check`; script dựng DAO testnet 2 phiếu | P0 | GĐ4, GĐ5 | Kịch bản demo chạy trọn: cảnh báo đến trước phiếu thứ hai | 8/11 · **Đã build 29/10**, chờ chạy demo trên testnet |
 | ⛔ | **Mốc 8/11:** GĐ6 chưa chạy thì dừng mọi việc khác, chỉ làm GĐ6 | | | | |
 | **7** | Dashboard: nhập, council, hồ sơ account, nút "Nhận cảnh báo" bản MVP, deploy Pages | P0 | GĐ1 | Nhập DAO testnet, thấy báo cáo khớp `/check` | 8 đến 9/11 |
-| **8** | Kế hoạch dọn khóa (UC8): xóa khóa app theo lô qua ví; xóa khóa toàn quyền qua ví nếu Meteor cho; hướng dẫn thêm ML-DSA; tiến độ đọc từ chain | P0 | GĐ7 | Account testnet: xóa lô khóa app bằng một lần ký; làm trọn các bước, quét lại thấy xanh; không thể xóa khóa toàn quyền cuối | 9 đến 10/11 |
-| **9** | Job so khóa hằng ngày (UC7) | P0 | GĐ3, GĐ4 | Thêm khóa vào account test, lần chạy sau nhận tin | 10/11 |
-| **10** | Số liệu toàn mạng + script tái lập | P0 | GĐ1 | Một lệnh ra đúng bảng số trong README | Chạy nền từ sau GĐ1, xong trước 10/11 |
+| **8** | Kế hoạch dọn khóa (UC8): xóa khóa app theo lô qua ví; xóa khóa toàn quyền qua ví nếu Meteor cho; hướng dẫn thêm ML-DSA; tiến độ đọc từ chain | P0 | GĐ7 | Account testnet: xóa lô khóa app bằng một lần ký; làm trọn các bước, quét lại thấy xanh; không thể xóa khóa toàn quyền cuối | 9 đến 10/11 · **Đã build một phần 29/10**: màn kế hoạch + chốt an toàn; ký trong dashboard chờ thử Meteor |
+| **9** | Job so khóa hằng ngày (UC7) | P0 | GĐ3, GĐ4 | Thêm khóa vào account test, lần chạy sau nhận tin | 10/11 · **Đã build 29/10**, chờ deploy |
+| **10** | Số liệu toàn mạng + script tái lập | P0 | GĐ1 | Một lệnh ra đúng bảng số trong README | Chạy nền từ sau GĐ1, xong trước 10/11 · **Đã build 29/10** (`pnpm stats`), chờ chạy với RPC thật |
 | **11** | Chạy ngược rule trên lịch sử (mục 14.1) | P1 | GĐ5 | `summary.json` tái lập được | 11/11 |
-| **12** | Tool `watch` + `/start` deep link; `/api/watch-link`; nút dashboard bản P1 | P1 | GĐ4, GĐ7 | Bấm link là đăng ký xong | 11/11 |
+| **12** | Tool `watch` + `/start` deep link; `/api/watch-link`; nút dashboard bản P1 | P1 | GĐ4, GĐ7 | Bấm link là đăng ký xong | 11/11 · **Đã build 29/10**, chờ deploy |
 | **13** | Ngày tạo khóa từ NearBlocks; rule mở rộng | P1 | GĐ1 | | 11/11 |
 | **14** | README, ví dụ MCP + `curl`, quay video, post X, nộp form | P0 | Mọi P0 | Claude Code chạy lại được repo theo README | 12 đến 14/11 |
 

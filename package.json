@@ -10,7 +10,8 @@
   "scripts": {
     "test": "pnpm -r --if-present run test",
     "typecheck": "pnpm -r --if-present run typecheck",
-    "build": "pnpm -r --if-present run build"
+    "build": "pnpm -r --if-present run build",
+    "stats": "pnpm --filter key-doctor stats"
   },
   "packageManager": "pnpm@10.34.7"
 }

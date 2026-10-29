@@ -17,7 +17,7 @@ export interface PolicyAnalysis {
 }
 
 /** `kind:action`, `kind:*`, `*:action` or `*:*` (Policy::can_execute_action). */
-function permits(role: PolicyRole, kind: string, action: string): boolean {
+export function permits(role: PolicyRole, kind: string, action: string): boolean {
   return [`${kind}:${action}`, `${kind}:*`, `*:${action}`, "*:*"].some((p) => role.permissions.includes(p));
 }
 
@@ -27,7 +27,7 @@ function toWeight(t: Policy["defaultVotePolicy"]["threshold"], total: bigint): b
 }
 
 /** Null unless the role is a Group voting by RoleWeight. */
-function approvalsNeeded(policy: Policy, role: PolicyRole, label: string): number | null {
+export function approvalsNeeded(policy: Policy, role: PolicyRole, label: string): number | null {
   const vp = role.votePolicy[label] ?? policy.defaultVotePolicy;
   if (role.kind !== "group" || vp.weightKind !== "RoleWeight") return null;
   const total = BigInt(new Set(role.members).size);

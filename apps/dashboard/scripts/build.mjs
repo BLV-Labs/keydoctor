@@ -1,7 +1,7 @@
 // Builds the static site into dist/: the bundled app plus public/ and the design tokens.
 // `--serve` rebuilds on change and serves dist/ on http://localhost:8788.
 import { context, build } from "esbuild";
-import { cpSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -9,11 +9,20 @@ const here = dirname(fileURLToPath(import.meta.url));
 const app = join(here, "..");
 const dist = join(app, "dist");
 const serve = process.argv.includes("--serve");
+// Optional Worker origin for one-tap watch links (P1). Empty keeps the MVP dialog with no Worker call.
+const workerUrl = (process.env.KD_WORKER_URL ?? "").replace(/\/+$/, "");
+if (workerUrl && !/^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(workerUrl) && !/^http:\/\/localhost(:\d+)?$/.test(workerUrl)) {
+  throw new Error("KD_WORKER_URL must be an https origin, e.g. https://key-doctor.example.workers.dev");
+}
 
 rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist, { recursive: true });
 cpSync(join(app, "public"), dist, { recursive: true });
 cpSync(join(app, "../../docs/design/dashboard/tokens.css"), join(dist, "tokens.css"));
+if (workerUrl) {
+  const headers = join(dist, "_headers");
+  writeFileSync(headers, readFileSync(headers, "utf8").replace("connect-src ", `connect-src ${workerUrl} `));
+}
 
 const options = {
   entryPoints: [join(app, "src/app.ts")],
@@ -25,6 +34,7 @@ const options = {
   minify: !serve,
   sourcemap: serve,
   logLevel: "info",
+  define: { __KD_WORKER_URL__: JSON.stringify(workerUrl) },
 };
 
 if (serve) {

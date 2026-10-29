@@ -191,3 +191,19 @@ describe("S1-AC5: follow-up and caps", () => {
     assert.equal(r.members[0]!.keys.length, MAX_KEYS);
   });
 });
+
+describe("scanTarget", () => {
+  it("falls back to scanAccount on NOT_A_DAO and keeps other errors", async (t) => {
+    const { scanTarget } = await import("../src/index.ts");
+    const { installFetch, blockBody, ok, fixture, rpcErr } = await import("./support/stub.ts");
+    installFetch(t, (req) => {
+      if (req.method === "block") return blockBody();
+      if (req.params.request_type === "call_function") return ok({ error: "wasm execution failed: CodeDoesNotExist", logs: [] });
+      if (req.params.request_type === "view_access_key_list" && req.params.account_id === "b.kd-demo.testnet") return fixture("rpc/view_access_key_list.b.json");
+      return rpcErr("UNKNOWN_ACCOUNT");
+    });
+    const r = await scanTarget("b.kd-demo.testnet", { skipReceiverCheck: true });
+    assert.equal(r.target.type, "account");
+    await assert.rejects(scanTarget("nobody.kd-demo.testnet"), (e: any) => e.kd?.code === "NOT_FOUND");
+  });
+});
