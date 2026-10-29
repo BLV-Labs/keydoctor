@@ -12,7 +12,8 @@ Built for the NEAR HACKATHON (1–14 Nov 2026). The design is in `docs/final-ide
 - GĐ5 built: `checkProposals` (proposal watch: governance, code-upgrade and new-key-voter alerts). Waiting on a live testnet check.
 - GĐ7 built: the dashboard (`apps/dashboard`) with the check form, the council report, the account profile and the Telegram alerts dialog. Not deployed to Pages yet.
 - GĐ3 built: the Worker (`apps/worker`) with the MCP server (`diagnose`, `compare`) and D1 baselines. Not deployed yet.
-- Not built yet: the Telegram bot (GĐ4), the proposal-watch job (GĐ6), the daily key diff (GĐ9) and the key cleanup plan (GĐ8).
+- GĐ4 built: the Telegram bot (`/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help`; plain messages with one `*.near` / `*.testnet` name run `/check`). Not deployed yet.
+- Not built yet: the proposal-watch job and `/run-check` (GĐ6), the daily key diff (GĐ9) and the key cleanup plan (GĐ8).
 
 ## Try it
 
@@ -59,6 +60,18 @@ Add it to Claude Code:
 ```bash
 claude mcp add --transport http key-doctor http://localhost:8787/mcp --header "Authorization: Bearer change-me-mcp"
 ```
+
+## Telegram bot (after deploy)
+
+The bot runs in the same Worker at `POST /telegram`. Each update must carry the `X-Telegram-Bot-Api-Secret-Token` header. The Worker answers 200 at once and does the work in `ctx.waitUntil`. Replies are plain text in Vietnamese or English, based on the user's Telegram language. After `wrangler secret put TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET`, register the webhook:
+
+```bash
+curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
+  -d url=https://<your-worker>.workers.dev/telegram \
+  -d secret_token=$TELEGRAM_WEBHOOK_SECRET -d 'allowed_updates=["message"]'
+```
+
+Then send `/check kd-demo.sputnik-v2.testnet` (or any testnet DAO) to the bot.
 
 ## License
 

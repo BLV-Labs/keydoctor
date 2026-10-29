@@ -18,6 +18,10 @@ export interface Chain {
   calls: Record<string, unknown>[];
   /** Extra answers for call_function, by method name. */
   views: Record<string, (args: any) => unknown>;
+  /** Telegram Bot API calls: method name and JSON body. */
+  telegram: { method: string; body: any }[];
+  /** Status the stub Telegram API answers with (200 by default). */
+  telegramStatus: number;
 }
 
 export function installChain(t: TestContext): Chain {
@@ -28,9 +32,17 @@ export function installChain(t: TestContext): Chain {
       "c.kd-demo.testnet": fixture("rpc/view_access_key_list.c.json"),
     },
     calls: [],
-    views: {},
+    views: { get_last_proposal_id: () => bytes(4) },
+    telegram: [],
+    telegramStatus: 200,
   };
-  t.mock.method(globalThis, "fetch", async (_url: unknown, init?: RequestInit) => {
+  t.mock.method(globalThis, "fetch", async (url: unknown, init?: RequestInit) => {
+    const tg = /^https:\/\/api\.telegram\.org\/bot[^/]+\/(\w+)$/.exec(String(url));
+    if (tg) {
+      chain.telegram.push({ method: tg[1] as string, body: JSON.parse(String(init?.body)) });
+      const ok = chain.telegramStatus === 200;
+      return new Response(JSON.stringify(ok ? { ok: true, result: {} } : { ok: false, description: "Forbidden: bot was blocked by the user" }), { status: chain.telegramStatus });
+    }
     const body = JSON.parse(String(init?.body)) as { method: string; params: Record<string, any> };
     chain.calls.push({ method: body.method, ...body.params });
     const p = body.params;

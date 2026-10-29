@@ -14,6 +14,7 @@ Current state:
 - GĐ0 is done (moved from npm to pnpm workspaces on 2026-10-29).
 - GĐ2 is done (`packages/key-doctor/test/diff.test.ts`).
 - GĐ3 is built (`apps/worker`, `test/mcp.test.ts`). It is done after deploy.
+- GĐ4 is built (`apps/worker/src/telegram`, `test/telegram.test.ts`). It is done after deploy and a real group test.
 - GĐ5 is built (`packages/key-doctor/test/proposals.test.ts`). It is done once the owner checks the four Sputnik facts in `fixtures/README.md` on a testnet DAO.
 - GĐ1 is done: the live-run checklist was recorded on 2026-10-29.
 - GĐ7 is built. It is not deployed yet.
@@ -23,7 +24,7 @@ Current state:
 | 1 | GĐ2 ✅ | `diffReports`, `toSummary` (pure, tests for every §4.3 case) | Done 2026-10-29 |
 | 2 | GĐ5 🔨 | `checkProposals` + `get_proposal` fixture tests | Built 2026-10-29; done after the GĐ5 live-run list in `fixtures/README.md` |
 | 3 | GĐ3 🔨 | Worker: MCP `diagnose`, `compare`, Bearer auth, D1 `snapshots` | Built 2026-10-29 (local workerd run OK). Done after deploy plus a live `curl` and Claude Code call |
-| 4 | GĐ4 | Bot: webhook, `/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help`, `subscriptions` | Critical path. **Checkpoint 5/11:** GĐ1–4 must run end to end |
+| 4 | GĐ4 🔨 | Bot: webhook, `/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help`, `subscriptions` | Built 2026-10-29. Done after deploy plus a group test. **Checkpoint 5/11:** GĐ1–4 must run end to end |
 | 5 | GĐ6 | Proposal-watch job (15 min), `proposal_state`, `alerts_sent`, `/run-check`, `scripts/demo-testnet` | Main demo scene. **Milestone 8/11:** if it does not run, stop everything else |
 | 6 | GĐ7 close-out | Deploy to Pages; check that the dashboard report matches `/check` | Needs GĐ4 |
 | 7 | GĐ8 | Cleanup plan, Delete / Revoke through Meteor | Blocked on the §13.5 wallet-selector + Meteor signing test |

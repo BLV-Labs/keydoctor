@@ -874,7 +874,7 @@ Ghi rõ trong README: agent không chấm điểm, mọi kết luận từ rule;
 | **1** | Thư viện quét: `rpc.ts`, `scanAccount`, `scanDao`, bộ rule mục 5.1, `messages` | P0 | GĐ0 | Quét đúng 20 account của prototype; mỗi rule có test | 1 đến 3/11 · **Xong 29/10** |
 | **2** | `diffReports`, `toSummary` | P0 | GĐ0 | Test đủ các trường hợp mục 4.3 | 2 đến 3/11 · **Xong 29/10** |
 | **3** | Worker: nâng `kd-hello` thành MCP thật với `diagnose`, `compare`; D1 `snapshots` | P0 | GĐ1, GĐ2 | Claude Code và `curl` gọi được; mốc không bị dời khi `update_baseline: false` | 4/11 · **Đã build 29/10**, chờ deploy |
-| **4** | Bot: webhook, `/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help`; `subscriptions`; lấy mốc khi đăng ký | P0 | GĐ3 | Đăng ký trong nhóm Telegram, `/check` trả tóm tắt | 5/11 |
+| **4** | Bot: webhook, `/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help`; `subscriptions`; lấy mốc khi đăng ký | P0 | GĐ3 | Đăng ký trong nhóm Telegram, `/check` trả tóm tắt | 5/11 · **Đã build 29/10**, chờ deploy và tạo bot |
 | ⛔ | **Điểm dừng 5/11:** GĐ1 đến GĐ4 chưa chạy từ đầu đến cuối thì dồn sức vào đây | | | | |
 | **5** | `checkProposals` (mục 4.5, 5.2) | P0 | GĐ1 | Test với fixture `get_proposal`; chạy được trên DAO testnet | 6 đến 7/11 · **Đã build 29/10**, chờ chạy thử testnet |
 | **6** | Job canh đề xuất (mục 8.5), `proposal_state`, `alerts_sent`, `/run-check`; script dựng DAO testnet 2 phiếu | P0 | GĐ4, GĐ5 | Kịch bản demo chạy trọn: cảnh báo đến trước phiếu thứ hai | 8/11 |
