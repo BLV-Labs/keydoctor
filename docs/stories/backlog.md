@@ -34,6 +34,8 @@ Current state:
 | 10 | GĐ11 → GĐ13 → GĐ12 | P1: history replay, NearBlocks key dates, watch-link | Cut order if late: GĐ11 → GĐ13 → GĐ12 → GĐ9 |
 | 11 | GĐ14 | README, video, submission | Last; never cut |
 
+Open question for the owner (2026-10-29): `/changes` and MCP `compare` on a target with no baseline save one as the first baseline (`docs/final-idea.md` §8.3, UC3). CLAUDE.md names only the daily job and the first subscription as baseline writers. The code follows the spec, and snapshots are pruned to 7 per target. Should `/changes` for an unwatched target answer "no baseline yet" without writing instead?
+
 Owner-only tasks that block steps above:
 - Run `pnpm stats` (mainnet, live RPC; it takes a while) and paste `data/network-stats.md` into the README. Commit `data/network-stats.json`.
 - Run `scripts/demo-testnet/demo.sh` on testnet (mind the 48-hour note in its header). It has not been run: there is no RPC route from the build container.

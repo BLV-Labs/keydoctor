@@ -19,6 +19,8 @@ const keysB = () => fixture("rpc/view_access_key_list.b.json");
 const keysC = () => fixture("rpc/view_access_key_list.c.json");
 
 interface World {
+  /** get_proposal ids that fail at the transport level (HTTP 500). */
+  down?: number[];
   last?: unknown;
   proposals?: Record<number, unknown>;
   keys?: Record<string, unknown>;
@@ -35,6 +37,7 @@ function world(t: TestContext, w: World): Req[] {
       if (p.method_name === "get_policy") return bytes(policyRaw());
       if (p.method_name === "get_proposal") {
         const { id } = JSON.parse(Buffer.from(String(p.args_base64), "base64").toString()) as { id: number };
+        if (w.down?.includes(id)) return new Response("{}", { status: 500 });
         const found = w.proposals?.[id];
         return found === undefined ? ok({ error: "wasm execution failed: ERR_NO_PROPOSAL", logs: [] }) : found;
       }
@@ -198,20 +201,65 @@ describe("GĐ5 checkProposals: failures and caps", () => {
     await assert.rejects(checkProposals(DAO, { last_proposal_id: 0, pending: {} }), (e: any) => e.kd?.code === "RPC_ERROR");
   });
 
-  it("a failing new proposal goes to errors and is retried next call; later ones still run", async (t) => {
+  it("a transport failure on a new proposal goes to errors and is retried next call; later ones still run", async (t) => {
+    demo(t, { down: [2] });
+    const r = await checkProposals(DAO, { last_proposal_id: 2, pending: {} });
+    assert.deepEqual(r.errors, ["proposal 2: RPC_ERROR"]);
+    assert.deepEqual(kinds(r.alerts), ["testnet:kd-demo.sputnik-dao.testnet:governance_change_proposal:3:-"]);
+    assert.equal(r.state.last_proposal_id, 2);
+    // Next call: 3 is pending and above last_proposal_id, but it is read once, not twice.
+    const calls = demo(t);
+    const again = await checkProposals(DAO, r.state);
+    assert.equal(calls.filter((c) => c.params.method_name === "get_proposal").length, 2);
+    assert.equal(again.state.last_proposal_id, 4);
+    assert.ok(again.alerts.some((a) => a.alert_id.endsWith("voter_new_full_access_key:2:a.kd-demo.testnet")));
+    assert.ok(!again.alerts.some((a) => a.kind === "governance_change_proposal"), "proposal 3 was already announced");
+  });
+
+  it("a removed proposal (get_proposal fails in the contract) is dropped, not retried forever", async (t) => {
     demo(t, { proposals: { 3: bytes(addMember3()) } });
     const r = await checkProposals(DAO, { last_proposal_id: 2, pending: {} });
     assert.deepEqual(r.errors, ["proposal 2: NOT_A_DAO"]);
-    assert.deepEqual(kinds(r.alerts), ["testnet:kd-demo.sputnik-dao.testnet:governance_change_proposal:3:-"]);
-    assert.equal(r.state.last_proposal_id, 2);
+    assert.equal(r.state.last_proposal_id, 4);
+    assert.deepEqual(Object.keys(r.state.pending), ["3"]);
   });
 
-  it("a failing pending proposal keeps its old entry", async (t) => {
+  it("a long backlog with a removed first proposal still reaches every id", async (t) => {
+    const base = { proposer: B, description: "x", status: "InProgress", votes: {}, kind: { AddMemberToRole: { member_id: "d.kd-demo.testnet", role: "council" } } };
+    const proposals: Record<number, unknown> = {};
+    for (let i = 1; i < 20; i++) proposals[i] = bytes({ ...base, id: i });
+    world(t, { last: bytes(20), proposals });
+    let state: ProposalWatchState = { last_proposal_id: 0, pending: {} };
+    const seen = new Set<string>();
+    for (let run = 0; run < 4; run++) {
+      const r = await checkProposals(DAO, state);
+      for (const a of r.alerts) seen.add(a.alert_id);
+      state = r.state;
+    }
+    assert.equal(state.last_proposal_id, 20);
+    assert.equal(seen.size, 19);
+  });
+
+  it("a transport failure on a pending proposal keeps its old entry", async (t) => {
     const entry = { kind_label: "transfer", votes_seen: { [A]: "Approve" as const }, first_seen_at: "2026-11-03T00:00:00Z" };
-    demo(t, { proposals: {} });
+    demo(t, { down: [2] });
     const r = await checkProposals(DAO, { last_proposal_id: 4, pending: { "2": entry } });
     assert.deepEqual(r.state.pending, { "2": entry });
     assert.equal(r.errors.length, 1);
+  });
+
+  it("a finished proposal stays pending until every voter is scanned, and the deferral is reported", async (t) => {
+    const voters = Array.from({ length: 10 }, (_, i) => `v${i}.kd-demo.testnet`);
+    const p = { ...transfer2(), id: 4, status: "Approved", votes: Object.fromEntries(voters.map((v) => [v, "Approve"])) };
+    const keys = Object.fromEntries(voters.map((v) => [v, keysB()]));
+    demo(t, { last: bytes(5), proposals: { 4: bytes(p) }, keys });
+    const first = await checkProposals(DAO, { last_proposal_id: 4, pending: {} });
+    assert.deepEqual(first.errors, ["proposal 4: 2 voter scan(s) deferred to the next call"]);
+    assert.equal(Object.keys(first.state.pending["4"]!.votes_seen).length, 8);
+    demo(t, { last: bytes(5), proposals: { 4: bytes(p) }, keys });
+    const second = await checkProposals(DAO, first.state);
+    assert.deepEqual(second.errors, []);
+    assert.deepEqual(second.state.pending, {});
   });
 
   it("a voter scan failure goes to errors and leaves the vote unseen for a retry", async (t) => {

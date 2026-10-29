@@ -121,6 +121,37 @@ describe("GĐ6 proposal watch (demo scenario)", () => {
     assert.equal(retried.body.alerts_sent, 2);
   });
 
+  it("a chat Telegram refuses for good (400) does not hold the alert back from the others", async (t) => {
+    const { env, chain, db } = setup(t);
+    await watch(env, DAO, -1);
+    await watch(env, DAO, -2);
+    demoProposals(chain);
+    chain.telegramReply = (_m, body) =>
+      body.chat_id === "-1" ? { status: 400, json: { ok: false, description: "Bad Request: have no rights to send a message" } } : undefined;
+    const first = await runCheck(env, { job: "proposals" });
+    assert.equal(first.body.alerts_sent, 2);
+    assert.equal(rows(db, "SELECT * FROM alerts_sent").length, 2);
+    assert.equal(rows(db, "SELECT last_proposal_id FROM proposal_state")[0].last_proposal_id, 6);
+    const healthy = () => sends(chain).filter((x) => x.body.chat_id === "-2").length;
+    const before = healthy();
+    await runCheck(env, { job: "proposals" });
+    assert.equal(healthy(), before, "no repeat for the healthy group");
+  });
+
+  it("a group upgraded to a supergroup moves its subscription and still gets the alert", async (t) => {
+    const { env, chain, db } = setup(t);
+    await watch(env, DAO, -1);
+    demoProposals(chain);
+    chain.telegramReply = (_m, body) =>
+      body.chat_id === "-1"
+        ? { status: 400, json: { ok: false, description: "Bad Request: group chat was upgraded to a supergroup chat", parameters: { migrate_to_chat_id: -1009 } } }
+        : undefined;
+    const r = await runCheck(env, { job: "proposals" });
+    assert.equal(r.body.alerts_sent, 2);
+    assert.deepEqual(rows(db, "SELECT chat_id, chat_type FROM subscriptions").map((x) => [x.chat_id, x.chat_type]), [["-1009", "supergroup"]]);
+    assert.equal(sends(chain).filter((x) => x.body.chat_id === "-1009").length, 2);
+  });
+
   it("a chat that removed the bot loses its subscription", async (t) => {
     const { env, chain, db } = setup(t);
     await watch(env, DAO);

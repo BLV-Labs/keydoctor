@@ -158,6 +158,17 @@ describe("GĐ3 compare and the baseline", () => {
     assert.deepEqual(after.changes, []);
   });
 
+  it("repeated update_baseline keeps at most 7 snapshots", async (t) => {
+    const { env, db } = setup(t);
+    await call(env, "compare", { target: DAO });
+    for (let i = 0; i < 9; i++) {
+      db.raw.prepare("INSERT INTO snapshots VALUES (?, 'testnet', ?, ?, '{}')").run(DAO, `2026-10-0${i}T00:00:00Z`, i);
+    }
+    const r = await call(env, "compare", { target: DAO, update_baseline: true });
+    assert.equal(r.isError, undefined);
+    assert.equal(snapshots(db), 7);
+  });
+
   it("validates update_baseline", async (t) => {
     const { env } = setup(t);
     const r = await call(env, "compare", { target: DAO, update_baseline: "yes" });

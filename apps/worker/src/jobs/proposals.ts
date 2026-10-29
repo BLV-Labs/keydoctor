@@ -66,7 +66,7 @@ export async function runProposalJob(env: Env, only?: string): Promise<JobResult
       result.alerts.push(alert.alert_id);
       const d = await deliver(env, alert, alertMessage(env, alert), target, network);
       if (d.delivered) result.alerts_sent += 1;
-      if (d.errors.length > 0) retry = true;
+      if (d.retry) retry = true;
       result.errors.push(...d.errors);
     }
     // A failed send keeps the old state, so the next run rebuilds the alert; alerts_sent drops the ones that did arrive.

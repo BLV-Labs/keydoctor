@@ -276,25 +276,36 @@ export async function checkProposals(
     .sort((a, b) => a - b);
   const start = Math.min(prev.last_proposal_id, last);
   const newIds: number[] = [];
-  for (let id = start; id < last; id++) newIds.push(id);
-  const budget = Math.max(0, MAX_PROPOSALS_PER_CHECK - pendingIds.length);
-  const newRead = newIds.slice(0, budget);
-  const pendingRead = pendingIds.slice(0, MAX_PROPOSALS_PER_CHECK);
-  for (const id of pendingIds.slice(MAX_PROPOSALS_PER_CHECK)) pending[String(id)] = prev.pending[String(id)]!;
+  // An id can be pending and above `start` when an earlier transport error held `last_proposal_id` back.
+  for (let id = start; id < last; id++) if (!(String(id) in prev.pending)) newIds.push(id);
+  // New ids get at least half of the reads, so many open proposals cannot starve new ones. Pending ids
+  // rotate from an offset that moves with the block, so every pending proposal is read in turn.
+  const newBudget = Math.min(newIds.length, Math.max(MAX_PROPOSALS_PER_CHECK / 2, MAX_PROPOSALS_PER_CHECK - pendingIds.length));
+  const newRead = newIds.slice(0, newBudget);
+  const offset = pendingIds.length === 0 ? 0 : head.height % pendingIds.length;
+  const rotated = [...pendingIds.slice(offset), ...pendingIds.slice(0, offset)];
+  const pendingRead = rotated.slice(0, MAX_PROPOSALS_PER_CHECK - newBudget);
+  for (const id of rotated.slice(MAX_PROPOSALS_PER_CHECK - newBudget)) pending[String(id)] = prev.pending[String(id)]!;
 
-  let nextLast = newRead.length > 0 ? (newRead.at(-1) as number) + 1 : start;
+  // Resume from the first new id not read this time (pending ids are tracked on their own).
+  let nextLast = newRead.length < newIds.length ? (newIds[newRead.length] as number) : last;
   let scans = 0;
   const scanned = new Map<string, Evidence | null>();
 
+  const fresh = new Set(newRead);
   for (const id of [...pendingRead, ...newRead]) {
-    const isNew = id >= start;
+    const isNew = fresh.has(id);
     const seen = prev.pending[String(id)];
     let p: Proposal | null;
     try {
       p = parseProposal(await rpc.callFunction(dao, head.height, "get_proposal", { id }));
       if (p === null || p.id !== id) throw fail("RPC_ERROR", { retryable: false });
     } catch (e) {
-      errors.push(`proposal ${id}: ${codeOf(e)}`);
+      const code = codeOf(e);
+      errors.push(`proposal ${id}: ${code}`);
+      // Sputnik deletes a removed proposal, so get_proposal fails in the contract (NOT_A_DAO here) for good:
+      // drop it and move on. Only a transport error (RPC_ERROR, RATE_LIMITED) is retried on the next call.
+      if (code === "NOT_A_DAO") continue;
       if (seen !== undefined) pending[String(id)] = seen;
       if (isNew) nextLast = Math.min(nextLast, id);
       continue;
@@ -315,6 +326,7 @@ export async function checkProposals(
 
     // Votes not in votes_seen. A voter whose scan failed or was deferred stays unseen, so the next call retries.
     const votesSeen: Record<string, Vote> = { ...(seen?.votes_seen ?? {}) };
+    let unseen = 0;
     for (const [voter, vote] of Object.entries(p.votes)) {
       if (seen?.votes_seen[voter] === vote) continue;
       if (accountKind(voter) === null) {
@@ -324,12 +336,16 @@ export async function checkProposals(
       }
       let evidence = scanned.get(voter);
       if (evidence === undefined) {
-        if (scans >= MAX_VOTER_SCANS_PER_CHECK) continue;
+        if (scans >= MAX_VOTER_SCANS_PER_CHECK) {
+          unseen += 1;
+          continue;
+        }
         scans += 1;
         try {
           evidence = await newFullAccessKey(voter, head, { network, rpcUrl, windowHours });
         } catch (e) {
           errors.push(`voter ${voter}: ${codeOf(e)}`);
+          unseen += 1;
           continue;
         }
         scanned.set(voter, evidence);
@@ -349,7 +365,9 @@ export async function checkProposals(
       }
     }
 
-    if (p.status === "InProgress") {
+    if (unseen > 0) errors.push(`proposal ${id}: ${unseen} voter scan(s) deferred to the next call`);
+    // A finished proposal leaves pending (§4.5 rule 4), unless some of its voters are still unscanned.
+    if (p.status === "InProgress" || unseen > 0) {
       pending[String(id)] = { kind_label: p.label, votes_seen: votesSeen, first_seen_at: seen?.first_seen_at ?? createdAt };
     }
   }

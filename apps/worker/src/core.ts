@@ -1,7 +1,7 @@
 // Shared functions behind the MCP tools and the bot commands (§8.2, §8.3).
 import { diffReports, resolveTarget, scanTarget, toSummary, type KdDiff, type KdReport, type KdReportSummary, type Network } from "key-doctor";
 import type { Env } from "./env.ts";
-import { latestSnapshot, saveSnapshot } from "./store/snapshots.ts";
+import { latestSnapshot, pruneSnapshots, saveSnapshot } from "./store/snapshots.ts";
 
 export interface TargetArgs {
   target: string;
@@ -40,6 +40,7 @@ export async function compare(args: TargetArgs & { update_baseline?: boolean }, 
   const diff = diffReports(baseline, curr);
   if (baseline === null || args.update_baseline === true) {
     await saveSnapshot(env.DB, curr);
+    await pruneSnapshots(env.DB, t.id, t.network);
     return { ...diff, baseline_updated: true };
   }
   return diff;

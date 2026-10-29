@@ -76,7 +76,7 @@ export async function runDailyJob(env: Env, only?: string): Promise<JobResult> {
       if (d.delivered) result.alerts_sent += 1;
       result.errors.push(...d.errors);
       // Send first: a failed send keeps the old baseline, so the next run reports the same changes again.
-      if (d.errors.length > 0) continue;
+      if (d.retry) continue;
     }
     // The daily job is one of the two baseline writers.
     await saveSnapshot(env.DB, curr);

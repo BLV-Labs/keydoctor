@@ -3,11 +3,18 @@
 export class TelegramError extends Error {
   readonly status: number;
   readonly description: string;
-  constructor(status: number, description: string) {
+  /** Set when a group became a supergroup: the chat now lives under this id. */
+  readonly migrateTo: string | null;
+  constructor(status: number, description: string, migrateTo: string | null = null) {
     super(`telegram ${status}`);
     this.name = "TelegramError";
     this.status = status;
     this.description = description;
+    this.migrateTo = migrateTo;
+  }
+  /** 429, 5xx and network trouble may pass; any other 4xx will fail the same way next time. */
+  get transient(): boolean {
+    return this.status === 429 || this.status >= 500;
   }
   /** The chat blocked the bot, removed it, or no longer exists: its subscriptions should go (§8.5). */
   get chatGone(): boolean {
@@ -35,13 +42,16 @@ async function call(token: string, method: string, body: Record<string, unknown>
   });
   if (res.ok) return;
   let description = "";
+  let migrateTo: string | null = null;
   try {
-    const data = (await res.json()) as { description?: unknown };
+    const data = (await res.json()) as { description?: unknown; parameters?: { migrate_to_chat_id?: unknown } };
     if (typeof data.description === "string") description = data.description.slice(0, 200);
+    const m = data.parameters?.migrate_to_chat_id;
+    if (typeof m === "number" && Number.isSafeInteger(m)) migrateTo = String(m);
   } catch {
     // keep the empty description
   }
-  throw new TelegramError(res.status, description);
+  throw new TelegramError(res.status, description, migrateTo);
 }
 
 /** Plain text (no parse_mode), so chain text can never inject markup. URL buttons go in an inline keyboard. */

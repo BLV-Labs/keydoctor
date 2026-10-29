@@ -24,6 +24,8 @@ export interface Chain {
   telegramStatus: number;
   /** Head block the stub reports; tests advance it like a real chain. */
   head: number;
+  /** Per-call Telegram answer; overrides telegramStatus when it returns a value. */
+  telegramReply?: (method: string, body: any) => { status: number; json: unknown } | undefined;
 }
 
 export function installChain(t: TestContext): Chain {
@@ -42,7 +44,10 @@ export function installChain(t: TestContext): Chain {
   t.mock.method(globalThis, "fetch", async (url: unknown, init?: RequestInit) => {
     const tg = /^https:\/\/api\.telegram\.org\/bot[^/]+\/(\w+)$/.exec(String(url));
     if (tg) {
-      chain.telegram.push({ method: tg[1] as string, body: JSON.parse(String(init?.body)) });
+      const sentBody = JSON.parse(String(init?.body));
+      chain.telegram.push({ method: tg[1] as string, body: sentBody });
+      const custom = chain.telegramReply?.(tg[1] as string, sentBody);
+      if (custom) return new Response(JSON.stringify(custom.json), { status: custom.status });
       const ok = chain.telegramStatus === 200;
       return new Response(JSON.stringify(ok ? { ok: true, result: {} } : { ok: false, description: "Forbidden: bot was blocked by the user" }), { status: chain.telegramStatus });
     }

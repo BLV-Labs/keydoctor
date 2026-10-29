@@ -62,3 +62,9 @@ export async function chatsFor(db: D1Database, target: string, network: Network)
     .all<{ chat_id: string }>();
   return results.map((r) => r.chat_id);
 }
+
+/** A group upgraded to a supergroup gets a new chat id; its subscriptions follow it. */
+export async function moveChat(db: D1Database, from: string, to: string): Promise<void> {
+  await db.prepare("UPDATE OR IGNORE subscriptions SET chat_id = ?, chat_type = 'supergroup' WHERE chat_id = ?").bind(to, from).run();
+  await db.prepare("DELETE FROM subscriptions WHERE chat_id = ?").bind(from).run();
+}
