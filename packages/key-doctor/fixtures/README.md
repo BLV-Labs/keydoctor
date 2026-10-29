@@ -8,7 +8,7 @@ Sample data for tests and for building the dashboard before the scanner exists. 
 | `alerts/` | `kd.alert.v1` `voter_new_full_access_key` for proposal 2 | Hand-built to the §4.4 contract |
 | `rpc/` | Raw `view_access_key_list` JSON-RPC responses | Shape from the NEAR RPC docs |
 | `corpus/` | One positive and one negative scan case per rule (26 files) plus `LIMIT_NON_GROUP_ADMIN.json`; see below | Hand-built; run by `test/corpus.test.ts` |
-| `sputnik/` | Decoded results of Sputnik v2 `get_policy`, `get_last_proposal_id`, `get_proposal` | **Not yet checked against a live testnet DAO** (`docs/final-idea.md` §13.5) |
+| `sputnik/` | Decoded results of Sputnik v2 `get_policy`, `get_last_proposal_id` (the proposal count, so ids run 0 to 3), `get_proposal` | `get_policy` was checked live in GĐ1. The proposal shapes are not yet checked: see the GĐ5 live-run list below |
 
 Known placeholders, to replace in GĐ1/GĐ5 with data captured from testnet:
 
@@ -50,3 +50,14 @@ Owner runs `packages/key-doctor/scripts/scan.ts --save-raw`. Only that run chang
 | 5 | `policy.rs` permission matching and vote-policy fallback | confirmed (2026-10-29): the `council` role has permissions `["*:*"]` and the scan reported `can_approve_transfer: true`. Its empty `vote_policy` `{}` falls back to `default_vote_policy` (RoleWeight, ratio 1/2, quorum 0) | `verdict-panel-p8n6.sputnik-v2.testnet` (third-party testnet DAO, council of 2) | 275337332 |
 | 6 | `to_weight` formula | confirmed (2026-10-29): ratio 1/2 with 2 members gives min(1·2/2 + 1, 2) = 2, quorum 0, and the scan reported `approvals_needed: 2` | `verdict-panel-p8n6.sputnik-v2.testnet` | 275337332 |
 | 7 | `DEFAULT_RPC_URL` values answer JSON-RPC | confirmed (2026-10-29, `block` with `finality: final`) | n/a (no account) | testnet 275336292, mainnet 222159657 |
+
+## GĐ5 live-run checklist (`checkProposals`)
+
+These are recalled Sputnik v2 facts that `src/proposals.ts` depends on. The owner checks them on a testnet DAO with at least one proposal. GĐ5 is "built", not "done", until all four are recorded.
+
+| # | Recalled value | Status | DAO | Block height |
+|---|---|---|---|---|
+| 1 | `get_last_proposal_id` is the proposal count: the newest id is `last - 1`, and `get_proposal {"id": last}` fails | unconfirmed | | |
+| 2 | `get_proposal` JSON: `id`, `proposer`, `description`, `kind` (externally tagged, e.g. `{"Transfer": {...}}`, unit variants as a string), `status`, `votes` (`{account: "Approve" \| "Reject" \| "Remove"}`) | unconfirmed | | |
+| 3 | Status values: `InProgress`, `Approved`, `Rejected`, `Removed`, `Expired`, `Moved`, `Failed` | unconfirmed | | |
+| 4 | Kind → label map in `KIND_LABEL` (`Transfer` → `transfer`, `FunctionCall` → `call`, `ChangePolicy*` → `policy*`, `UpgradeSelf` → `upgrade_self`, ...) | unconfirmed | | |

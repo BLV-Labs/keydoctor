@@ -284,3 +284,87 @@ export const diffRulesetLimitation = (from: string, to: string): string =>
   `The ruleset changed from ${from} to ${to}; flag changes are not compared.`;
 export const diffMemberErrorLimitation = (id: string): string =>
   `${id} could not be read in one of the two scans; its key and flag changes are not compared.`;
+
+// ---------------------------------------------------------------------------
+// kd.alert.v1 texts for checkProposals (§5.2, bot template §9.1). Ids are checked by the caller.
+// ---------------------------------------------------------------------------
+
+const YOCTO_PER_NEAR = 10n ** 24n;
+
+/** yoctoNEAR string to NEAR without float rounding: "50000000000000000000000000" → "50". */
+export function formatNear(yocto: string): string {
+  if (!/^\d+$/.test(yocto)) return "?";
+  const v = BigInt(yocto);
+  const frac = (v % YOCTO_PER_NEAR).toString().padStart(24, "0").replace(/0+$/, "");
+  return frac ? `${v / YOCTO_PER_NEAR}.${frac}` : `${v / YOCTO_PER_NEAR}`;
+}
+
+export type AlertText = { vi: { title: string; body: string; action: string }; en: { title: string; body: string; action: string } };
+
+const hoursText = (h: number): Text =>
+  h < 1 ? { vi: "chưa tới 1 giờ", en: "less than an hour" } : { vi: `khoảng ${h} giờ`, en: `about ${h} hour${h === 1 ? "" : "s"}` };
+
+export function voterAlertText(dao: string, id: number, action: Text, voter: string, hours: number, afterTheFact: boolean): AlertText {
+  const h = hoursText(hours);
+  return {
+    vi: {
+      title: `${afterTheFact ? "ĐÃ THỰC THI" : "CẢNH BÁO"}: ${dao}`,
+      body: `Đề xuất ${id}: ${action.vi}. ${voter} có khóa toàn quyền mới thêm ${h.vi} trước khi bỏ phiếu. Tài khoản có thể đã bị chiếm.`,
+      action: afterTheFact
+        ? `Đề xuất đã được thực thi. Xác minh với ${voter} qua kênh khác (gọi điện, gặp trực tiếp) và kiểm tra những gì đã thay đổi.`
+        : `Trước khi bỏ phiếu: xác minh với ${voter} qua kênh khác (gọi điện, gặp trực tiếp).`,
+    },
+    en: {
+      title: `${afterTheFact ? "EXECUTED" : "ALERT"}: ${dao}`,
+      body: `Proposal ${id}: ${action.en}. ${voter} has a new full-access key added ${h.en} before voting. The account may be compromised.`,
+      action: afterTheFact
+        ? `The proposal has already been executed. Verify with ${voter} through another channel (call or meet in person) and check what changed.`
+        : `Before you vote: verify with ${voter} through another channel (call or meet in person).`,
+    },
+  };
+}
+
+export function proposalAlertText(
+  kind: "governance" | "upgrade",
+  dao: string,
+  id: number,
+  action: Text,
+  proposer: string,
+  afterTheFact: boolean,
+): AlertText {
+  const gov = kind === "governance";
+  const why: Text = gov
+    ? { vi: "Đề xuất này thay đổi ai kiểm soát DAO.", en: "It changes who controls the DAO." }
+    : { vi: "Đề xuất này thay code contract, code mới có thể chuyển mọi tài sản contract đang giữ.", en: "It replaces contract code, and new code can move any funds the contract holds." };
+  return {
+    vi: {
+      title: `${afterTheFact ? "ĐÃ THỰC THI" : gov ? "ĐỔI QUYỀN DAO" : "NÂNG CẤP CODE"}: ${dao}`,
+      body: `Đề xuất ${id}: ${action.vi}. ${why.vi}`,
+      action: afterTheFact
+        ? `Đề xuất đã được thực thi. Xác minh với ${proposer} qua kênh khác rằng chính họ tạo đề xuất, và kiểm tra những gì đã thay đổi.`
+        : `Trước khi bỏ phiếu: xác minh với người tạo đề xuất ${proposer} qua kênh khác (gọi điện, gặp trực tiếp) rằng chính họ tạo nó.`,
+    },
+    en: {
+      title: `${afterTheFact ? "EXECUTED" : gov ? "GOVERNANCE CHANGE" : "CODE UPGRADE"}: ${dao}`,
+      body: `Proposal ${id}: ${action.en}. ${why.en}`,
+      action: afterTheFact
+        ? `The proposal has already been executed. Verify with ${proposer} through another channel that they created it, and check what changed.`
+        : `Before you vote: verify with the proposer ${proposer} through another channel (call or meet in person) that they created it.`,
+    },
+  };
+}
+
+export const ACTION_TEXT = {
+  transferNear: (amount: string, to: string): Text => ({ vi: `chuyển ${amount} NEAR cho ${to}`, en: `transfer ${amount} NEAR to ${to}` }),
+  transferToken: (amount: string, token: string, to: string): Text => ({
+    vi: `chuyển ${amount} (đơn vị gốc) token ${token} cho ${to}`,
+    en: `transfer ${amount} raw units of ${token} to ${to}`,
+  }),
+  call: (methods: string, on: string): Text => ({ vi: `gọi ${methods} trên ${on}`, en: `call ${methods} on ${on}` }),
+  addMember: (m: string, role: string): Text => ({ vi: `thêm ${m} vào role ${role}`, en: `add ${m} to role ${role}` }),
+  removeMember: (m: string, role: string): Text => ({ vi: `bỏ ${m} khỏi role ${role}`, en: `remove ${m} from role ${role}` }),
+  policy: (): Text => ({ vi: "đổi policy của DAO", en: "change the DAO policy" }),
+  config: (): Text => ({ vi: "đổi cấu hình DAO", en: "change the DAO config" }),
+  upgradeSelf: (): Text => ({ vi: "nâng cấp code contract của DAO", en: "upgrade the DAO contract code" }),
+  upgradeRemote: (on: string): Text => ({ vi: `nâng cấp code của ${on}`, en: `upgrade the code of ${on}` }),
+};

@@ -76,6 +76,14 @@ export const CONCURRENCY_MIN = 1;
 export const CONCURRENCY_MAX = 8;
 export const RPC_TIMEOUT_MS = 15_000;
 
+// checkProposals (§4.5, §5.2). Window for "voter has a new full-access key".
+export const NEW_KEY_WINDOW_HOURS = 48;
+// Per call: proposals read (pending first, then new) and voters scanned; the rest wait for the next call.
+export const MAX_PROPOSALS_PER_CHECK = 12;
+export const MAX_VOTER_SCANS_PER_CHECK = 8;
+// Proposal descriptions are chain text: cut before they go into ProposalInfo.
+export const DESCRIPTION_MAX_LEN = 280;
+
 // NEAR account id length bounds.
 export const ACCOUNT_ID_MIN_LEN = 2;
 export const ACCOUNT_ID_MAX_LEN = 64;
