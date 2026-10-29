@@ -26,7 +26,7 @@ Tài liệu mô tả **8 use case**: ai kích hoạt, các thành phần gọi n
 | Bot `@KeyDoctorOnCallBot` | Bot Telegram, do Worker điều khiển | GĐ4 |
 | Agent bên ngoài | Claude Code, OpenClaw... cắm vào `/mcp` | Không xây |
 | NEAR RPC | Nguồn dữ liệu, chỉ đọc | Có sẵn |
-| Ví Meteor | Người dùng tự ký khi dọn khóa | Có sẵn |
+| Ví (qua wallet-selector), Meteor | Người dùng ký giao dịch xóa khóa; bật ML-DSA trong Meteor | Có sẵn |
 | Sputnik UI | Council bỏ phiếu | Có sẵn |
 
 ### 0.2 Sơ đồ tổng thể
@@ -90,7 +90,7 @@ flowchart TB
 
 ### 0.4 Nguyên tắc xuyên suốt
 
-1. **Không giữ khóa, không ký giao dịch.** Mọi dữ liệu đọc từ RPC công khai.
+1. **Không giữ khóa, không ký giao dịch thay người dùng.** Mọi dữ liệu đọc từ RPC công khai. Khi dọn khóa, dashboard chỉ dựng giao dịch; người dùng ký bằng ví.
 2. **Code quyết định mọi kết luận.** Không dùng LLM trong sản phẩm.
 3. **Chỉ job UC7 và lần đăng ký đầu được ghi mốc so sánh.**
 4. **Một nguồn duy nhất cho đăng ký:** bảng `subscriptions`, chỉ Worker ghi.
@@ -509,22 +509,30 @@ sequenceDiagram
 **Kích hoạt:** người dùng mở kế hoạch dọn trên dashboard.
 **Mức:** P0. **Giai đoạn:** GĐ8.
 
-**Vì sao không tự dọn:** không giữ khóa của ai; wallet-selector không hỗ trợ ML-DSA; dApp không ra lệnh cho Meteor thêm khóa chống lượng tử được.
+**Nguyên tắc:** Key Doctor không giữ khóa và không ký. Dashboard **dựng giao dịch xóa khóa**, người dùng **ký bằng ví** (kết nối qua wallet-selector). Riêng bước thêm khóa ML-DSA phải làm trong Meteor, vì wallet-selector không hỗ trợ ML-DSA và dApp không yêu cầu Meteor thêm khóa chống lượng tử được.
 
 ```mermaid
 sequenceDiagram
   actor U as Người dùng
   participant D as Dashboard
+  participant W as Ví (qua wallet-selector)
+  participant M as Ví Meteor (màn PQ)
   participant K as key-doctor
-  participant M as Ví Meteor
   participant R as NEAR RPC
 
   D-->>U: Kế hoạch dọn theo thứ tự an toàn
-  U->>M: Bước 1: thu hồi khóa app thừa
-  U->>M: Bước 2: bật khóa ML-DSA
-  U->>M: Bước 3: ký thử bằng khóa ML-DSA, chờ chốt
-  U->>M: Bước 4: xóa khóa Ed25519 toàn quyền cũ
-  M->>R: Các giao dịch
+  U->>D: Bước 1: tick các khóa app thừa, bấm Xóa
+  D-->>U: Màn xem trước danh sách khóa sẽ xóa
+  D->>W: Một giao dịch gồm nhiều DeleteKey
+  W-->>U: Ví hiện giao dịch, người dùng ký
+  W->>R: Gửi giao dịch
+  U->>D: Bước 2: chọn khóa toàn quyền cũ không dùng, bấm Xóa (nếu ví cho ký)
+  D->>D: Kiểm: không phải khóa toàn quyền cuối, không phải khóa ví đang dùng
+  D-->>U: Ba cảnh báo + xem trước
+  D->>W: Giao dịch DeleteKey
+  W->>R: Gửi giao dịch
+  U->>M: Bước 3: bật ML-DSA, ký thử, chờ chốt
+  U->>M: Bước 4 (tùy chọn): xóa khóa Ed25519 toàn quyền còn lại
   U->>D: Quét lại
   D->>K: scanAccount
   K-->>D: kd.report.v1
@@ -533,40 +541,55 @@ sequenceDiagram
 
 ### Thứ tự dọn
 
-| Bước | Việc | Rủi ro nếu sai |
-|---|---|---|
-| 1 | Thu hồi khóa app chưa dùng, trỏ contract chết, quyền quá rộng (Connected Apps) | Thấp |
-| 2 | Thêm ML-DSA (màn PQ; account cần có NEAR trả phí) | Thấp |
-| 3 | Ký thử bằng ML-DSA, chờ chốt | Bỏ qua là nguy hiểm |
-| 4 | Xóa Ed25519 toàn quyền cũ, từ khóa chưa dùng và cũ nhất | **Cao** |
-| 5 | Quét lại | |
+| Bước | Việc | Làm ở đâu | Rủi ro nếu sai |
+|---|---|---|---|
+| 1 | Xóa khóa app thừa: chưa dùng, trỏ contract chết, quyền quá rộng. **Nhiều khóa trong một lần ký** | **Dashboard**, ví ký | Thấp: tệ nhất phải đăng nhập lại app |
+| 2 | Xóa khóa Ed25519 toàn quyền **chưa từng dùng hoặc cũ**, giữ lại khóa ví đang dùng | **Dashboard** nếu ví cho ký; không thì Meteor | Cao |
+| 3 | Thêm ML-DSA (màn PQ; account cần có NEAR trả phí), ký thử, chờ chốt | **Meteor** | Bỏ ký thử là nguy hiểm |
+| 4 | (Mức "chuyển hẳn") Xóa khóa Ed25519 toàn quyền còn lại | **Meteor** (lúc này ví ký bằng ML-DSA, dashboard không nhờ ký qua wallet-selector được) | **Cao** |
+| 5 | Quét lại | Dashboard | |
 
-**Không bao giờ hướng dẫn xóa khóa toàn quyền cuối cùng.**
+Bước 1 và 2 làm **trước** khi bật ML-DSA, vì sau khi ví chuyển sang ký bằng ML-DSA, dashboard không gửi giao dịch nhờ ký được nữa.
+
+### Quy tắc an toàn (dashboard bắt buộc kiểm)
+
+1. **Không bao giờ dựng giao dịch xóa khóa toàn quyền cuối cùng** của account.
+2. **Không xóa khóa ví đang dùng để ký** (nếu ví cho biết public key đang dùng). Nếu không xác định được, hiện cảnh báo rõ và chỉ cho xóa khóa toàn quyền khi account còn ít nhất 2 khóa toàn quyền sau khi xóa.
+3. **Luôn có màn xem trước** danh sách khóa sẽ xóa, kèm lý do từng khóa.
+4. **Ba cảnh báo trước khi xóa khóa toàn quyền:**
+   - Mỗi khóa toàn quyền thường gắn với một seed phrase hoặc thiết bị; xóa khóa là seed phrase / thiết bị đó mất quyền.
+   - Khóa ML-DSA mới phải được sao lưu (cách Meteor sao lưu: cần kiểm trước 1/11).
+   - Kiểm ví, ví cứng, dApp hằng ngày còn chạy với account chỉ có ML-DSA.
+5. **Kết nối ví không được đẻ thêm khóa:** không dùng `signIn` kèm `contractId`.
+6. Giới hạn số action mỗi giao dịch (khoảng 100); nhiều hơn thì chia nhiều giao dịch.
 
 ### Tiến độ đọc từ chain
 
 | Bước | Coi là xong khi quét lại thấy |
 |---|---|
-| Thu hồi khóa app | Các khóa đánh dấu không còn |
+| Xóa khóa app | Các khóa đã chọn không còn |
+| Xóa khóa toàn quyền cũ | Các khóa đã chọn không còn; còn ít nhất một khóa toàn quyền |
 | Thêm ML-DSA | Có ≥1 khóa ML-DSA toàn quyền |
 | Ký thử | Khóa ML-DSA có số lần dùng ≥ 1 |
-| Xóa khóa cũ | Không còn Ed25519 toàn quyền bị gắn cờ |
-
-### Ba cảnh báo trước bước 4
-
-1. Mỗi khóa toàn quyền thường gắn với một seed phrase hoặc thiết bị; xóa khóa là seed phrase / thiết bị đó mất quyền.
-2. Khóa ML-DSA mới phải được sao lưu (cách Meteor sao lưu: cần kiểm trước 1/11).
-3. Kiểm ví, ví cứng, dApp hằng ngày còn chạy với account chỉ có ML-DSA.
+| Chuyển hẳn | Không còn Ed25519 toàn quyền |
 
 ### Hai mức dọn
 
-- **Dọn an toàn:** bước 1, 2, 3 và xóa khóa toàn quyền chưa từng dùng.
-- **Chuyển hẳn sang chống lượng tử:** xóa hết Ed25519 toàn quyền; chỉ khi đã sao lưu và kiểm kỹ.
+- **Dọn an toàn** (ai cũng nên làm): bước 1, 2, 3.
+- **Chuyển hẳn sang chống lượng tử:** thêm bước 4; chỉ khi đã sao lưu khóa ML-DSA và kiểm kỹ.
+
+### Phụ thuộc kết quả thử trước 1/11
+
+- Meteor qua wallet-selector có ký được giao dịch nhiều `DeleteKey` cho khóa app không. **Không được** thì bước 1 chuyển sang hướng dẫn dùng "Select Keys to Revoke" của Meteor.
+- Có ký được `DeleteKey` cho khóa toàn quyền không. **Không được** thì bước 2 chuyển sang hướng dẫn trong Meteor.
+- Ví có cho biết public key đang dùng không (cho quy tắc an toàn 2).
+- Kết nối ví mà không tạo function-call key mới.
 
 ### Xong khi
 
-- Account testnet đủ các ca: làm trọn 5 bước, quét lại thấy xanh.
-- Dashboard không bao giờ gợi ý xóa khóa toàn quyền cuối.
+- Account testnet đủ các ca: xóa lô khóa app bằng **một lần ký** trên dashboard; làm trọn các bước; quét lại thấy xanh.
+- Dashboard không thể dựng giao dịch xóa khóa toàn quyền cuối, có test cho quy tắc này.
+- Kết nối ví không làm phát sinh khóa mới.
 
 ---
 
@@ -607,4 +630,4 @@ Xác thực: `Authorization: Bearer <MCP_TOKEN>`.
 - Skill / MCP cho agent trong near.com khi nền tảng mở cho tool bên ngoài.
 - Liên kết Telegram với account NEAR bằng chữ ký.
 - Discord, email; indexer gần thời gian thực.
-- Dọn khóa trong app qua Meteor SDK.
+- Thêm khóa ML-DSA ngay trong dashboard khi wallet-selector hỗ trợ ML-DSA.
