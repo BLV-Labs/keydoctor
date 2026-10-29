@@ -12,7 +12,6 @@ Sample data for tests and for building the dashboard before the scanner exists. 
 
 Known placeholders, to replace in GĐ1/GĐ5 with data captured from testnet:
 
-- The ML-DSA public key prefix `mldsa65:` is a guess. Check the real prefix NEAR RPC returns.
 - Sputnik `kind` labels, `vote_counts` and `submission_time` formats must be compared with the contract source.
 - `created.at` and `age_days` assume a 1.2 s block time; the real scanner reads block timestamps.
 
@@ -46,7 +45,7 @@ Owner runs `packages/key-doctor/scripts/scan.ts --save-raw`. Only that run chang
 |---|---|---|---|---|
 | 1 | Cause names `UNKNOWN_ACCOUNT`, `UNKNOWN_BLOCK`, `NO_CONTRACT_CODE`, `CONTRACT_EXECUTION_ERROR` | differs (2026-10-29): `UNKNOWN_ACCOUNT` and `UNKNOWN_BLOCK` come back as `error.cause.name`, as expected. The two contract cases come back as a `result.error` string, not as a cause: `wasm execution failed with error: CompilationError(CodeDoesNotExist { … })` for an account with no contract, and `… MethodResolveError(MethodNotFound)` for a non-DAO contract. `rpc.ts` already maps any `result.error` string on `get_policy` to `NOT_A_DAO` (test `scan-dao.test.ts` "result.error string"), so no code change. The cause-name branches stay for RPC nodes that do send them | `kd-does-not-exist-9z.testnet` (missing), the owner's testnet wallet account (no contract), `wrap.testnet` (non-DAO contract) | final (not recorded) |
 | 2 | An empty key list (not `UNKNOWN_ACCOUNT`) for a missing account | confirmed (2026-10-29): `view_access_key_list` answered with no `error` and no `result.error`. This is why `scanAccount` follows an empty list with `view_account` | `kd-does-not-exist-9z.testnet` (missing) | final (not recorded) |
-| 3 | `mldsa65:` key prefix | unconfirmed | | |
+| 3 | `mldsa65:` key prefix | differs: `ml-dsa-65-hash:` (2026-10-29, a full-access key added in Meteor Wallet). `parse.ts` now matches `ml-dsa-`, and the fixtures use the real prefix | the owner's testnet wallet account | final (not recorded) |
 | 4 | `GENESIS_HEIGHT` mainnet 9820210, testnet 42376888 | confirmed (2026-10-29, `EXPERIMENTAL_genesis_config`: testnet 42376888, mainnet 9820210) | n/a (no account) | n/a (genesis config) |
 | 5 | `policy.rs` permission matching and vote-policy fallback | unconfirmed | | |
 | 6 | `to_weight` formula | unconfirmed | | |

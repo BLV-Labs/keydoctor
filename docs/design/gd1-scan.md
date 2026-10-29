@@ -125,7 +125,7 @@ Limitation lines (fixed text, once per role):
 
 ## 5. Key parsing and age
 
-- Curve from the key prefix: `ed25519:` → `ed25519`, `mldsa65:` → `ml_dsa`, else `unknown`. The ML-DSA prefix is a placeholder (`fixtures/README.md:14`; checklist).
+- Curve from the key prefix: `ed25519:` → `ed25519`, `ml-dsa-` → `ml_dsa` (testnet RPC returns `ml-dsa-65-hash:`, confirmed in the live run), else `unknown`.
 - `"FullAccess"` → `{type:"full_access"}`. `{FunctionCall:{allowance, receiver_id, method_names}}` → `function_call` with `allowance_yocto = allowance` (null stays null).
 - `nonce` is kept as `String(n)`, split with `BigInt`: `h = nonce / 10^6`, `uses = nonce % 10^6` (`final-idea.md:564`). Nonces near 1.8e14 < 2^53 stay exact in `JSON.parse`.
 - `thresholds.ts`: `BLOCK_TIME_MS = 1200` (owner decision 4, `fixtures/README.md:16`); `GENESIS_HEIGHT = { mainnet: 9820210, testnet: 42376888 }` (recalled; checklist).

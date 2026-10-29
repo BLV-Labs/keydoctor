@@ -597,7 +597,7 @@ describe("S3-AC4 member failures, missing members, order, counts", () => {
         [cl]: [faKey(), faKey()],
         // one ML-DSA key and nothing else: no flags at all
         [note]: [fcKey(recvB, ["go"]), fcKey(recvA, ["go"])],
-        [okM]: [faKey(5, 182_000_000, "mldsa65")],
+        [okM]: [faKey(5, 182_000_000, "ml-dsa-65-hash")],
       },
       {
         [`query/view_access_key_list/${gone}`]: unknownAccountBody(),

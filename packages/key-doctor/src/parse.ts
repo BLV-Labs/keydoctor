@@ -83,8 +83,8 @@ export function parseRawKey(raw: unknown): RawKey | null {
 
 function curveOf(publicKey: string): KeyInfo["curve"] {
   if (publicKey.startsWith("ed25519:")) return "ed25519";
-  // Placeholder prefix, see fixtures/README.md.
-  if (publicKey.startsWith("mldsa65:")) return "ml_dsa";
+  // Testnet RPC returns "ml-dsa-65-hash:" (owner live run, fixtures/README.md item 3); other ML-DSA levels share "ml-dsa-".
+  if (publicKey.startsWith("ml-dsa-")) return "ml_dsa";
   return "unknown";
 }
 
