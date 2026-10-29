@@ -48,6 +48,7 @@ main:focus { outline: none; }
 .meta { font-size: 14px; color: var(--kd-text-muted); }
 .hero { max-width: 760px; padding-top: 40px; }
 .label { font-size: 14px; font-weight: 600; color: var(--kd-text-2); }
+.form-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 
 .card { background: var(--kd-surface); border: 1px solid var(--kd-border); border-radius: var(--kd-radius-lg); }
 .pad { padding: 20px 24px; }
@@ -174,7 +175,7 @@ li:last-child > .member-row { border-bottom: 0; }
 .progress::-webkit-progress-value { background: var(--kd-ok); border-radius: 999px; }
 .progress::-moz-progress-bar { background: var(--kd-ok); border-radius: 999px; }
 .segmented { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; border: 1px solid var(--kd-border-strong); border-radius: var(--kd-radius); background: var(--kd-surface); align-self: flex-start; }
-.seg { display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; border-radius: var(--kd-radius-sm); color: var(--kd-text-2); text-decoration: none; font-weight: 500; }
+.seg { border: 0; background: transparent; font: inherit; cursor: pointer; display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; border-radius: var(--kd-radius-sm); color: var(--kd-text-2); text-decoration: none; font-weight: 500; }
 .seg[aria-pressed="true"] { background: var(--kd-primary); color: #FFFFFF; }
 .step-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .step-head .h3 { flex: 1 1 260px; }

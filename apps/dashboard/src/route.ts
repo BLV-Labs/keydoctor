@@ -1,4 +1,4 @@
-import { resolveTarget } from "key-doctor";
+import { resolveTarget, type Network } from "key-doctor";
 
 export const BOT_USERNAME = "KeyDoctorOnCallBot";
 export const BOT_URL = `https://t.me/${BOT_USERNAME}`;
@@ -12,6 +12,22 @@ export interface Route {
   from: string | null;
   view: "report" | "cleanup";
   level: "safe" | "full";
+  /**
+   * With a target: the network it is scanned on (the name suffix wins, `?network=` only matters for an
+   * implicit account). On the home page: the `?network=` switch value, or null when the URL has none.
+   */
+  network: Network | null;
+}
+
+const NETWORK_SUFFIX: Record<Network, string> = { mainnet: ".near", testnet: ".testnet" };
+
+const parseNetwork = (raw: string | null): Network | null => (raw === "mainnet" || raw === "testnet" ? raw : null);
+
+/** The network a name's suffix fixes, or null for an implicit account or a top-level name. */
+export function suffixNetwork(id: string): Network | null {
+  if (id.endsWith(NETWORK_SUFFIX.testnet)) return "testnet";
+  if (id.endsWith(NETWORK_SUFFIX.mainnet)) return "mainnet";
+  return null;
 }
 
 const normalize = (raw: string): string | null => {
@@ -27,17 +43,47 @@ export function parseRoute(search: string): Route {
   const raw = params.get("target");
   const view = params.get("view") === "cleanup" ? "cleanup" : "report";
   const level = params.get("level") === "full" ? "full" : "safe";
-  if (raw === null || raw.trim() === "") return { target: null, invalid: null, from: null, view: "report", level };
+  const network = parseNetwork(params.get("network"));
+  if (raw === null || raw.trim() === "") return { target: null, invalid: null, from: null, view: "report", level, network };
   const target = normalize(raw);
-  if (target === null) return { target: null, invalid: raw, from: null, view: "report", level };
+  if (target === null) return { target: null, invalid: raw, from: null, view: "report", level, network };
   const fromRaw = params.get("from");
   const from = fromRaw === null ? null : normalize(fromRaw);
-  return { target, invalid: null, from: from === target ? null : from, view, level };
+  return {
+    target,
+    invalid: null,
+    from: from === target ? null : from,
+    view,
+    level,
+    network: suffixNetwork(target) ?? network ?? "testnet",
+  };
 }
 
-/** The `?target=` deep link, also used by the bot's "View on dashboard". */
-export function routeHref(target: string, from?: string | null): string {
+/**
+ * What the home form submits: the typed name on the network the switch picks. A named account without a
+ * `.near` / `.testnet` suffix gets the suffix of that network; a suffix the user typed always wins.
+ * Throws the library's INVALID_TARGET error for a name that is not an account id.
+ */
+export function resolveInput(raw: string, network: Network): { id: string; network: Network } {
+  const { id, kind } = resolveTarget(raw);
+  const own = suffixNetwork(id);
+  if (own !== null) return { id, network: own };
+  if (kind === "implicit") return { id, network };
+  return { id: resolveTarget(id + NETWORK_SUFFIX[network]).id, network };
+}
+
+/**
+ * The `?target=` deep link, also used by the bot's "View on dashboard". `network` is written only for a
+ * target whose name has no network suffix (an implicit account); a suffixed name carries its own.
+ */
+export function routeHref(target: string, from?: string | null, network?: Network | null): string {
   const params = new URLSearchParams({ target });
   if (from) params.set("from", from);
+  if (network && suffixNetwork(target) === null) params.set("network", network);
   return `?${params.toString()}`;
+}
+
+/** The home page link that keeps the network switch on mainnet; testnet is the default. */
+export function homeHref(network: Network): string {
+  return network === "mainnet" ? "?network=mainnet" : "./";
 }

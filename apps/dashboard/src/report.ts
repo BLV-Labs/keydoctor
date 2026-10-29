@@ -1,4 +1,4 @@
-import type { Flag, KdReport, KeyInfo, Member, Status } from "key-doctor";
+import type { Flag, KdReport, KeyInfo, Member, Network, Status } from "key-doctor";
 import { formatInt, formatThreshold, formatUtc, keyAgeMs, plural, relativeAge, truncateKey, yoctoToNear } from "./format.ts";
 import { html, type Html } from "./html.ts";
 import { icon, statusIcon } from "./icons.ts";
@@ -63,11 +63,11 @@ function transferNote(report: KdReport): string {
     : `Transfers need ${first.approvals_needed} of ${size} votes`;
 }
 
-function memberRow(member: Member, dao: string): Html {
+function memberRow(member: Member, dao: string, network: Network): Html {
   const failed = member.error !== null;
   const reason = failed ? `Couldn't read this account. ${mainReason(member)}` : mainReason(member);
   return html`<li>
-    <a class="member-row${failed ? " member-row-error" : ""}" href="${routeHref(member.account_id, dao)}" data-nav>
+    <a class="member-row${failed ? " member-row-error" : ""}" href="${routeHref(member.account_id, dao, network)}" data-nav>
       <span class="cell"><span class="cell-label">Member</span><span class="mono wrap">${member.account_id}</span></span>
       <span class="cell"><span class="cell-label">Status</span>${failed ? statusPill("note", true) : statusPill(member.status, true)}</span>
       <span class="cell"><span class="cell-label">Full-access / app keys</span>${failed ? "Unknown" : keyMix(member)}</span>
@@ -165,7 +165,7 @@ export function renderCouncil(report: KdReport): Html {
           </div>
           ${members.length === 0
             ? html`<p class="pad muted">This DAO has no council members to scan.</p>`
-            : html`<ul class="plain" role="list">${members.map((m) => memberRow(m, dao))}</ul>`}
+            : html`<ul class="plain" role="list">${members.map((m) => memberRow(m, dao, report.chain.network))}</ul>`}
         </div>
       </div>
     </section>
@@ -239,7 +239,7 @@ export function renderAccount(report: KdReport, from: string | null): Html {
           ? html`<p class="meta">Opened from the council of <a href="${routeHref(from)}" data-nav class="mono">${from}</a>. The checks are the same for any account.</p>`
           : ""}
       </div>
-      ${reportActions(member.error === null ? `${routeHref(id, from)}&view=cleanup` : undefined)}
+      ${reportActions(member.error === null ? `${routeHref(id, from, report.chain.network)}&view=cleanup` : undefined)}
     </section>
     ${member.error !== null ? html`<section role="alert" class="alert-box">${icon.alert()}<p>${mainReason(member)}</p></section>` : ""}
     ${newKeyAlert(member, report, inCouncil)}

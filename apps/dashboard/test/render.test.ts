@@ -7,7 +7,7 @@ import { escape, html } from "../src/html.ts";
 import { formatThreshold, formatUtc, relativeAge, truncateKey, yoctoToNear } from "../src/format.ts";
 import { renderError, renderHome } from "../src/pages.ts";
 import { renderAccount, renderCouncil } from "../src/report.ts";
-import { parseRoute, routeHref } from "../src/route.ts";
+import { parseRoute, resolveInput, routeHref } from "../src/route.ts";
 import { groupFlags, keyMix, mainReason, recentFullAccessKeys, sortMembers } from "../src/view.ts";
 import { renderWatchDialog, renderWatchLinks } from "../src/watch.ts";
 
@@ -57,10 +57,39 @@ describe("route", () => {
       from: "kd-demo.sputnik-dao.testnet",
       view: "report",
       level: "safe",
+      network: "testnet",
     });
-    assert.deepEqual(parseRoute("?target=bad name&from=x"), { target: null, invalid: "bad name", from: null, view: "report", level: "safe" });
+    assert.deepEqual(parseRoute("?target=bad name&from=x"), {
+      target: null,
+      invalid: "bad name",
+      from: null,
+      view: "report",
+      level: "safe",
+      network: null,
+    });
     assert.equal(parseRoute("?target=a.kd-demo.testnet&from=%3Cx%3E").from, null);
     assert.equal(routeHref("a.kd-demo.testnet", "kd-demo.sputnik-dao.testnet"), "?target=a.kd-demo.testnet&from=kd-demo.sputnik-dao.testnet");
+  });
+
+  const IMPLICIT = "a".repeat(64);
+
+  it("the name suffix decides the network; `?network=` only matters without one", () => {
+    assert.equal(parseRoute("?target=x.near").network, "mainnet");
+    assert.equal(parseRoute("?target=x.near&network=testnet").network, "mainnet");
+    assert.equal(parseRoute(`?target=${IMPLICIT}&network=mainnet`).network, "mainnet");
+    assert.equal(parseRoute(`?target=${IMPLICIT}`).network, "testnet");
+    assert.equal(parseRoute("?network=mainnet").network, "mainnet");
+    assert.equal(parseRoute("?network=bogus").network, null);
+    assert.equal(routeHref("x.near", null, "mainnet"), "?target=x.near");
+    assert.equal(routeHref(IMPLICIT, null, "mainnet"), `?target=${IMPLICIT}&network=mainnet`);
+  });
+
+  it("the home form adds the switch's suffix to a bare name, and a typed suffix wins", () => {
+    assert.deepEqual(resolveInput(" My-DAO.sputnik-dao ", "mainnet"), { id: "my-dao.sputnik-dao.near", network: "mainnet" });
+    assert.deepEqual(resolveInput("x.sputnik-dao", "testnet"), { id: "x.sputnik-dao.testnet", network: "testnet" });
+    assert.deepEqual(resolveInput("a.kd-demo.testnet", "mainnet"), { id: "a.kd-demo.testnet", network: "testnet" });
+    assert.deepEqual(resolveInput(IMPLICIT, "mainnet"), { id: IMPLICIT, network: "mainnet" });
+    assert.throws(() => resolveInput("bad name", "mainnet"));
   });
 });
 
@@ -148,6 +177,12 @@ describe("pages", () => {
     const home = renderHome("", "Invalid target.").value;
     assert.match(home, /aria-invalid="true"/);
     assert.match(home, /a\.kd-demo\.testnet/);
+    assert.match(home, /data-network="testnet" aria-pressed="true"/);
+    const main = renderHome("", null, "mainnet").value;
+    assert.match(main, /data-network="mainnet" aria-pressed="true"/);
+    // No example names on mainnet: testnet demo names only, and no real mainnet accounts.
+    assert.doesNotMatch(main, /class="chips"/);
+    assert.match(main, /placeholder="your-dao\.sputnik-dao\.near"/);
     const err = text(
       renderError("x.kd-demo.testnet", null, {
         schema_version: "kd.error.v1",

@@ -1,19 +1,19 @@
-import type { KdError } from "key-doctor";
+import type { KdError, Network } from "key-doctor";
 import { html, type Html } from "./html.ts";
 import { icon } from "./icons.ts";
 import { breadcrumb } from "./report.ts";
-import { BOT_URL, routeHref } from "./route.ts";
+import { BOT_URL, homeHref, routeHref } from "./route.ts";
 
 export const EXAMPLE_DAO = "kd-demo.sputnik-dao.testnet";
 export const EXAMPLE_ACCOUNT = "a.kd-demo.testnet";
 
-export function renderLayout(content: Html): Html {
+export function renderLayout(content: Html, network: Network = "testnet"): Html {
   return html`<a class="skip" href="#main">Skip to content</a>
     <header class="site-header">
       <div class="container header-inner">
-        <a href="./" data-nav class="brand">${icon.logo()}<span>Key Doctor</span></a>
+        <a href="${homeHref(network)}" data-nav class="brand">${icon.logo()}<span>Key Doctor</span></a>
         <nav aria-label="Main" class="main-nav">
-          <a href="./" data-nav>Check</a>
+          <a href="${homeHref(network)}" data-nav>Check</a>
           <a href="${BOT_URL}" target="_blank" rel="noopener">Telegram bot</a>
         </nav>
       </div>
@@ -31,7 +31,21 @@ function chip(kind: string, target: string): Html {
   return html`<a class="chip" href="${routeHref(target)}" data-nav><strong>${kind}</strong><span class="mono">${target}</span></a>`;
 }
 
-export function renderHome(value: string, error: string | null): Html {
+function networkSwitch(network: Network): Html {
+  const seg = (n: Network, label: string) =>
+    html`<button type="button" class="seg" data-action="network" data-network="${n}" aria-pressed="${String(network === n)}">${label}</button>`;
+  return html`<div class="segmented" role="group" aria-label="Network">${seg("testnet", "Testnet")}${seg("mainnet", "Mainnet")}</div>`;
+}
+
+/** Example chips use testnet names only; on mainnet the user enters their own account (no real names in the UI). */
+function examples(network: Network): Html {
+  return network === "testnet"
+    ? html`<div class="chips"><span class="small muted">Try:</span>${chip("Personal", EXAMPLE_ACCOUNT)}${chip("DAO council", EXAMPLE_DAO)}</div>`
+    : html`<p class="small muted">Mainnet scans read live data. Enter your own account, or your DAO's <span class="mono">*.sputnik-dao.near</span> name.</p>`;
+}
+
+export function renderHome(value: string, error: string | null, network: Network = "testnet"): Html {
+  const suffix = network === "mainnet" ? ".near" : ".testnet";
   return html`<section class="hero stack-lg">
       <div class="stack">
         <p class="eyebrow">Key health for NEAR accounts and DAO councils</p>
@@ -39,16 +53,20 @@ export function renderHome(value: string, error: string | null): Html {
         <p class="lead">Enter your own NEAR account, or a Sputnik DAO to check its whole council. Key Doctor reads the public keys on chain, scores the risk with fixed rules, and explains each key. No sign-in, and it never holds anyone's keys.</p>
       </div>
       <form id="check-form" class="card pad stack-sm" novalidate>
-        <label for="target" class="label">NEAR account or DAO</label>
+        <div class="form-head">
+          <label for="target" class="label">NEAR account or DAO</label>
+          ${networkSwitch(network)}
+        </div>
         <div class="input-row">
-          <input id="target" name="target" type="text" class="input mono" value="${value}" placeholder="${EXAMPLE_DAO}"
+          <input id="target" name="target" type="text" class="input mono" value="${value}"
+            placeholder="${network === "mainnet" ? "your-dao.sputnik-dao.near" : EXAMPLE_DAO}"
             autocomplete="off" autocapitalize="none" spellcheck="false" required
             aria-describedby="target-hint${error ? " target-error" : ""}"${error ? html` aria-invalid="true"` : ""}>
           <button type="submit" class="btn btn-primary btn-lg">${icon.search()}Check</button>
         </div>
         ${error ? html`<p id="target-error" class="field-error" role="alert">${error}</p>` : ""}
-        <p id="target-hint" class="small muted">The network comes from the name suffix: <span class="mono">.near</span> is mainnet, <span class="mono">.testnet</span> is testnet.</p>
-        <div class="chips"><span class="small muted">Try:</span>${chip("Personal", EXAMPLE_ACCOUNT)}${chip("DAO council", EXAMPLE_DAO)}</div>
+        <p id="target-hint" class="small muted">Checking on <strong>${network}</strong>. A name without a suffix gets <span class="mono">${suffix}</span>; a <span class="mono">.near</span> or <span class="mono">.testnet</span> suffix you type always wins.</p>
+        ${examples(network)}
       </form>
     </section>
 
@@ -107,7 +125,7 @@ export function renderScanning(target: string, from: string | null): Html {
     <section class="card pad stack-sm" aria-busy="true" aria-label="Loading scan results">${rows}</section>`;
 }
 
-export function renderError(target: string, from: string | null, err: KdError): Html {
+export function renderError(target: string, from: string | null, err: KdError, network: Network = "testnet"): Html {
   return html`${breadcrumb(target, from)}
     <section class="page-head"><div class="stack-sm grow"><h1 class="h1 mono wrap">${target}</h1></div></section>
     <section role="alert" class="alert-box">
@@ -117,7 +135,7 @@ export function renderError(target: string, from: string | null, err: KdError): 
         <p>${err.message.en}</p>
         <div class="actions">
           ${err.retryable ? html`<button type="button" class="btn btn-secondary" data-action="rescan">${icon.rescan()}Try again</button>` : ""}
-          <a href="./" data-nav class="btn btn-secondary">Check another account</a>
+          <a href="${homeHref(network)}" data-nav class="btn btn-secondary">Check another account</a>
         </div>
       </div>
     </section>`;
