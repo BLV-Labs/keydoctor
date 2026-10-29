@@ -6,7 +6,7 @@
 
 **Library** (`docs/stories/epics/library/`): the pure `packages/key-doctor` library that every surface reuses. Governing entries: `docs/final-idea.md` §13.3 phases GĐ1, GĐ2 and GĐ5, with the §4 contracts and §5 rules. Stories: [gd1-scan](epics/library/gd1-scan/overview.md) (done 2026-10-29). GĐ1 is "built" when slices S1 to S4 meet their ACs. It is "done" only after the owner records the live-run checklist in `packages/key-doctor/fixtures/README.md` (decision 0001).
 
-## Build Order (as of 2026-10-29)
+## Build Order (as of 2026-10-30)
 
 Next steps from `docs/final-idea.md` §13.3 and the current repo state. Critical path: GĐ0 → 1 → 3 → 4 → 5 → 6.
 
@@ -36,12 +36,32 @@ Current state:
 
 Open question for the owner (2026-10-29): `/changes` and MCP `compare` on a target with no baseline save one as the first baseline (`docs/final-idea.md` §8.3, UC3). CLAUDE.md names only the daily job and the first subscription as baseline writers. The code follows the spec, and snapshots are pruned to 7 per target. Should `/changes` for an unwatched target answer "no baseline yet" without writing instead?
 
-Owner-only tasks that block steps above:
-- Run `pnpm stats` (mainnet, live RPC; it takes a while) and paste `data/network-stats.md` into the README. Commit `data/network-stats.json`.
-- Run `scripts/demo-testnet/demo.sh` on testnet (mind the 48-hour note in its header). It has not been run: there is no RPC route from the build container.
-- Check the GĐ5 live-run list (four Sputnik proposal facts) in `packages/key-doctor/fixtures/README.md`.
-- Create `@KeyDoctorOnCallBot`, the Cloudflare account and D1, then deploy the Worker: `wrangler d1 create key-doctor`, put the id in `apps/worker/wrangler.toml`, run `pnpm --filter worker db:migrate:remote`, set the secrets with `wrangler secret put`, then `pnpm --filter worker deploy`. Steps 3 to 6 need this.
-- Run the wallet-selector + Meteor signing test. It decides the scope of step 7.
+### Owner tasks (human only)
+
+Tick each box when done and tell Claude the result (numbers, names, block heights) so it can record it.
+
+- [ ] **O1 Deploy.** Create `@KeyDoctorOnCallBot` (BotFather), the Cloudflare account and D1, then follow README "Deploy": `wrangler d1 create key-doctor`, put the id in `apps/worker/wrangler.toml`, `pnpm --filter worker db:migrate:remote`, `wrangler secret put` for the four secrets, `pnpm --filter worker deploy`, `setWebhook`, and Pages for the dashboard. Unblocks steps 3, 4, 6, 8 and GĐ12.
+- [ ] **O2 Demo run.** Run `scripts/demo-testnet/demo.sh` on testnet. Create the accounts at least 48 hours before (see the script header). Unblocks step 5 (milestone 8/11).
+- [ ] **O3 GĐ5 live check.** Check the four Sputnik proposal facts in `packages/key-doctor/fixtures/README.md` ("GĐ5 live-run checklist").
+- [ ] **O4 Stats.** Run `pnpm stats` (mainnet, live RPC; it takes a while). Paste `data/network-stats.md` into the README and commit `data/network-stats.json`.
+- [ ] **O5 Meteor signing test** (§13.5): does Meteor through wallet-selector sign several `DeleteKey` actions in one transaction, and a `DeleteKey` for a full-access key? Does it say which key it signs with? Decides the rest of step 7.
+- [ ] **O6 Decide** the open question above (does `/changes` write a first baseline?).
+- [ ] **O7 Submission** (GĐ14, `docs/near-hackathon.md` §9.3): make the repo public, record the demo video, post on X ("built at NEAR HACKATHON"), create the mainnet prize account, and submit the form once. Do these only by hand; Claude never does them.
+
+### Claude tasks (next sessions)
+
+- [ ] **C1** after O1/O2: point the dashboard example chips and README examples at the real demo DAO. `kd-demo.sputnik-dao.testnet` does not exist on chain; testnet DAOs live under `sputnik-v2.testnet`. Add the live URLs to the README.
+- [ ] **C2** after O3: record the results and fix `packages/key-doctor/src/proposals.ts` if any fact differs.
+- [ ] **C3** after O4: put the stats table into the README "The problem" section.
+- [ ] **C4** after O5: GĐ8 in-dashboard signing with wallet-selector + Meteor, using `buildDeletePlan` in `apps/dashboard/src/cleanup.ts` (no `signIn` with `contractId`).
+- [ ] **C5** P1, optional: GĐ13 (NearBlocks key dates), then GĐ11 (history backtest, `docs/final-idea.md` §14.1). Both need NearBlocks API access.
+- [ ] **C6** last: a final README pass so every claim matches what is deployed (GĐ14).
+
+### How to resume in a new session
+
+1. `git pull` on `main`, `corepack enable`, `pnpm install`, then `pnpm test`. All three packages should print `# fail 0`.
+2. Read this file (state, owner and Claude tasks), then `docs/TEST_MATRIX.md` for the proof per phase. Commit messages say what each phase still misses.
+3. Tell Claude which owner tasks are done and paste their results. Claude picks up the matching C-task.
 
 ## Selected Stories
 
