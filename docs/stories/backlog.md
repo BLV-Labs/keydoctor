@@ -11,7 +11,7 @@
 Next steps from `docs/final-idea.md` §13.3 and the current repo state. Critical path: GĐ0 → 1 → 3 → 4 → 5 → 6.
 
 Current state:
-- GĐ0 is done.
+- GĐ0 is done (moved from npm to pnpm workspaces on 2026-10-29).
 - GĐ2 is done (`packages/key-doctor/test/diff.test.ts`).
 - GĐ1 is done: the live-run checklist was recorded on 2026-10-29.
 - GĐ7 is built. It is not deployed yet.

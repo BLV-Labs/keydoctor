@@ -1,17 +1,17 @@
 # dev-team profile
 
-npm workspaces monorepo: `packages/key-doctor` (pure TS library, `fetch` only) + `apps/worker` (Cloudflare Worker, D1, Telegram bot, MCP, crons) + `apps/dashboard` (static Cloudflare Pages site). Repo harness (`AGENTS.md`, `docs/HARNESS.md`) outranks the generic skill where they differ; `CLAUDE.md` and `docs/final-idea.md` outrank both.
+pnpm workspaces monorepo: `packages/key-doctor` (pure TS library, `fetch` only) + `apps/worker` (Cloudflare Worker, D1, Telegram bot, MCP, crons) + `apps/dashboard` (static Cloudflare Pages site). Repo harness (`AGENTS.md`, `docs/HARNESS.md`) outranks the generic skill where they differ; `CLAUDE.md` and `docs/final-idea.md` outrank both.
 
 ```yaml
 integration_branch: main           # inferred: only long-lived remote branch
 deploy_branch: main                # inferred: no CI/deploy workflows yet
 worktree_root: ..
-package_manager: npm
+package_manager: pnpm
 commands:
-  setup: npm install
-  typecheck: npm run typecheck    # library src is checked without Node types (fetch-only rule)
+  setup: pnpm install
+  typecheck: pnpm typecheck        # library src is checked without Node types (fetch-only rule)
   lint: none                       # no linter yet
-  test: npm test                   # node:test; one package: npm test -w key-doctor
+  test: pnpm test                  # node:test; one package: pnpm --filter key-doctor test
 areas:
   backend: [packages/key-doctor, apps/worker, scripts]   # inferred: from docs/final-idea.md §12
   frontend: [apps/dashboard]                             # inferred: from docs/final-idea.md §12

@@ -14,7 +14,7 @@ Everything written into the repo is in **English**: README, docs, code, comments
 
 ## Build order
 
-Work through phases GĐ0–GĐ14 in `docs/final-idea.md` §13.3. Do not start a phase until the phases it depends on meet their "Xong khi" (done when) criteria. Start at GĐ0: the monorepo, `types.ts`, fixtures, and a `npm test` that passes.
+Work through phases GĐ0–GĐ14 in `docs/final-idea.md` §13.3. Do not start a phase until the phases it depends on meet their "Xong khi" (done when) criteria. Start at GĐ0: the monorepo, `types.ts`, fixtures, and a `pnpm test` that passes.
 - Critical path: GĐ0 → 1 → 3 → 4 → 5 → 6. GĐ6 (proposal-watch job plus the testnet demo) is the main demo scene.
 - Phases allowed to run in parallel: GĐ2 with GĐ1; GĐ7/8 with GĐ5/6; GĐ10 any time after GĐ1.
 - Cut order if late: GĐ11 → GĐ13 → GĐ12 → GĐ9. Never cut GĐ0–8, GĐ10, GĐ14.
@@ -22,7 +22,7 @@ Work through phases GĐ0–GĐ14 in `docs/final-idea.md` §13.3. Do not start a 
 
 ## Planned architecture (`docs/final-idea.md` §1, §7, §8, §12)
 
-npm/pnpm workspaces monorepo:
+pnpm workspaces monorepo (`pnpm-workspace.yaml`, version pinned in `packageManager`):
 - **`packages/key-doctor`**: pure library. It uses only `fetch` so it runs in the browser, Node and Workers. Exports `scanDao`, `scanAccount`, `checkProposals`, `diffReports`, `toSummary`. Rules live in `src/rules/`, thresholds in `src/rules/thresholds.ts` (changing a threshold means bumping `ruleset_version`). User-facing explanations (vi + en) live in `messages`, and the bot and dashboard reuse them verbatim. Per-member failures go into `members[].error` and never fail the whole scan. Pin every RPC query in a scan to one `block_height`. Key age comes from the nonce: `floor(nonce / 10^6)` is the block where the key was added.
 - **`apps/worker`**: one Cloudflare Worker (free plan) with D1. Its entry points are `POST /telegram` (webhook, checks the secret-token header, returns 200 at once and does the work in `ctx.waitUntil`), `POST /mcp` (Streamable HTTP, `Authorization: Bearer`), `POST /run-check`, `POST /api/watch-link` (P1), `GET /` health check, and `scheduled` crons (proposal watch every 15 minutes, daily key diff at `0 2 * * *` UTC). The bot commands and the MCP tools (`diagnose`, `compare`, `watch` (P1)) call the same shared functions. D1 schema: §8.7.
 - **`apps/dashboard`**: static Cloudflare Pages site. Scans run in the browser through the library. It never writes subscriptions. Key cleanup is signed by the user in the Meteor wallet.
@@ -42,11 +42,11 @@ The data contracts in `docs/final-idea.md` §4 (`kd.report.v1`, `kd.report_summa
 
 ## Testing
 
-`npm test` (to be set up in GĐ0) must pass before every commit. Required test coverage: every rule, `diffReports`, `checkProposals` (with `get_proposal` fixtures in `packages/key-doctor/fixtures/`), and Telegram message rendering.
+`pnpm test` (set up in GĐ0) must pass before every commit. Required test coverage: every rule, `diffReports`, `checkProposals` (with `get_proposal` fixtures in `packages/key-doctor/fixtures/`), and Telegram message rendering.
 
 ## Submission constraints
 
-AI judges (Claude Code and Codex) check that "the repo runs and matches the README". Every feature the README describes must actually work. Unfinished features go under Roadmap. The README must have "do X → see Y" steps (`npm test`, scanning a testnet DAO, a `curl` call to `diagnose`, `scripts/demo-testnet` followed by `/run-check`), a Limitations section, and a list of libraries and AI-written code. Add an MIT `LICENSE`. Full checklist: `docs/near-hackathon.md` §9.3 and `docs/final-idea.md` §14.
+AI judges (Claude Code and Codex) check that "the repo runs and matches the README". Every feature the README describes must actually work. Unfinished features go under Roadmap. The README must have "do X → see Y" steps (`pnpm test`, scanning a testnet DAO, a `curl` call to `diagnose`, `scripts/demo-testnet` followed by `/run-check`), a Limitations section, and a list of libraries and AI-written code. Add an MIT `LICENSE`. Full checklist: `docs/near-hackathon.md` §9.3 and `docs/final-idea.md` §14.
 
 ## Dev workflow
 

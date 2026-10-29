@@ -4,7 +4,7 @@ Skeleton: no code exists yet. The planned design is `docs/final-idea.md` §1, §
 
 ## Stack
 
-- **TypeScript, npm workspaces** — monorepo (`packages/*`, `apps/*`).
+- **TypeScript, pnpm workspaces** — monorepo (`packages/*`, `apps/*`; list in `pnpm-workspace.yaml`).
 - **`packages/key-doctor`** — pure library using only `fetch` (browser, Node, Workers): `scanDao`, `scanAccount`, `checkProposals`, `diffReports`, `toSummary`.
 - **Cloudflare Workers + D1 (free plan)** — `apps/worker`: Telegram webhook, MCP (Streamable HTTP), `/run-check`, crons (15-minute proposal watch, daily key diff `0 2 * * *`).
 - **Cloudflare Pages** — `apps/dashboard`: static site, scans run in the browser.
