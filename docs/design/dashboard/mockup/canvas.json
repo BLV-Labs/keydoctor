@@ -1,0 +1,21 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-10-29T15:10:00Z" },
+  "title": "Key Doctor Dashboard",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 1440, "h": 1560, "title": "1 · Enter an account or DAO", "expand": "fill", "is_interactive": true },
+    "Council.dc.html": { "x": 1520, "y": 0, "w": 1440, "h": 1320, "title": "2 · Council report", "expand": "fill", "is_interactive": true },
+    "Account.dc.html": { "x": 3040, "y": 0, "w": 1440, "h": 1900, "title": "3 · Account profile (Delete / Revoke keys)", "expand": "fill", "is_interactive": true },
+    "Cleanup.dc.html": { "x": 4560, "y": 0, "w": 1440, "h": 1800, "title": "4 · Key cleanup plan (UC8)", "expand": "fill", "is_interactive": true },
+    "Watch.dc.html": { "x": 6080, "y": 0, "w": 1440, "h": 980, "title": "5 · Get Telegram alerts (any account or DAO)", "expand": "fill", "is_interactive": true },
+    "DeleteKey.dc.html": { "x": 7600, "y": 0, "w": 1440, "h": 1000, "title": "6 · Delete a full-access key (sign in Meteor)", "expand": "fill", "is_interactive": true },
+    "RevokeKey.dc.html": { "x": 9120, "y": 0, "w": 1440, "h": 900, "title": "7 · Revoke an app key (sign in Meteor)", "expand": "fill", "is_interactive": true }
+  },
+  "order": ["Main.dc.html", "Council.dc.html", "Account.dc.html", "Cleanup.dc.html", "Watch.dc.html", "DeleteKey.dc.html", "RevokeKey.dc.html"],
+  "notes": {
+    "title": { "x": 0, "y": -300, "text": "Key Doctor · dashboard mockup (testnet fixture data)", "kind": "title1", "maxW": 10560 }
+  },
+  "designSystems": []
+}
