@@ -81,5 +81,5 @@ export const RECENT = nonceAt(HEAD - 1000, 5);
 export const ed = (i: number | string, nonce: number | string = RECENT, permission: unknown = FA) =>
   rawKey(`ed25519:E${i}`, nonce, permission);
 export const ml = (i: number | string, nonce: number | string = RECENT, permission: unknown = FA) =>
-  rawKey(`mldsa65:M${i}`, nonce, permission);
+  rawKey(`ml-dsa-65-hash:M${i}`, nonce, permission);
 export const iso = (sec: number) => new Date(sec * 1000).toISOString().replace(".000Z", "Z");

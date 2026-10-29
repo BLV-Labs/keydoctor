@@ -51,7 +51,7 @@ Skeleton: no code exists yet. Fill the remaining `<...>` lines in GĐ0 from the 
 
 ## Testing
 
-- Test runner: Node's built-in `node:test` + `node:assert/strict` (`npm test`). vitest 4.1 does not install under npm 10, and older vitest has a critical advisory. Required: every rule, `diffReports`, `checkProposals` (fixtures in `packages/key-doctor/fixtures/`), Telegram message rendering.
+- Test runner: Node's built-in `node:test` + `node:assert/strict` (`pnpm test`). vitest 4.1 did not install under npm 10, and older vitest has a critical advisory. Required: every rule, `diffReports`, `checkProposals` (fixtures in `packages/key-doctor/fixtures/`), Telegram message rendering.
 - Tests verify intent, not just behavior.
 - A test that can't fail when business logic changes is wrong.
 - Test file location: `test/` mirror per package (e.g. `packages/key-doctor/test/`).

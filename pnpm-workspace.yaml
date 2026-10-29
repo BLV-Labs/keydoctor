@@ -1,0 +1,7 @@
+packages:
+  - packages/*
+  - apps/dashboard
+
+# pnpm 10 skips install scripts unless a package is listed here.
+onlyBuiltDependencies:
+  - esbuild

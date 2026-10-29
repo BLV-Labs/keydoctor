@@ -27,7 +27,7 @@
         "block_height": 182340111,
         "keys": [
           {
-            "public_key": "mldsa65:J89ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqr",
+            "public_key": "ml-dsa-65-hash:J89ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqr",
             "access_key": {
               "nonce": 182000000000005,
               "permission": "FullAccess"

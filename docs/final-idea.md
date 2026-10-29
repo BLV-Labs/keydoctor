@@ -96,7 +96,7 @@ flowchart TB
 
 | Thành phần | Mức | Giai đoạn (mục 13) |
 |---|---|---|
-| Repo monorepo, `types.ts`, fixture, `npm test` | P0 | GĐ0 |
+| Repo monorepo (pnpm workspaces), `types.ts`, fixture, `pnpm test` | P0 | GĐ0 |
 | Thư viện: `rpc.ts`, `scanAccount`, `scanDao`, bộ rule khóa, `messages` | P0 | GĐ1 |
 | Thư viện: `diffReports`, `toSummary` | P0 | GĐ2 |
 | Worker: MCP `diagnose`, `compare`; D1 `snapshots`; xác thực header Bearer | P0 | GĐ3 |
@@ -818,7 +818,7 @@ Ghi rõ trong README: agent không chấm điểm, mọi kết luận từ rule;
 
 ```
 /
-├── package.json                  # npm hoặc pnpm workspaces
+├── package.json                  # pnpm workspaces (pnpm-workspace.yaml)
 ├── packages/key-doctor/
 │   ├── src/
 │   │   ├── types.ts              # mục 4, nguồn chuẩn
@@ -870,9 +870,9 @@ Ghi rõ trong README: agent không chấm điểm, mọi kết luận từ rule;
 
 | GĐ | Nội dung | Mức | Phụ thuộc | Xong khi | Ngày dự kiến |
 |---|---|---|---|---|---|
-| **0** | Repo monorepo, `types.ts` (mục 4), fixture mẫu, `npm test` chạy được | P0 | | Repo build được, test rỗng pass | 1/11 |
-| **1** | Thư viện quét: `rpc.ts`, `scanAccount`, `scanDao`, bộ rule mục 5.1, `messages` | P0 | GĐ0 | Quét đúng 20 account của prototype; mỗi rule có test | 1 đến 3/11 |
-| **2** | `diffReports`, `toSummary` | P0 | GĐ0 | Test đủ các trường hợp mục 4.3 | 2 đến 3/11 |
+| **0** | Repo monorepo pnpm workspaces, `types.ts` (mục 4), fixture mẫu, `pnpm test` chạy được | P0 | | Repo build được, test rỗng pass | 1/11 · **Xong** (chuyển npm → pnpm 29/10) |
+| **1** | Thư viện quét: `rpc.ts`, `scanAccount`, `scanDao`, bộ rule mục 5.1, `messages` | P0 | GĐ0 | Quét đúng 20 account của prototype; mỗi rule có test | 1 đến 3/11 · **Xong 29/10** |
+| **2** | `diffReports`, `toSummary` | P0 | GĐ0 | Test đủ các trường hợp mục 4.3 | 2 đến 3/11 · **Xong 29/10** |
 | **3** | Worker: nâng `kd-hello` thành MCP thật với `diagnose`, `compare`; D1 `snapshots` | P0 | GĐ1, GĐ2 | Claude Code và `curl` gọi được; mốc không bị dời khi `update_baseline: false` | 4/11 |
 | **4** | Bot: webhook, `/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help`; `subscriptions`; lấy mốc khi đăng ký | P0 | GĐ3 | Đăng ký trong nhóm Telegram, `/check` trả tóm tắt | 5/11 |
 | ⛔ | **Điểm dừng 5/11:** GĐ1 đến GĐ4 chưa chạy từ đầu đến cuối thì dồn sức vào đây | | | | |
@@ -926,7 +926,7 @@ Ba thứ được xem: trường `idea` (20 đến 2000 ký tự), README đọc
 
 - Vấn đề + số liệu tái lập.
 - **Bằng chứng (P1):** kết quả chạy ngược rule canh đề xuất trên 12 tháng lịch sử ("nếu On Call chạy từ năm ngoái, đã cảnh báo X đề xuất"), kèm tỉ lệ báo động giả và giới hạn (RPC không thấy khóa đã xóa; phải dùng NearBlocks).
-- Cách chạy: `npm test`; quét một DAO testnet; `curl` vào `diagnose` ra cùng kết luận với dashboard; `scripts/demo-testnet` rồi `/run-check` thấy cảnh báo.
+- Cách chạy: `pnpm test`; quét một DAO testnet; `curl` vào `diagnose` ra cùng kết luận với dashboard; `scripts/demo-testnet` rồi `/run-check` thấy cảnh báo.
 - Mục "Agent": cắm MCP vào Claude Code, ví dụ dùng.
 - Nêu các gợi ý track đã dùng: Sputnik DAO, Trezu (`social`); function-call key (`security`).
 - Liệt kê thư viện, template, code do AI viết, dữ liệu chuẩn bị trước (luật Q-005). File LICENSE (MIT).
@@ -990,7 +990,7 @@ Ba thứ được xem: trường `idea` (20 đến 2000 ký tự), README đọc
 
 **Quyền riêng tư:** chỉ công bố số tổng hợp. `cases` ẩn danh (mã `c01`, `c02`...), không có tên DAO, account, public key. Dữ liệu thô có tên để trong thư mục bị `.gitignore`, không đưa lên repo.
 
-**Tái lập:** một lệnh, ví dụ `npm run backtest -- --from 2025-11-10 --to 2026-11-10`. Cache phản hồi RPC và NearBlocks; tôn trọng giới hạn tốc độ của NearBlocks (cần API key nếu dùng gói trả phí).
+**Tái lập:** một lệnh, ví dụ `pnpm backtest --from 2025-11-10 --to 2026-11-10`. Cache phản hồi RPC và NearBlocks; tôn trọng giới hạn tốc độ của NearBlocks (cần API key nếu dùng gói trả phí).
 
 **Giới hạn phải ghi trong README:**
 
@@ -1051,7 +1051,7 @@ Ba thứ được xem: trường `idea` (20 đến 2000 ký tự), README đọc
 3. **Định dạng dữ liệu:** nguồn chuẩn `packages/key-doctor/src/types.ts` (mục 4). Không tự đổi; đổi thì tăng `schema_version`, ghi rõ trong commit.
 4. **Không bao giờ:** ký giao dịch thay người dùng (dashboard chỉ dựng giao dịch, ví ký); xóa khóa toàn quyền cuối cùng; ghi private key, seed phrase, token vào repo; dùng LLM trong sản phẩm; tạo bảng xếp hạng account; dùng tên DAO hoặc account mainnet thật trong ví dụ, fixture, demo.
 5. **Thư viện `key-doctor` chỉ dùng `fetch`.** `checkProposals` không lưu, không gửi.
-6. **Test bắt buộc:** mọi rule, `diffReports`, `checkProposals` (fixture `get_proposal`), render tin Telegram. Chạy `npm test` trước khi commit.
+6. **Test bắt buộc:** mọi rule, `diffReports`, `checkProposals` (fixture `get_proposal`), render tin Telegram. Chạy `pnpm test` trước khi commit.
 7. **Mốc so sánh:** chỉ job UC7 và lần đăng ký đầu được ghi `snapshots`. `/check`, `diagnose` không đụng D1; `/changes`, `compare` mặc định không dời mốc.
 8. **Đăng ký:** chỉ Worker ghi `subscriptions`.
 9. **Mỗi giai đoạn xong:** cập nhật bảng mục 13.5 / 13.3 (đánh dấu xong), ghi ngắn trong commit những gì đã làm và những gì còn thiếu.

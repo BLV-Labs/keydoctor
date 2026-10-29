@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { isKdError, resolveTarget, scanAccount, scanDao } from "../src/index.ts";
+import { toKeyInfo } from "../src/parse.ts";
 import { installFetch, world } from "./support/stub.ts";
 
 const code = (fn: () => unknown) => {
@@ -83,5 +84,21 @@ describe("S1-AC4: resolveTarget", () => {
       }
     }
     assert.equal(calls.length, 0);
+  });
+});
+
+describe("live-run item 3: ML-DSA key prefix", () => {
+  const head = { height: 182_340_111, timestampMs: 1_793_671_210_000 };
+  const key = (publicKey: string) =>
+    toKeyInfo({ publicKey, nonce: "182000000000001", permission: { type: "full_access" } }, "testnet", head);
+
+  it("the prefix testnet RPC returns is an ML-DSA key", () => {
+    assert.equal(key("ml-dsa-65-hash:3xYz").curve, "ml_dsa");
+  });
+
+  it("ed25519 stays ed25519, and the old guessed prefix is unknown", () => {
+    assert.equal(key("ed25519:3xYz").curve, "ed25519");
+    assert.equal(key("mldsa65:3xYz").curve, "unknown");
+    assert.equal(key("secp256k1:3xYz").curve, "unknown");
   });
 });

@@ -3,16 +3,14 @@
   "private": true,
   "description": "Key Doctor On Call: NEAR access-key health checks and DAO proposal alerts",
   "license": "MIT",
-  "workspaces": [
-    "packages/*",
-    "apps/dashboard"
-  ],
   "engines": {
-    "node": ">=22.18"
+    "node": ">=22.18",
+    "pnpm": ">=10"
   },
   "scripts": {
-    "test": "npm run test --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "build": "npm run build --workspaces --if-present"
-  }
+    "test": "pnpm -r --if-present run test",
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "build": "pnpm -r --if-present run build"
+  },
+  "packageManager": "pnpm@10.34.7"
 }

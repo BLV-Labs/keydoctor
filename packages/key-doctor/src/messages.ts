@@ -222,3 +222,65 @@ export const roleLabel = (name: string, index: number): string => (ROLE_LABEL.te
 
 export const missingMemberLimitation = (id: string): string =>
   `Council member ${id} does not exist; anyone who creates it gains its vote.`;
+
+// ---------------------------------------------------------------------------
+// kd.diff.v1 change texts (§4.3). Built from report fields only; ids are already validated or sanitized by the scan.
+// ---------------------------------------------------------------------------
+
+type Text = { vi: string; en: string };
+
+export const DIFF_TEXT = {
+  memberAdded: (id: string): Text => ({
+    vi: `${id} được thêm vào council.`,
+    en: `${id} was added to the council.`,
+  }),
+  memberRemoved: (id: string): Text => ({
+    vi: `${id} bị bỏ khỏi council.`,
+    en: `${id} was removed from the council.`,
+  }),
+  roleChanged: (id: string, becameAdmin: boolean): Text =>
+    becameAdmin
+      ? {
+          vi: `Role của ${id} đã đổi: giờ account này một mình thông qua được thay đổi policy.`,
+          en: `The roles of ${id} changed: this account can now pass policy changes alone.`,
+        }
+      : { vi: `Role của ${id} đã đổi.`, en: `The roles of ${id} changed.` },
+  fullAccessKeyAdded: (id: string): Text => ({
+    vi: `${id} có khóa toàn quyền mới. Nếu chủ account không tự thêm, account có thể đã bị chiếm.`,
+    en: `${id} has a new full-access key. If the owner did not add it, the account may be compromised.`,
+  }),
+  daoVoteKeyAdded: (id: string): Text => ({
+    vi: `${id} có khóa app mới được bỏ phiếu trong DAO này.`,
+    en: `${id} has a new app key that can vote in this DAO.`,
+  }),
+  appKeyAdded: (id: string, receiverId: string | null): Text => ({
+    vi: `${id} có khóa app mới${receiverId ? ` cho ${receiverId}` : ""}.`,
+    en: `${id} has a new app key${receiverId ? ` for ${receiverId}` : ""}.`,
+  }),
+  fullAccessKeyRemoved: (id: string): Text => ({
+    vi: `Một khóa toàn quyền của ${id} đã bị xóa.`,
+    en: `A full-access key of ${id} was removed.`,
+  }),
+  appKeyRemoved: (id: string): Text => ({
+    vi: `Một khóa app của ${id} đã bị xóa.`,
+    en: `An app key of ${id} was removed.`,
+  }),
+  flagRaised: (id: string, title: Text): Text => ({
+    vi: `${id}: ${title.vi}.`,
+    en: `${id}: ${title.en}.`,
+  }),
+  flagCleared: (id: string, title: Text): Text => ({
+    vi: `${id}: đã hết "${title.vi}".`,
+    en: `${id}: resolved "${title.en}".`,
+  }),
+  pqReady: (id: string, ready: boolean): Text =>
+    ready
+      ? { vi: `${id} đã sẵn sàng chống lượng tử.`, en: `${id} is now quantum-ready.` }
+      : { vi: `${id} không còn sẵn sàng chống lượng tử.`, en: `${id} is no longer quantum-ready.` },
+};
+
+export const DIFF_UNSEEN_LIMITATION = "A key added and removed between two scans is not seen.";
+export const diffRulesetLimitation = (from: string, to: string): string =>
+  `The ruleset changed from ${from} to ${to}; flag changes are not compared.`;
+export const diffMemberErrorLimitation = (id: string): string =>
+  `${id} could not be read in one of the two scans; its key and flag changes are not compared.`;

@@ -99,7 +99,7 @@ Every story must declare expected proof before implementation begins:
 
 | Level | What | Example |
 |---|---|---|
-| Unit | Isolated function/logic | `npm test -- <path>` (from GĐ0) |
+| Unit | Isolated function/logic | `pnpm --filter key-doctor exec node --test <path>` (from GĐ0) |
 | Integration | Component boundary | API route + DB, service + queue |
 | E2E | Full user flow | Browser session, CLI invocation |
 | Platform | Deploy + infra | Migration applies, Docker builds, smoke test |

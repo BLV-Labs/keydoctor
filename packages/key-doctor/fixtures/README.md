@@ -12,7 +12,6 @@ Sample data for tests and for building the dashboard before the scanner exists. 
 
 Known placeholders, to replace in GĐ1/GĐ5 with data captured from testnet:
 
-- The ML-DSA public key prefix `mldsa65:` is a guess. Check the real prefix NEAR RPC returns.
 - Sputnik `kind` labels, `vote_counts` and `submission_time` formats must be compared with the contract source.
 - `created.at` and `age_days` assume a 1.2 s block time; the real scanner reads block timestamps.
 
@@ -40,14 +39,14 @@ Each file is `{target, scan, network, rule, fires, note, responses}` (the limita
 
 ## Live-run checklist (design `docs/design/gd1-scan.md` section 11)
 
-Owner runs `packages/key-doctor/scripts/scan.ts --save-raw`. Only that run changes a status to `confirmed` or `differs: <value>`, and it records the account or DAO name and the block height. GĐ1 is "built", not "done", until all seven are recorded.
+Owner runs `packages/key-doctor/scripts/scan.ts --save-raw`. Only that run changes a status to `confirmed` or `differs: <value>`, and it records the account or DAO name and the block height. All seven items were recorded on 2026-10-29, so GĐ1 is done. Items 1 and 3 differ from the recalled values. Item 1 needed no code change; item 3 was fixed in `parse.ts`.
 
 | # | Recalled value | Status | Account or DAO | Block height |
 |---|---|---|---|---|
-| 1 | Cause names `UNKNOWN_ACCOUNT`, `UNKNOWN_BLOCK`, `NO_CONTRACT_CODE`, `CONTRACT_EXECUTION_ERROR` | unconfirmed | | |
-| 2 | An empty key list (not `UNKNOWN_ACCOUNT`) for a missing account | unconfirmed | | |
-| 3 | `mldsa65:` key prefix | unconfirmed | | |
-| 4 | `GENESIS_HEIGHT` mainnet 9820210, testnet 42376888 | unconfirmed | | |
-| 5 | `policy.rs` permission matching and vote-policy fallback | unconfirmed | | |
-| 6 | `to_weight` formula | unconfirmed | | |
-| 7 | `DEFAULT_RPC_URL` values answer JSON-RPC | unconfirmed | | |
+| 1 | Cause names `UNKNOWN_ACCOUNT`, `UNKNOWN_BLOCK`, `NO_CONTRACT_CODE`, `CONTRACT_EXECUTION_ERROR` | differs (2026-10-29): `UNKNOWN_ACCOUNT` and `UNKNOWN_BLOCK` come back as `error.cause.name`, as expected. The two contract cases come back as a `result.error` string, not as a cause: `wasm execution failed with error: CompilationError(CodeDoesNotExist { … })` for an account with no contract, and `… MethodResolveError(MethodNotFound)` for a non-DAO contract. `rpc.ts` already maps any `result.error` string on `get_policy` to `NOT_A_DAO` (test `scan-dao.test.ts` "result.error string"), so no code change. The cause-name branches stay for RPC nodes that do send them | `kd-does-not-exist-9z.testnet` (missing), the owner's testnet wallet account (no contract), `wrap.testnet` (non-DAO contract) | final (not recorded) |
+| 2 | An empty key list (not `UNKNOWN_ACCOUNT`) for a missing account | confirmed (2026-10-29): `view_access_key_list` answered with no `error` and no `result.error`. This is why `scanAccount` follows an empty list with `view_account` | `kd-does-not-exist-9z.testnet` (missing) | final (not recorded) |
+| 3 | `mldsa65:` key prefix | differs: `ml-dsa-65-hash:` (2026-10-29, a full-access key added in Meteor Wallet). `parse.ts` now matches `ml-dsa-`, and the fixtures use the real prefix | the owner's testnet wallet account | final (not recorded) |
+| 4 | `GENESIS_HEIGHT` mainnet 9820210, testnet 42376888 | confirmed (2026-10-29, `EXPERIMENTAL_genesis_config`: testnet 42376888, mainnet 9820210) | n/a (no account) | n/a (genesis config) |
+| 5 | `policy.rs` permission matching and vote-policy fallback | confirmed (2026-10-29): the `council` role has permissions `["*:*"]` and the scan reported `can_approve_transfer: true`. Its empty `vote_policy` `{}` falls back to `default_vote_policy` (RoleWeight, ratio 1/2, quorum 0) | `verdict-panel-p8n6.sputnik-v2.testnet` (third-party testnet DAO, council of 2) | 275337332 |
+| 6 | `to_weight` formula | confirmed (2026-10-29): ratio 1/2 with 2 members gives min(1·2/2 + 1, 2) = 2, quorum 0, and the scan reported `approvals_needed: 2` | `verdict-panel-p8n6.sputnik-v2.testnet` | 275337332 |
+| 7 | `DEFAULT_RPC_URL` values answer JSON-RPC | confirmed (2026-10-29, `block` with `finality: final`) | n/a (no account) | testnet 275336292, mainnet 222159657 |
