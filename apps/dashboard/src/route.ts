@@ -10,6 +10,8 @@ export interface Route {
   invalid: string | null;
   /** The DAO whose council the account was opened from. */
   from: string | null;
+  view: "report" | "cleanup";
+  level: "safe" | "full";
 }
 
 const normalize = (raw: string): string | null => {
@@ -23,12 +25,14 @@ const normalize = (raw: string): string | null => {
 export function parseRoute(search: string): Route {
   const params = new URLSearchParams(search);
   const raw = params.get("target");
-  if (raw === null || raw.trim() === "") return { target: null, invalid: null, from: null };
+  const view = params.get("view") === "cleanup" ? "cleanup" : "report";
+  const level = params.get("level") === "full" ? "full" : "safe";
+  if (raw === null || raw.trim() === "") return { target: null, invalid: null, from: null, view: "report", level };
   const target = normalize(raw);
-  if (target === null) return { target: null, invalid: raw, from: null };
+  if (target === null) return { target: null, invalid: raw, from: null, view: "report", level };
   const fromRaw = params.get("from");
   const from = fromRaw === null ? null : normalize(fromRaw);
-  return { target, invalid: null, from: from === target ? null : from };
+  return { target, invalid: null, from: from === target ? null : from, view, level };
 }
 
 /** The `?target=` deep link, also used by the bot's "View on dashboard". */

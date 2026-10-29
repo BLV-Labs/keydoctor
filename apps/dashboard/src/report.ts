@@ -34,9 +34,10 @@ function scannedLine(report: KdReport): Html {
   )} · ruleset ${report.ruleset_version}</p>`;
 }
 
-function reportActions(): Html {
+function reportActions(cleanupHref?: string): Html {
   return html`<div class="actions">
     <button type="button" class="btn btn-secondary" data-action="rescan">${icon.rescan()}Rescan</button>
+    ${cleanupHref ? html`<a class="btn btn-secondary" href="${cleanupHref}" data-nav>Open cleanup plan</a>` : ""}
     <button type="button" class="btn btn-primary" data-action="watch" aria-haspopup="dialog">${icon.bell()}Get Telegram alerts</button>
   </div>`;
 }
@@ -238,7 +239,7 @@ export function renderAccount(report: KdReport, from: string | null): Html {
           ? html`<p class="meta">Opened from the council of <a href="${routeHref(from)}" data-nav class="mono">${from}</a>. The checks are the same for any account.</p>`
           : ""}
       </div>
-      ${reportActions()}
+      ${reportActions(member.error === null ? `${routeHref(id, from)}&view=cleanup` : undefined)}
     </section>
     ${member.error !== null ? html`<section role="alert" class="alert-box">${icon.alert()}<p>${mainReason(member)}</p></section>` : ""}
     ${newKeyAlert(member, report, inCouncil)}

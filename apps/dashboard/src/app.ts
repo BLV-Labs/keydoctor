@@ -2,6 +2,7 @@
 import { isKdError, resolveTarget, scanAccount, scanTarget, type KdError, type KdReport } from "key-doctor";
 import type { Html } from "./html.ts";
 import { renderError, renderHome, renderLayout, renderScanning } from "./pages.ts";
+import { renderCleanup } from "./cleanup-view.ts";
 import { renderAccount, renderCouncil } from "./report.ts";
 import { parseRoute, routeHref, type Route } from "./route.ts";
 import { renderWatchDialog } from "./watch.ts";
@@ -23,9 +24,9 @@ function paint(content: Html, title: string, focusMain: boolean): void {
   if (focusMain) document.getElementById("main")?.focus();
 }
 
-/** A council member is always an account; anything else goes through scanTarget (DAO first). */
+/** A council member and a cleanup plan are always accounts; anything else goes through scanTarget (DAO first). */
 function scan(route: Route & { target: string }): Promise<KdReport> {
-  return route.from !== null ? scanAccount(route.target) : scanTarget(route.target);
+  return route.from !== null || route.view === "cleanup" ? scanAccount(route.target) : scanTarget(route.target);
 }
 
 async function render(focusMain: boolean): Promise<void> {
@@ -41,7 +42,12 @@ async function render(focusMain: boolean): Promise<void> {
   try {
     const report = await scan({ ...route, target });
     if (seq !== scanSeq) return;
-    const body = report.target.type === "dao" ? renderCouncil(report) : renderAccount(report, route.from);
+    const body =
+      report.target.type === "dao"
+        ? renderCouncil(report)
+        : route.view === "cleanup"
+          ? renderCleanup(report, route.from, route.level)
+          : renderAccount(report, route.from);
     paint(body, `${target} · Key Doctor`, false);
     root.insertAdjacentHTML("beforeend", renderWatchDialog(target, report.target.type).value);
   } catch (e) {

@@ -16,7 +16,7 @@ Built for the NEAR HACKATHON (1–14 Nov 2026). The design is in `docs/final-ide
 - GĐ6 built: the proposal-watch job (cron every 15 minutes, once per DAO, send first then record `alerts_sent`), `POST /run-check`, and `scripts/demo-testnet/demo.sh`. Waiting on a live testnet run.
 - GĐ9 built: the daily key diff (cron at 02:00 UTC; it moves the baseline and alerts only on changes).
 - GĐ10 built: `pnpm stats` measures the network-wide numbers and writes `data/network-stats.json` and `data/network-stats.md`. The numbers are not in this README until the owner runs it against live RPC.
-- Not built yet: the key cleanup plan (GĐ8, waiting on the Meteor signing test).
+- GĐ8 partly built: the cleanup plan (`?target=<account>&view=cleanup`, button "Open cleanup plan" on the account profile). It shows the UC8 steps in a safe order, each step ticked from chain data when you rescan, the keys to remove with their reasons, and Meteor Wallet links. Keys are removed in Meteor Wallet for now. Signing the deletes in the dashboard waits on the wallet-selector + Meteor signing test; the delete guards for it are built and tested (never the last full-access key, never the signing key).
 
 ## Try it
 

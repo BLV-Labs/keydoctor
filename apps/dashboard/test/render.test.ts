@@ -55,8 +55,10 @@ describe("route", () => {
       target: "a.kd-demo.testnet",
       invalid: null,
       from: "kd-demo.sputnik-dao.testnet",
+      view: "report",
+      level: "safe",
     });
-    assert.deepEqual(parseRoute("?target=bad name&from=x"), { target: null, invalid: "bad name", from: null });
+    assert.deepEqual(parseRoute("?target=bad name&from=x"), { target: null, invalid: "bad name", from: null, view: "report", level: "safe" });
     assert.equal(parseRoute("?target=a.kd-demo.testnet&from=%3Cx%3E").from, null);
     assert.equal(routeHref("a.kd-demo.testnet", "kd-demo.sputnik-dao.testnet"), "?target=a.kd-demo.testnet&from=kd-demo.sputnik-dao.testnet");
   });
