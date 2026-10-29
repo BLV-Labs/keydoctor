@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "dev-harness": {
+      "source": {
+        "source": "github",
+        "repo": "duonghb53/dev-harness"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "dev-harness@dev-harness": true
+  }
+}

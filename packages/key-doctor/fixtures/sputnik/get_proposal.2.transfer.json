@@ -1,0 +1,25 @@
+{
+  "id": 2,
+  "proposer": "b.kd-demo.testnet",
+  "description": "Pay the design contractor$$$$",
+  "kind": {
+    "Transfer": {
+      "token_id": "",
+      "receiver_id": "contractor.kd-demo.testnet",
+      "amount": "50000000000000000000000000",
+      "msg": null
+    }
+  },
+  "status": "InProgress",
+  "vote_counts": {
+    "council": [
+      "1",
+      "0",
+      "0"
+    ]
+  },
+  "votes": {
+    "a.kd-demo.testnet": "Approve"
+  },
+  "submission_time": "1793669400000000000"
+}

@@ -1,0 +1,30 @@
+{
+  "jsonrpc": "2.0",
+  "id": "kd",
+  "result": {
+    "block_hash": "DH4dB9DdM5vxoSWeTeoiTY3GbJYc5p5jcbMg9CDo66Md",
+    "block_height": 182340111,
+    "keys": [
+      {
+        "public_key": "ed25519:2YJJG7qYp6ZBLtyvtekiAVbkRj3xBfvcg5yMPujCMHVV",
+        "access_key": {
+          "nonce": 130000000000120,
+          "permission": "FullAccess"
+        }
+      },
+      {
+        "public_key": "ed25519:Gz2h4LKSDxX7hqMiCcJriGzjuYBM3AxG5V75D3MLsXD3",
+        "access_key": {
+          "nonce": 160000000000015,
+          "permission": {
+            "FunctionCall": {
+              "allowance": null,
+              "receiver_id": "game.kd-demo.testnet",
+              "method_names": []
+            }
+          }
+        }
+      }
+    ]
+  }
+}

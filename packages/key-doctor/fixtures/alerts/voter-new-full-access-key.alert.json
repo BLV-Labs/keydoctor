@@ -1,0 +1,52 @@
+{
+  "schema_version": "kd.alert.v1",
+  "alert_id": "testnet:kd-demo.sputnik-dao.testnet:voter_new_full_access_key:2:a.kd-demo.testnet",
+  "created_at": "2026-11-03T02:00:15Z",
+  "network": "testnet",
+  "target": "kd-demo.sputnik-dao.testnet",
+  "severity": "high",
+  "kind": "voter_new_full_access_key",
+  "after_the_fact": false,
+  "proposal": {
+    "id": 2,
+    "kind_label": "transfer",
+    "description": "Pay the design contractor",
+    "proposer": "b.kd-demo.testnet",
+    "transfer": {
+      "token_id": "",
+      "receiver_id": "contractor.kd-demo.testnet",
+      "amount": "50000000000000000000000000"
+    },
+    "status": "InProgress",
+    "votes": {
+      "a.kd-demo.testnet": "Approve"
+    },
+    "approvals_needed": 2,
+    "approvals_have": 1,
+    "pending_voters": [
+      "b.kd-demo.testnet",
+      "c.kd-demo.testnet"
+    ],
+    "executed": false,
+    "ui_url": null
+  },
+  "evidence": {
+    "account_id": "a.kd-demo.testnet",
+    "public_key": "ed25519:zsNxJRqtpFdNtZhWDw2v1nNT419ozWMtpKi24cxgFW3",
+    "key_added_block": 182330555,
+    "key_added_at_est": "2026-11-02T22:49:02Z",
+    "hours_before_vote_seen": 3
+  },
+  "messages": {
+    "vi": {
+      "title": "CẢNH BÁO: kd-demo.sputnik-dao.testnet",
+      "body": "Đề xuất 2: chuyển 50 NEAR cho contractor.kd-demo.testnet. a.kd-demo.testnet có khóa toàn quyền mới thêm khoảng 3 giờ trước khi bỏ phiếu. Tài khoản có thể đã bị chiếm.",
+      "action": "Trước khi bỏ phiếu: xác minh với a.kd-demo.testnet qua kênh khác (gọi điện, gặp trực tiếp)."
+    },
+    "en": {
+      "title": "ALERT: kd-demo.sputnik-dao.testnet",
+      "body": "Proposal 2: transfer 50 NEAR to contractor.kd-demo.testnet. a.kd-demo.testnet has a new full-access key added about 3 hours before voting. The account may be compromised.",
+      "action": "Before you vote: verify with a.kd-demo.testnet through another channel (call or meet in person)."
+    }
+  }
+}

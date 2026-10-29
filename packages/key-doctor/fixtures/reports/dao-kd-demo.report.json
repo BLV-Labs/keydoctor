@@ -1,0 +1,422 @@
+{
+  "schema_version": "kd.report.v1",
+  "ruleset_version": "2026-11-01",
+  "generated_at": "2026-11-03T02:00:12Z",
+  "chain": {
+    "network": "testnet",
+    "block_height": 182340111,
+    "block_timestamp": "2026-11-03T02:00:10Z"
+  },
+  "target": {
+    "type": "dao",
+    "id": "kd-demo.sputnik-dao.testnet"
+  },
+  "dao": {
+    "roles": [
+      {
+        "name": "all",
+        "kind": "everyone",
+        "members": [],
+        "can_approve_transfer": false
+      },
+      {
+        "name": "council",
+        "kind": "group",
+        "members": [
+          "a.kd-demo.testnet",
+          "b.kd-demo.testnet",
+          "c.kd-demo.testnet"
+        ],
+        "can_approve_transfer": true
+      }
+    ],
+    "transfer_vote_policy": [
+      {
+        "role": "council",
+        "weight_kind": "RoleWeight",
+        "threshold": [
+          1,
+          2
+        ],
+        "approvals_needed": 2
+      }
+    ],
+    "proposal_bond_yocto": "100000000000000000000000"
+  },
+  "summary": {
+    "status": "high",
+    "council_size": 3,
+    "members_scanned": 3,
+    "members_high": 1,
+    "members_cleanup": 1,
+    "members_ok": 1,
+    "pq_ready": 1,
+    "keys_total": 8,
+    "keys_full_access": 7,
+    "keys_unused": 2
+  },
+  "members": [
+    {
+      "account_id": "a.kd-demo.testnet",
+      "account_kind": "named",
+      "roles": [
+        "council"
+      ],
+      "status": "high",
+      "pq_ready": false,
+      "counts": {
+        "full_access": 5,
+        "function_call": 0,
+        "ml_dsa": 0,
+        "unused": 2
+      },
+      "keys": [
+        {
+          "public_key": "ed25519:zsNxJRqtpFdNtZhWDw2v1nNT419ozWMtpKi24cxgFW3",
+          "curve": "ed25519",
+          "permission": {
+            "type": "full_access"
+          },
+          "nonce": "182330555000000",
+          "use_count": 0,
+          "created": {
+            "block_height": 182330555,
+            "at": "2026-11-02T22:49:02Z",
+            "source": "nonce_estimate"
+          },
+          "age_days": 0,
+          "flag_ids": [
+            "FA_MANY",
+            "KEY_UNUSED"
+          ]
+        },
+        {
+          "public_key": "ed25519:CMMZeyELuNUMQQuYv5vt69EV3aJMWrUhpYrHnF7XGKgV",
+          "curve": "ed25519",
+          "permission": {
+            "type": "full_access"
+          },
+          "nonce": "150120000000042",
+          "use_count": 42,
+          "created": {
+            "block_height": 150120000,
+            "at": "2025-08-12T13:57:56Z",
+            "source": "nonce_estimate"
+          },
+          "age_days": 447,
+          "flag_ids": [
+            "FA_MANY"
+          ]
+        },
+        {
+          "public_key": "ed25519:88BhchgZ5zEhFD5yofzsbpoWqqNvDDsDEkDub6KLEqQ4",
+          "curve": "ed25519",
+          "permission": {
+            "type": "full_access"
+          },
+          "nonce": "140500000000007",
+          "use_count": 7,
+          "created": {
+            "block_height": 140500000,
+            "at": "2025-03-31T23:17:56Z",
+            "source": "nonce_estimate"
+          },
+          "age_days": 581,
+          "flag_ids": [
+            "FA_MANY"
+          ]
+        },
+        {
+          "public_key": "ed25519:XYwU2yECxZR73q69bm7SUPFrvU17CU2z2MuE39BRWPu",
+          "curve": "ed25519",
+          "permission": {
+            "type": "full_access"
+          },
+          "nonce": "120300000000000",
+          "use_count": 0,
+          "created": {
+            "block_height": 120300000,
+            "at": "2024-06-24T09:57:56Z",
+            "source": "nonce_estimate"
+          },
+          "age_days": 861,
+          "flag_ids": [
+            "FA_MANY",
+            "KEY_UNUSED"
+          ]
+        },
+        {
+          "public_key": "ed25519:9JxobzkybQxNWd3JwXAdGh25RFzBWirH4nPL9nvZHffQ",
+          "curve": "ed25519",
+          "permission": {
+            "type": "full_access"
+          },
+          "nonce": "101200000000003",
+          "use_count": 3,
+          "created": {
+            "block_height": 101200000,
+            "at": "2023-10-03T03:17:56Z",
+            "source": "nonce_estimate"
+          },
+          "age_days": 1126,
+          "flag_ids": [
+            "FA_MANY"
+          ]
+        }
+      ],
+      "flags": [
+        {
+          "rule_id": "FA_MANY",
+          "severity": "high",
+          "scope": "account",
+          "account_id": "a.kd-demo.testnet",
+          "evidence": {
+            "full_access_ed25519": 5
+          },
+          "messages": {
+            "vi": {
+              "title": "Quá nhiều khóa toàn quyền",
+              "explain": "Account có 5 khóa toàn quyền. Lộ bất kỳ khóa nào cũng mất cả account.",
+              "fix": "Giữ ít khóa nhất có thể, xóa khóa không dùng."
+            },
+            "en": {
+              "title": "Too many full-access keys",
+              "explain": "The account has 5 full-access keys. Leaking any one of them loses the whole account.",
+              "fix": "Keep as few keys as possible and delete the ones you do not use."
+            }
+          }
+        },
+        {
+          "rule_id": "KEY_UNUSED",
+          "severity": "cleanup",
+          "scope": "key",
+          "account_id": "a.kd-demo.testnet",
+          "public_key": "ed25519:zsNxJRqtpFdNtZhWDw2v1nNT419ozWMtpKi24cxgFW3",
+          "evidence": {
+            "use_count": 0
+          },
+          "messages": {
+            "vi": {
+              "title": "Khóa chưa từng dùng",
+              "explain": "Khóa này chưa ký giao dịch nào.",
+              "fix": "Nếu không nhận ra khóa này, xóa nó."
+            },
+            "en": {
+              "title": "Key never used",
+              "explain": "This key has never signed a transaction.",
+              "fix": "If you do not recognise this key, delete it."
+            }
+          }
+        },
+        {
+          "rule_id": "KEY_UNUSED",
+          "severity": "cleanup",
+          "scope": "key",
+          "account_id": "a.kd-demo.testnet",
+          "public_key": "ed25519:XYwU2yECxZR73q69bm7SUPFrvU17CU2z2MuE39BRWPu",
+          "evidence": {
+            "use_count": 0
+          },
+          "messages": {
+            "vi": {
+              "title": "Khóa chưa từng dùng",
+              "explain": "Khóa này chưa ký giao dịch nào.",
+              "fix": "Nếu không nhận ra khóa này, xóa nó."
+            },
+            "en": {
+              "title": "Key never used",
+              "explain": "This key has never signed a transaction.",
+              "fix": "If you do not recognise this key, delete it."
+            }
+          }
+        },
+        {
+          "rule_id": "PQ_NONE",
+          "severity": "note",
+          "scope": "account",
+          "account_id": "a.kd-demo.testnet",
+          "evidence": {
+            "ml_dsa": 0
+          },
+          "messages": {
+            "vi": {
+              "title": "Chưa có khóa chống lượng tử",
+              "explain": "Account chưa có khóa ML-DSA.",
+              "fix": "Thêm khóa ML-DSA trong ví Meteor khi sẵn sàng."
+            },
+            "en": {
+              "title": "No post-quantum key",
+              "explain": "The account has no ML-DSA key.",
+              "fix": "Add an ML-DSA key in Meteor Wallet when you are ready."
+            }
+          }
+        }
+      ],
+      "error": null
+    },
+    {
+      "account_id": "b.kd-demo.testnet",
+      "account_kind": "named",
+      "roles": [
+        "council"
+      ],
+      "status": "cleanup",
+      "pq_ready": false,
+      "counts": {
+        "full_access": 1,
+        "function_call": 1,
+        "ml_dsa": 0,
+        "unused": 0
+      },
+      "keys": [
+        {
+          "public_key": "ed25519:2YJJG7qYp6ZBLtyvtekiAVbkRj3xBfvcg5yMPujCMHVV",
+          "curve": "ed25519",
+          "permission": {
+            "type": "full_access"
+          },
+          "nonce": "130000000000120",
+          "use_count": 120,
+          "created": {
+            "block_height": 130000000,
+            "at": "2024-11-06T03:17:56Z",
+            "source": "nonce_estimate"
+          },
+          "age_days": 726,
+          "flag_ids": []
+        },
+        {
+          "public_key": "ed25519:Gz2h4LKSDxX7hqMiCcJriGzjuYBM3AxG5V75D3MLsXD3",
+          "curve": "ed25519",
+          "permission": {
+            "type": "function_call",
+            "receiver_id": "game.kd-demo.testnet",
+            "method_names": [],
+            "allowance_yocto": null
+          },
+          "nonce": "160000000000015",
+          "use_count": 15,
+          "created": {
+            "block_height": 160000000,
+            "at": "2025-12-27T19:17:56Z",
+            "source": "nonce_estimate"
+          },
+          "age_days": 310,
+          "flag_ids": [
+            "FC_UNLIMITED_ALLOWANCE",
+            "FC_ANY_METHOD"
+          ],
+          "receiver_exists": true
+        }
+      ],
+      "flags": [
+        {
+          "rule_id": "FC_UNLIMITED_ALLOWANCE",
+          "severity": "cleanup",
+          "scope": "key",
+          "account_id": "b.kd-demo.testnet",
+          "public_key": "ed25519:Gz2h4LKSDxX7hqMiCcJriGzjuYBM3AxG5V75D3MLsXD3",
+          "evidence": {
+            "allowance_yocto": null
+          },
+          "messages": {
+            "vi": {
+              "title": "Khóa ứng dụng chi không giới hạn",
+              "explain": "Khóa này trả phí gas không giới hạn từ account.",
+              "fix": "Thu hồi khóa trong mục Connected Apps nếu không dùng app này nữa."
+            },
+            "en": {
+              "title": "App key with unlimited allowance",
+              "explain": "This key can spend unlimited gas fees from the account.",
+              "fix": "Revoke it under Connected Apps if you no longer use this app."
+            }
+          }
+        },
+        {
+          "rule_id": "FC_ANY_METHOD",
+          "severity": "cleanup",
+          "scope": "key",
+          "account_id": "b.kd-demo.testnet",
+          "public_key": "ed25519:Gz2h4LKSDxX7hqMiCcJriGzjuYBM3AxG5V75D3MLsXD3",
+          "evidence": {
+            "method_names": []
+          },
+          "messages": {
+            "vi": {
+              "title": "Khóa ứng dụng gọi được mọi hàm",
+              "explain": "Khóa này gọi được mọi hàm của contract game.kd-demo.testnet.",
+              "fix": "Thu hồi và cấp lại khóa chỉ cho các hàm cần thiết."
+            },
+            "en": {
+              "title": "App key can call any method",
+              "explain": "This key can call every method of game.kd-demo.testnet.",
+              "fix": "Revoke it and issue a key limited to the methods you need."
+            }
+          }
+        },
+        {
+          "rule_id": "PQ_NONE",
+          "severity": "note",
+          "scope": "account",
+          "account_id": "b.kd-demo.testnet",
+          "evidence": {
+            "ml_dsa": 0
+          },
+          "messages": {
+            "vi": {
+              "title": "Chưa có khóa chống lượng tử",
+              "explain": "Account chưa có khóa ML-DSA.",
+              "fix": "Thêm khóa ML-DSA trong ví Meteor khi sẵn sàng."
+            },
+            "en": {
+              "title": "No post-quantum key",
+              "explain": "The account has no ML-DSA key.",
+              "fix": "Add an ML-DSA key in Meteor Wallet when you are ready."
+            }
+          }
+        }
+      ],
+      "error": null
+    },
+    {
+      "account_id": "c.kd-demo.testnet",
+      "account_kind": "named",
+      "roles": [
+        "council"
+      ],
+      "status": "ok",
+      "pq_ready": true,
+      "counts": {
+        "full_access": 1,
+        "function_call": 0,
+        "ml_dsa": 1,
+        "unused": 0
+      },
+      "keys": [
+        {
+          "public_key": "mldsa65:21uXuVJUBxFYQzoxf649SWGgn6dp8ZpDXDLpMH78vDpFKPH2Nz9J1QikXAt6XRqfeH",
+          "curve": "ml_dsa",
+          "permission": {
+            "type": "full_access"
+          },
+          "nonce": "175000000000004",
+          "use_count": 4,
+          "created": {
+            "block_height": 175000000,
+            "at": "2026-07-24T03:17:56Z",
+            "source": "nonce_estimate"
+          },
+          "age_days": 101,
+          "flag_ids": []
+        }
+      ],
+      "flags": [],
+      "error": null
+    }
+  ],
+  "dao_flags": [],
+  "errors": [],
+  "limitations": [
+    "Key age is estimated from the access-key nonce."
+  ]
+}
