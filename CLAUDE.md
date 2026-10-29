@@ -47,3 +47,7 @@ The data contracts in `docs/final-idea.md` §4 (`kd.report.v1`, `kd.report_summa
 ## Submission constraints
 
 AI judges (Claude Code and Codex) check that "the repo runs and matches the README". Every feature the README describes must actually work. Unfinished features go under Roadmap. The README must have "do X → see Y" steps (`npm test`, scanning a testnet DAO, a `curl` call to `diagnose`, `scripts/demo-testnet` followed by `/run-check`), a Limitations section, and a list of libraries and AI-written code. Add an MIT `LICENSE`. Full checklist: `docs/near-hackathon.md` §9.3 and `docs/final-idea.md` §14.
+
+## Dev workflow
+
+Workflow: `/dev-harness:dev-team` — project profile: `.claude/dev-team.md`.
