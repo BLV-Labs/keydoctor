@@ -1,0 +1,13 @@
+{
+  "jsonrpc": "2.0",
+  "id": "kd",
+  "result": {
+    "author": "validator.testnet",
+    "header": {
+      "height": 182340111,
+      "hash": "6kVuqX3vFwPQZ9sM2H1cYJgW8dN4eTbA5rLxo7Cj9pDz",
+      "timestamp_nanosec": "1793671210000000000"
+    },
+    "chunks": []
+  }
+}

@@ -888,6 +888,8 @@ Ghi rõ trong README: agent không chấm điểm, mọi kết luận từ rule;
 | **13** | Ngày tạo khóa từ NearBlocks; rule mở rộng | P1 | GĐ1 | | 11/11 |
 | **14** | README, ví dụ MCP + `curl`, quay video, post X, nộp form | P0 | Mọi P0 | Claude Code chạy lại được repo theo README | 12 đến 14/11 |
 
+> 2026-10-29: GĐ1 built (S1-S4, branch claude/peaceful-maxwell-lk347b). Done-when replaced by decision 0001. Done after the owner's live testnet run.
+
 ### 13.4 Đọc bảng
 
 - **Đường găng:** GĐ0 → 1 → 3 → 4 → 5 → 6. Trễ ở đây là trễ cả bài.

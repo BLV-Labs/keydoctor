@@ -59,6 +59,8 @@ for (const file of reportFiles) {
 
     it("member status is not above its highest flag severity", () => {
       for (const m of r.members) {
+        // An errored or missing member has status note and no flags (design §7).
+        if (m.error !== null || m.account_kind === "missing") continue;
         const highest = m.flags.reduce<Status>((s, f) => (RANK[f.severity] > RANK[s] ? f.severity : s), "ok");
         assert.ok(RANK[m.status] <= RANK[highest], `${m.account_id}: ${m.status} > ${highest}`);
         if (highest === "high" || highest === "cleanup") assert.equal(m.status, highest);

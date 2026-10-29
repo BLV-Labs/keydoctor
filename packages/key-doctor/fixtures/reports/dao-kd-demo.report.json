@@ -51,7 +51,7 @@
     "members_cleanup": 1,
     "members_ok": 1,
     "pq_ready": 1,
-    "keys_total": 8,
+    "keys_total": 9,
     "keys_full_access": 7,
     "keys_unused": 2
   },
@@ -66,7 +66,7 @@
       "pq_ready": false,
       "counts": {
         "full_access": 5,
-        "function_call": 0,
+        "function_call": 1,
         "ml_dsa": 0,
         "unused": 2
       },
@@ -142,6 +142,7 @@
           "age_days": 861,
           "flag_ids": [
             "FA_MANY",
+            "FA_OLD",
             "KEY_UNUSED"
           ]
         },
@@ -160,8 +161,32 @@
           },
           "age_days": 1126,
           "flag_ids": [
-            "FA_MANY"
+            "FA_MANY",
+            "FA_OLD"
           ]
+        },
+        {
+          "public_key": "ed25519:5Fq8TnZr3VwKcYbL9mXeJhPd2sUa7NgBvC4oRtHyW6Aj",
+          "curve": "ed25519",
+          "permission": {
+            "type": "function_call",
+            "receiver_id": "game.kd-demo.testnet",
+            "method_names": [],
+            "allowance_yocto": null
+          },
+          "nonce": "165000000000031",
+          "use_count": 31,
+          "created": {
+            "block_height": 165000000,
+            "at": "2026-03-07T05:57:56Z",
+            "source": "nonce_estimate"
+          },
+          "age_days": 240,
+          "flag_ids": [
+            "FC_UNLIMITED_ALLOWANCE",
+            "FC_ANY_METHOD"
+          ],
+          "receiver_exists": true
         }
       ],
       "flags": [
@@ -183,6 +208,50 @@
               "title": "Too many full-access keys",
               "explain": "The account has 5 full-access keys. Leaking any one of them loses the whole account.",
               "fix": "Keep as few keys as possible and delete the ones you do not use."
+            }
+          }
+        },
+        {
+          "rule_id": "FA_OLD",
+          "severity": "cleanup",
+          "scope": "key",
+          "account_id": "a.kd-demo.testnet",
+          "public_key": "ed25519:XYwU2yECxZR73q69bm7SUPFrvU17CU2z2MuE39BRWPu",
+          "evidence": {
+            "age_days": 861
+          },
+          "messages": {
+            "vi": {
+              "title": "Khóa toàn quyền cũ hoặc không rõ tuổi",
+              "explain": "Khóa toàn quyền này đã 861 ngày tuổi, quá 730 ngày.",
+              "fix": "Nếu không còn dùng khóa này, xóa nó; nếu còn dùng, cân nhắc thay bằng khóa mới."
+            },
+            "en": {
+              "title": "Old or unknown-age full-access key",
+              "explain": "This full-access key is 861 days old, over 730 days.",
+              "fix": "Delete the key if you no longer use it; otherwise consider replacing it with a new one."
+            }
+          }
+        },
+        {
+          "rule_id": "FA_OLD",
+          "severity": "cleanup",
+          "scope": "key",
+          "account_id": "a.kd-demo.testnet",
+          "public_key": "ed25519:9JxobzkybQxNWd3JwXAdGh25RFzBWirH4nPL9nvZHffQ",
+          "evidence": {
+            "age_days": 1126
+          },
+          "messages": {
+            "vi": {
+              "title": "Khóa toàn quyền cũ hoặc không rõ tuổi",
+              "explain": "Khóa toàn quyền này đã 1126 ngày tuổi, quá 730 ngày.",
+              "fix": "Nếu không còn dùng khóa này, xóa nó; nếu còn dùng, cân nhắc thay bằng khóa mới."
+            },
+            "en": {
+              "title": "Old or unknown-age full-access key",
+              "explain": "This full-access key is 1126 days old, over 730 days.",
+              "fix": "Delete the key if you no longer use it; otherwise consider replacing it with a new one."
             }
           }
         },
@@ -227,6 +296,50 @@
               "title": "Key never used",
               "explain": "This key has never signed a transaction.",
               "fix": "If you do not recognise this key, delete it."
+            }
+          }
+        },
+        {
+          "rule_id": "FC_UNLIMITED_ALLOWANCE",
+          "severity": "cleanup",
+          "scope": "key",
+          "account_id": "a.kd-demo.testnet",
+          "public_key": "ed25519:5Fq8TnZr3VwKcYbL9mXeJhPd2sUa7NgBvC4oRtHyW6Aj",
+          "evidence": {
+            "allowance_yocto": null
+          },
+          "messages": {
+            "vi": {
+              "title": "Khóa ứng dụng chi không giới hạn",
+              "explain": "Khóa này trả phí gas không giới hạn từ account.",
+              "fix": "Thu hồi khóa trong mục Connected Apps nếu không dùng app này nữa."
+            },
+            "en": {
+              "title": "App key with unlimited allowance",
+              "explain": "This key can spend unlimited gas fees from the account.",
+              "fix": "Revoke it under Connected Apps if you no longer use this app."
+            }
+          }
+        },
+        {
+          "rule_id": "FC_ANY_METHOD",
+          "severity": "cleanup",
+          "scope": "key",
+          "account_id": "a.kd-demo.testnet",
+          "public_key": "ed25519:5Fq8TnZr3VwKcYbL9mXeJhPd2sUa7NgBvC4oRtHyW6Aj",
+          "evidence": {
+            "method_names": []
+          },
+          "messages": {
+            "vi": {
+              "title": "Khóa ứng dụng gọi được mọi hàm",
+              "explain": "Khóa này gọi được mọi hàm của contract game.kd-demo.testnet.",
+              "fix": "Thu hồi và cấp lại khóa chỉ cho các hàm cần thiết."
+            },
+            "en": {
+              "title": "App key can call any method",
+              "explain": "This key can call every method of game.kd-demo.testnet.",
+              "fix": "Revoke it and issue a key limited to the methods you need."
             }
           }
         },
@@ -417,6 +530,6 @@
   "dao_flags": [],
   "errors": [],
   "limitations": [
-    "Key age is estimated from the access-key nonce."
+    "Key age is estimated from the access-key nonce, assuming 1.2 s blocks."
   ]
 }

@@ -39,6 +39,19 @@
           "nonce": 101200000000003,
           "permission": "FullAccess"
         }
+      },
+      {
+        "public_key": "ed25519:5Fq8TnZr3VwKcYbL9mXeJhPd2sUa7NgBvC4oRtHyW6Aj",
+        "access_key": {
+          "nonce": 165000000000031,
+          "permission": {
+            "FunctionCall": {
+              "allowance": null,
+              "receiver_id": "game.kd-demo.testnet",
+              "method_names": []
+            }
+          }
+        }
       }
     ]
   }

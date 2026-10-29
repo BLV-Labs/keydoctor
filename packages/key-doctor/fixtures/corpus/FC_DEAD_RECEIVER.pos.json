@@ -1,0 +1,65 @@
+{
+  "target": "fc-dead-receiver-pos.kd-corpus.testnet",
+  "scan": "account",
+  "network": "testnet",
+  "rule": "FC_DEAD_RECEIVER",
+  "fires": true,
+  "note": "receiver account answers UNKNOWN_ACCOUNT",
+  "responses": {
+    "block": {
+      "jsonrpc": "2.0",
+      "id": "kd",
+      "result": {
+        "author": "validator.testnet",
+        "header": {
+          "height": 182340111,
+          "hash": "x",
+          "timestamp_nanosec": "1793671210000000000"
+        },
+        "chunks": []
+      }
+    },
+    "query/view_access_key_list/fc-dead-receiver-pos.kd-corpus.testnet": {
+      "jsonrpc": "2.0",
+      "id": "kd",
+      "result": {
+        "block_hash": "x",
+        "block_height": 182340111,
+        "keys": [
+          {
+            "public_key": "ed25519:V89ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqr",
+            "access_key": {
+              "nonce": 182000000000005,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "receiver_id": "ghost.kd-corpus.testnet",
+                  "method_names": [
+                    "go"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "query/view_account/ghost.kd-corpus.testnet": {
+      "jsonrpc": "2.0",
+      "id": "kd",
+      "error": {
+        "code": -32000,
+        "message": "Server error",
+        "data": "account missing.kd-demo.testnet does not exist while viewing",
+        "name": "HANDLER_ERROR",
+        "cause": {
+          "name": "UNKNOWN_ACCOUNT",
+          "info": {
+            "requested_account_id": "missing.kd-demo.testnet",
+            "block_height": 182340111
+          }
+        }
+      }
+    }
+  }
+}

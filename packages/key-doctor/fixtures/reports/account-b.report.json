@@ -150,6 +150,6 @@
   "dao_flags": [],
   "errors": [],
   "limitations": [
-    "Key age is estimated from the access-key nonce."
+    "Key age is estimated from the access-key nonce, assuming 1.2 s blocks."
   ]
 }

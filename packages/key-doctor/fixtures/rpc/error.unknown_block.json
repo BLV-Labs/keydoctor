@@ -1,0 +1,14 @@
+{
+  "jsonrpc": "2.0",
+  "id": "kd",
+  "error": {
+    "code": -32000,
+    "message": "Server error",
+    "data": "DB Not Found Error: BLOCK HEIGHT: 182340111",
+    "name": "HANDLER_ERROR",
+    "cause": {
+      "name": "UNKNOWN_BLOCK",
+      "info": {}
+    }
+  }
+}

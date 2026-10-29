@@ -1,0 +1,13 @@
+{
+  "jsonrpc": "2.0",
+  "id": "kd",
+  "result": {
+    "amount": "5000000000000000000000000",
+    "locked": "0",
+    "code_hash": "9Gx2oLQ3v7mRk4pTn1WzYb6CdHf8JsUe5AaNqXr3KtVh",
+    "storage_usage": 120450,
+    "storage_paid_at": 0,
+    "block_height": 182340111,
+    "block_hash": "DH4dB9DdM5vxoSWeTeoiTY3GbJYc5p5jcbMg9CDo66Md"
+  }
+}
