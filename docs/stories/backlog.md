@@ -6,6 +6,34 @@
 
 **Library** (`docs/stories/epics/library/`): the pure `packages/key-doctor` library that every surface reuses. Governing entries: `docs/final-idea.md` §13.3 phases GĐ1, GĐ2 and GĐ5, with the §4 contracts and §5 rules. Stories: [gd1-scan](epics/library/gd1-scan/overview.md) (built). GĐ1 is "built" when slices S1 to S4 meet their ACs. It is "done" only after the owner records the live-run checklist in `packages/key-doctor/fixtures/README.md` (decision 0001).
 
+## Build Order (as of 2026-10-29)
+
+Next steps from `docs/final-idea.md` §13.3 and the current repo state. Critical path: GĐ0 → 1 → 3 → 4 → 5 → 6.
+
+Current state:
+- GĐ0 is done.
+- GĐ1 is built. It is done once the owner records the live-run checklist (`packages/key-doctor/fixtures/README.md`).
+- GĐ7 is built. It is not deployed yet.
+
+| Step | Phase | Work | Why now / gate |
+|---|---|---|---|
+| 1 | GĐ2 | `diffReports`, `toSummary` (pure, tests for every §4.3 case) | GĐ3 needs it; small |
+| 2 | GĐ5 | `checkProposals` + `get_proposal` fixture tests | Depends only on GĐ1; core of the main demo scene |
+| 3 | GĐ3 | Worker: MCP `diagnose`, `compare`, Bearer auth, D1 `snapshots` | Critical path |
+| 4 | GĐ4 | Bot: webhook, `/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help`, `subscriptions` | Critical path. **Checkpoint 5/11:** GĐ1–4 must run end to end |
+| 5 | GĐ6 | Proposal-watch job (15 min), `proposal_state`, `alerts_sent`, `/run-check`, `scripts/demo-testnet` | Main demo scene. **Milestone 8/11:** if it does not run, stop everything else |
+| 6 | GĐ7 close-out | Deploy to Pages; check that the dashboard report matches `/check` | Needs GĐ4 |
+| 7 | GĐ8 | Cleanup plan, Delete / Revoke through Meteor | Blocked on the §13.5 wallet-selector + Meteor signing test |
+| 8 | GĐ9 | Daily key diff job (02:00 UTC) | Needs GĐ3, GĐ4 |
+| 9 | GĐ10 | Network stats + reproduce script | Can run in the background any time; finish before 10/11 |
+| 10 | GĐ11 → GĐ13 → GĐ12 | P1: history replay, NearBlocks key dates, watch-link | Cut order if late: GĐ11 → GĐ13 → GĐ12 → GĐ9 |
+| 11 | GĐ14 | README, video, submission | Last; never cut |
+
+Owner-only tasks that block steps above:
+- Run the GĐ1 live-run checklist. GĐ1 counts as done only after that.
+- Create `@KeyDoctorOnCallBot`, the Cloudflare account and D1. Steps 3 and 4 need them.
+- Run the wallet-selector + Meteor signing test. It decides the scope of step 7.
+
 ## Selected Stories
 
 | Story | Description | Lane | Status |
