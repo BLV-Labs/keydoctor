@@ -1,6 +1,6 @@
 // Public API (docs/final-idea.md §7).
 export type * from "./types.ts";
-export { scanAccount, scanDao } from "./scan.ts";
+export { scanAccount, scanDao, scanTarget } from "./scan.ts";
 export { resolveTarget } from "./parse.ts";
 export { diffReports } from "./diff.ts";
 export { toSummary } from "./summary.ts";

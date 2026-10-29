@@ -1,5 +1,5 @@
 // Browser entry: routing, scanning and DOM events. Rendering lives in pure modules that tests run in Node.
-import { isKdError, resolveTarget, scanAccount, scanDao, type KdError, type KdReport } from "key-doctor";
+import { isKdError, resolveTarget, scanAccount, scanTarget, type KdError, type KdReport } from "key-doctor";
 import type { Html } from "./html.ts";
 import { renderError, renderHome, renderLayout, renderScanning } from "./pages.ts";
 import { renderAccount, renderCouncil } from "./report.ts";
@@ -23,15 +23,9 @@ function paint(content: Html, title: string, focusMain: boolean): void {
   if (focusMain) document.getElementById("main")?.focus();
 }
 
-/** A council member is always an account; anything else tries get_policy first (NOT_A_DAO → account). */
-async function scan(route: Route & { target: string }): Promise<KdReport> {
-  if (route.from !== null) return scanAccount(route.target);
-  try {
-    return await scanDao(route.target);
-  } catch (e) {
-    if (isKdError(e) && e.kd.code === "NOT_A_DAO") return scanAccount(route.target);
-    throw e;
-  }
+/** A council member is always an account; anything else goes through scanTarget (DAO first). */
+function scan(route: Route & { target: string }): Promise<KdReport> {
+  return route.from !== null ? scanAccount(route.target) : scanTarget(route.target);
 }
 
 async function render(focusMain: boolean): Promise<void> {

@@ -296,3 +296,13 @@ export async function scanDao(id: string, opts: ScanOptions = {}): Promise<KdRep
     ],
   };
 }
+
+/** Any target: a Sputnik DAO gets the council scan, anything else (NOT_A_DAO) the account scan. */
+export async function scanTarget(id: string, opts: ScanOptions = {}): Promise<KdReport> {
+  try {
+    return await scanDao(id, opts);
+  } catch (e) {
+    if (isKdError(e) && e.kd.code === "NOT_A_DAO") return scanAccount(id, opts);
+    throw e;
+  }
+}

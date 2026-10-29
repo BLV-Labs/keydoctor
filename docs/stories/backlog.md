@@ -13,6 +13,7 @@ Next steps from `docs/final-idea.md` §13.3 and the current repo state. Critical
 Current state:
 - GĐ0 is done (moved from npm to pnpm workspaces on 2026-10-29).
 - GĐ2 is done (`packages/key-doctor/test/diff.test.ts`).
+- GĐ3 is built (`apps/worker`, `test/mcp.test.ts`). It is done after deploy.
 - GĐ5 is built (`packages/key-doctor/test/proposals.test.ts`). It is done once the owner checks the four Sputnik facts in `fixtures/README.md` on a testnet DAO.
 - GĐ1 is done: the live-run checklist was recorded on 2026-10-29.
 - GĐ7 is built. It is not deployed yet.
@@ -21,7 +22,7 @@ Current state:
 |---|---|---|---|
 | 1 | GĐ2 ✅ | `diffReports`, `toSummary` (pure, tests for every §4.3 case) | Done 2026-10-29 |
 | 2 | GĐ5 🔨 | `checkProposals` + `get_proposal` fixture tests | Built 2026-10-29; done after the GĐ5 live-run list in `fixtures/README.md` |
-| 3 | GĐ3 | Worker: MCP `diagnose`, `compare`, Bearer auth, D1 `snapshots` | Critical path |
+| 3 | GĐ3 🔨 | Worker: MCP `diagnose`, `compare`, Bearer auth, D1 `snapshots` | Built 2026-10-29 (local workerd run OK). Done after deploy plus a live `curl` and Claude Code call |
 | 4 | GĐ4 | Bot: webhook, `/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help`, `subscriptions` | Critical path. **Checkpoint 5/11:** GĐ1–4 must run end to end |
 | 5 | GĐ6 | Proposal-watch job (15 min), `proposal_state`, `alerts_sent`, `/run-check`, `scripts/demo-testnet` | Main demo scene. **Milestone 8/11:** if it does not run, stop everything else |
 | 6 | GĐ7 close-out | Deploy to Pages; check that the dashboard report matches `/check` | Needs GĐ4 |
@@ -33,7 +34,7 @@ Current state:
 
 Owner-only tasks that block steps above:
 - Check the GĐ5 live-run list (four Sputnik proposal facts) in `packages/key-doctor/fixtures/README.md`.
-- Create `@KeyDoctorOnCallBot`, the Cloudflare account and D1. Steps 3 and 4 need them.
+- Create `@KeyDoctorOnCallBot`, the Cloudflare account and D1, then deploy the Worker: `wrangler d1 create key-doctor`, put the id in `apps/worker/wrangler.toml`, run `pnpm --filter worker db:migrate:remote`, set the secrets with `wrangler secret put`, then `pnpm --filter worker deploy`. Steps 3 to 6 need this.
 - Run the wallet-selector + Meteor signing test. It decides the scope of step 7.
 
 ## Selected Stories

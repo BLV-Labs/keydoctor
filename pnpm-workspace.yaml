@@ -1,7 +1,13 @@
 packages:
   - packages/*
   - apps/dashboard
+  - apps/worker
 
 # pnpm 10 skips install scripts unless a package is listed here.
 onlyBuiltDependencies:
   - esbuild
+  - workerd
+
+# wrangler 4.149's miniflare pins a vulnerable undici (dev-only path); force the patched release.
+overrides:
+  undici: 7.30.1
