@@ -73,7 +73,7 @@ export function renderCleanup(report: KdReport, from: string | null, level: Leve
   const steps = planSteps(m, level);
   const done = steps.filter((s) => s.done).length;
   const recent = recentFullAccessKeys(m, report.chain.block_timestamp)[0];
-  const href = (l: Level) => `${routeHref(id, from)}&view=cleanup${l === "full" ? "&level=full" : ""}`;
+  const href = (l: Level) => `${routeHref(id, from, report.chain.network)}&view=cleanup${l === "full" ? "&level=full" : ""}`;
   const firstOpen = steps.find((s) => !s.done);
   return html`${breadcrumb(id, from)}
     <section class="page-head">
@@ -84,7 +84,7 @@ export function renderCleanup(report: KdReport, from: string | null, level: Leve
         <progress class="progress" aria-labelledby="progress-label" value="${done}" max="${steps.length}"></progress>
       </div>
       <div class="actions">
-        <a class="btn btn-secondary" href="${routeHref(id, from)}" data-nav>Back to profile</a>
+        <a class="btn btn-secondary" href="${routeHref(id, from, report.chain.network)}" data-nav>Back to profile</a>
         <button type="button" class="btn btn-primary" data-action="rescan">${icon.rescan()}Rescan</button>
       </div>
     </section>
