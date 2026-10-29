@@ -1,0 +1,56 @@
+/*
+ * Key Doctor dashboard design tokens, taken from the approved mockup
+ * (docs/design/dashboard/mockup). Light theme only for the hackathon.
+ * Every text/background pair below passes WCAG AA (lowest: --kd-ok on --kd-ok-bg, 5.40:1).
+ */
+:root {
+  /* Type */
+  --kd-font-sans: "Fira Sans", system-ui, sans-serif;
+  --kd-font-mono: "Fira Code", ui-monospace, monospace; /* account ids, public keys, commands, block heights */
+  --kd-text-base: 16px;
+  --kd-leading: 1.5;
+
+  /* Neutrals */
+  --kd-page: #F6F7F9;
+  --kd-surface: #FFFFFF;
+  --kd-surface-muted: #F9FAFB;   /* table heads, dialog footers */
+  --kd-border: #E4E7EC;          /* decorative card borders */
+  --kd-border-strong: #D0D5DD;   /* secondary buttons */
+  --kd-border-input: #667085;    /* inputs: needs 3:1 against white */
+  --kd-text: #101828;
+  --kd-text-2: #344054;
+  --kd-text-muted: #475467;
+
+  /* Brand */
+  --kd-primary: #1E3A5F;         /* navy: primary buttons, links */
+  --kd-primary-hover: #0F2742;
+  --kd-primary-tint: #E8EEF5;    /* example chips */
+  --kd-focus: #2E6BB8;           /* 3px focus ring, 2px offset */
+
+  /* Status: always paired with an icon and a text label, never color alone */
+  --kd-high: #B42318;     --kd-high-bg: #FEF3F2;    --kd-high-border: #FECDCA;    --kd-high-text: #7A271A;
+  --kd-cleanup: #93370D;  --kd-cleanup-bg: #FFFAEB; --kd-cleanup-border: #FEDF89;
+  --kd-ok: #067647;       --kd-ok-bg: #ECFDF3;      --kd-ok-border: #ABEFC6;
+  --kd-note: #344054;     --kd-note-bg: #F2F4F7;    --kd-note-border: #D0D5DD;
+
+  /* Shape and space */
+  --kd-radius-sm: 6px;    /* tags */
+  --kd-radius: 8px;       /* buttons, inputs */
+  --kd-radius-md: 10px;   /* inset boxes */
+  --kd-radius-lg: 12px;   /* cards */
+  --kd-radius-xl: 16px;   /* dialogs */
+  --kd-touch: 44px;       /* minimum control height */
+  --kd-container: 1200px; /* 960px for the cleanup plan */
+  --kd-gutter: 24px;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid var(--kd-focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}

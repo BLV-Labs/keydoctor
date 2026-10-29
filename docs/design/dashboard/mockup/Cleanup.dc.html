@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Key Doctor · Key cleanup plan</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&amp;family=Fira+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F6F7F9}
+a{color:#1E3A5F;cursor:pointer;transition:color .2s,background-color .2s}a:hover{color:#0F2742}button{cursor:pointer}button:disabled{cursor:not-allowed}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #2E6BB8;outline-offset:2px}
+@media (prefers-reduced-motion: reduce){*{transition:none !important}}
+input[type=checkbox]{width:20px;height:20px;accent-color:#1E3A5F;cursor:pointer}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #F6F7F9; color: #101828; font-family: 'Fira Sans', system-ui, sans-serif; font-size: 16px; line-height: 1.5;">
+  <header style="background: #FFFFFF; border-bottom: 1px solid #E4E7EC;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 14px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 16px 28px;">
+      <a href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: #101828;">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#1E3A5F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z"></path><path d="M12 9v6M9 12h6"></path></svg>
+        <span style="font-weight: 700; font-size: 18px; letter-spacing: -0.01em;">Key Doctor</span>
+      </a>
+      <nav aria-label="Main" style="display: flex; flex-wrap: wrap; gap: 4px 20px; flex: 1 1 auto;">
+        <a href="Main.dc.html" style="color: #101828; font-weight: 600; text-decoration: none; padding: 10px 0;">Check</a>
+        <a href="Main.dc.html#stats" style="color: #475467; text-decoration: none; padding: 10px 0;">Network stats</a>
+        <a href="https://t.me/KeyDoctorOnCallBot" target="_blank" rel="noopener" style="color: #475467; text-decoration: none; padding: 10px 0;">Telegram bot</a>
+      </nav>
+    </div>
+  </header>
+
+  <main style="max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; display: flex; flex-direction: column; gap: 24px;">
+    <nav aria-label="Breadcrumb" style="font-size: 14px; color: #475467; display: flex; gap: 8px; flex-wrap: wrap;">
+      <a href="Council.dc.html" style="color: #475467; font-family: 'Fira Code', monospace;">kd-demo.sputnik-dao.testnet</a><span aria-hidden="true">/</span>
+      <a href="Account.dc.html" style="color: #475467; font-family: 'Fira Code', monospace;">a.kd-demo.testnet</a><span aria-hidden="true">/</span>
+      <span>Cleanup plan</span>
+    </nav>
+
+    <section style="display: flex; flex-direction: column; gap: 12px;">
+      <h1 style="margin: 0; font-size: 30px; font-weight: 700; letter-spacing: -0.01em;">Key cleanup plan</h1>
+      <p style="margin: 0; color: #475467;">Revoke and delete right here: Key Doctor builds the transaction and you approve it in Meteor Wallet. Adding the ML-DSA key happens inside Meteor. Key Doctor never holds keys and never signs for you. Progress updates every time you rescan.</p>
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; font-size: 14px; color: #344054;"><span>0 of 5 steps done</span><span>From chain data at block 182,340,111</span></div>
+        <div style="height: 8px; border-radius: 999px; background: #E4E7EC; overflow: hidden;" role="progressbar" aria-valuemin="0" aria-valuemax="5" aria-valuenow="0" aria-label="Cleanup progress"><div style="width: 0%; height: 100%; background: #067647;"></div></div>
+      </div>
+    </section>
+
+    <section role="alert" style="display: flex; gap: 16px; align-items: flex-start; background: #FEF3F2; border: 1px solid #FECDCA; border-radius: 12px; padding: 20px 24px;">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#B42318" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 2px;"><path d="M12 3l10 18H2L12 3z"></path><path d="M12 10v4M12 17.5v.01"></path></svg>
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <p style="margin: 0; font-weight: 600; color: #7A271A;">Urgent, before the plan</p>
+        <p style="margin: 0; color: #7A271A;">Key <span style="font-family: 'Fira Code', monospace;">ed25519:7Hq2…Vd9K</span> was added 3 hours ago. If you did not add it, delete it now. Do not wait for the steps below.</p>
+        <a href="DeleteKey.dc.html" style="align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border-radius: 8px; background: #B42318; color: #FFFFFF; font-weight: 600; text-decoration: none;">Delete this key now</a>
+      </div>
+    </section>
+
+    <section aria-label="Cleanup level" style="display: flex; flex-wrap: wrap; gap: 8px; background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 8px;">
+      <button type="button" aria-pressed="{{isSafe}}" onClick="{{pickSafe}}" style="{{safeStyle}}">
+        <span style="display: block; font-weight: 600;">Safe cleanup</span>
+        <span style="display: block; font-size: 14px; opacity: 0.85;">Add ML-DSA, delete full-access keys that were never used</span>
+      </button>
+      <button type="button" aria-pressed="{{isFull}}" onClick="{{pickFull}}" style="{{fullStyle}}">
+        <span style="display: block; font-weight: 600;">Go fully post-quantum</span>
+        <span style="display: block; font-size: 14px; opacity: 0.85;">Delete every Ed25519 full-access key. Only after a careful backup</span>
+      </button>
+    </section>
+
+    <ol style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px;">
+      <li style="background: #FFFFFF; border: 2px solid #1E3A5F; border-radius: 12px; padding: 20px 24px; display: flex; gap: 16px;">
+        <span style="flex: none; width: 32px; height: 32px; border-radius: 999px; background: #1E3A5F; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-weight: 700;">1</span>
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <h2 style="margin: 0; font-size: 18px; font-weight: 600;">1. Revoke unneeded app keys <span style="font-size: 14px; font-weight: 500; color: #1E3A5F;">· Next step</span></h2>
+          <p style="margin: 0; color: #344054;">App keys that are unused, point at a dead contract, or have too wide a permission. Low risk: the app just asks you to connect again.</p>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-top: 8px; padding: 12px 16px; border: 1px solid #E4E7EC; border-radius: 10px;">
+            <div style="display: flex; flex-direction: column;">
+              <span style="font-family: 'Fira Code', monospace; font-size: 14px;">ed25519:Fk3R…w8Tn → game.kd-demo.testnet</span>
+              <span style="font-size: 14px; color: #475467;">Any method · unlimited gas · 15 uses</span>
+            </div>
+            <a href="RevokeKey.dc.html" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border: 1px solid #D0D5DD; border-radius: 8px; background: #FFFFFF; color: #1E3A5F; font-weight: 600; text-decoration: none;">Revoke</a>
+          </div>
+          <p style="margin: 4px 0 0; font-size: 14px; color: #475467;">Done when a rescan no longer finds these app keys. With several, "Revoke all" sends them in one transaction.</p>
+        </div>
+      </li>
+
+      <li style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 20px 24px; display: flex; gap: 16px;">
+        <span style="flex: none; width: 32px; height: 32px; border-radius: 999px; background: #F2F4F7; color: #475467; display: flex; align-items: center; justify-content: center; font-weight: 700;">2</span>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <h2 style="margin: 0; font-size: 18px; font-weight: 600;">2. Add an ML-DSA key in Meteor</h2>
+          <p style="margin: 0; color: #344054;">Open Meteor, go to post-quantum keys and add a full-access ML-DSA key. The account needs a little NEAR to pay the fee.</p>
+          <p style="margin: 0; font-size: 14px; color: #475467;">Done when a rescan finds at least one full-access ML-DSA key.</p>
+          <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+            <a href="https://wallet.meteorwallet.app" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border-radius: 8px; background: #1E3A5F; color: #FFFFFF; font-weight: 600; text-decoration: none;">Open Meteor</a>
+            <button type="button" style="min-height: 44px; padding: 0 16px; border: 1px solid #D0D5DD; border-radius: 8px; background: #FFFFFF; color: #344054; font: inherit; font-weight: 500;">I did it, rescan</button>
+          </div>
+        </div>
+      </li>
+
+      <li style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 20px 24px; display: flex; gap: 16px;">
+        <span style="flex: none; width: 32px; height: 32px; border-radius: 999px; background: #F2F4F7; color: #475467; display: flex; align-items: center; justify-content: center; font-weight: 700;">3</span>
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <h2 style="margin: 0; font-size: 18px; font-weight: 600;">3. Sign a test transaction with the ML-DSA key and wait for finality</h2>
+          <p style="margin: 0; color: #344054;">Send a small transaction with the new key. Skipping this is dangerous: you do not yet know the new key works.</p>
+          <p style="margin: 0; font-size: 14px; color: #475467;">Done when the ML-DSA key has been used at least once.</p>
+        </div>
+      </li>
+
+      <li style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 20px 24px; display: flex; gap: 16px;">
+        <span style="flex: none; width: 32px; height: 32px; border-radius: 999px; background: #F2F4F7; color: #475467; display: flex; align-items: center; justify-content: center; font-weight: 700;">4</span>
+        <div style="display: flex; flex-direction: column; gap: 12px; min-width: 0; flex: 1 1 auto;">
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <h2 style="margin: 0; font-size: 18px; font-weight: 600;">4. Delete old Ed25519 full-access keys</h2>
+            <p style="margin: 0; color: #344054;">High risk if done wrong. Delete in this order: never-used first, oldest first.</p>
+          </div>
+
+          <div style="border: 1px solid #E4E7EC; border-radius: 10px; overflow: hidden;">
+            <sc-for list="{{toDelete}}" as="k" hint-placeholder-count="2">
+              <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 12px 16px; border-bottom: 1px solid #F2F4F7;">
+                <span style="font-family: 'Fira Code', monospace; font-size: 14px;">{{k.key}}</span>
+                <span style="font-size: 14px; color: #475467;">{{k.why}}</span>
+              </div>
+            </sc-for>
+            <div style="padding: 12px 16px; background: #F9FAFB; font-size: 14px; color: #344054;">Keep: {{keep}}. Key Doctor never suggests deleting your last full-access key.</div>
+          </div>
+
+          <fieldset style="margin: 0; border: 1px solid #FEDF89; background: #FFFAEB; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;">
+            <legend style="padding: 0 6px; font-weight: 600; color: #93370D;">Read before you delete</legend>
+            <label style="display: flex; gap: 12px; align-items: flex-start; color: #344054;"><input type="checkbox" checked="{{w1}}" onChange="{{toggle1}}"><span>Each full-access key usually belongs to a seed phrase or a device. Deleting the key means that seed phrase or device loses access.</span></label>
+            <label style="display: flex; gap: 12px; align-items: flex-start; color: #344054;"><input type="checkbox" checked="{{w2}}" onChange="{{toggle2}}"><span>I have backed up the new ML-DSA key.</span></label>
+            <label style="display: flex; gap: 12px; align-items: flex-start; color: #344054;"><input type="checkbox" checked="{{w3}}" onChange="{{toggle3}}"><span>The wallets, hardware wallets and dApps I use every day still work with an ML-DSA-only account.</span></label>
+          </fieldset>
+
+          <sc-if value="{{ready}}" hint-placeholder-val="{{false}}">
+            <a href="DeleteKey.dc.html" style="align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border-radius: 8px; background: #B42318; color: #FFFFFF; font-weight: 600; text-decoration: none;">Delete {{deleteLabel}} (one transaction)</a>
+          </sc-if>
+          <sc-if value="{{notReady}}" hint-placeholder-val="{{true}}">
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <button type="button" disabled aria-describedby="delete-why" style="align-self: flex-start; min-height: 44px; padding: 0 16px; border: 1px solid #D0D5DD; border-radius: 8px; background: #F2F4F7; color: #475467; font: inherit; font-weight: 600;">Delete {{deleteLabel}} (one transaction)</button>
+              <p id="delete-why" style="margin: 0; font-size: 14px; color: #475467;">Still needed: {{missing}}.</p>
+            </div>
+          </sc-if>
+        </div>
+      </li>
+
+      <li style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 20px 24px; display: flex; gap: 16px;">
+        <span style="flex: none; width: 32px; height: 32px; border-radius: 999px; background: #F2F4F7; color: #475467; display: flex; align-items: center; justify-content: center; font-weight: 700;">5</span>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <h2 style="margin: 0; font-size: 18px; font-weight: 600;">5. Rescan</h2>
+          <p style="margin: 0; color: #344054;">Each step ticks itself green from chain data. The red flag on the council report turns green when you are done.</p>
+          <button type="button" style="align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; border: 1px solid #D0D5DD; border-radius: 8px; background: #FFFFFF; color: #344054; font: inherit; font-weight: 500;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 11-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></svg>
+            Rescan a.kd-demo.testnet
+          </button>
+        </div>
+      </li>
+    </ol>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"step3Done":{"editor":"boolean","default":false},"$preview":{"width":1440,"height":1760}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { mode: 'safe', w1: false, w2: false, w3: false };
+  }
+  renderVals() {
+    const s = this.state;
+    const base = 'flex: 1 1 280px; min-height: 64px; text-align: left; padding: 12px 16px; border-radius: 8px; font: inherit; ';
+    const on = base + 'border: 1px solid #1E3A5F; background: #1E3A5F; color: #FFFFFF;';
+    const off = base + 'border: 1px solid transparent; background: #FFFFFF; color: #344054;';
+    const safeKeys = [
+      { key: 'ed25519:9Jr8…kL2s', why: 'Never used · ~2.4 years' }
+    ];
+    const fullKeys = [
+      { key: 'ed25519:9Jr8…kL2s', why: 'Never used · ~2.4 years' },
+      { key: 'ed25519:2bYm…Qe7u', why: '3 uses · ~3.1 years' },
+      { key: 'ed25519:Cw5T…mZ3e', why: '7 uses · ~1.6 years' },
+      { key: 'ed25519:4nPx…a81Q', why: '42 uses · ~1.2 years' }
+    ];
+    const isSafe = s.mode === 'safe';
+    const list = isSafe ? safeKeys : fullKeys;
+    const step3Done = this.props.step3Done ?? false;
+    const missing = [];
+    if (!step3Done) missing.push('finish step 3 (test signature with the ML-DSA key)');
+    const unticked = [s.w1, s.w2, s.w3].filter((x) => !x).length;
+    if (unticked) missing.push('tick ' + unticked + (unticked === 1 ? ' more box' : ' more boxes'));
+    const ready = missing.length === 0;
+    return {
+      isSafe: isSafe,
+      isFull: !isSafe,
+      safeStyle: isSafe ? on : off,
+      fullStyle: isSafe ? off : on,
+      pickSafe: () => this.setState({ mode: 'safe' }),
+      pickFull: () => this.setState({ mode: 'full' }),
+      toDelete: list,
+      deleteLabel: list.length === 1 ? '1 key' : list.length + ' keys',
+      keep: isSafe ? 'the new ML-DSA key and the 3 Ed25519 keys in use' : 'the new ML-DSA key (the only full-access key left)',
+      w1: s.w1, w2: s.w2, w3: s.w3,
+      toggle1: () => this.setState({ w1: !s.w1 }),
+      toggle2: () => this.setState({ w2: !s.w2 }),
+      toggle3: () => this.setState({ w3: !s.w3 }),
+      missing: missing.join(' and '),
+      ready: ready,
+      notReady: !ready
+    };
+  }
+}
+</script>
+</body>
+</html>

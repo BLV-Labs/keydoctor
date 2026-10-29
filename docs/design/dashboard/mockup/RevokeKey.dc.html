@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Key Doctor · Revoke an app key</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&amp;family=Fira+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#667085}
+a{color:#1E3A5F;cursor:pointer;transition:color .2s,background-color .2s}a:hover{color:#0F2742}
+a:focus-visible{outline:3px solid #2E6BB8;outline-offset:2px}
+@media (prefers-reduced-motion: reduce){*{transition:none !important}}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: rgba(16, 24, 40, 0.6); font-family: 'Fira Sans', system-ui, sans-serif; font-size: 16px; line-height: 1.5; color: #101828; display: flex; align-items: center; justify-content: center; padding: 48px 16px; box-sizing: border-box;">
+  <div role="alertdialog" aria-modal="true" aria-labelledby="rev-h" aria-describedby="rev-d" style="width: 100%; max-width: 560px; background: #FFFFFF; border-radius: 16px; box-shadow: 0 20px 48px rgba(16, 24, 40, 0.25); display: flex; flex-direction: column; overflow: hidden;">
+    <div style="padding: 24px 24px 12px; display: flex; gap: 16px; align-items: flex-start;">
+      <span style="flex: none; width: 44px; height: 44px; border-radius: 999px; background: #FFFAEB; color: #93370D; display: flex; align-items: center; justify-content: center;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M5.6 5.6l12.8 12.8"></path></svg>
+      </span>
+      <div style="display: flex; flex-direction: column; gap: 6px; min-width: 0;">
+        <h2 id="rev-h" style="margin: 0; font-size: 22px; font-weight: 700;">Revoke this app key?</h2>
+        <p id="rev-d" style="margin: 0; color: #475467;"><span style="font-family: 'Fira Code', monospace; color: #101828;">game.kd-demo.testnet</span> will no longer be able to act for <span style="font-family: 'Fira Code', monospace; color: #101828;">a.kd-demo.testnet</span>. Your funds and other keys are not affected.</p>
+      </div>
+    </div>
+
+    <div style="padding: 8px 24px 0;">
+      <dl style="margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; padding: 14px 16px; border: 1px solid #E4E7EC; border-radius: 10px; background: #F9FAFB; font-size: 15px;">
+        <dt style="color: #475467;">Key</dt><dd style="margin: 0; font-family: 'Fira Code', monospace; overflow-wrap: anywhere;">ed25519:Fk3R…w8Tn</dd>
+        <dt style="color: #475467;">App (contract)</dt><dd style="margin: 0; font-family: 'Fira Code', monospace;">game.kd-demo.testnet</dd>
+        <dt style="color: #475467;">Permission</dt><dd style="margin: 0;">Any method, unlimited gas allowance</dd>
+        <dt style="color: #475467;">Last used</dt><dd style="margin: 0;">15 uses so far</dd>
+      </dl>
+      <p style="margin: 12px 0 0; font-size: 14px; color: #475467;">Still using the app? It will ask you to connect again, and you can grant a narrower key then.</p>
+    </div>
+
+    <div style="padding: 20px 24px 24px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px;">
+      <a href="Account.dc.html" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border: 1px solid #D0D5DD; border-radius: 8px; background: #FFFFFF; color: #344054; font-weight: 500; text-decoration: none;">Cancel</a>
+      <a href="Account.dc.html" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border-radius: 8px; background: #1E3A5F; color: #FFFFFF; font-weight: 600; text-decoration: none;">Open Meteor to sign</a>
+    </div>
+
+    <div style="padding: 14px 24px; background: #F9FAFB; border-top: 1px solid #E4E7EC; display: flex; gap: 10px; align-items: flex-start; font-size: 14px; color: #475467;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 1px;"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v5M12 8v.01"></path></svg>
+      <span>Revoking is a DeleteKey on an app key. Key Doctor only prepares the transaction; Meteor Wallet opens and you sign it there.</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
