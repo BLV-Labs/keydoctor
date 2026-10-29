@@ -1,0 +1,61 @@
+{
+  "target": "fa-many-neg.kd-corpus.testnet",
+  "scan": "account",
+  "network": "testnet",
+  "rule": "FA_MANY",
+  "fires": false,
+  "note": "4 Ed25519 full-access keys: FA_MULTIPLE fires, FA_MANY does not",
+  "responses": {
+    "block": {
+      "jsonrpc": "2.0",
+      "id": "kd",
+      "result": {
+        "author": "validator.testnet",
+        "header": {
+          "height": 182340111,
+          "hash": "x",
+          "timestamp_nanosec": "1793671210000000000"
+        },
+        "chunks": []
+      }
+    },
+    "query/view_access_key_list/fa-many-neg.kd-corpus.testnet": {
+      "jsonrpc": "2.0",
+      "id": "kd",
+      "result": {
+        "block_hash": "x",
+        "block_height": 182340111,
+        "keys": [
+          {
+            "public_key": "ed25519:789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqr",
+            "access_key": {
+              "nonce": 182000000000005,
+              "permission": "FullAccess"
+            }
+          },
+          {
+            "public_key": "ed25519:889ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqr",
+            "access_key": {
+              "nonce": 182000000000005,
+              "permission": "FullAccess"
+            }
+          },
+          {
+            "public_key": "ed25519:989ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqr",
+            "access_key": {
+              "nonce": 182000000000005,
+              "permission": "FullAccess"
+            }
+          },
+          {
+            "public_key": "ed25519:A89ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqr",
+            "access_key": {
+              "nonce": 182000000000005,
+              "permission": "FullAccess"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

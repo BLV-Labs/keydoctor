@@ -1,0 +1,59 @@
+{
+  "target": "fc-any-method-pos.kd-corpus.testnet",
+  "scan": "account",
+  "network": "testnet",
+  "rule": "FC_ANY_METHOD",
+  "fires": true,
+  "note": "function-call key with an empty method list",
+  "responses": {
+    "block": {
+      "jsonrpc": "2.0",
+      "id": "kd",
+      "result": {
+        "author": "validator.testnet",
+        "header": {
+          "height": 182340111,
+          "hash": "x",
+          "timestamp_nanosec": "1793671210000000000"
+        },
+        "chunks": []
+      }
+    },
+    "query/view_access_key_list/fc-any-method-pos.kd-corpus.testnet": {
+      "jsonrpc": "2.0",
+      "id": "kd",
+      "result": {
+        "block_hash": "x",
+        "block_height": 182340111,
+        "keys": [
+          {
+            "public_key": "ed25519:T89ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqr",
+            "access_key": {
+              "nonce": 182000000000005,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "receiver_id": "app.kd-corpus.testnet",
+                  "method_names": []
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "query/view_account/app.kd-corpus.testnet": {
+      "jsonrpc": "2.0",
+      "id": "kd",
+      "result": {
+        "amount": "1000000000000000000000000",
+        "locked": "0",
+        "code_hash": "11111111111111111111111111111111",
+        "storage_usage": 182,
+        "storage_paid_at": 0,
+        "block_height": 182340111,
+        "block_hash": "DH4dB9DdM5vxoSWeTeoiTY3GbJYc5p5jcbMg9CDo66Md"
+      }
+    }
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "target": "fc-any-method-neg.kd-corpus.testnet",
+  "scan": "account",
+  "network": "testnet",
+  "rule": "FC_ANY_METHOD",
+  "fires": false,
+  "note": "function-call key limited to one method",
+  "responses": {
+    "block": {
+      "jsonrpc": "2.0",
+      "id": "kd",
+      "result": {
+        "author": "validator.testnet",
+        "header": {
+          "height": 182340111,
+          "hash": "x",
+          "timestamp_nanosec": "1793671210000000000"
+        },
+        "chunks": []
+      }
+    },
+    "query/view_access_key_list/fc-any-method-neg.kd-corpus.testnet": {
+      "jsonrpc": "2.0",
+      "id": "kd",
+      "result": {
+        "block_hash": "x",
+        "block_height": 182340111,
+        "keys": [
+          {
+            "public_key": "ed25519:U89ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqr",
+            "access_key": {
+              "nonce": 182000000000005,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "receiver_id": "app.kd-corpus.testnet",
+                  "method_names": [
+                    "go"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "query/view_account/app.kd-corpus.testnet": {
+      "jsonrpc": "2.0",
+      "id": "kd",
+      "result": {
+        "amount": "1000000000000000000000000",
+        "locked": "0",
+        "code_hash": "11111111111111111111111111111111",
+        "storage_usage": 182,
+        "storage_paid_at": 0,
+        "block_height": 182340111,
+        "block_hash": "DH4dB9DdM5vxoSWeTeoiTY3GbJYc5p5jcbMg9CDo66Md"
+      }
+    }
+  }
+}

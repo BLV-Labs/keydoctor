@@ -1,0 +1,40 @@
+{
+  "target": "key-unused-neg.kd-corpus.testnet",
+  "scan": "account",
+  "network": "testnet",
+  "rule": "KEY_UNUSED",
+  "fires": false,
+  "note": "full-access key with use_count 1",
+  "responses": {
+    "block": {
+      "jsonrpc": "2.0",
+      "id": "kd",
+      "result": {
+        "author": "validator.testnet",
+        "header": {
+          "height": 182340111,
+          "hash": "x",
+          "timestamp_nanosec": "1793671210000000000"
+        },
+        "chunks": []
+      }
+    },
+    "query/view_access_key_list/key-unused-neg.kd-corpus.testnet": {
+      "jsonrpc": "2.0",
+      "id": "kd",
+      "result": {
+        "block_hash": "x",
+        "block_height": 182340111,
+        "keys": [
+          {
+            "public_key": "ed25519:N89ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqr",
+            "access_key": {
+              "nonce": 182000000000001,
+              "permission": "FullAccess"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "target": "fa-old-neg.kd-corpus.testnet",
+  "scan": "account",
+  "network": "testnet",
+  "rule": "FA_OLD",
+  "fires": false,
+  "note": "full-access key added at block 129708112: age 730 days, 1 block under the limit (head 182340111)",
+  "responses": {
+    "block": {
+      "jsonrpc": "2.0",
+      "id": "kd",
+      "result": {
+        "author": "validator.testnet",
+        "header": {
+          "height": 182340111,
+          "hash": "x",
+          "timestamp_nanosec": "1793671210000000000"
+        },
+        "chunks": []
+      }
+    },
+    "query/view_access_key_list/fa-old-neg.kd-corpus.testnet": {
+      "jsonrpc": "2.0",
+      "id": "kd",
+      "result": {
+        "block_hash": "x",
+        "block_height": 182340111,
+        "keys": [
+          {
+            "public_key": "ed25519:L89ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqr",
+            "access_key": {
+              "nonce": 129708112000005,
+              "permission": "FullAccess"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

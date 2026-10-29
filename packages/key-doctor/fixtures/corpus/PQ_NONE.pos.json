@@ -1,0 +1,40 @@
+{
+  "target": "pq-none-pos.kd-corpus.testnet",
+  "scan": "account",
+  "network": "testnet",
+  "rule": "PQ_NONE",
+  "fires": true,
+  "note": "1 key, no ML-DSA key",
+  "responses": {
+    "block": {
+      "jsonrpc": "2.0",
+      "id": "kd",
+      "result": {
+        "author": "validator.testnet",
+        "header": {
+          "height": 182340111,
+          "hash": "x",
+          "timestamp_nanosec": "1793671210000000000"
+        },
+        "chunks": []
+      }
+    },
+    "query/view_access_key_list/pq-none-pos.kd-corpus.testnet": {
+      "jsonrpc": "2.0",
+      "id": "kd",
+      "result": {
+        "block_hash": "x",
+        "block_height": 182340111,
+        "keys": [
+          {
+            "public_key": "ed25519:H89ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqr",
+            "access_key": {
+              "nonce": 182000000000005,
+              "permission": "FullAccess"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "target": "fa-bot-like-pos.kd-corpus.testnet",
+  "scan": "account",
+  "network": "testnet",
+  "rule": "FA_BOT_LIKE",
+  "fires": true,
+  "note": "full-access key with use_count 1000 (FA_BOT_LIKE_USES)",
+  "responses": {
+    "block": {
+      "jsonrpc": "2.0",
+      "id": "kd",
+      "result": {
+        "author": "validator.testnet",
+        "header": {
+          "height": 182340111,
+          "hash": "x",
+          "timestamp_nanosec": "1793671210000000000"
+        },
+        "chunks": []
+      }
+    },
+    "query/view_access_key_list/fa-bot-like-pos.kd-corpus.testnet": {
+      "jsonrpc": "2.0",
+      "id": "kd",
+      "result": {
+        "block_hash": "x",
+        "block_height": 182340111,
+        "keys": [
+          {
+            "public_key": "ed25519:P89ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqr",
+            "access_key": {
+              "nonce": 182000000001000,
+              "permission": "FullAccess"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
