@@ -6,7 +6,7 @@
 | Cuộc thi | NEAR HACKATHON "Build Beyond Boundaries", build 1/11 đến 14/11/2026 (hạn 23:59 UTC 14/11) |
 | Team | TuTM (Trần Minh Tú), DuongHB. Toàn bộ code do Claude Code viết theo tài liệu này |
 | Tên | Sản phẩm **Key Doctor**. Tính năng canh quỹ **On Call** ("Key Doctor On Call"). Bot `@KeyDoctorOnCallBot` |
-| Tài liệu đi kèm | `usecase.md`: 8 use case, sơ đồ trình tự. `proposal-key-doctor.md` (bản v2): số liệu, hạng mục #1 đến #18 của lõi Key Doctor |
+| Tài liệu đi kèm | `usecase.md`: 8 use case, sơ đồ trình tự. `near-hackathon.md`: luật và yêu cầu chính thức của cuộc thi. `proposal-key-doctor.md` (bản v2): số liệu, hạng mục #1 đến #18 của lõi Key Doctor |
 
 > **Thứ tự ưu tiên khi tài liệu mâu thuẫn:** file này > `usecase.md` > `proposal-key-doctor.md`. Các điểm thay đổi so với v2 ở mục 3.
 >
@@ -20,20 +20,20 @@
 
 **Sản phẩm, hai lớp:**
 
-1. **Khám và dọn khóa:** đọc khóa của một account hoặc cả council DAO, giải thích từng khóa bằng lời thường, chấm rủi ro bằng rule viết bằng code, hướng dẫn dọn khóa qua ví Meteor.
+1. **Khám và dọn khóa:** đọc khóa của một account hoặc cả council DAO, giải thích từng khóa bằng lời thường, chấm rủi ro bằng rule viết bằng code. **Dọn khóa thừa ngay trên dashboard** (Key Doctor dựng giao dịch, người dùng ký bằng ví); bước thêm khóa chống lượng tử làm trong ví Meteor theo hướng dẫn.
 2. **On Call (canh quỹ):** Worker tự kiểm tra mỗi 15 phút. Khi DAO có đề xuất chi tiền hoặc thay đổi quyền, và người vừa bỏ phiếu có khóa toàn quyền mới xuất hiện gần đây, bot Telegram cảnh báo council **trước phiếu cuối**. Kèm so khóa council hằng ngày.
 
 Kèm theo: **MCP server** để agent bất kỳ (Claude Code, OpenClaw...) dùng được Key Doctor. Đã kiểm với Claude Code.
 
 **Nguyên tắc:**
 
-- Không thành phần nào giữ khóa của ai, không ký giao dịch thay ai.
+- Không thành phần nào giữ khóa của ai, không ký giao dịch thay ai. Dashboard chỉ **dựng** giao dịch dọn khóa; người dùng tự ký trong ví.
 - **Code quyết định mọi kết luận.** Không dùng LLM trong sản phẩm.
 - Chỉ Worker cron được dời mốc so sánh.
 - **Đăng ký theo dõi có một nguồn duy nhất:** bảng `subscriptions` trong D1, chỉ Worker được ghi.
 - Bot Telegram là kênh báo động duy nhất.
 
-**Track:** `social`.
+**Track:** `social` (chính) + `security` (phụ). Luật cho chọn nhiều track trong một bài nộp (xem `near-hackathon.md`).
 
 **Câu giới thiệu:**
 
@@ -104,7 +104,7 @@ flowchart TB
 | Thư viện: `checkProposals` | P0 | GĐ5 |
 | Worker: job canh đề xuất, `proposal_state`, `alerts_sent`, `/run-check`; script demo testnet | P0 | GĐ6 |
 | Dashboard: nhập, council, hồ sơ account, nút "Nhận cảnh báo" (MVP) | P0 | GĐ7 |
-| Dashboard: kế hoạch dọn khóa (UC8) | P0 | GĐ8 |
+| Dashboard: kế hoạch dọn khóa (UC8), xóa khóa theo lô qua ví | P0 | GĐ8 |
 | Worker: job so khóa hằng ngày (UC7) | P0 | GĐ9 |
 | Số liệu toàn mạng + script tái lập | P0 | GĐ10 |
 | Chạy ngược rule trên lịch sử (mục 14.1) | P1 | GĐ11 |
@@ -137,7 +137,7 @@ Dùng **chung một tài khoản Cloudflare** cho cả team.
 | 5 | Đăng ký qua dashboard hoặc agent | Người dùng | MVP: nút mở bot kèm lệnh. P1: link xác nhận | P0 (MVP) / P1 (link) | GĐ7 / GĐ12 |
 | 6 | **Canh đề xuất** (15 phút) | Worker cron | Cron → `checkProposals` → bot | P0 | GĐ5, GĐ6 |
 | 7 | So khóa hằng ngày | Worker cron | Cron → `scanDao` → `diffReports` → bot | P0 | GĐ9 |
-| 8 | Dọn khóa | Người dùng | Dashboard → Meteor (tự ký) → quét lại | P0 | GĐ8 |
+| 8 | Dọn khóa | Người dùng | Dashboard dựng giao dịch xóa khóa → ví ký; thêm ML-DSA trong Meteor → quét lại | P0 | GĐ8 |
 
 ---
 
@@ -152,9 +152,9 @@ Dùng **chung một tài khoản Cloudflare** cho cả team.
 | T3 | (không có) | Thêm UC6 canh đề xuất; `checkProposals` nằm trong thư viện | Đã chốt |
 | T4 | 10.2 phân công | Bỏ phân công theo người; làm theo giai đoạn mục 13 | Đã chốt |
 | T5 | Mục 8 bộ rule | Đề xuất thêm `FC_DAO_VOTE`, `FA_BOT_LIKE`, `COUNCIL_SMALL` | Cần chốt |
-| T6 | #6 Đăng nhập NEP-413 | Đề xuất bỏ: mọi bước dọn làm trong Meteor; tiến độ đọc từ chain | Chờ kết quả #14 |
+| T6 | #6 Đăng nhập NEP-413 | Bỏ đăng nhập. Dashboard chỉ **kết nối ví** khi người dùng bấm dọn, để ví ký giao dịch xóa khóa; tiến độ đọc từ chain | Chờ kết quả thử ký (mục 13.5) |
 | T7 | #1 bỏ qua implicit | Implicit (hex) có tiền vẫn đọc được khóa; cần xử lý riêng account `0x...` | Cần kiểm |
-| T8 | 13.2 track | Chọn `social` (form ghi "preferred track") | Cần kiểm form |
+| T8 | 13.2 track | `social` (chính) + `security` (phụ). Luật chính thức cho chọn nhiều track | Đã chốt |
 | T9 | 5.4 không cấp khóa cho agent | Giữ nguyên; Agent Guard vào Roadmap | Đã chốt |
 | T10 | Màn hình | Thêm nút "Nhận cảnh báo qua Telegram" | Đã chốt |
 | T11 | Ví dụ DAO thật trong prototype | Bản public và demo chỉ dùng testnet | Đã chốt |
@@ -784,7 +784,15 @@ Theo v2 (màn nhập, council, hồ sơ account, kế hoạch dọn, số liệu
   - **MVP:** hộp hướng dẫn kèm lệnh `/watch <target>` có nút sao chép, nút mở bot, hướng dẫn thêm bot vào nhóm council. Không gọi Worker.
   - **P1:** gọi `POST /api/watch-link`, hiện hai nút dùng `link_private` và `link_group`.
   - Không ghi đăng ký, không hiển thị trạng thái "đang theo dõi".
-- **Kế hoạch dọn (UC8):** thứ tự an toàn, tiến độ tự tích xanh khi quét lại, ba cảnh báo trước khi xóa khóa toàn quyền; không bao giờ gợi ý xóa khóa toàn quyền cuối.
+- **Kế hoạch dọn (UC8):**
+  - **Xóa khóa app thừa theo lô ngay trên dashboard:** người dùng tick các khóa (chưa dùng, contract chết, quyền quá rộng), dashboard dựng **một giao dịch gồm nhiều action `DeleteKey`**, gửi sang ví qua wallet-selector để người dùng ký.
+  - **Xóa khóa toàn quyền Ed25519 cũ:** làm trên dashboard theo cùng cách **nếu ví cho ký** (phải thử trước, mục 13.5); không thì hướng dẫn làm trong Meteor.
+  - **Thêm khóa ML-DSA:** luôn làm trong Meteor (wallet-selector không hỗ trợ ML-DSA, dApp không yêu cầu Meteor thêm khóa PQ được). Dashboard hiện hướng dẫn từng bước.
+  - Sau khi account đã ký bằng ML-DSA, dashboard không nhờ ví ký qua wallet-selector được nữa: các bước còn lại chuyển sang hướng dẫn trong Meteor.
+  - **Thứ tự:** xóa khóa app và khóa toàn quyền cũ **trước** khi bật ML-DSA (sau đó ví ký bằng ML-DSA, dashboard không nhờ ký được nữa). Chi tiết: UC8 trong `usecase.md`.
+  - **An toàn:** dashboard **chặn** xóa khóa toàn quyền cuối cùng và khóa ví đang dùng để ký (kiểm trước khi dựng giao dịch); hiện ba cảnh báo (seed phrase gắn với khóa, sao lưu khóa ML-DSA, kiểm app còn chạy) trước khi xóa khóa toàn quyền; luôn có màn xem trước danh sách khóa sẽ xóa.
+  - **Kết nối ví không được đẻ thêm khóa:** không dùng `signIn` kèm `contractId` (sẽ tạo function-call key mới). Chỉ kết nối để ký giao dịch.
+  - Tiến độ từng bước tự tích xanh khi quét lại.
 - **Quyền riêng tư:** bỏ ví dụ DAO thật khỏi bản public; dùng account testnet.
 
 ---
@@ -862,7 +870,7 @@ Ghi rõ trong README: agent không chấm điểm, mọi kết luận từ rule;
 
 | GĐ | Nội dung | Mức | Phụ thuộc | Xong khi | Ngày dự kiến |
 |---|---|---|---|---|---|
-| **0** ✅ | Repo monorepo, `types.ts` (mục 4), fixture mẫu, `npm test` chạy được | P0 | | Repo build được, test rỗng pass | 1/11 (xong 29/10) |
+| **0** | Repo monorepo, `types.ts` (mục 4), fixture mẫu, `npm test` chạy được | P0 | | Repo build được, test rỗng pass | 1/11 |
 | **1** | Thư viện quét: `rpc.ts`, `scanAccount`, `scanDao`, bộ rule mục 5.1, `messages` | P0 | GĐ0 | Quét đúng 20 account của prototype; mỗi rule có test | 1 đến 3/11 |
 | **2** | `diffReports`, `toSummary` | P0 | GĐ0 | Test đủ các trường hợp mục 4.3 | 2 đến 3/11 |
 | **3** | Worker: nâng `kd-hello` thành MCP thật với `diagnose`, `compare`; D1 `snapshots` | P0 | GĐ1, GĐ2 | Claude Code và `curl` gọi được; mốc không bị dời khi `update_baseline: false` | 4/11 |
@@ -872,7 +880,7 @@ Ghi rõ trong README: agent không chấm điểm, mọi kết luận từ rule;
 | **6** | Job canh đề xuất (mục 8.5), `proposal_state`, `alerts_sent`, `/run-check`; script dựng DAO testnet 2 phiếu | P0 | GĐ4, GĐ5 | Kịch bản demo chạy trọn: cảnh báo đến trước phiếu thứ hai | 8/11 |
 | ⛔ | **Mốc 8/11:** GĐ6 chưa chạy thì dừng mọi việc khác, chỉ làm GĐ6 | | | | |
 | **7** | Dashboard: nhập, council, hồ sơ account, nút "Nhận cảnh báo" bản MVP, deploy Pages | P0 | GĐ1 | Nhập DAO testnet, thấy báo cáo khớp `/check` | 8 đến 9/11 |
-| **8** | Kế hoạch dọn khóa (UC8), tiến độ đọc từ chain | P0 | GĐ7 | Account testnet làm trọn 5 bước, quét lại thấy xanh | 9 đến 10/11 |
+| **8** | Kế hoạch dọn khóa (UC8): xóa khóa app theo lô qua ví; xóa khóa toàn quyền qua ví nếu Meteor cho; hướng dẫn thêm ML-DSA; tiến độ đọc từ chain | P0 | GĐ7 | Account testnet: xóa lô khóa app bằng một lần ký; làm trọn các bước, quét lại thấy xanh; không thể xóa khóa toàn quyền cuối | 9 đến 10/11 |
 | **9** | Job so khóa hằng ngày (UC7) | P0 | GĐ3, GĐ4 | Thêm khóa vào account test, lần chạy sau nhận tin | 10/11 |
 | **10** | Số liệu toàn mạng + script tái lập | P0 | GĐ1 | Một lệnh ra đúng bảng số trong README | Chạy nền từ sau GĐ1, xong trước 10/11 |
 | **11** | Chạy ngược rule trên lịch sử (mục 14.1) | P1 | GĐ5 | `summary.json` tái lập được | 11/11 |
@@ -894,7 +902,8 @@ Ghi rõ trong README: agent không chấm điểm, mọi kết luận từ rule;
 | Task hello: MCP trên Workers, header Bearer, Claude Code | **Xong** |
 | Xác nhận `ping_near` testnet và mainnet | |
 | Chốt mục 4 và mục 5 (gồm T5) | |
-| #14: thu hồi hàng loạt trong Meteor; quyết T6 | |
+| #14: thu hồi hàng loạt trong Meteor | |
+| **Thử ký qua wallet-selector + Meteor:** một giao dịch nhiều `DeleteKey` cho khóa app; một `DeleteKey` cho khóa toàn quyền (account testnet có ≥2 khóa toàn quyền); kết nối ví mà không tạo function-call key mới. Kết quả quyết phạm vi GĐ8 và T6 | |
 | T7: implicit và account `0x...` | |
 | Cách Meteor sao lưu khóa ML-DSA | |
 | Đo: tỉ lệ DAO cần ≥2 phiếu; đề xuất thường chờ bao lâu | |
@@ -902,14 +911,14 @@ Ghi rõ trong README: agent không chấm điểm, mọi kết luận từ rule;
 | Tạo bot `@KeyDoctorOnCallBot`; kiểm handle X, GitHub, `keydoctor.near` / `.testnet` | |
 | Tài khoản Cloudflare chung, D1 | |
 | Giao diện mở đề xuất Sputnik testnet / mainnet (`PROPOSAL_UI_URL_TEMPLATE`) | |
-| Kiểm form nộp bài: một hay nhiều track (T8) | |
+| Kiểm form nộp bài: một hay nhiều track (T8) | **Xong**: được chọn nhiều track |
 | Phỏng vấn 2 đến 3 đội treasury | |
 
 ---
 
 ## 14. Nộp bài
 
-Ba thứ được xem: trường `idea` (20 đến 2000 ký tự), README đọc được bằng máy kiểu "làm X → thấy Y" (giám khảo AI là Claude Code và Codex), bài demo trên X ghi "built at NEAR HACKATHON". Không sửa được sau khi nộp. Track `social`.
+Ba thứ được xem: trường `idea` (20 đến 2000 ký tự), README đọc được bằng máy kiểu "làm X → thấy Y" (giám khảo AI là Claude Code và Codex), bài demo trên X ghi "built at NEAR HACKATHON". Không sửa được sau khi nộp. Tracks: `social`, `security`. Chi tiết luật, danh sách việc bắt buộc và các trường của form: `near-hackathon.md`.
 
 **README phải có:**
 
@@ -917,6 +926,8 @@ Ba thứ được xem: trường `idea` (20 đến 2000 ký tự), README đọc
 - **Bằng chứng (P1):** kết quả chạy ngược rule canh đề xuất trên 12 tháng lịch sử ("nếu On Call chạy từ năm ngoái, đã cảnh báo X đề xuất"), kèm tỉ lệ báo động giả và giới hạn (RPC không thấy khóa đã xóa; phải dùng NearBlocks).
 - Cách chạy: `npm test`; quét một DAO testnet; `curl` vào `diagnose` ra cùng kết luận với dashboard; `scripts/demo-testnet` rồi `/run-check` thấy cảnh báo.
 - Mục "Agent": cắm MCP vào Claude Code, ví dụ dùng.
+- Nêu các gợi ý track đã dùng: Sputnik DAO, Trezu (`social`); function-call key (`security`).
+- Liệt kê thư viện, template, code do AI viết, dữ liệu chuẩn bị trước (luật Q-005). File LICENSE (MIT).
 - Mục "Giới hạn": DAO 1 phiếu chỉ báo sau sự việc; độ trễ tối đa bằng chu kỳ cron; chỉ báo được chat đã đăng ký; khóa thêm rồi xóa giữa hai lần quét không thấy; tuổi khóa là ước lượng.
 
 **Thông điệp lượng tử:** không có máy lượng tử nào phá được khóa hôm nay. Lý do làm ngay: chuyển đổi khóa mất nhiều năm, trên NEAR mọi public key đều công khai, số liệu cho thấy gần như chưa ai dọn khóa cũ. Không dùng giọng dọa.
@@ -998,7 +1009,7 @@ Ba thứ được xem: trường `idea` (20 đến 2000 ký tự), README đọc
 2. **Khám (35 giây):** dashboard với DAO testnet; council, hồ sơ, lý do từng khóa. Bấm "Nhận cảnh báo qua Telegram", thêm bot vào nhóm council.
 3. **On Call (60 giây):** DAO testnet cần 2 phiếu. Tạo đề xuất chuyển tiền. Thành viên A bị "chiếm" (thêm khóa toàn quyền mới), A bỏ phiếu. `/run-check`. Nhóm Telegram nhận cảnh báo nêu tên người chưa bỏ phiếu. Thành viên B từ chối. Thêm cảnh đề xuất `add_member_to_role` cũng bị báo.
 4. **Bằng chứng (25 giây):** kết quả chạy ngược trên lịch sử (nếu có). Không có thì dùng thời lượng này cho `/check` và `/changes` ngay trên bot.
-5. **Dọn khóa (25 giây):** làm nhanh trong Meteor, quét lại, cờ chuyển xanh.
+5. **Dọn khóa (25 giây):** trên dashboard tick các khóa app thừa, ký một lần trong ví là xóa cả lô; bật ML-DSA trong Meteor; quét lại, cờ chuyển xanh.
 6. **Chốt (15 giây):** "Key Doctor khám khóa cho council, và trực cả lúc bạn ngủ."
 
 ---
@@ -1009,7 +1020,7 @@ Ba thứ được xem: trường `idea` (20 đến 2000 ký tự), README đọc
 - Skill / MCP cho agent tích hợp trong near.com, khi nền tảng này mở cho tool bên ngoài.
 - Liên kết Telegram với account NEAR bằng chữ ký để nhắc đích danh.
 - Cảnh báo qua Discord, email; theo dõi gần thời gian thực qua indexer.
-- Dọn khóa trong app qua Meteor SDK; cờ Admin toàn mạng (#16); màn trước/sau (#17).
+- Thêm khóa ML-DSA ngay trong dashboard (khi wallet-selector hỗ trợ ML-DSA, hoặc qua Meteor SDK); cờ Admin toàn mạng (#16); màn trước/sau (#17).
 - Tích hợp vào ví, Trezu, NEAR Business (kể cả treasury confidential).
 
 ---
@@ -1019,25 +1030,24 @@ Ba thứ được xem: trường `idea` (20 đến 2000 ký tự), README đọc
 | # | Câu hỏi | Hạn |
 |---|---|---|
 | Q1 | Ba rule đề xuất (T5)? Ngưỡng `FA_BOT_LIKE`? | 31/10 |
-| Q2 | Bỏ đăng nhập NEP-413 (T6)? (sau #14) | 31/10 |
+| Q2 | Meteor có cho ký `DeleteKey` (khóa app, khóa toàn quyền) qua wallet-selector không? (T6, GĐ8) | 31/10 |
 | Q3 | Implicit và account `0x...` (T7)? | 31/10 |
 | Q4 | Cách xác định council (`can_approve_transfer`)? | 31/10 |
 | Q5 | `messages` cần cả `vi` và `en`, hay MVP chỉ `en`? | 31/10 |
-| Q6 | Form cho chọn một hay nhiều track (T8)? | 31/10 |
 | Q8 | Đề xuất thường chờ bao lâu? Có cần rút cron dưới 15 phút? | 31/10 |
 | Q9 | Giao diện mở đề xuất trên testnet / mainnet? | 31/10 |
 | Q10 | Chạy ngược lịch sử khả thi tới đâu với NearBlocks? | 4/11 |
 
-(Q7 đã đóng: xác thực MCP bằng header Bearer.)
+(Đã đóng: Q6, được chọn nhiều track; Q7, xác thực MCP bằng header Bearer.)
 
 ---
 
 ## 17. Hướng dẫn cho Claude Code
 
-1. **Đọc trước:** file này, `usecase.md`, rồi `proposal-key-doctor.md`.
+1. **Đọc trước:** file này, `usecase.md`, `near-hackathon.md`, rồi `proposal-key-doctor.md`. Đọc thêm bản HACKATHON.md trực tiếp tại nearhackathon.com.
 2. **Làm theo thứ tự giai đoạn ở mục 13.3.** Không bắt đầu một giai đoạn khi giai đoạn nó phụ thuộc chưa đạt tiêu chí "xong khi". Hai phiên song song chỉ được làm các giai đoạn mục 13.4 cho phép.
 3. **Định dạng dữ liệu:** nguồn chuẩn `packages/key-doctor/src/types.ts` (mục 4). Không tự đổi; đổi thì tăng `schema_version`, ghi rõ trong commit.
-4. **Không bao giờ:** ký giao dịch; ghi private key, seed phrase, token vào repo; dùng LLM trong sản phẩm; tạo bảng xếp hạng account; dùng tên DAO hoặc account mainnet thật trong ví dụ, fixture, demo.
+4. **Không bao giờ:** ký giao dịch thay người dùng (dashboard chỉ dựng giao dịch, ví ký); xóa khóa toàn quyền cuối cùng; ghi private key, seed phrase, token vào repo; dùng LLM trong sản phẩm; tạo bảng xếp hạng account; dùng tên DAO hoặc account mainnet thật trong ví dụ, fixture, demo.
 5. **Thư viện `key-doctor` chỉ dùng `fetch`.** `checkProposals` không lưu, không gửi.
 6. **Test bắt buộc:** mọi rule, `diffReports`, `checkProposals` (fixture `get_proposal`), render tin Telegram. Chạy `npm test` trước khi commit.
 7. **Mốc so sánh:** chỉ job UC7 và lần đăng ký đầu được ghi `snapshots`. `/check`, `diagnose` không đụng D1; `/changes`, `compare` mặc định không dời mốc.
