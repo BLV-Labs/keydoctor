@@ -10,7 +10,7 @@
 
 S1, then S2, then S3, then S4 (`docs/design/gd1-scan.md` line 259). One builder per slice. No file is edited in parallel. All `src/` paths are under `packages/key-doctor/src/`. All `fixtures/` paths are under `packages/key-doctor/fixtures/`. Read the builder notes in `design.md` first.
 
-### Step 1: S1 `scanAccount`, key and account rules, live-run script
+### Step 1: S1 `scanAccount`, key and account rules, live-run script (built)
 - **Files**:
   - `src/rpc.ts` (`block`, `viewAccessKeyList`, `viewAccount`)
   - `src/errors.ts`, `src/parse.ts`, `src/age.ts`, `src/messages.ts`

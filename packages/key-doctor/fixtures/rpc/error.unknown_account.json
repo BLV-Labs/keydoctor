@@ -1,0 +1,17 @@
+{
+  "jsonrpc": "2.0",
+  "id": "kd",
+  "error": {
+    "code": -32000,
+    "message": "Server error",
+    "data": "account missing.kd-demo.testnet does not exist while viewing",
+    "name": "HANDLER_ERROR",
+    "cause": {
+      "name": "UNKNOWN_ACCOUNT",
+      "info": {
+        "requested_account_id": "missing.kd-demo.testnet",
+        "block_height": 182340111
+      }
+    }
+  }
+}
