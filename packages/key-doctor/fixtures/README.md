@@ -45,7 +45,7 @@ Owner runs `packages/key-doctor/scripts/scan.ts --save-raw`. Only that run chang
 | # | Recalled value | Status | Account or DAO | Block height |
 |---|---|---|---|---|
 | 1 | Cause names `UNKNOWN_ACCOUNT`, `UNKNOWN_BLOCK`, `NO_CONTRACT_CODE`, `CONTRACT_EXECUTION_ERROR` | partial (2026-10-29): `UNKNOWN_ACCOUNT` and `UNKNOWN_BLOCK` confirmed. Differs: `CONTRACT_EXECUTION_ERROR` was not returned. `get_policy` on a non-DAO contract answered with the `result.error` string `wasm execution failed with error: MethodResolveError(MethodNotFound)`, which `rpc.ts` already maps to `NOT_A_DAO` (test `scan-dao.test.ts` "result.error string"). `NO_CONTRACT_CODE` is still unchecked: the run used the literal placeholder `<acc>.testnet` and got `PARSE_ERROR` | `kd-does-not-exist-9z.testnet` (missing), `wrap.testnet` (non-DAO contract) | final (not recorded) |
-| 2 | An empty key list (not `UNKNOWN_ACCOUNT`) for a missing account | unconfirmed | | |
+| 2 | An empty key list (not `UNKNOWN_ACCOUNT`) for a missing account | confirmed (2026-10-29): `view_access_key_list` answered with no `error` and no `result.error`. This is why `scanAccount` follows an empty list with `view_account` | `kd-does-not-exist-9z.testnet` (missing) | final (not recorded) |
 | 3 | `mldsa65:` key prefix | unconfirmed | | |
 | 4 | `GENESIS_HEIGHT` mainnet 9820210, testnet 42376888 | confirmed (2026-10-29, `EXPERIMENTAL_genesis_config`: testnet 42376888, mainnet 9820210) | n/a (no account) | n/a (genesis config) |
 | 5 | `policy.rs` permission matching and vote-policy fallback | unconfirmed | | |
