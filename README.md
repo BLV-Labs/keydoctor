@@ -40,7 +40,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
    pnpm --filter dashboard dev
    ```
 
-   Open `http://localhost:8788/?target=verdict-panel-p8n6.sputnik-v2.testnet`. The scan runs in your browser against public NEAR RPC. You see the council report: status, council size and votes needed for a transfer, members sorted by risk, voting rules and the limits of the scan. Click a member to see its key profile. On an account, **Open cleanup plan** shows the cleanup steps. **Get Telegram alerts** shows the `/watch` command to copy.
+   Open `http://localhost:8788/?target=verdict-panel-p8n6.sputnik-v2.testnet`. The scan runs in your browser against public NEAR RPC. You see the council report: status, council size and votes needed for a transfer, members sorted by risk, voting rules and the limits of the scan. The **Testnet / Mainnet** switch on the home page picks the network for a name typed without a `.near` / `.testnet` suffix (and for implicit accounts); a typed suffix always wins. Mainnet shows no example names. Click a member to see its key profile. On an account, **Open cleanup plan** shows the cleanup steps. **Get Telegram alerts** shows the `/watch` command to copy.
 
 3. **Ask the MCP server for the same verdict**
 
@@ -80,6 +80,14 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
    ```
 
    The first command pins the latest final block. The second reruns the scan at a fixed block. The script prints a Markdown table and writes `data/network-stats.json` and `data/network-stats.md`, with aggregates only and no account names.
+
+7. **Benchmark the data sources** (NEAR RPC endpoints vs the NearBlocks API)
+
+   ```bash
+   pnpm bench --account <your-account>.testnet --dao verdict-panel-p8n6.sputnik-v2.testnet --runs 5
+   ```
+
+   The script prints p50/p95 latency per call, the time of a full scan through each RPC, and, with `--burst N`, when each source starts answering 429. Method, published rate limits and why NearBlocks cannot replace RPC: [`docs/data-sources-benchmark.md`](docs/data-sources-benchmark.md).
 
 ## Status
 
