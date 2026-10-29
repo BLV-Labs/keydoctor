@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-Key Doctor ("Key Doctor On Call") is a NEAR HACKATHON entry (build window 1–14 Nov 2026, deadline 23:59 UTC 14/11). The repo currently holds **only spec documents (in Vietnamese), no code yet**. All code is written by Claude Code from those specs.
+Key Doctor ("Key Doctor On Call") is a NEAR HACKATHON entry (build window 1–14 Nov 2026, deadline 23:59 UTC 14/11). All code is written by Claude Code from the Vietnamese spec documents. **Current state, owner tasks and the next Claude tasks live in `docs/stories/backlog.md` (section "Build Order"): read it first when you resume.** GĐ0–GĐ10 and GĐ12 are built; most need a deploy or a live testnet run to count as done.
 
 Spec documents and precedence when they conflict: **`docs/final-idea.md` > `docs/usecase.md` > `proposal-key-doctor.md`** (v2, not in the repo). `docs/near-hackathon.md` holds the contest rules and the submission checklist. Read `docs/final-idea.md` first. §17 is the Claude Code instruction list, §13.3 is the build-phase table.
 
