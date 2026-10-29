@@ -47,7 +47,7 @@ Owner runs `packages/key-doctor/scripts/scan.ts --save-raw`. Only that run chang
 | 1 | Cause names `UNKNOWN_ACCOUNT`, `UNKNOWN_BLOCK`, `NO_CONTRACT_CODE`, `CONTRACT_EXECUTION_ERROR` | unconfirmed | | |
 | 2 | An empty key list (not `UNKNOWN_ACCOUNT`) for a missing account | unconfirmed | | |
 | 3 | `mldsa65:` key prefix | unconfirmed | | |
-| 4 | `GENESIS_HEIGHT` mainnet 9820210, testnet 42376888 | unconfirmed | | |
+| 4 | `GENESIS_HEIGHT` mainnet 9820210, testnet 42376888 | confirmed (2026-10-29, `EXPERIMENTAL_genesis_config`: testnet 42376888, mainnet 9820210) | n/a (no account) | n/a (genesis config) |
 | 5 | `policy.rs` permission matching and vote-policy fallback | unconfirmed | | |
 | 6 | `to_weight` formula | unconfirmed | | |
 | 7 | `DEFAULT_RPC_URL` values answer JSON-RPC | confirmed (2026-10-29, `block` with `finality: final`) | n/a (no account) | testnet 275336292, mainnet 222159657 |
