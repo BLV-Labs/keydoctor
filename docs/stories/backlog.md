@@ -12,12 +12,13 @@ Next steps from `docs/final-idea.md` §13.3 and the current repo state. Critical
 
 Current state:
 - GĐ0 is done.
+- GĐ2 is done (`packages/key-doctor/test/diff.test.ts`).
 - GĐ1 is done: the live-run checklist was recorded on 2026-10-29.
 - GĐ7 is built. It is not deployed yet.
 
 | Step | Phase | Work | Why now / gate |
 |---|---|---|---|
-| 1 | GĐ2 | `diffReports`, `toSummary` (pure, tests for every §4.3 case) | GĐ3 needs it; small |
+| 1 | GĐ2 ✅ | `diffReports`, `toSummary` (pure, tests for every §4.3 case) | Done 2026-10-29 |
 | 2 | GĐ5 | `checkProposals` + `get_proposal` fixture tests | Depends only on GĐ1; core of the main demo scene |
 | 3 | GĐ3 | Worker: MCP `diagnose`, `compare`, Bearer auth, D1 `snapshots` | Critical path |
 | 4 | GĐ4 | Bot: webhook, `/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help`, `subscriptions` | Critical path. **Checkpoint 5/11:** GĐ1–4 must run end to end |
