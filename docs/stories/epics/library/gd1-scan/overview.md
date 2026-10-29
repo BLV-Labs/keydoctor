@@ -24,7 +24,7 @@ flowchart TD
 
 The full flow, with every error edge, is `docs/design/gd1-scan.md` §1. The §3 tables of that design win over both diagrams.
 
-- **Status**: in progress (S1 to S3 built; S4 planned)
+- **Status**: built (S1-S4). Done after the owner's §11 live run (decision 0001).
 - **Lane**: high-risk (`docs/FEATURE_INTAKE.md`)
 - **Risk factors**: `packages/key-doctor/src/rpc.ts` is a `high_risk` path in `.claude/dev-team.md`. It fetches user-supplied targets. Every later phase (GĐ3 Worker, GĐ4 bot, GĐ10 dashboard) consumes its report. Error text can leak an RPC URL that holds a provider API key.
 
@@ -60,7 +60,8 @@ Recorded in `docs/decisions/0001-gd1-done-when.md` and `docs/decisions/0002-gd1-
 | A council of 22 or more throws `LIMIT_EXCEEDED`. A partial scan goes to the Roadmap. | owner, 2026-10-29 |
 | No per-member callback in GĐ1. The `buildMember()` seam stays instead. | orchestrator, on the red-team's side |
 | `members_ok` counts `ok` plus `note` (`docs/final-idea.md:311`) | orchestrator |
-| `FA_MANY` suppresses `FA_MULTIPLE`. `MAX_ROLES` is 50. `MAX_KEYS` is 100. | Lead Dev design, decider unchecked for the owner |
+| `FA_MANY` suppresses `FA_MULTIPLE`. `MAX_ROLES` is 50. `MAX_KEYS` is 100. | owner, 2026-10-29 ("Accept all (Recommended)" in chat) |
+| `MAX_GROUP_ENTRIES` is 500, the total of `Group` entries across all roles. Over it, the scan throws `LIMIT_EXCEEDED` (roles variant) before any key-list read. | orchestrator, from the 3.7 security review. The owner has not answered. |
 
 ## Scope
 
@@ -127,6 +128,40 @@ Recorded in `docs/decisions/0001-gd1-done-when.md` and `docs/decisions/0002-gd1-
 |---|---|---|---|
 | Recalled RPC cause names, genesis heights or Sputnik `policy.rs` rules are wrong | med | high | The owner's live run checks each item of design §11. GĐ1 stays "built" until it is recorded. |
 | Error text leaks an RPC URL with an API key, or RPC body text | low | high | Fixed text per code. `KdErrorException` never sets `cause` (design §9). |
-| A large council or key list exhausts the Workers subrequest cap | med | med | `MAX_MEMBERS` 21, `MAX_KEYS` 100, `MAX_ROLES` 50, `REQUEST_BUDGET` 45 per scan (design §9). |
+| A large council or key list exhausts the Workers subrequest cap | med | med | `MAX_MEMBERS` 21, `MAX_KEYS` 100, `MAX_ROLES` 50, `MAX_GROUP_ENTRIES` 500, `REQUEST_BUDGET` 45 per scan (design §9). |
 | A worst-case scan (300 s at concurrency 4) exceeds the `waitUntil` window in GĐ4 | med | med | GĐ4 measures it (design §9 item 7). |
 | The Worker passes user input into `opts.rpcUrl` (server-side request forgery) | low | high | Design §9 item 3. GĐ3 and GĐ4 callers carry the note. |
+
+## As-built
+
+Branch `claude/peaceful-maxwell-lk347b`. Builders finished slices S1 to S4. GĐ1 is "built", not "done": the owner's live testnet run (design §11) is still open (decision 0001).
+
+| Commit | Content |
+|---|---|
+| 90422b8 | S1: `rpc.ts`, `scanAccount`, key and account rules, live-run script |
+| be3dc7c | S2: function-call rules and receiver checks |
+| 005f742 | S3: `scanDao`, DAO rules, caps and concurrency |
+| e364beb | Cleanups and the `MAX_GROUP_ENTRIES` cap (500, from the 3.7 security review) |
+| 949aade | Tests: S1 and S2 proof |
+| f5b6253 | Tests: S3 `scanDao` specs and the S4 rule corpus |
+| f07a82f | `docs/TEST_MATRIX.md` rows and whole-suite evidence |
+
+Proof: `docs/TEST_MATRIX.md` rows 38 to 44. Row 44 ("GĐ1 done") stays `planned` until the owner records the live run.
+
+Change against the design: the scan has one more cap, `MAX_GROUP_ENTRIES` (`packages/key-doctor/src/rules/thresholds.ts`). The design §9 table and decision 0002 item 9 record it.
+
+## Harness Delta
+
+Answers to the `AGENTS.md` "Done Definition" questions for this story.
+
+| Question | Answer |
+|---|---|
+| Is the requested change complete, or does a doc name the blocker? | Built. The blocker for "done" is documented: the owner's §11 live run (decision 0001, `TEST_MATRIX.md` row 44). |
+| Does the governing PRD requirement match what shipped? | Partly. The §13.3 GĐ1 "Xong khi" text is stale. A dated English note under the table points to decision 0001. The human text stays unchanged. `MAX_GROUP_ENTRIES` is not in the PRD. Design §9 and decision 0002 item 9 record it. |
+| Are docs, stories and test matrix entries current? | Yes: this packet, `docs/stories/backlog.md`, `docs/TEST_MATRIX.md` rows 38 to 44, decision 0002, design §9. |
+| Does source code follow `docs/CODING_RULES.md`? | Yes, per the Phase 4 code review (91). |
+| Were the validation commands run? | Yes: `npm test` and `npm run typecheck`. 279 pass, 0 fail, 0 skipped. `src/` line coverage 100%. |
+| Was observable behavior run on the local stack? | No. NOT RUN: there is no route to NEAR RPC from the build environment, and `verify_skill` is `none`. The owner's live run covers it. |
+| Were missing harness capabilities added to `docs/HARNESS_BACKLOG.md`? | Yes: the duplicate RPC stub helpers, plus the follow-ups for GĐ2, GĐ3, GĐ4 and GĐ7. |
+| Does the final response say what changed and what was not attempted? | Yes, in the Phase 5 report. Not attempted: the live run, and the README Limitations list (GĐ14). |
+

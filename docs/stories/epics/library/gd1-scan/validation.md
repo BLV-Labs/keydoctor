@@ -69,19 +69,26 @@ S3 changes `test/fixtures.test.ts:60-63`. The invariant "member status is not ab
 - [ ] `--save-raw` refuses mainnet (S1-AC8).
 - Auth checks, SQL injection and rate limiting do not apply. The library has no route and no database.
 
-## Evidence Template
+## Evidence
 
 ```
-[YYYY-MM-DD] <command>: <result>
+[2026-10-29] npm test: 279 pass, 0 fail, 0 skipped
+[2026-10-29] node --test --experimental-test-coverage: packages/key-doctor/src/ lines 100%
+[2026-10-29] npm run typecheck: pass
+[2026-10-29] Phase 2.7 design gate: PO 91, red-team 88 (items closed in 9d717f2)
+[2026-10-29] Phase 3.7 security review: 90
+[2026-10-29] Phase 4 code review: 91; proof verdict: 93
+[2026-10-29] Phase 3.65 live check: NOT RUN (no route to NEAR RPC from the build environment)
+[2026-10-29] E2E owner live run (design §11): NOT RUN (open; decision 0001)
 ```
 
-(Filled in after each proof level is run.)
+Per-AC proof sits in `docs/TEST_MATRIX.md` rows 38 to 44.
 
 ## Sign-Off
 
-- [ ] All proof levels pass
-- [ ] No critical findings unresolved
-- [ ] `docs/TEST_MATRIX.md` rows for gd1-scan updated
-- [ ] Security review complete (high-risk)
-- [ ] Lead dev approved
+- [x] All automated proof levels pass (unit, integration, platform)
+- [x] No critical findings unresolved (the open low findings are in `docs/HARNESS_BACKLOG.md`)
+- [x] `docs/TEST_MATRIX.md` rows for gd1-scan updated (rows 38 to 43 `implemented`, row 44 `planned`)
+- [x] Security review complete (high-risk): 3.7 score 90, `MAX_GROUP_ENTRIES` added from it
+- [x] Lead dev approved (code review 91)
 - [ ] Owner live run recorded (GĐ1 done, not only built)

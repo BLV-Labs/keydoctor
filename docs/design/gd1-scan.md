@@ -209,6 +209,7 @@ Cap numbers in messages come from `thresholds.ts`.
 | `MAX_MEMBERS` | 21 | throw `LIMIT_EXCEEDED`, not retryable, before any key-list read |
 | `MAX_ROLES` | 50 per policy | throw `LIMIT_EXCEEDED` before council build |
 | `MAX_KEYS` | 100 per account | target: throw `LIMIT_EXCEEDED`; member: error `LIMIT_EXCEEDED`, `keys: []` |
+| `MAX_GROUP_ENTRIES` | 500 `Group` entries in total across all roles | throw `LIMIT_EXCEEDED` (roles variant) before any key-list read |
 | `concurrency` | default 4, clamped to 1..8 | |
 
 5. Request count per scan: `1 (block) + 1 (get_policy, DAO only) + M (key lists) + E (empty-list follow-ups, E ≤ M) + R (receivers)`. Worst case without receivers: `2 + 21 + 21 = 44 ≤ 45`. Receivers get `REQUEST_BUDGET - used` slots; the rest are skipped in sorted id order with the limitation line (`usecase.md:147`). No path retries, so the count has no hidden extra.
@@ -216,6 +217,7 @@ Cap numbers in messages come from `thresholds.ts`.
 7. Worst-case time, every request at the 15 s timeout, concurrency 4: block + get_policy in sequence (30 s); member tasks (key list then follow-up, ≤ 30 s each) take `ceil(21/4) = 6` rounds (180 s); receivers (≤ `45 - 23 = 22`) take 6 rounds (90 s). Bound at concurrency c: `30 + ceil(21/c)×30 + ceil(22/c)×15` s per scan, excluding the caller's own work: 300 s at 4 (default), 165 s at 8, worst case 990 s at 1 (`30 + 21×30 + 22×15`). GĐ4 risk: this, and even one 15 s timeout, may exceed the Cloudflare `waitUntil` window after the webhook's 200; GĐ4 measures it.
 8. Policy bytes are decoded with `TextDecoder` and `JSON.parse` in try/catch, then shape-checked. A bad shape throws `NOT_A_DAO`.
 9. Owner decision (2026-10-29): a council of 22 or more members throws `LIMIT_EXCEEDED`, as designed. The GĐ14 README lists the 21-member cap under Limitations; a partial scan of larger councils goes to the Roadmap.
+10. `MAX_GROUP_ENTRIES` (500, `packages/key-doctor/src/rules/thresholds.ts`) came from the 3.7 security review. A hostile policy can hold a large non-council group, and the scan parses every `Group` entry. The cap bounds that work. The GĐ14 README lists it under Limitations next to the 21-member cap. Decider: orchestrator (decision 0002 item 9).
 
 ## 10. Slices
 

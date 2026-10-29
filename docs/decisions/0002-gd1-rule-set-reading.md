@@ -20,7 +20,8 @@
 | 5 | A council of 22 or more throws `LIMIT_EXCEEDED` (`MAX_MEMBERS` 21). A partial scan goes to the Roadmap, and the GĐ14 README lists the cap under Limitations. | §9 item 9 | owner, 2026-10-29 |
 | 6 | No per-member callback in GĐ1. Every member goes through the pure `buildMember()` seam, so GĐ7 can add an optional `ScanOptions` field later. | §2 | orchestrator, on the red-team's side |
 | 7 | `members_ok` counts members with status `ok` or `note`, so `members_high + members_cleanup + members_ok = members_scanned` (`docs/final-idea.md:311`). | §7 | orchestrator |
-| 8 | `FA_MANY` suppresses `FA_MULTIPLE`. `MAX_ROLES` is 50 per policy. `MAX_KEYS` is 100 per account. | §6, §9 | Lead Dev design. Decider unchecked for the owner. |
+| 8 | `FA_MANY` suppresses `FA_MULTIPLE`. `MAX_ROLES` is 50 per policy. `MAX_KEYS` is 100 per account. | §6, §9 | owner, 2026-10-29 ("Accept all (Recommended)" in chat) |
+| 9 | `MAX_GROUP_ENTRIES` is 500 `Group` entries in total across all roles. Over it, the scan throws `LIMIT_EXCEEDED` (roles variant) before any key-list read. | §9 | orchestrator, from the 3.7 security review. The owner has not answered. |
 
 ## Alternatives Rejected
 
@@ -40,6 +41,6 @@
 **Tradeoffs**:
 - Age is an estimate. The limitation line says so in every report.
 - A DAO with more than 21 council members gets no report in GĐ1.
-- Item 8 has no owner ruling. The owner can override it, which bumps `RULESET_VERSION`.
+- Item 9 has no owner ruling. The owner can override it, which bumps `RULESET_VERSION`.
 
-**Revisit trigger**: the owner rules on item 8. Or the §11 live run shows a different block time or policy rule. Or a target DAO has more than 21 council members.
+**Revisit trigger**: the owner rules on item 9. Or the §11 live run shows a different block time or policy rule. Or a target DAO has more than 21 council members.

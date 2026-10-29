@@ -45,7 +45,7 @@ S1, then S2, then S3, then S4 (`docs/design/gd1-scan.md` line 259). One builder 
 - **Changes**: design §3, §4, §6 (DAO rules), §7, §9.
 - **ACs**: S3-AC1 to S3-AC6.
 
-### Step 4: S4 rule corpus
+### Step 4: S4 rule corpus (built)
 - **Files**:
   - `fixtures/corpus/<RULE_ID>.pos.json` and `fixtures/corpus/<RULE_ID>.neg.json` (26 files)
   - `fixtures/corpus/LIMIT_NON_GROUP_ADMIN.json`
@@ -56,7 +56,7 @@ S1, then S2, then S3, then S4 (`docs/design/gd1-scan.md` line 259). One builder 
 ## Post-Implementation
 
 - [ ] The owner runs the design §11 live-run checklist and records it in `fixtures/README.md`. Until then GĐ1 is "built", not "done".
-- [ ] Story status updated in `overview.md` and `docs/stories/backlog.md`.
+- [x] Story status updated in `overview.md` and `docs/stories/backlog.md` (status "built").
 
 ## Dependencies
 
