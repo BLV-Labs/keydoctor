@@ -24,7 +24,7 @@ flowchart TD
 
 The full flow, with every error edge, is `docs/design/gd1-scan.md` §1. The §3 tables of that design win over both diagrams.
 
-- **Status**: in progress (S1, S2 built; S3, S4 planned)
+- **Status**: in progress (S1 to S3 built; S4 planned)
 - **Lane**: high-risk (`docs/FEATURE_INTAKE.md`)
 - **Risk factors**: `packages/key-doctor/src/rpc.ts` is a `high_risk` path in `.claude/dev-team.md`. It fetches user-supplied targets. Every later phase (GĐ3 Worker, GĐ4 bot, GĐ10 dashboard) consumes its report. Error text can leak an RPC URL that holds a provider API key.
 

@@ -4,7 +4,7 @@ import { FA_BOT_LIKE_USES, FA_OLD_DAYS } from "./thresholds.ts";
 
 export interface RuleHit {
   rule_id: MessageRuleId;
-  scope: "key" | "account";
+  scope: "key" | "account" | "dao";
   /** Key-scope hits: the key. */
   public_key?: string;
   /** Account-scope hits: the keys that carry this rule id in `flag_ids`. */

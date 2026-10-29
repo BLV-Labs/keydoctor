@@ -33,7 +33,7 @@ S1, then S2, then S3, then S4 (`docs/design/gd1-scan.md` line 259). One builder 
 - **Changes**: design §3 (receiver rows), §6 (FC rules), §9 item 5.
 - **ACs**: S2-AC1 to S2-AC3.
 
-### Step 3: S3 `scanDao`
+### Step 3: S3 `scanDao` (built)
 - **Files**:
   - `src/rpc.ts` (`callFunction`)
   - `src/rules/dao.ts`, `src/rules/index.ts`, `src/messages.ts`

@@ -17,23 +17,33 @@ export interface Rpc {
   viewAccessKeyList(accountId: string, blockId: number): Promise<RawKey[]>;
   /** Resolves when the account exists; a missing account throws NOT_FOUND. */
   viewAccount(accountId: string, blockId: number): Promise<void>;
+  /**
+   * Calls a view method and returns its JSON result. Contract-level failures
+   * (no code, execution error, undecodable result) throw NOT_A_DAO: only get_policy uses this.
+   */
+  callFunction(accountId: string, blockId: number, methodName: string, args: unknown): Promise<unknown>;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /** Error text is fixed per code: never the URL, the body, `error.data` or `error.message`. */
-function unwrap(body: unknown, blockPinnedByCaller: boolean): Record<string, unknown> {
+function unwrap(body: unknown, blockPinnedByCaller: boolean, contractFailureIsNotADao: boolean): Record<string, unknown> {
   if (!isRecord(body)) throw fail("RPC_ERROR");
   if ("error" in body && body.error !== undefined && body.error !== null) {
     const cause = isRecord(body.error) ? body.error.cause : undefined;
     const name = isRecord(cause) && typeof cause.name === "string" ? cause.name : "";
     if (name === "UNKNOWN_ACCOUNT") throw fail("NOT_FOUND");
     if (name === "UNKNOWN_BLOCK") throw fail("RPC_ERROR", { retryable: !blockPinnedByCaller });
+    if (contractFailureIsNotADao && (name === "NO_CONTRACT_CODE" || name === "CONTRACT_EXECUTION_ERROR")) {
+      throw fail("NOT_A_DAO");
+    }
     throw fail("RPC_ERROR", { retryable: false });
   }
   const result = body.result;
   if (!isRecord(result)) throw fail("RPC_ERROR");
-  if (typeof result.error === "string") throw fail("RPC_ERROR", { retryable: false });
+  if (typeof result.error === "string") {
+    throw contractFailureIsNotADao ? fail("NOT_A_DAO") : fail("RPC_ERROR", { retryable: false });
+  }
   return result;
 }
 
@@ -44,6 +54,7 @@ export function createRpc(cfg: { url: string; fetchImpl?: FetchLike }): Rpc {
     method: string,
     params: Record<string, unknown>,
     blockPinnedByCaller = false,
+    contractFailureIsNotADao = false,
   ): Promise<Record<string, unknown>> {
     const ctl = new AbortController();
     // Stays armed until the body is parsed, so a stalled body read also times out.
@@ -69,7 +80,7 @@ export function createRpc(cfg: { url: string; fetchImpl?: FetchLike }): Rpc {
       } catch {
         throw fail("RPC_ERROR");
       }
-      return unwrap(body, blockPinnedByCaller);
+      return unwrap(body, blockPinnedByCaller, contractFailureIsNotADao);
     } finally {
       clearTimeout(timer);
     }
@@ -102,6 +113,26 @@ export function createRpc(cfg: { url: string; fetchImpl?: FetchLike }): Rpc {
     async viewAccount(accountId, blockId) {
       const result = await call("query", { request_type: "view_account", block_id: blockId, account_id: accountId });
       if (typeof result.amount !== "string") throw fail("RPC_ERROR");
+    },
+
+    async callFunction(accountId, blockId, methodName, args) {
+      let binary = "";
+      for (const byte of new TextEncoder().encode(JSON.stringify(args))) binary += String.fromCharCode(byte);
+      const result = await call(
+        "query",
+        { request_type: "call_function", block_id: blockId, account_id: accountId, method_name: methodName, args_base64: btoa(binary) },
+        false,
+        true,
+      );
+      const bytes = result.result;
+      if (!Array.isArray(bytes) || !bytes.every((b) => Number.isInteger(b) && b >= 0 && b <= 255)) {
+        throw fail("NOT_A_DAO");
+      }
+      try {
+        return JSON.parse(new TextDecoder().decode(Uint8Array.from(bytes as number[]))) as unknown;
+      } catch {
+        throw fail("NOT_A_DAO");
+      }
     },
   };
 }

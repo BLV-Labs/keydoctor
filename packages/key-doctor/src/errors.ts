@@ -27,8 +27,8 @@ const TEXT: Record<KdErrorCode, Text> = {
     en: "The RPC node is rate limiting requests. Try again later. The risk is unknown, not low.",
   },
   LIMIT_EXCEEDED: {
-    vi: "Vượt giới hạn quét của Key Doctor.",
-    en: "This exceeds a Key Doctor scan limit.",
+    vi: `Vượt giới hạn quét của Key Doctor (tối đa ${MAX_KEYS} khóa mỗi account, ${MAX_MEMBERS} thành viên council, ${MAX_ROLES} role).`,
+    en: `This exceeds a Key Doctor scan limit (at most ${MAX_KEYS} keys per account, ${MAX_MEMBERS} council members, ${MAX_ROLES} roles).`,
   },
   UNAUTHORIZED: {
     vi: "Không có quyền thực hiện yêu cầu này.",

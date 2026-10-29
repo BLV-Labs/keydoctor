@@ -1,0 +1,17 @@
+{
+  "jsonrpc": "2.0",
+  "id": "kd",
+  "result": {
+    "block_hash": "9tQxk2WvLmR4nYc7HfDsB3ZpJeA8uTgN5oXrC6VbMa1E",
+    "block_height": 182340111,
+    "keys": [
+      {
+        "public_key": "mldsa65:21uXuVJUBxFYQzoxf649SWGgn6dp8ZpDXDLpMH78vDpFKPH2Nz9J1QikXAt6XRqfeH",
+        "access_key": {
+          "nonce": 175000000000004,
+          "permission": "FullAccess"
+        }
+      }
+    ]
+  }
+}

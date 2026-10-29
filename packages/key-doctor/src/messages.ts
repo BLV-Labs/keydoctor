@@ -1,5 +1,5 @@
 import type { Messages } from "./types.ts";
-import { BLOCK_TIME_MS, FA_OLD_DAYS } from "./rules/thresholds.ts";
+import { BLOCK_TIME_MS, FA_OLD_DAYS, MAX_KEYS } from "./rules/thresholds.ts";
 
 type Evidence = Record<string, unknown>;
 /** Chain-sourced ids the text may name; null when the id failed the account-id regex. */
@@ -133,6 +133,42 @@ const BUILDERS = {
       fix: "Revoke the key if you do not recognise it.",
     },
   }),
+  DAO_ADMIN: (e: Evidence): Messages => ({
+    vi: {
+      title: "Một thành viên đủ quyền đổi policy của DAO",
+      explain: `Chỉ cần ${num(e, "approvals_needed")} phiếu của account này là đề xuất đổi policy được thông qua.`,
+      fix: "Tăng ngưỡng bỏ phiếu cho các thay đổi policy, hoặc bỏ quyền này khỏi role.",
+    },
+    en: {
+      title: "One member can change the DAO policy",
+      explain: `${num(e, "approvals_needed")} vote from this account is enough to pass a policy change.`,
+      fix: "Raise the vote threshold for policy changes, or remove this permission from the role.",
+    },
+  }),
+  FC_DAO_VOTE: (_e: Evidence, s: Subject): Messages => ({
+    vi: {
+      title: "Khóa ứng dụng có thể bỏ phiếu thay thành viên council",
+      explain: `Khóa function-call này trỏ vào DAO ${s.receiverId ?? "đang quét"} và gọi được act_proposal, nên có thể bỏ phiếu thay cho thành viên này.`,
+      fix: "Thu hồi khóa này, hoặc cấp lại khóa không gồm act_proposal.",
+    },
+    en: {
+      title: "App key can vote for a council member",
+      explain: `This function-call key points at ${s.receiverId ?? "the scanned DAO"} and may call act_proposal, so it can vote for this member.`,
+      fix: "Revoke the key, or issue one that does not include act_proposal.",
+    },
+  }),
+  COUNCIL_SMALL: (e: Evidence): Messages => ({
+    vi: {
+      title: "Council quá nhỏ",
+      explain: `Council chỉ có ${num(e, "council_size")} thành viên, nên mất một khóa là mất quyền kiểm soát DAO.`,
+      fix: "Cân nhắc thêm thành viên vào council.",
+    },
+    en: {
+      title: "Very small council",
+      explain: `The council has only ${num(e, "council_size")} member(s), so losing one key can lose control of the DAO.`,
+      fix: "Consider adding more council members.",
+    },
+  }),
   PQ_NONE: (_e: Evidence): Messages => ({
     vi: {
       title: "Chưa có khóa chống lượng tử",
@@ -152,3 +188,24 @@ export type MessageRuleId = keyof typeof BUILDERS;
 export function ruleMessages(ruleId: MessageRuleId, evidence: Evidence, subject: Subject = { receiverId: null }): Messages {
   return BUILDERS[ruleId](evidence, subject);
 }
+
+export type MemberErrorCode = "RPC_ERROR" | "RATE_LIMITED" | "INVALID_ACCOUNT_ID" | "LIMIT_EXCEEDED";
+
+const UNREAD = {
+  vi: "Không đọc được khóa của account này. Rủi ro chưa được xác định, không phải là thấp.",
+  en: "Could not read this account's keys. Its risk is unknown, not low.",
+};
+
+/** Fixed text for `members[].error`; no code implies low risk. */
+export const MEMBER_ERROR_TEXT: Record<MemberErrorCode, { vi: string; en: string }> = {
+  RPC_ERROR: UNREAD,
+  RATE_LIMITED: UNREAD,
+  INVALID_ACCOUNT_ID: UNREAD,
+  LIMIT_EXCEEDED: {
+    vi: `Account có hơn ${MAX_KEYS} khóa; Key Doctor chỉ quét tối đa ${MAX_KEYS}. Rủi ro chưa được xác định, không phải là thấp.`,
+    en: `This account has more than ${MAX_KEYS} keys; Key Doctor scans at most ${MAX_KEYS}. Its risk is unknown, not low.`,
+  },
+};
+
+export const missingMemberLimitation = (id: string): string =>
+  `Council member ${id} does not exist; anyone who creates it gains its vote.`;

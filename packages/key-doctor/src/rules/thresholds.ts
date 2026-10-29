@@ -46,6 +46,16 @@ export const FA_OLD_DAYS = 730;
 export const FA_BOT_LIKE_USES = 1000;
 export const COUNCIL_SMALL_MAX = 2;
 
+// A member who can pass a policy proposal alone is a DAO admin.
+export const ADMIN_LABELS = [
+  "policy",
+  "policy_add_or_update_role",
+  "policy_remove_role",
+  "policy_update_default_vote_policy",
+  "policy_update_parameters",
+] as const;
+export const ADMIN_APPROVALS = 1;
+
 // Key age from the nonce.
 export const BLOCK_TIME_MS = 1200;
 export const MS_PER_DAY = 86_400_000;

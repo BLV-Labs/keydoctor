@@ -99,3 +99,86 @@ export function toKeyInfo(raw: RawKey, network: Network, head: HeadBlock): KeyIn
     flag_ids: [],
   };
 }
+
+export type Threshold = { kind: "weight"; value: bigint } | { kind: "ratio"; n: bigint; d: bigint };
+
+export interface VotePolicy {
+  weightKind: string;
+  quorum: bigint;
+  /** Verbatim from get_policy, for `transfer_vote_policy`. */
+  rawThreshold: unknown;
+  threshold: Threshold;
+}
+
+export interface PolicyRole {
+  name: string;
+  kind: "everyone" | "group" | "member";
+  members: string[];
+  permissions: string[];
+  votePolicy: Record<string, VotePolicy>;
+}
+
+export interface Policy {
+  roles: PolicyRole[];
+  defaultVotePolicy: VotePolicy;
+  proposalBond: string;
+}
+
+const isDigits = (v: unknown): v is string => typeof v === "string" && /^\d+$/.test(v);
+
+function parseVotePolicy(raw: unknown): VotePolicy | null {
+  if (!isRecord(raw) || typeof raw.weight_kind !== "string") return null;
+  const q = raw.quorum;
+  const quorum = isDigits(q) ? BigInt(q) : typeof q === "number" && Number.isSafeInteger(q) && q >= 0 ? BigInt(q) : null;
+  if (quorum === null) return null;
+  const t = raw.threshold;
+  let threshold: Threshold;
+  if (isDigits(t)) threshold = { kind: "weight", value: BigInt(t) };
+  else if (
+    Array.isArray(t) &&
+    t.length === 2 &&
+    t.every((x) => Number.isSafeInteger(x) && x >= 0) &&
+    (t[1] as number) > 0
+  ) {
+    threshold = { kind: "ratio", n: BigInt(t[0] as number), d: BigInt(t[1] as number) };
+  } else return null;
+  return { weightKind: raw.weight_kind, quorum, rawThreshold: t, threshold };
+}
+
+function parseRole(raw: unknown): PolicyRole | null {
+  if (!isRecord(raw) || typeof raw.name !== "string") return null;
+  if (!Array.isArray(raw.permissions) || !raw.permissions.every((p) => typeof p === "string")) return null;
+  let kind: PolicyRole["kind"];
+  let members: string[] = [];
+  const k = raw.kind;
+  if (k === "Everyone") kind = "everyone";
+  else if (isRecord(k) && Array.isArray(k.Group) && k.Group.every((m) => typeof m === "string")) {
+    kind = "group";
+    members = k.Group as string[];
+  } else if (isRecord(k) && "Member" in k) kind = "member";
+  else return null;
+  const votePolicy: Record<string, VotePolicy> = {};
+  if (raw.vote_policy !== undefined) {
+    if (!isRecord(raw.vote_policy)) return null;
+    for (const [label, v] of Object.entries(raw.vote_policy)) {
+      const vp = parseVotePolicy(v);
+      if (vp === null) return null;
+      votePolicy[label] = vp;
+    }
+  }
+  return { name: raw.name, kind, members, permissions: raw.permissions as string[], votePolicy };
+}
+
+/** Returns null for anything that is not a Sputnik v2 policy; the caller maps that to NOT_A_DAO. */
+export function parsePolicy(raw: unknown): Policy | null {
+  if (!isRecord(raw) || !Array.isArray(raw.roles) || !isDigits(raw.proposal_bond)) return null;
+  const defaultVotePolicy = parseVotePolicy(raw.default_vote_policy);
+  if (defaultVotePolicy === null) return null;
+  const roles: PolicyRole[] = [];
+  for (const r of raw.roles) {
+    const role = parseRole(r);
+    if (role === null) return null;
+    roles.push(role);
+  }
+  return { roles, defaultVotePolicy, proposalBond: raw.proposal_bond };
+}

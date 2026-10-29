@@ -2,7 +2,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { isKdError, resolveTarget, scanAccount } from "../src/index.ts";
+import { isKdError, resolveTarget, scanAccount, scanDao } from "../src/index.ts";
 import type { Network } from "../src/index.ts";
 
 const { values, positionals } = parseArgs({
@@ -34,7 +34,6 @@ try {
   if (saveRaw !== undefined && target.network === "mainnet") {
     die("--save-raw is refused for mainnet targets: fixtures hold testnet data only");
   }
-  if (values.dao) die("--dao is not available yet (scanDao lands in GĐ1 S3)");
 
   if (saveRaw !== undefined) {
     mkdirSync(saveRaw, { recursive: true });
@@ -51,7 +50,7 @@ try {
     };
   }
 
-  const report = await scanAccount(id, { network, blockHeight });
+  const report = await (values.dao ? scanDao : scanAccount)(id, { network, blockHeight });
   console.log(JSON.stringify(report, null, 2));
 } catch (e) {
   if (isKdError(e)) die(JSON.stringify(e.kd, null, 2), 1);
