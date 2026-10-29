@@ -1,12 +1,12 @@
 import type { Flag, KdReport, KeyInfo, Member, ReportSummary, ScanOptions, Status } from "./types.ts";
 import { toIsoSeconds } from "./age.ts";
-import { fail } from "./errors.ts";
-import { AGE_LIMITATION } from "./messages.ts";
-import { resolveTarget, toKeyInfo } from "./parse.ts";
-import { createRpc, DEFAULT_RPC_URL } from "./rpc.ts";
+import { fail, isKdError } from "./errors.ts";
+import { AGE_LIMITATION, RECEIVERS_UNCHECKED_LIMITATION } from "./messages.ts";
+import { accountKind, resolveTarget, toKeyInfo } from "./parse.ts";
+import { createRpc, DEFAULT_RPC_URL, type Rpc } from "./rpc.ts";
 import { countKeys } from "./rules/account.ts";
 import { evaluateKeys } from "./rules/index.ts";
-import { MAX_KEYS, RULESET_VERSION, SEVERITY_RANK } from "./rules/thresholds.ts";
+import { MAX_KEYS, REQUEST_BUDGET, RULESET_VERSION, SEVERITY_RANK } from "./rules/thresholds.ts";
 
 export interface MemberInput {
   account_id: string;
@@ -55,6 +55,46 @@ export function buildSummary(members: Member[], daoFlags: Flag[], councilSize: n
   };
 }
 
+interface ReceiverResult {
+  exists: Map<string, boolean | null>;
+  errors: string[];
+  skipped: boolean;
+}
+
+/** Checks each distinct function-call receiver once, in code-unit order, within `slots` requests. */
+async function checkReceivers(
+  rpc: Rpc,
+  keys: KeyInfo[],
+  blockId: number,
+  slots: number,
+  skipAll: boolean,
+): Promise<ReceiverResult> {
+  const ids = new Set<string>();
+  for (const k of keys) if (k.permission.type === "function_call") ids.add(k.permission.receiver_id);
+  const result: ReceiverResult = { exists: new Map(), errors: [], skipped: false };
+  let left = slots;
+  for (const id of [...ids].sort()) {
+    if (skipAll || left <= 0 || accountKind(id) === null) {
+      result.exists.set(id, null);
+      result.skipped = true;
+      continue;
+    }
+    left -= 1;
+    try {
+      await rpc.viewAccount(id, blockId);
+      result.exists.set(id, true);
+    } catch (e) {
+      const code = isKdError(e) ? e.kd.code : "RPC_ERROR";
+      if (code === "NOT_FOUND") result.exists.set(id, false);
+      else {
+        result.exists.set(id, null);
+        result.errors.push(`receiver ${id}: ${code}`);
+      }
+    }
+  }
+  return result;
+}
+
 export async function scanAccount(id: string, opts: ScanOptions = {}): Promise<KdReport> {
   const target = resolveTarget(id, opts);
   const rpc = createRpc({ url: opts.rpcUrl ?? DEFAULT_RPC_URL[target.network] });
@@ -65,11 +105,19 @@ export async function scanAccount(id: string, opts: ScanOptions = {}): Promise<K
   // A missing account can answer with an empty list, so confirm it exists.
   if (rawKeys.length === 0) await rpc.viewAccount(target.id, head.height);
 
+  const keys = rawKeys.map((k) => toKeyInfo(k, target.network, head));
+  // block, key list and the empty-list follow-up are already spent.
+  const used = 2 + (rawKeys.length === 0 ? 1 : 0);
+  const receivers = await checkReceivers(rpc, keys, head.height, REQUEST_BUDGET - used, opts.skipReceiverCheck === true);
   const member = buildMember({
     account_id: target.id,
     account_kind: target.kind,
     roles: [],
-    keys: rawKeys.map((k) => toKeyInfo(k, target.network, head)),
+    keys: keys.map((k) =>
+      k.permission.type === "function_call"
+        ? { ...k, receiver_exists: receivers.exists.get(k.permission.receiver_id) ?? null }
+        : k,
+    ),
     error: null,
   });
 
@@ -82,7 +130,7 @@ export async function scanAccount(id: string, opts: ScanOptions = {}): Promise<K
     summary: buildSummary([member], [], 0),
     members: [member],
     dao_flags: [],
-    errors: [],
-    limitations: [AGE_LIMITATION],
+    errors: receivers.errors,
+    limitations: receivers.skipped ? [AGE_LIMITATION, RECEIVERS_UNCHECKED_LIMITATION] : [AGE_LIMITATION],
   };
 }

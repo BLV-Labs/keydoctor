@@ -24,7 +24,7 @@ S1, then S2, then S3, then S4 (`docs/design/gd1-scan.md` line 259). One builder 
 - **Changes**: design §2, §3, §5, §6 (account and key rules), §7, §8, §9.
 - **ACs**: S1-AC1 to S1-AC8 in `overview.md`.
 
-### Step 2: S2 function-call rules, receivers
+### Step 2: S2 function-call rules, receivers (built)
 - **Files**:
   - `src/rpc.ts` (receiver `viewAccount`)
   - `src/rules/key.ts`, `src/messages.ts`

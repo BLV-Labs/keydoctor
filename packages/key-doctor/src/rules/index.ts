@@ -1,4 +1,5 @@
 import type { Flag, KeyInfo } from "../types.ts";
+import { accountKind } from "../parse.ts";
 import { ruleMessages } from "../messages.ts";
 import { accountRules } from "./account.ts";
 import { keyRules, type RuleHit } from "./key.ts";
@@ -26,7 +27,9 @@ export function evaluateKeys(accountId: string, keys: KeyInfo[]): { flags: Flag[
     account_id: accountId,
     ...(h.public_key === undefined ? {} : { public_key: h.public_key }),
     evidence: h.evidence,
-    messages: ruleMessages(h.rule_id, h.evidence),
+    messages: ruleMessages(h.rule_id, h.evidence, {
+      receiverId: h.receiver_id !== undefined && accountKind(h.receiver_id) !== null ? h.receiver_id : null,
+    }),
   }));
 
   const withIds = keys.map((key) => {

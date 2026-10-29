@@ -2,8 +2,14 @@ import type { Messages } from "./types.ts";
 import { BLOCK_TIME_MS, FA_OLD_DAYS } from "./rules/thresholds.ts";
 
 type Evidence = Record<string, unknown>;
+/** Chain-sourced ids the text may name; null when the id failed the account-id regex. */
+interface Subject {
+  receiverId: string | null;
+}
 
 const num = (e: Evidence, key: string): number | null => (typeof e[key] === "number" ? (e[key] as number) : null);
+
+export const RECEIVERS_UNCHECKED_LIMITATION = "Some function-call key receivers were not checked.";
 
 /** Always shown: ages are estimates. */
 export const AGE_LIMITATION = `Key age is estimated from the access-key nonce, assuming ${BLOCK_TIME_MS / 1000} s blocks.`;
@@ -91,6 +97,42 @@ const BUILDERS = {
       fix: "If it is a bot or agent, replace it with a restricted function-call key.",
     },
   }),
+  FC_UNLIMITED_ALLOWANCE: (_e: Evidence): Messages => ({
+    vi: {
+      title: "Khóa ứng dụng chi không giới hạn",
+      explain: "Khóa này trả phí gas không giới hạn từ account.",
+      fix: "Thu hồi khóa trong mục Connected Apps nếu không dùng app này nữa.",
+    },
+    en: {
+      title: "App key with unlimited allowance",
+      explain: "This key can spend unlimited gas fees from the account.",
+      fix: "Revoke it under Connected Apps if you no longer use this app.",
+    },
+  }),
+  FC_ANY_METHOD: (_e: Evidence, s: Subject): Messages => ({
+    vi: {
+      title: "Khóa ứng dụng gọi được mọi hàm",
+      explain: `Khóa này gọi được mọi hàm của contract ${s.receiverId ?? "được chỉ định"}.`,
+      fix: "Thu hồi và cấp lại khóa chỉ cho các hàm cần thiết.",
+    },
+    en: {
+      title: "App key can call any method",
+      explain: `This key can call every method of ${s.receiverId ?? "its receiver contract"}.`,
+      fix: "Revoke it and issue a key limited to the methods you need.",
+    },
+  }),
+  FC_DEAD_RECEIVER: (_e: Evidence, s: Subject): Messages => ({
+    vi: {
+      title: "Khóa ứng dụng trỏ tới account không tồn tại",
+      explain: `Khóa này chỉ định contract ${s.receiverId ?? "được chỉ định"} nhưng account đó không tồn tại.`,
+      fix: "Thu hồi khóa này nếu không nhận ra nó.",
+    },
+    en: {
+      title: "App key points to a missing account",
+      explain: `This key names ${s.receiverId ?? "a receiver"} as its contract, but that account does not exist.`,
+      fix: "Revoke the key if you do not recognise it.",
+    },
+  }),
   PQ_NONE: (_e: Evidence): Messages => ({
     vi: {
       title: "Chưa có khóa chống lượng tử",
@@ -107,6 +149,6 @@ const BUILDERS = {
 
 export type MessageRuleId = keyof typeof BUILDERS;
 
-export function ruleMessages(ruleId: MessageRuleId, evidence: Evidence): Messages {
-  return BUILDERS[ruleId](evidence);
+export function ruleMessages(ruleId: MessageRuleId, evidence: Evidence, subject: Subject = { receiverId: null }): Messages {
+  return BUILDERS[ruleId](evidence, subject);
 }
