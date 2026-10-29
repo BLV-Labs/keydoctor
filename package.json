@@ -4,13 +4,15 @@
   "description": "Key Doctor On Call: NEAR access-key health checks and DAO proposal alerts",
   "license": "MIT",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "apps/dashboard"
   ],
   "engines": {
     "node": ">=22.18"
   },
   "scripts": {
     "test": "npm run test --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
   }
 }
