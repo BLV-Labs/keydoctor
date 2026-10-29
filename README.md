@@ -15,7 +15,8 @@ Built for the NEAR HACKATHON (1–14 Nov 2026). The design is in `docs/final-ide
 - GĐ4 built: the Telegram bot (`/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help`; plain messages with one `*.near` / `*.testnet` name run `/check`). Not deployed yet.
 - GĐ6 built: the proposal-watch job (cron every 15 minutes, once per DAO, send first then record `alerts_sent`), `POST /run-check`, and `scripts/demo-testnet/demo.sh`. Waiting on a live testnet run.
 - GĐ9 built: the daily key diff (cron at 02:00 UTC; it moves the baseline and alerts only on changes).
-- Not built yet: the key cleanup plan (GĐ8, waiting on the Meteor signing test) and network stats (GĐ10).
+- GĐ10 built: `pnpm stats` measures the network-wide numbers and writes `data/network-stats.json` and `data/network-stats.md`. The numbers are not in this README until the owner runs it against live RPC.
+- Not built yet: the key cleanup plan (GĐ8, waiting on the Meteor signing test).
 
 ## Try it
 
@@ -88,6 +89,15 @@ scripts/demo-testnet/demo.sh run-check   # the group gets the alert that names t
 ```
 
 `POST /run-check` with `{"job": "proposals" | "daily", "target"?}` runs the same function as the cron and returns `{job, targets_checked, alerts_sent, alerts, errors}`.
+
+## Network stats (reproducible)
+
+```bash
+pnpm stats                      # mainnet Sputnik DAOs, pinned to the latest final block
+pnpm stats -- --block <height> --rpc https://archival-rpc.mainnet.near.org   # rerun at a fixed block
+```
+
+The script lists every DAO from the factory and keeps the ones with a proposal in the last 365 days (`--active-days`). It scans their councils with the same library, all at one block, and prints the Markdown table. It writes `data/network-stats.json` (`kd.network_stats.v1`) and `data/network-stats.md`. Only aggregates are written: no DAO or account names. Raw RPC answers are cached under `data/raw/` (gitignored), so a rerun at the same block is offline.
 
 ## License
 
