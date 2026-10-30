@@ -18,6 +18,9 @@
 # would alert. Run `accounts` at least 48 hours before the demo, or set NEW_KEY_WINDOW_HOURS=1 on the demo
 # Worker and wait more than an hour after `accounts` before `compromise`.
 #
+# Existing accounts: set KD_DEMO_A, KD_DEMO_B, KD_DEMO_C (and KD_DEMO_SIGN=sign-with-legacy-keychain for keys in
+# ~/.near-credentials). `a` needs about 7 NEAR (the DAO costs 6), `b` about 2 NEAR (1 NEAR per proposal).
+#
 # Needs: near (near-cli-rs), node >= 22, curl. Env: KD_DEMO_PREFIX (unique, e.g. kdd$(date +%s)),
 # and for run-check: KD_WORKER_URL (https://<worker>.workers.dev) and RUN_CHECK_TOKEN.
 set -euo pipefail
@@ -26,15 +29,18 @@ PREFIX="${KD_DEMO_PREFIX:?set KD_DEMO_PREFIX to a unique lowercase name, e.g. kd
 [[ "$PREFIX" =~ ^[a-z0-9]{3,20}$ ]] || { echo "KD_DEMO_PREFIX must be 3-20 lowercase letters or digits" >&2; exit 2; }
 RPC="${RPC_URL_TESTNET:-https://rpc.testnet.near.org}"
 FACTORY="sputnik-v2.testnet"
-A="${PREFIX}-a.testnet"
-B="${PREFIX}-b.testnet"
-C="${PREFIX}-c.testnet"
+# Optional: use accounts you already hold keys for (old accounts skip the 48-hour wait). Keys saved by the old
+# near-cli-js live in ~/.near-credentials, so pair them with KD_DEMO_SIGN=sign-with-legacy-keychain.
+A="${KD_DEMO_A:-${PREFIX}-a.testnet}"
+B="${KD_DEMO_B:-${PREFIX}-b.testnet}"
+C="${KD_DEMO_C:-${PREFIX}-c.testnet}"
+SIGN="${KD_DEMO_SIGN:-sign-with-keychain}"
 DAO="${PREFIX}.${FACTORY}"
 NET=(network-config testnet)
 
 call() { # call <signer> <contract> <method> <json> <deposit>
   near contract call-function as-transaction "$2" "$3" json-args "$4" \
-    prepaid-gas '150.0 Tgas' attached-deposit "$5" sign-as "$1" "${NET[@]}" sign-with-keychain send
+    prepaid-gas '150.0 Tgas' attached-deposit "$5" sign-as "$1" "${NET[@]}" "$SIGN" send
 }
 
 view() { # view <contract> <method> <json> -> JSON result on stdout
@@ -54,6 +60,7 @@ last_id() { echo $(( $(view "$DAO" get_last_proposal_id '{}') - 1 )); }
 
 case "${1:-}" in
   accounts)
+    [[ -z "${KD_DEMO_A:-}" ]] || { echo "KD_DEMO_A is set: using your existing accounts $A $B $C, nothing to create."; exit 0; }
     for acc in "$A" "$B" "$C"; do
       near account create-account sponsor-by-faucet-service "$acc" autogenerate-new-keypair save-to-keychain "${NET[@]}" create
     done
@@ -73,7 +80,7 @@ case "${1:-}" in
     echo "Transfer proposal id: $(last_id)"
     ;;
   compromise)
-    near account add-key "$A" grant-full-access autogenerate-new-keypair save-to-keychain "${NET[@]}" sign-with-keychain send
+    near account add-key "$A" grant-full-access autogenerate-new-keypair save-to-keychain "${NET[@]}" "$SIGN" send
     echo "$A now has a fresh full-access key."
     ;;
   vote)
