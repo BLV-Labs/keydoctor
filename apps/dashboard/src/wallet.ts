@@ -38,8 +38,12 @@ export async function signDeleteKeys(
   const label = walletLabel(walletId);
   onStep("Step 1/3: starting the wallet SDK…");
   const wallet = await connect(network, walletId);
-  onStep(`Step 2/3: connect your account in ${label}.`);
-  const accounts = await wallet.signIn({ accounts: [] });
+  // Connect Wallet already stored the session; asking again opens a second popup and the sign popup after it gets blocked.
+  let accounts = await wallet.getAccounts().catch(() => []);
+  if (!accounts.some((a) => a.accountId === accountId)) {
+    onStep(`Step 2/3: connect your account in ${label}.`);
+    accounts = await wallet.signIn({ accounts: [] });
+  }
   onStep(`Step 3/3: approve the Delete Key transaction in ${label}.`);
   if (!accounts.some((a) => a.accountId === accountId)) {
     await wallet.signOut();
