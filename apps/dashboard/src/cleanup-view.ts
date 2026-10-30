@@ -61,6 +61,7 @@ function stepCard(step: Step, m: Member, report: KdReport, blocked: string | nul
     ${step.keep ? html`<p class="small"><strong>Keep:</strong> <span class="mono">${truncateKey(step.keep.public_key)}</span> (${formatInt(step.keep.use_count ?? 0)} uses). Key Doctor never lists the last full-access key.</p>` : ""}
     ${!step.done ? html`<p>${HOW[step.id]}</p>` : ""}
     ${!step.done && blocked ? html`<p class="small field-hint">${blocked}</p>` : ""}
+    ${!step.done && step.keys.length > 0 && !blocked ? html`<button type="button" class="btn btn-primary self-start" data-action="delete-keys" data-step="${step.id}">${step.id === "revoke_app_keys" ? "Revoke" : "Delete"} ${step.keys.length === 1 ? "this key" : `these ${step.keys.length} keys`} with Meteor</button><p class="small muted" id="sign-status-${step.id}" role="status"></p>` : ""}
     ${!step.done && step.id !== "test_sign" ? html`<a class="btn btn-secondary self-start" href="${METEOR_URL}" target="_blank" rel="noopener">Open Meteor Wallet</a>` : ""}
     <p class="small muted">${DONE_WHEN[step.id]}</p>
   </li>`;

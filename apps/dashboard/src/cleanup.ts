@@ -89,3 +89,11 @@ export function buildDeletePlan(m: Member, publicKeys: readonly string[], signer
   for (let i = 0; i < actions.length; i += MAX_ACTIONS_PER_TX) transactions.push(actions.slice(i, i + MAX_ACTIONS_PER_TX));
   return { ok: true, errors: [], transactions };
 }
+
+export const GUARD_TEXT: Record<GuardError, string> = {
+  EMPTY: "No keys to delete.",
+  UNKNOWN_KEY: "A listed key is no longer on the account. Rescan first.",
+  LAST_FULL_ACCESS: "This would delete the last full-access key. Key Doctor never does that.",
+  SIGNER_KEY: "This would delete the key that signs the transaction.",
+  NEEDS_TWO_FULL_ACCESS_LEFT: "The wallet does not say which key it signs with, so at least two full-access keys must stay after this delete.",
+};

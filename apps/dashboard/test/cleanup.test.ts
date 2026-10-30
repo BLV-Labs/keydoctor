@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { describe, it } from "node:test";
 import type { KdReport, KeyInfo, Member } from "key-doctor";
-import { appKeysToRevoke, buildDeletePlan, MAX_ACTIONS_PER_TX, oldFullAccessKeys, planSteps } from "../src/cleanup.ts";
+import { appKeysToRevoke, buildDeletePlan, GUARD_TEXT, MAX_ACTIONS_PER_TX, oldFullAccessKeys, planSteps } from "../src/cleanup.ts";
 import { renderCleanup } from "../src/cleanup-view.ts";
 import { parseRoute } from "../src/route.ts";
 
@@ -130,5 +130,22 @@ describe("GĐ8 cleanup page", () => {
     assert.equal(r.view, "cleanup");
     assert.equal(r.level, "full");
     assert.equal(parseRoute("?target=a.kd-demo.testnet&view=other").view, "report");
+  });
+});
+
+describe("GĐ8 sign buttons", () => {
+  it("shows Revoke for app keys and Delete for full-access keys, only on steps with keys to remove", () => {
+    const out = text(renderCleanup(accountReport(0), null, "safe"));
+    assert.match(out, /Revoke this key with Meteor/);
+    assert.match(out, /Delete (this key|these \d+ keys) with Meteor/);
+    const html = renderCleanup(accountReport(0), null, "safe").value;
+    assert.equal((html.match(/data-action="delete-keys"/g) ?? []).length, 2);
+    assert.doesNotMatch(text(renderCleanup(accountReport(2), null, "safe")), /with Meteor/);
+  });
+
+  it("every guard error has a user-facing text, so a refused plan never fails silently", () => {
+    const refused = buildDeletePlan(withKeys([fa("ed25519:ONLY", 5, 100)]), ["ed25519:ONLY"], null);
+    assert.equal(refused.ok, false);
+    for (const e of refused.errors) assert.ok(GUARD_TEXT[e].length > 0);
   });
 });
