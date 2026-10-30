@@ -255,7 +255,7 @@ function keysTable(member: Member, report: KdReport, paging: Paging): Html {
         ${pager(KEYS_LIST, "Keys", window, paging)}
         <p class="pad small muted" id="key-status" role="status"></p>
         ${keyDialogShell()}`}
-    <p class="pad small muted footnote">Revoke and Delete ask Meteor Wallet to remove one key; you approve the transaction there. Key Doctor never signs transactions and never holds keys.</p>
+    <p class="pad small muted footnote">Revoke and Delete ask your wallet (Meteor, Here or HOT) to remove one key; you approve the transaction there. Key Doctor never signs transactions and never holds keys.</p>
   </section>`;
 }
 

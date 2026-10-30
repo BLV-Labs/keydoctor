@@ -16,7 +16,7 @@ Network-wide numbers come from one reproducible command (`pnpm stats`, see below
 |---|---|---|
 | Check | Every key of an account or a whole council, with the reason each one matters and a fixed-rule risk score | Dashboard, Telegram `/check`, MCP `diagnose`, `list_keys` |
 | On Call | A warning before the final vote when a voter has a new full-access key. Warnings for proposals that change members, policy or contract code. A daily key-change message | Telegram bot (cron every 15 minutes and at 02:00 UTC) |
-| Clean up | A step-by-step plan in a safe order, ticked from chain data when you rescan. Revoke or Delete one key at a time | Dashboard (`view=cleanup`), each change signed by you in Meteor Wallet |
+| Clean up | A step-by-step plan in a safe order, ticked from chain data when you rescan. Revoke or Delete one key at a time | Dashboard (`view=cleanup`), each change signed by you in Meteor, Here or HOT Wallet (your pick) |
 | Compare | What changed since the last baseline | Telegram `/changes`, MCP `compare` |
 
 Fixed rules make every conclusion. **No AI is used in the product**, and Key Doctor **never signs transactions or holds keys**.
@@ -27,7 +27,7 @@ Fixed rules make every conclusion. **No AI is used in the product**, and Key Doc
 - Council report: <https://key-doctor-dashboard.pages.dev/?target=kdoncall.sputnik-v2.testnet>
 - Account cleanup plan: <https://key-doctor-dashboard.pages.dev/?target=kdoncall-p.testnet&view=cleanup>
 
-The scan runs in your browser against public testnet RPC. Revoke and Delete need the Meteor Wallet extension and the account's own key.
+The scan runs in your browser against public testnet RPC. Revoke and Delete need Meteor Wallet (extension), Here Wallet or HOT Wallet, and the account's own key. **Connect Wallet**, Revoke and Delete open a dialog where you pick the wallet. Meteor is the only wallet checked on testnet so far; Here and HOT load and open their widget but have not signed a Delete yet.
 
 ## Try it: do X, see Y
 
@@ -163,6 +163,7 @@ On post-quantum keys: no quantum computer breaks these keys today. The reason to
 
 ## Limitations
 
+- ML-DSA keys can be added only in Meteor Wallet (its PQ screen). Key Doctor reads any ML-DSA key on chain but does not add one, and Here and HOT are not claimed to support it.
 - A DAO that needs one vote executes a proposal at once, so Key Doctor can only warn after the fact (`after_the_fact: true`).
 - Alerts arrive up to one cron period late (15 minutes). Sputnik does not store vote times.
 - Alerts reach only chats that subscribed with `/watch`. There is no way to message a NEAR account.
