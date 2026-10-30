@@ -77,6 +77,7 @@ main:focus { outline: none; }
 .icon-btn { flex: none; width: var(--kd-touch); height: var(--kd-touch); border: 0; border-radius: var(--kd-radius); background: transparent; color: var(--kd-text-muted); display: inline-flex; align-items: center; justify-content: center; }
 .icon-btn:hover { background: var(--kd-surface-muted); }
 .actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.key-table .actions, .key-list .actions { flex-wrap: nowrap; gap: 8px; }
 /* Risk-colored actions: red removes a full-access key, amber revokes an app key or opens a cleanup plan. */
 .btn-danger { background: var(--kd-surface); color: var(--kd-high); border-color: var(--kd-high-edge); }
 .btn-danger:hover { background: var(--kd-high-bg); color: var(--kd-high-text); }
@@ -181,6 +182,12 @@ li:last-child > .member-row { border-bottom: 0; }
 .command-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
 .command { flex: 1 1 260px; min-width: 0; display: flex; align-items: center; min-height: var(--kd-touch); padding: 0 14px; border: 1px solid var(--kd-border-strong); border-radius: var(--kd-radius); background: var(--kd-surface-muted); font-size: 15px; overflow-wrap: anywhere; }
 .dialog-box { margin: 0 24px 16px; padding: 16px; border: 1px solid var(--kd-border); border-radius: var(--kd-radius-md); }
+.kv-list { margin: 0 24px 24px; border: 1px solid var(--kd-border); border-radius: var(--kd-radius-md); overflow: hidden; }
+.kv-row { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--kd-border); }
+.kv-row:last-child { border-bottom: 0; }
+.kv-row:nth-child(odd) { background: var(--kd-surface-muted); }
+.kv-row dt, .kv-row dd { margin: 0; }
+@media (max-width: 720px) { .kv-row { grid-template-columns: 1fr; gap: 4px; } }
 .check-line { display: flex; gap: 10px; align-items: flex-start; color: var(--kd-text-2); }
 .check-line svg { flex: none; margin-top: 4px; color: var(--kd-ok); }
 .dialog-foot { display: flex; gap: 10px; align-items: flex-start; padding: 14px 24px 20px; background: var(--kd-surface-muted); border-top: 1px solid var(--kd-border); }
