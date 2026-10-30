@@ -1,25 +1,29 @@
-// Find testnet Sputnik DAOs with large councils, as benchmark and demo targets. Run from the repo root:
-//   pnpm find-dao [--limit 300] [--min 5] [--top 10]
-// Lists the newest --limit DAOs of the sputnik-v2.testnet factory, reads each policy at one block, and prints the
+// Find Sputnik DAOs with large councils, as benchmark targets. Run from the repo root:
+//   pnpm find-dao [--network testnet|mainnet] [--limit 300] [--min 5] [--top 10]
+// Lists the newest --limit DAOs of the network's Sputnik factory, reads each policy at one block, and prints the
 // --top DAOs by council size (accounts in group roles, at most MAX_MEMBERS so a scan accepts them), with their
-// proposal count. Testnet only: real mainnet names must not end up in examples or docs. Prints to the terminal;
-// writes nothing.
+// proposal count. Prints to the terminal only and writes nothing: real mainnet names must never end up in the
+// repo (examples, docs, fixtures). The bench output holds counts only, so a mainnet bench run can be committed.
 import { parseArgs } from "node:util";
 import { isKdError } from "../src/index.ts";
 import { parsePolicy } from "../src/parse.ts";
+import type { Network } from "../src/index.ts";
 import { createRpc, DEFAULT_RPC_URLS } from "../src/rpc.ts";
 import { MAX_MEMBERS } from "../src/rules/thresholds.ts";
 
-const FACTORY = "sputnik-v2.testnet";
+const FACTORY: Record<Network, string> = { mainnet: "sputnik-dao.near", testnet: "sputnik-v2.testnet" };
 const argv = process.argv.slice(2);
 const { values } = parseArgs({
   args: argv[0] === "--" ? argv.slice(1) : argv,
   options: {
+    network: { type: "string", default: "testnet" },
     limit: { type: "string", default: "300" },
     min: { type: "string", default: "5" },
     top: { type: "string", default: "10" },
   },
 });
+const network = values.network as Network;
+if (network !== "mainnet" && network !== "testnet") throw new Error("--network must be mainnet or testnet");
 const limit = Number(values.limit);
 const min = Number(values.min);
 const top = Number(values.top);
@@ -38,12 +42,12 @@ async function pool<T, R>(items: readonly T[], n: number, fn: (x: T) => Promise<
   return out;
 }
 
-const rpc = createRpc({ url: DEFAULT_RPC_URLS.testnet });
+const rpc = createRpc({ url: DEFAULT_RPC_URLS[network] });
 let height: number;
 let listed: string[];
 try {
   height = (await rpc.block()).height;
-  listed = (await rpc.callFunction(FACTORY, height, "get_dao_list", {})) as string[];
+  listed = (await rpc.callFunction(FACTORY[network], height, "get_dao_list", {})) as string[];
 } catch (e) {
   console.error(isKdError(e) ? `${e.kd.code}: ${e.kd.message.en}` : "could not reach the RPC");
   process.exit(1);
@@ -78,5 +82,7 @@ if (found.length === 0) {
   console.log("| DAO | Council accounts | Proposals |\n|---|---|---|");
   for (const d of found.slice(0, top)) console.log(`| ${d.dao} | ${d.council} | ${d.proposals} |`);
   const best = found[0] as { dao: string };
-  console.log(`\nNext: pnpm bench --account <your-account>.testnet --dao ${best.dao} --runs 5`);
+  const suffix = network === "mainnet" ? "near" : "testnet";
+  console.log(`\nNext: pnpm bench --network ${network} --account <your-account>.${suffix} --dao ${best.dao} --runs 5`);
+  if (network === "mainnet") console.log("Mainnet names: use them for the run only; never paste them into the repo.");
 }
