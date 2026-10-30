@@ -3,7 +3,7 @@ import { formatInt, formatThreshold, formatUtc, keyAgeMs, plural, relativeAge, t
 import { clamp } from "./clamp.ts";
 import { html, type Html } from "./html.ts";
 import { icon, statusIcon } from "./icons.ts";
-import { keyApproval, keyDialogShell } from "./key-detail.ts";
+import { keyApproval, keyDialogShell, viewButton } from "./key-detail.ts";
 import { proposalsPlaceholder } from "./proposals-view.ts";
 import { NO_PAGING, pageOf, pager, slicePage, type Paging } from "./paging.ts";
 import { routeHref } from "./route.ts";
@@ -215,10 +215,6 @@ export function keyButton(k: KeyInfo, statusId: string): Html {
   const full = k.permission.type === "full_access";
   const verb = full ? "Delete" : "Revoke";
   return html`<button type="button" class="btn ${full ? "btn-danger" : "btn-warn"} self-start" data-action="delete-key" data-key="${k.public_key}" data-status="${statusId}" aria-label="${verb} key ${truncateKey(k.public_key)} with Meteor">${verb}</button>`;
-}
-
-function viewButton(k: KeyInfo): Html {
-  return html`<button type="button" class="btn btn-secondary self-start" data-action="view-key" data-key="${k.public_key}" aria-label="View key ${truncateKey(k.public_key)}">View</button>`;
 }
 
 /** `isNew`: a full-access key added in the last 48 hours (the one the alert box names). Only that row is tinted. */

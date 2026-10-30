@@ -1,11 +1,15 @@
 import type { KdReport, KeyInfo, Member } from "key-doctor";
-import { formatInt, formatUtc, keyAgeMs, relativeAge, yoctoToNear } from "./format.ts";
+import { formatInt, formatUtc, keyAgeMs, relativeAge, truncateKey, yoctoToNear } from "./format.ts";
 import { html, type Html } from "./html.ts";
 import { icon } from "./icons.ts";
 import { keyReasons } from "./view.ts";
 
 /** The empty dialog the View buttons fill and open. */
 export const keyDialogShell = (): Html => html`<dialog id="key-dialog" class="dialog" aria-labelledby="key-h"></dialog>`;
+
+export function viewButton(k: KeyInfo): Html {
+  return html`<button type="button" class="btn btn-secondary self-start" data-action="view-key" data-key="${k.public_key}" aria-label="View key ${truncateKey(k.public_key)}">View</button>`;
+}
 
 /** Who the key is approved for: the dApp contract of an app key, or any contract for a full-access key. */
 export function keyApproval(key: KeyInfo): { label: string; contract: string | null } {
