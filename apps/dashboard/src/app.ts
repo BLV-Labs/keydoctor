@@ -140,9 +140,9 @@ function syncWallet(): void {
       el.replaceChildren();
       continue;
     }
-    el.title = connected.accounts.join(", ");
+    el.title = walletLabel(connected.walletId);
     const name = document.createElement("span");
-    name.textContent = walletLabel(connected.walletId);
+    name.textContent = connected.accounts.join(", ") || "no account";
     if (connected.iconUrl === undefined) {
       el.replaceChildren(name);
       continue;
