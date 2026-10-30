@@ -3,7 +3,7 @@
 Live run of `scripts/demo-testnet/demo.sh` against the deployed Worker, using existing testnet accounts
 (`KD_DEMO_A/B/C`, `KD_DEMO_SIGN=sign-with-legacy-keychain`, see PR #14). Testnet only. State read from RPC at block 275391744.
 
-- DAO: `kdd1793327513.sputnik-v2.testnet` (council: `bot1`, `bot2`, `test1`, all `*.duonghb3.testnet`; transfers need 2 votes)
+- DAO: `kdd1793327513.sputnik-v2.testnet` (council: `bot1`, `bot2`, `test1`, all `*.<owner>.testnet`; transfers need 2 votes)
 - Worker: `https://key-doctor.duonghb53.workers.dev`
 
 ## Steps
@@ -27,20 +27,20 @@ Key Doctor On Call
 ĐỔI QUYỀN DAO: kdd1793327513.sputnik-v2.testnet
 
 Đề xuất 1: thêm kdd1793327513-newcomer.testnet vào role council. Đề xuất này thay đổi ai kiểm soát DAO.
-Phiếu: 0/2 đã duyệt. Còn chờ: test1.duonghb3.testnet, bot1.duonghb3.testnet, bot2.duonghb3.testnet
+Phiếu: 0/2 đã duyệt. Còn chờ: test1.<owner>.testnet, bot1.<owner>.testnet, bot2.<owner>.testnet
 
-Trước khi bỏ phiếu: xác minh với người tạo đề xuất bot2.duonghb3.testnet qua kênh khác (gọi điện, gặp trực tiếp) rằng chính họ tạo nó.
+Trước khi bỏ phiếu: xác minh với người tạo đề xuất bot2.<owner>.testnet qua kênh khác (gọi điện, gặp trực tiếp) rằng chính họ tạo nó.
 
 — English —
 GOVERNANCE CHANGE: kdd1793327513.sputnik-v2.testnet
 
 Proposal 1: add kdd1793327513-newcomer.testnet to role council. It changes who controls the DAO.
-Votes: 0/2 approved. Still to vote: test1.duonghb3.testnet, bot1.duonghb3.testnet, bot2.duonghb3.testnet
+Votes: 0/2 approved. Still to vote: test1.<owner>.testnet, bot1.<owner>.testnet, bot2.<owner>.testnet
 
-Before you vote: verify with the proposer bot2.duonghb3.testnet through another channel (call or meet in person) that they created it.
+Before you vote: verify with the proposer bot2.<owner>.testnet through another channel (call or meet in person) that they created it.
 ```
 
-Alert sent: `testnet:kdd1793327513.sputnik-v2.testnet:voter_new_full_access_key:0:bot1.duonghb3.testnet`.
+Alert sent: `testnet:kdd1793327513.sputnik-v2.testnet:voter_new_full_access_key:0:bot1.<owner>.testnet`.
 
 Telegram message received in the group (Vietnamese and English in one message, as the bot sends it):
 
@@ -48,18 +48,18 @@ Telegram message received in the group (Vietnamese and English in one message, a
 Key Doctor On Call
 CẢNH BÁO: kdd1793327513.sputnik-v2.testnet
 
-Đề xuất 0: chuyển 1 NEAR cho test1.duonghb3.testnet. bot1.duonghb3.testnet có khóa toàn quyền mới thêm chưa tới 1 giờ trước khi bỏ phiếu. Tài khoản có thể đã bị chiếm.
-Phiếu: 1/2 đã duyệt. Còn chờ: test1.duonghb3.testnet, bot2.duonghb3.testnet
+Đề xuất 0: chuyển 1 NEAR cho test1.<owner>.testnet. bot1.<owner>.testnet có khóa toàn quyền mới thêm chưa tới 1 giờ trước khi bỏ phiếu. Tài khoản có thể đã bị chiếm.
+Phiếu: 1/2 đã duyệt. Còn chờ: test1.<owner>.testnet, bot2.<owner>.testnet
 
-Trước khi bỏ phiếu: xác minh với bot1.duonghb3.testnet qua kênh khác (gọi điện, gặp trực tiếp).
+Trước khi bỏ phiếu: xác minh với bot1.<owner>.testnet qua kênh khác (gọi điện, gặp trực tiếp).
 
 — English —
 ALERT: kdd1793327513.sputnik-v2.testnet
 
-Proposal 0: transfer 1 NEAR to test1.duonghb3.testnet. bot1.duonghb3.testnet has a new full-access key added less than an hour before voting. The account may be compromised.
-Votes: 1/2 approved. Still to vote: test1.duonghb3.testnet, bot2.duonghb3.testnet
+Proposal 0: transfer 1 NEAR to test1.<owner>.testnet. bot1.<owner>.testnet has a new full-access key added less than an hour before voting. The account may be compromised.
+Votes: 1/2 approved. Still to vote: test1.<owner>.testnet, bot2.<owner>.testnet
 
-Before you vote: verify with bot1.duonghb3.testnet through another channel (call or meet in person).
+Before you vote: verify with bot1.<owner>.testnet through another channel (call or meet in person).
 ```
 
 Checked against the chain: the message names the right proposal, the right voter and the right pending voters; "1/2" matches the 2-vote threshold.
@@ -68,14 +68,14 @@ Checked against the chain: the message names the right proposal, the right voter
 
 | Account | NEAR | Keys |
 |---|---|---|
-| `bot1.duonghb3.testnet` | 25 (was 31) | full access `99Qe…` (block 91420058), full access `Ga9K…` (block 275391116, new) |
-| `bot2.duonghb3.testnet` | 19 (was 20) | full access `65ud…` (block 92550301) |
-| `test1.duonghb3.testnet` | 99 | full access `916N…` (block 107455695), function call `8B6k…` (block 275391266, new) |
+| `bot1.<owner>.testnet` | 25 (was 31) | full access `99Qe…` (block 91420058), full access `Ga9K…` (block 275391116, new) |
+| `bot2.<owner>.testnet` | 19 (was 20) | full access `65ud…` (block 92550301) |
+| `test1.<owner>.testnet` | 99 | full access `916N…` (block 107455695), function call `8B6k…` (block 275391266, new) |
 | `kdd1793327513.sputnik-v2.testnet` | 7 | none (DAO contract; 6 NEAR create deposit + 1 NEAR proposal bond) |
 
 State below was read after step 7, before steps 8 and 9 (`bot2` paid another 1 NEAR bond, the DAO now holds 8 NEAR).
 
-Proposal 0: `InProgress`, `vote_counts` `{"council":[1,0,0]}`, votes `{"bot1.duonghb3.testnet":"Approve"}`, proposer `bot2.duonghb3.testnet`. One more approval passes it.
+Proposal 0: `InProgress`, `vote_counts` `{"council":[1,0,0]}`, votes `{"bot1.<owner>.testnet":"Approve"}`, proposer `bot2.<owner>.testnet`. One more approval passes it.
 
 ## What this shows
 
@@ -89,5 +89,5 @@ Proposal 0: `InProgress`, `vote_counts` `{"council":[1,0,0]}`, votes `{"bot1.duo
 
 ## Cleanup after the demo
 
-- Delete `Ga9K…` from `bot1.duonghb3.testnet`.
-- Delete `8B6k…` from `test1.duonghb3.testnet` after the revoke test.
+- Delete `Ga9K…` from `bot1.<owner>.testnet`.
+- Delete `8B6k…` from `test1.<owner>.testnet` after the revoke test.
