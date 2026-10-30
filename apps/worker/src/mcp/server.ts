@@ -1,7 +1,7 @@
 // MCP over Streamable HTTP (§8.3): stateless JSON-RPC 2.0 with plain JSON replies (no SSE stream).
 import { isKdError, type KdError } from "key-doctor";
 import type { Env } from "../env.ts";
-import { compare, diagnose } from "../core.ts";
+import { compare, diagnose, listKeys, listProposals } from "../core.ts";
 import { json, kdErrorBody, readJson } from "../http.ts";
 import { createWatchLink } from "../watch-link.ts";
 
@@ -42,6 +42,41 @@ export const TOOLS = [
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
   },
   {
+    name: "list_keys",
+    title: "List the access keys of an account or DAO council",
+    description:
+      "One row per access key, like the dashboard key table: member account, roles, full access or function call (approved contract, methods, allowance), age, use count, and the flags raised on it with their vi/en explanation. Filter by account_id, permission or flagged_only. Read-only; stores nothing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...targetProps,
+        account_id: { type: "string", description: "Only the keys of this council member" },
+        permission: { type: "string", enum: ["full_access", "function_call"] },
+        flagged_only: { type: "boolean", default: false },
+      },
+      required: ["target"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, openWorldHint: true },
+  },
+  {
+    name: "list_proposals",
+    title: "List the proposals of a Sputnik DAO",
+    description:
+      "The DAO's proposals, newest first: id, kind, status, proposer, transfer details, votes cast, approvals needed and who still has to vote. Page with limit (default 10, max 50) and offset. Only for a DAO target. Read-only; stores nothing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...targetProps,
+        limit: { type: "integer", minimum: 1, maximum: 50, default: 10 },
+        offset: { type: "integer", minimum: 0, default: 0, description: "Newest proposals to skip" },
+      },
+      required: ["target"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, openWorldHint: true },
+  },
+  {
     name: "watch",
     title: "Get Telegram alert links for a target",
     description:
@@ -59,12 +94,23 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object
 
 /** Validates tool arguments; returns an error message for the agent, or null when valid. */
 function badArgs(name: string, args: Record<string, unknown>): string | null {
-  const allowed = new Set(["target", "network", ...(name === "diagnose" ? ["detail"] : name === "compare" ? ["update_baseline"] : [])]);
+  const extra: Record<string, string[]> = {
+    diagnose: ["detail"],
+    compare: ["update_baseline"],
+    list_keys: ["account_id", "permission", "flagged_only"],
+    list_proposals: ["limit", "offset"],
+  };
+  const allowed = new Set(["target", "network", ...(extra[name] ?? [])]);
   for (const k of Object.keys(args)) if (!allowed.has(k)) return `Unknown argument: ${k}`;
   if (typeof args.target !== "string" || args.target.length === 0 || args.target.length > TARGET_MAX_LEN) return "target must be a NEAR account name";
   if (args.network !== undefined && args.network !== "mainnet" && args.network !== "testnet") return "network must be mainnet or testnet";
   if (args.detail !== undefined && args.detail !== "summary" && args.detail !== "full") return "detail must be summary or full";
   if (args.update_baseline !== undefined && typeof args.update_baseline !== "boolean") return "update_baseline must be a boolean";
+  if (args.account_id !== undefined && (typeof args.account_id !== "string" || args.account_id.length > TARGET_MAX_LEN)) return "account_id must be a NEAR account name";
+  if (args.permission !== undefined && args.permission !== "full_access" && args.permission !== "function_call") return "permission must be full_access or function_call";
+  if (args.flagged_only !== undefined && typeof args.flagged_only !== "boolean") return "flagged_only must be a boolean";
+  if (args.limit !== undefined && (!Number.isInteger(args.limit) || (args.limit as number) < 1 || (args.limit as number) > 50)) return "limit must be an integer from 1 to 50";
+  if (args.offset !== undefined && (!Number.isInteger(args.offset) || (args.offset as number) < 0)) return "offset must be an integer of 0 or more";
   return null;
 }
 
@@ -74,11 +120,16 @@ const toolResult = (payload: unknown, isError = false) => ({
   ...(isError && { isError: true }),
 });
 
-async function callTool(name: "diagnose" | "compare" | "watch", args: Record<string, unknown>, env: Env) {
+const TOOL_NAMES = ["diagnose", "compare", "list_keys", "list_proposals", "watch"] as const;
+type ToolName = (typeof TOOL_NAMES)[number];
+
+async function callTool(name: ToolName, args: Record<string, unknown>, env: Env) {
   const bad = badArgs(name, args);
   if (bad !== null) return toolResult(kdErrorBody("INVALID_TARGET", { vi: bad, en: bad }), true);
   try {
     if (name === "diagnose") return toolResult(await diagnose(args as unknown as Parameters<typeof diagnose>[0], env));
+    if (name === "list_keys") return toolResult(await listKeys(args as unknown as Parameters<typeof listKeys>[0], env));
+    if (name === "list_proposals") return toolResult(await listProposals(args as unknown as Parameters<typeof listProposals>[0], env));
     if (name === "watch") return toolResult(await createWatchLink(args as unknown as Parameters<typeof createWatchLink>[0], env));
     return toolResult(await compare(args as unknown as Parameters<typeof compare>[0], env));
   } catch (e) {
@@ -110,7 +161,7 @@ export async function handleMcp(request: Request, env: Env): Promise<Response> {
           capabilities: { tools: { listChanged: false } },
           serverInfo: SERVER_INFO,
           instructions:
-            "Key Doctor checks NEAR access keys with fixed rules. diagnose is read-only. compare moves the baseline only with update_baseline=true. It never signs or holds keys.",
+            "Key Doctor checks NEAR access keys and DAO proposals with fixed rules. diagnose, list_keys and list_proposals are read-only. compare moves the baseline only with update_baseline=true. It never signs or holds keys.",
         }),
       );
     }
@@ -120,9 +171,9 @@ export async function handleMcp(request: Request, env: Env): Promise<Response> {
       return json(rpcResult(id, { tools: TOOLS }));
     case "tools/call": {
       const name = params.name;
-      if (name !== "diagnose" && name !== "compare" && name !== "watch") return json(rpcError(id, -32602, "Unknown tool"));
+      if (!TOOL_NAMES.some((n) => n === name)) return json(rpcError(id, -32602, "Unknown tool"));
       const args = isObj(params.arguments) ? params.arguments : {};
-      return json(rpcResult(id, await callTool(name, args, env)));
+      return json(rpcResult(id, await callTool(name as ToolName, args, env)));
     }
     default:
       return json(rpcError(id, -32601, "Method not found"));
