@@ -1,5 +1,6 @@
 import type { Flag, KdReport, KeyInfo, Member, Network, Status } from "key-doctor";
 import { formatInt, formatThreshold, formatUtc, keyAgeMs, plural, relativeAge, truncateKey, yoctoToNear } from "./format.ts";
+import { walletBar } from "./session.ts";
 import { clamp } from "./clamp.ts";
 import { html, type Html } from "./html.ts";
 import { icon, statusIcon } from "./icons.ts";
@@ -208,11 +209,22 @@ function newKeyAlert(member: Member, report: KdReport, inCouncil: boolean): Html
   </section>`;
 }
 
-/** One Revoke (app key) or Delete (full-access key) button; the click reports to the element `statusId`. */
+/** Connect Wallet until a wallet is connected; then its name and Disconnect. app.ts flips the `hidden` halves. */
+export function walletControls(): Html {
+  return html`<div class="actions wallet-ctl" data-wallet-ctl>
+    <button type="button" class="btn btn-tint" data-action="open-wallet" data-wallet-off>Connect Wallet</button>
+    <span class="pill pill-sm pill-ok" data-wallet-on data-wallet-name hidden></span>
+    <button type="button" class="btn btn-danger" data-action="disconnect-wallet" data-wallet-on hidden>Disconnect</button>
+    <span class="small muted" id="wallet-status" role="status"></span>
+  </div>`;
+}
+
+/** One Revoke (app key) or Delete (full-access key) button; the click reports to the element `statusId`.
+ *  Locked (grey, aria-disabled, still clickable to explain why) until app.ts sees the wallet holds the account. */
 export function keyButton(k: KeyInfo, statusId: string): Html {
   const full = k.permission.type === "full_access";
   const verb = full ? "Delete" : "Revoke";
-  return html`<button type="button" class="btn ${full ? "btn-danger" : "btn-warn"} self-start" data-action="delete-key" data-key="${k.public_key}" data-status="${statusId}" aria-label="${verb} key ${truncateKey(k.public_key)} with your wallet">${verb}</button>`;
+  return html`<button type="button" class="btn ${full ? "btn-danger" : "btn-warn"} btn-locked self-start" data-action="delete-key" data-key="${k.public_key}" data-status="${statusId}" aria-disabled="true" data-verb="${verb}" aria-label="${verb} key ${truncateKey(k.public_key)} with your wallet">${verb}</button>`;
 }
 
 /** `isNew`: a full-access key added in the last 48 hours (the one the alert box names). Only that row is tinted. */
@@ -235,20 +247,25 @@ function keyRow(key: KeyInfo, member: Member, report: KdReport, isNew: boolean):
 }
 
 function keysTable(member: Member, report: KdReport, paging: Paging, cleanupHref?: string): Html {
+  const bar = walletBar("visitor", report.target.id, null, report.chain.network);
   const { items: keys, window } = slicePage(member.keys, pageOf(paging, KEYS_LIST));
   const recent = new Set(recentFullAccessKeys(member, report.chain.block_timestamp).map((r) => r.key.public_key));
   return html`<section aria-labelledby="keys-h" class="card flush" tabindex="-1" data-list-anchor="${KEYS_LIST}">
     ${cardHead("keys-h", "Every key", "Key age is estimated from the nonce", cleanupHref ? { href: cleanupHref, label: "Cleanup plan" } : undefined)}
     ${member.keys.length === 0
       ? html`<p class="pad muted">This account has no access keys.</p>`
-      : html`<div class="table-scroll">
+      : html`<div class="pad">${bar}</div>
+        <div class="table-scroll">
           <table class="key-table">
             <thead><tr><th scope="col">Public key</th><th scope="col">Type</th><th scope="col">Approved for</th><th scope="col">Added</th><th scope="col" class="num">Uses</th><th scope="col">Why it matters</th><th scope="col">Action</th></tr></thead>
             <tbody>${keys.map((k) => keyRow(k, member, report, recent.has(k.public_key)))}</tbody>
           </table>
         </div>
         ${pager(KEYS_LIST, "Keys", window, paging)}
-        <p class="pad small muted" id="key-status" role="status"></p>
+        <div class="pad stack-sm">
+          <p class="small muted">Revoke and Delete unlock once the connected wallet holds this account. View always works.</p>
+          <p class="small muted" id="key-status" role="status"></p>
+        </div>
         ${keyDialogShell()}`}
     <p class="pad small muted footnote">Revoke and Delete ask your wallet (Meteor, Here or HOT) to remove one key; you approve the transaction there. Key Doctor never signs transactions and never holds keys.</p>
   </section>`;
