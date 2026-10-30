@@ -54,11 +54,12 @@ describe("S1-AC5: HTTP and transport failures", () => {
     ["a key with a negative nonce", () => ok({ keys: [rawKey("ed25519:x", -1, "FullAccess")] }), "RPC_ERROR", true],
   ];
   for (const [name, reply, code, retryable] of table) {
-    it(`${name} on the key list gives ${code}, retryable ${retryable}, no retry`, async (t) => {
+    it(`${name} on the key list gives ${code}, retryable ${retryable}`, async (t) => {
       const { kd, calls } = await fails(t, onKeyList(reply()));
       assert.equal(kd.code, code);
       assert.equal(kd.retryable, retryable);
-      assert.equal(calls.length, 2, "block + one key-list attempt, no retry");
+      // A 429 gets one more try after RATE_LIMIT_BACKOFF_MS; every other failure is not retried.
+      assert.equal(calls.length, code === "RATE_LIMITED" ? 3 : 2);
     });
   }
 

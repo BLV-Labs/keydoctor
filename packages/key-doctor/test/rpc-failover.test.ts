@@ -55,9 +55,23 @@ describe("RPC failover across endpoints", () => {
     assert.ok(calls.every((c) => c.url === A));
   });
 
-  it("when every endpoint is rate-limited, the scan fails with RATE_LIMITED", async (t) => {
+  it("when every endpoint is rate-limited, it waits once, tries them all again, then fails with RATE_LIMITED", async (t) => {
     const calls = installFetch(t, () => status(429));
-    await assert.rejects(scanAccount(ID, { rpcUrl: [A, B] }), (e) => isKdError(e) && e.kd.code === "RATE_LIMITED" && e.kd.retryable);
+    const rpc = createRpc({ url: [A, B], rateLimitBackoffMs: 1 });
+    await assert.rejects(rpc.block(), (e) => isKdError(e) && e.kd.code === "RATE_LIMITED" && e.kd.retryable);
+    assert.deepEqual(hosts(calls), ["A", "B", "A", "B"]);
+  });
+
+  it("the backoff round succeeds once a limit lifts", async (t) => {
+    let n = 0;
+    const calls = installFetch(t, (r) => (++n <= 2 ? status(429) : good(r)));
+    await createRpc({ url: [A, B], rateLimitBackoffMs: 1 }).block();
+    assert.deepEqual(hosts(calls), ["A", "B", "A"]);
+  });
+
+  it("no backoff round when one endpoint failed for another reason", async (t) => {
+    const calls = installFetch(t, (r) => (r.url === A ? status(429) : status(503)));
+    await assert.rejects(createRpc({ url: [A, B], rateLimitBackoffMs: 1 }).block(), (e) => isKdError(e) && e.kd.code === "RPC_ERROR");
     assert.deepEqual(hosts(calls), ["A", "B"]);
   });
 

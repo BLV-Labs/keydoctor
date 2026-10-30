@@ -2,13 +2,14 @@
 // Run from the repo root:
 //   pnpm bench --account <id> [--dao <id>] [--network testnet|mainnet] [--runs 5] [--rpc URL]... [--burst 0]
 //   NEARBLOCKS_API_KEY=... pnpm bench ...   (optional; without it the free tier's 6 calls/minute applies)
-// Measures per-call latency (p50/p95), one full library scan per RPC, and, with --burst N, how many back-to-back
-// calls each source takes before it answers 429. Writes data/bench-sources-<network>.json and .md.
+// Measures per-call latency (p50/p95), full library scans per RPC and through the default failover list, and,
+// with --burst N, how many back-to-back calls each source takes before it answers 429. Writes data/bench-sources-<network>.json and .md.
 // The output holds shapes only (key and member counts), never account names, so a mainnet run can be published.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { isKdError, resolveTarget, scanTarget, type Network } from "../src/index.ts";
+import { DEFAULT_RPC_URLS } from "../src/rpc.ts";
 import {
   burstResult,
   rateLimitHeaders,
@@ -146,24 +147,29 @@ async function benchRpc(url: string): Promise<SourceResult> {
     );
   }
 
-  // End to end: the same library call the dashboard and the bot make, through this RPC.
-  const scanSamples: Sample[] = [];
+  // End to end: the same library call the dashboard and the bot make, through this RPC alone.
+  const result: SourceResult = { source: name, kind: "rpc", calls, scan: await benchScan(url) };
+  if (burst > 0) result.burst = await burstProbe(burst, () => rpcCall(url, "block", { finality: "final" }));
+  return result;
+}
+
+/** `runs` full library scans through `rpcUrl` (one endpoint, or a failover list). */
+async function benchScan(rpcUrl: string | readonly string[]): Promise<NonNullable<SourceResult["scan"]>> {
+  const samples: Sample[] = [];
   let members: number | undefined;
   for (let i = 0; i < runs; i++) {
     const t0 = performance.now();
     try {
-      const report = await scanTarget(dao?.id ?? account.id, { rpcUrl: url, network });
+      const report = await scanTarget(dao?.id ?? account.id, { rpcUrl, network });
       members = report.members.length;
-      scanSamples.push({ ms: performance.now() - t0, status: 200 });
+      samples.push({ ms: performance.now() - t0, status: 200 });
     } catch (e) {
-      scanSamples.push({ ms: performance.now() - t0, status: isKdError(e) && e.kd.code === "RATE_LIMITED" ? 429 : 0 });
+      samples.push({ ms: performance.now() - t0, status: isKdError(e) && e.kd.code === "RATE_LIMITED" ? 429 : 0 });
     }
     await sleep(gapMs);
   }
   if (dao && members !== undefined) daoMembers = members;
-  const result: SourceResult = { source: name, kind: "rpc", calls, scan: { ...summarize(scanSamples), members } };
-  if (burst > 0) result.burst = await burstProbe(burst, () => rpcCall(url, "block", { finality: "final" }));
-  return result;
+  return { ...summarize(samples), members };
 }
 
 let nbKeyFields: string[] | null = null;
@@ -194,6 +200,14 @@ async function benchNearBlocks(): Promise<SourceResult> {
 
 const sources: SourceResult[] = [];
 for (const url of rpcs) sources.push(await benchRpc(url));
+// What production does: the default list with failover and the 429 backoff round.
+console.error("· default RPC list (failover)");
+sources.push({
+  source: `default list: ${DEFAULT_RPC_URLS[network].map(display).join(" → ")}`,
+  kind: "rpc",
+  calls: {},
+  scan: await benchScan(DEFAULT_RPC_URLS[network]),
+});
 if (!values["skip-nearblocks"]) sources.push(await benchNearBlocks());
 
 const result: BenchResult = {

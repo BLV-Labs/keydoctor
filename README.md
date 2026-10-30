@@ -167,6 +167,7 @@ On post-quantum keys: no quantum computer breaks these keys today. The reason to
 
 ## Roadmap
 
+- Show the exact time each key was added, from the NearBlocks indexer (`/v1/account/{id}/keys` returns `created` / `deleted`), next to the nonce-based estimate. See `docs/data-sources-benchmark.md`.
 - Sign key deletions in the dashboard through wallet-selector (several app keys in one signature), once the Meteor signing test passes.
 - Backtest the proposal rules on 12 months of history (`kd.backtest.v1`), using NearBlocks for keys added and later removed.
 - Exact key creation dates from NearBlocks, and more rules.

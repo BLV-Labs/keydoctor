@@ -12,7 +12,8 @@
     "typecheck": "pnpm -r --if-present run typecheck",
     "build": "pnpm -r --if-present run build",
     "stats": "pnpm --filter key-doctor stats",
-    "bench": "pnpm --filter key-doctor bench"
+    "bench": "pnpm --filter key-doctor bench",
+    "find-dao": "pnpm --filter key-doctor find-dao"
   },
   "packageManager": "pnpm@10.34.7"
 }

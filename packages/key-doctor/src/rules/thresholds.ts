@@ -75,6 +75,8 @@ export const CONCURRENCY_DEFAULT = 4;
 export const CONCURRENCY_MIN = 1;
 export const CONCURRENCY_MAX = 8;
 export const RPC_TIMEOUT_MS = 15_000;
+// When every RPC endpoint answers 429, wait this long and try them all once more (transport only, no rule effect).
+export const RATE_LIMIT_BACKOFF_MS = 1000;
 
 // checkProposals (§4.5, §5.2). Window for "voter has a new full-access key".
 export const NEW_KEY_WINDOW_HOURS = 48;
