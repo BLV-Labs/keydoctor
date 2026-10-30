@@ -123,7 +123,7 @@ function paintReport(report: KdReport, route: Route, paging: Paging, seq: number
 const currentNetwork = (): Network => parseRoute(location.search).network ?? lastReport?.chain.network ?? storedNetwork();
 
 /** The wallet Connect Wallet last connected and the accounts it holds; Revoke and Delete sign with it. */
-let connected: { walletId: WalletId; accounts: string[] } | null = null;
+let connected: { walletId: WalletId; accounts: string[]; iconUrl?: string } | null = null;
 
 /** Revoke and Delete work only when the connected wallet holds the account on screen. View is never touched.
  *  Also shows the wallet name and Disconnect in place of Connect Wallet while a wallet is connected. */
@@ -136,7 +136,22 @@ function syncWallet(): void {
   for (const el of root.querySelectorAll<HTMLElement>("[data-wallet-off]")) el.hidden = connected !== null;
   for (const el of root.querySelectorAll<HTMLElement>("[data-wallet-on]")) el.hidden = connected === null;
   for (const el of root.querySelectorAll<HTMLElement>("[data-wallet-name]")) {
-    el.textContent = connected === null ? "" : `${walletLabel(connected.walletId)} · ${connected.accounts.join(", ") || "no account"}`;
+    if (connected === null) {
+      el.replaceChildren();
+      continue;
+    }
+    el.title = connected.accounts.join(", ");
+    const name = document.createElement("span");
+    name.textContent = walletLabel(connected.walletId);
+    if (connected.iconUrl === undefined) {
+      el.replaceChildren(name);
+      continue;
+    }
+    const img = document.createElement("img");
+    img.src = connected.iconUrl;
+    img.alt = "";
+    img.width = img.height = 16;
+    el.replaceChildren(img, name);
   }
 }
 
@@ -301,6 +316,15 @@ function connectWallet(status: HTMLElement, walletId: WalletId): void {
       status.textContent =
         target === undefined || accounts.includes(target) ? "" : `${walletLabel(walletId)} holds ${accounts.join(", ") || "no account"}, not ${target}. Revoke and Delete stay off.`;
       syncWallet();
+      // The icon the wallet's own SDK module declares; the chip shows the name alone if it cannot be read.
+      void import("./wallet.ts")
+        .then((w) => w.walletMetadata(currentNetwork()))
+        .then((meta) => {
+          if (connected?.walletId !== walletId) return;
+          connected.iconUrl = meta[walletId]?.iconUrl;
+          syncWallet();
+        })
+        .catch(() => {});
     })
     .catch((e: unknown) => {
       const msg = e instanceof Error ? e.message : "";
