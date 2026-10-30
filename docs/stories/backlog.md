@@ -51,7 +51,7 @@ Tick each box when done and tell Claude the result (numbers, names, block height
 
 ### Claude tasks (next sessions)
 
-- [ ] **C1** after O1/O2: point the dashboard example chips and README examples at the real demo DAO. `kd-demo.sputnik-dao.testnet` does not exist on chain; testnet DAOs live under `sputnik-v2.testnet`. Add the live URLs to the README.
+- [x] **C1** Done 2026-10-30: dashboard chips and README examples use the demo DAO `kdd1793327513.sputnik-v2.testnet`; the README has a Live demo section with the Pages URLs.
 - [ ] **C2** after O3: record the results and fix `packages/key-doctor/src/proposals.ts` if any fact differs.
 - [ ] **C3** after O4: put the stats table into the README "The problem" section.
 - [~] **C4** GĐ8 in-dashboard signing built 2026-10-30 (Revoke / Delete buttons, wallet SDK lazy-loaded); one function-call key revoked with a real Meteor account on testnet; multi-key and full-access Delete still untested (O5). Original scope: in-dashboard signing with wallet-selector + Meteor, using `buildDeletePlan` in `apps/dashboard/src/cleanup.ts` (no `signIn` with `contractId`).
