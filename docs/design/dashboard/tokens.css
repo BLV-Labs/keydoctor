@@ -10,8 +10,17 @@
   /* Type */
   --kd-font-sans: "Fira Sans", system-ui, sans-serif;
   --kd-font-mono: "Fira Code", ui-monospace, monospace; /* account ids, public keys, commands, block heights */
-  --kd-text-base: 16px;
   --kd-leading: 1.5;
+  /* Type scale: compact, data-first. Body and tables 14px; inputs stay 16px so phones do not zoom on focus. */
+  --kd-fs-2xs: 11px;      /* column heads, monograms */
+  --kd-fs-xs: 12px;       /* tags, small pills, mobile cell labels */
+  --kd-fs-sm: 13px;       /* meta, notes, breadcrumbs, row buttons, pills */
+  --kd-fs-base: 14px;     /* body, tables, dialogs, buttons */
+  --kd-fs-md: 16px;       /* card titles, h3, lead, inputs */
+  --kd-fs-lg: 18px;       /* section titles (h2) */
+  --kd-fs-xl: 24px;       /* page title (h1), tile values */
+  --kd-fs-display: 36px;  /* home hero */
+  --kd-text-base: var(--kd-fs-base);
 
   /* Neutrals */
   --kd-page: #F6F7F9;
