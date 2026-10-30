@@ -1,8 +1,8 @@
 import type { Network } from "./types.ts";
 import type { HeadBlock } from "./age.ts";
-import { fail } from "./errors.ts";
+import { fail, isKdError } from "./errors.ts";
 import { isDigits, isRecord, parseRawKey, type RawKey } from "./parse.ts";
-import { RPC_TIMEOUT_MS } from "./rules/thresholds.ts";
+import { RATE_LIMIT_BACKOFF_MS, RPC_TIMEOUT_MS } from "./rules/thresholds.ts";
 
 /**
  * Default endpoints, tried in order. FastNEAR answered about 12x faster than near.org on testnet
@@ -62,12 +62,14 @@ class TransportFailure {
  * and moves on only after a transport failure (429, any other non-2xx, timeout, network error, unreadable
  * body). A JSON-RPC answer, even an error such as UNKNOWN_ACCOUNT, is final: another node would say the same.
  * Every query carries its block_id, so switching endpoints mid-scan does not change what the scan reads.
+ * When every endpoint answered 429, the call waits RATE_LIMIT_BACKOFF_MS once and tries them all again.
  */
-export function createRpc(cfg: { url: string | readonly string[]; fetchImpl?: FetchLike }): Rpc {
+export function createRpc(cfg: { url: string | readonly string[]; fetchImpl?: FetchLike; rateLimitBackoffMs?: number }): Rpc {
   const doFetch: FetchLike = cfg.fetchImpl ?? ((...a) => globalThis.fetch(...a));
   const urls = typeof cfg.url === "string" ? [cfg.url] : [...cfg.url];
   if (urls.length === 0) throw fail("RPC_ERROR", { retryable: false });
   let preferred = 0;
+  const rateLimitBackoffMs = cfg.rateLimitBackoffMs ?? RATE_LIMIT_BACKOFF_MS;
 
   async function call(
     method: string,
@@ -76,16 +78,22 @@ export function createRpc(cfg: { url: string | readonly string[]; fetchImpl?: Fe
     contractFailureIsNotADao = false,
   ): Promise<Record<string, unknown>> {
     let last: Error | undefined;
-    for (let i = 0; i < urls.length; i++) {
-      const idx = (preferred + i) % urls.length;
-      try {
-        const result = await attempt(urls[idx] as string, method, params, blockPinnedByCaller, contractFailureIsNotADao);
-        preferred = idx;
-        return result;
-      } catch (e) {
-        if (!(e instanceof TransportFailure)) throw e;
-        last = e.error;
+    for (let round = 0; round < 2; round++) {
+      let allRateLimited = true;
+      for (let i = 0; i < urls.length; i++) {
+        const idx = (preferred + i) % urls.length;
+        try {
+          const result = await attempt(urls[idx] as string, method, params, blockPinnedByCaller, contractFailureIsNotADao);
+          preferred = idx;
+          return result;
+        } catch (e) {
+          if (!(e instanceof TransportFailure)) throw e;
+          last = e.error;
+          if (!(isKdError(e.error) && e.error.kd.code === "RATE_LIMITED")) allRateLimited = false;
+        }
       }
+      if (!allRateLimited) break;
+      if (round === 0) await new Promise((r) => setTimeout(r, rateLimitBackoffMs));
     }
     throw last as Error;
   }
