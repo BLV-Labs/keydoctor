@@ -2,6 +2,7 @@ import type { Flag, KdReport, KeyInfo, Member, Network, Status } from "key-docto
 import { formatInt, formatThreshold, formatUtc, keyAgeMs, plural, relativeAge, truncateKey, yoctoToNear } from "./format.ts";
 import { html, type Html } from "./html.ts";
 import { icon, statusIcon } from "./icons.ts";
+import { proposalsPlaceholder } from "./proposals-view.ts";
 import { routeHref } from "./route.ts";
 import {
   STATUS_LABEL,
@@ -169,6 +170,8 @@ export function renderCouncil(report: KdReport): Html {
         </div>
       </div>
     </section>
+
+    ${proposalsPlaceholder()}
 
     <section class="two-col">${votingCard(report)}${limitsCard(report)}</section>`;
 }

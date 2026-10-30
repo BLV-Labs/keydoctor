@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { describe, it } from "node:test";
-import type { KdReport, Member } from "key-doctor";
+import type { KdReport, ListProposalsResult, Member, ProposalInfo } from "key-doctor";
 import { escape, html } from "../src/html.ts";
 import { formatThreshold, formatUtc, relativeAge, truncateKey, yoctoToNear } from "../src/format.ts";
 import { renderError, renderHome } from "../src/pages.ts";
+import { PROPOSALS_ID, renderProposals } from "../src/proposals-view.ts";
 import { renderAccount, renderCouncil } from "../src/report.ts";
 import { parseRoute, resolveInput, routeHref } from "../src/route.ts";
 import { groupFlags, keyMix, mainReason, recentFullAccessKeys, sortMembers } from "../src/view.ts";
@@ -225,5 +226,54 @@ describe("GĐ12 one-tap watch links (dashboard P1)", () => {
     const bad = renderWatchLinks({ link_private: "javascript:alert(1)", link_group: "https://evil.example", expires_at: "x" }).value;
     assert.doesNotMatch(bad, /href/);
     assert.match(bad, /Use the command above/);
+  });
+});
+
+describe("proposal list (C7)", () => {
+  const info = (over: Partial<ProposalInfo>): ProposalInfo => ({
+    id: 2,
+    kind_label: "transfer",
+    description: "pay the auditor",
+    proposer: "a.kd-demo.testnet",
+    transfer: { token_id: "", receiver_id: "auditor.testnet", amount: "2000000000000000000000000" },
+    status: "InProgress",
+    votes: { "a.kd-demo.testnet": "Approve" },
+    approvals_needed: 2,
+    approvals_have: 1,
+    pending_voters: ["b.kd-demo.testnet"],
+    executed: false,
+    ui_url: null,
+    ...over,
+  });
+  const result = (proposals: ProposalInfo[], total = proposals.length, errors: string[] = []): ListProposalsResult => ({ proposals, total, errors });
+
+  it("the council page holds a placeholder the list later fills", () => {
+    assert.match(renderCouncil(dao()).value, new RegExp(`id="${PROPOSALS_ID}"`));
+  });
+
+  it("shows what a voter needs to decide: amount, receiver, votes so far and who still has to vote", () => {
+    const t = text(renderProposals(result([info({})], 4)));
+    assert.match(t, /Newest 1 of 4/);
+    assert.match(t, /#2 Transfer InProgress/);
+    assert.match(t, /Send 2 NEAR to auditor\.testnet/);
+    assert.match(t, /1 approve of 2 needed/);
+    assert.match(t, /Still to vote: b\.kd-demo\.testnet/);
+  });
+
+  it("hides pending voters once the proposal is no longer open", () => {
+    const t = text(renderProposals(result([info({ status: "Approved", pending_voters: ["b.kd-demo.testnet"] })])));
+    assert.doesNotMatch(t, /Still to vote/);
+  });
+
+  it("says plainly when there are no proposals, when the read failed, and when some were unreadable", () => {
+    assert.match(text(renderProposals(result([], 0))), /no proposals yet/);
+    assert.match(text(renderProposals(null)), /Could not read proposals/);
+    assert.match(text(renderProposals(result([], 3, ["proposal 2: RPC_ERROR"]))), /No proposal could be read/);
+    assert.match(text(renderProposals(result([info({})], 3, ["proposal 1: NOT_A_DAO"]))), /1 proposal\(s\) could not be read/);
+  });
+
+  it("hostile chain text in a description never becomes markup", () => {
+    const out = renderProposals(result([info({ description: "<img src=x onerror=alert(1)>" })])).value;
+    assert.doesNotMatch(out, /<img/);
   });
 });

@@ -1,9 +1,10 @@
 // Browser entry: routing, scanning and DOM events. Rendering lives in pure modules that tests run in Node.
-import { isKdError, scanAccount, scanTarget, type KdError, type KdReport, type Network } from "key-doctor";
+import { isKdError, listProposals, scanAccount, scanTarget, type KdError, type KdReport, type Network } from "key-doctor";
 import type { Html } from "./html.ts";
 import { renderError, renderHome, renderLayout, renderScanning } from "./pages.ts";
 import { buildDeletePlan, GUARD_TEXT, METEOR_INSTALL_URL, type DeletePlan } from "./cleanup.ts";
 import { renderCleanup } from "./cleanup-view.ts";
+import { PROPOSALS_ID, renderProposals } from "./proposals-view.ts";
 import { renderAccount, renderCouncil } from "./report.ts";
 import { homeHref, parseRoute, resolveInput, routeHref, type Route } from "./route.ts";
 import { renderWatchDialog, renderWatchLinks } from "./watch.ts";
@@ -82,11 +83,19 @@ async function render(focusMain: boolean): Promise<void> {
           : renderAccount(report, route.from);
     paint(body, `${target} · Key Doctor`, false, network);
     root.insertAdjacentHTML("beforeend", renderWatchDialog(target, report.target.type, WORKER_URL).value);
+    if (report.target.type === "dao") void paintProposals(report.target.id, report.chain.network, seq);
   } catch (e) {
     if (seq !== scanSeq) return;
     if (!isKdError(e)) console.error("scan failed", { target, error: e });
     paint(renderError(target, route.from, isKdError(e) ? e.kd : UNKNOWN_ERROR, network), `${target} · Key Doctor`, false, network);
   }
+}
+
+/** Fills the Proposals section after the council report; a failed read never touches the report. */
+async function paintProposals(dao: string, network: Network, seq: number): Promise<void> {
+  const result = await listProposals(dao, { network }).catch(() => null);
+  const box = document.getElementById(PROPOSALS_ID);
+  if (seq === scanSeq && box !== null) box.innerHTML = renderProposals(result).value;
 }
 
 function navigate(href: string): void {
