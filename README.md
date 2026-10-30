@@ -159,7 +159,7 @@ On post-quantum keys: no quantum computer breaks these keys today. The reason to
 - Alerts arrive up to one cron period late (15 minutes). Sputnik does not store vote times.
 - Alerts reach only chats that subscribed with `/watch`. There is no way to message a NEAR account.
 - A key added and then removed between two scans is not seen. Key age is an estimate from the nonce and a 1.2 s block time.
-- Public RPC rate-limits heavy use. The Cloudflare free plan limits outbound requests per run, so the proposal job handles at most `MAX_DAOS_PER_RUN` DAOs per run (default 5), at most 12 proposals and 8 voter scans per DAO.
+- Scans read public NEAR RPC through FastNEAR (`rpc.<network>.fastnear.com`, free tier) and fall back to `rpc.<network>.near.org` on a rate limit or an outage; see [`docs/data-sources-benchmark.md`](docs/data-sources-benchmark.md) for why and the measured numbers. Public RPC rate-limits heavy use. The Cloudflare free plan limits outbound requests per run, so the proposal job handles at most `MAX_DAOS_PER_RUN` DAOs per run (default 5), at most 12 proposals and 8 voter scans per DAO.
 - Scan caps: 100 keys per account, 21 council members, 50 roles.
 - Four Sputnik v2 facts that `checkProposals` relies on (proposal-id semantics, proposal JSON, status values, kind labels) were taken from the contract source and still need a live check.
 - The dashboard does not yet sign key deletions itself. The cleanup plan sends you to Meteor Wallet.

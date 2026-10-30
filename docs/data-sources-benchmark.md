@@ -2,9 +2,7 @@
 
 Question: scans feel slow over NEAR RPC. Can the NearBlocks indexer API replace RPC, and what do speed and rate limits look like for each source?
 
-Short answer: **NearBlocks cannot replace RPC for Key Doctor.** It cannot call contract view methods (`get_policy`, `get_proposal`) or pin reads to one block. On its free tier (6 calls per minute) it is also slower than RPC for any DAO scan. The slowness most likely comes from the deprecated `rpc.*.near.org` endpoints, which are heavily rate-limited, not from RPC itself. The next step is to measure the endpoints side by side with `pnpm bench` (below), and then pick a faster RPC provider if the numbers support it.
-
-> **Status: measurements pending.** The tables under [Results](#results) are empty on purpose. The build container's network policy blocks `rpc.*.near.org`, `*.fastnear.com` and `*.nearblocks.io`, so the benchmark has not run yet. Nothing below is a measured number unless the Results section says so.
+Short answer: **NearBlocks cannot replace RPC for Key Doctor.** It cannot call contract view methods (`get_policy`, `get_proposal`) or pin reads to one block. On its free tier (6 calls per minute) it is also slower than RPC for any DAO scan. The slowness came from the deprecated `rpc.*.near.org` endpoint, not from RPC itself. On testnet it answered every call in about 3.3 s. FastNEAR answered the same calls in about 0.28 s, so a full DAO scan took 0.9 s instead of 10.2 s (11× faster). **Key Doctor now defaults to FastNEAR** (see [Decision](#decision)).
 
 ## What one scan asks for
 
@@ -70,9 +68,36 @@ NEARBLOCKS_API_KEY=<key> pnpm bench --account <your-account>.near --dao <your-da
 
 ## Results
 
-_Pending. Paste the Markdown that `pnpm bench` prints here, one block per network, with the date and the machine's location (latency depends on distance to the provider)._
+### Testnet, 2026-10-29
 
-## Decision (to take after the run)
+Run by the team from their own machine; raw output in [`data/bench-sources-testnet.md`](../data/bench-sources-testnet.md) and `.json`. 5 runs per call, account with 1 key, DAO with 2 council members, NearBlocks free tier (no API key), no `--burst`.
 
-1. If FastNEAR (or another provider) is clearly faster and rate-limits later than `near.org`: make it the default in `DEFAULT_RPC_URL` (`packages/key-doctor/src/rpc.ts`), add its host to the dashboard CSP `connect-src` (`apps/dashboard/public/_headers`), and let the Worker take an `RPC_URL` override.
-2. Keep NearBlocks out of the scan path. Consider it later as an optional source that adds the exact time a key was added (Roadmap), only if the benchmark confirms the field exists.
+| Source | Call | OK | p50 ms | p95 ms | min–max ms |
+|---|---|---|---|---|---|
+| rpc.testnet.near.org | block (final) | 5/5 | 3278 | 3921 | 3260–3921 |
+| rpc.testnet.near.org | view_access_key_list | 5/5 | 3328 | 4024 | 3250–4024 |
+| rpc.testnet.near.org | view_account | 5/5 | 3287 | 3350 | 3254–3350 |
+| rpc.testnet.near.org | call_function get_policy | 5/5 | 3313 | 3785 | 3250–3785 |
+| rpc.testnet.near.org | call_function get_last_proposal_id | 5/5 | 3268 | 3369 | 3251–3369 |
+| rpc.testnet.near.org | **full scan (2 members)** | 5/5 | **10161** | 10262 | 9871–10262 |
+| rpc.testnet.fastnear.com | block (final) | 5/5 | 282 | 315 | 262–315 |
+| rpc.testnet.fastnear.com | view_access_key_list | 5/5 | 294 | 356 | 287–356 |
+| rpc.testnet.fastnear.com | view_account | 5/5 | 278 | 376 | 263–376 |
+| rpc.testnet.fastnear.com | call_function get_policy | 5/5 | 294 | 304 | 267–304 |
+| rpc.testnet.fastnear.com | call_function get_last_proposal_id | 5/5 | 278 | 377 | 254–377 |
+| rpc.testnet.fastnear.com | **full scan (2 members)** | 5/5 | **893** | 918 | 823–918 |
+| NearBlocks API (api-testnet) | GET /v1/account/{id} | 5/5 | 1225 | 1316 | 393–1316 |
+| NearBlocks API (api-testnet) | GET /v1/account/{id}/keys | 5/5 | 481 | 1174 | 380–1174 |
+
+What the numbers say:
+
+- **`rpc.testnet.near.org` adds about 3 s to every call**, even to `block`, the cheapest one. Its minimum (3250 ms) sits close to its median, so this looks like a fixed throttle delay rather than network distance. Each scan step waits on the one before it (block, then policy, then the member keys), so these delays add up: 10 s for a 2-member DAO, and more for a bigger council.
+- **FastNEAR is about 12× faster per call and 11× faster per full scan.** No call failed, and none was rate-limited, during this run.
+- **NearBlocks** answered in 0.4–1.3 s per call: faster than `near.org`, slower than FastNEAR, and still limited to 6 calls per minute on the free tier. The script did not find a key list in the `/keys` answer (`nearblocks_key_fields` is null), so the "exact time a key was added" field is **not confirmed**.
+- Not measured yet: mainnet, larger councils, and the burst limit (`--burst`) of each source.
+
+## Decision
+
+1. **Done:** FastNEAR is now the default RPC, with `near.org` as the fallback. That covers `DEFAULT_RPC_URLS` in `packages/key-doctor/src/rpc.ts` (library, dashboard and scripts), `RPC_URL_TESTNET` / `RPC_URL_MAINNET` in `apps/worker/wrangler.toml` (a comma-separated list, which the Worker can still override), and the dashboard CSP `connect-src` (both providers). The mainnet endpoint (`rpc.mainnet.fastnear.com`) comes from the same provider but has not been benchmarked yet. Run `pnpm bench --network mainnet ...` to confirm it, and `--rpc https://rpc.testnet.near.org` to compare against the old endpoint at any time.
+2. **Done: failover between endpoints.** `rpcUrl` (and `RPC_URL_*` in the Worker) accepts a list. Each call tries the endpoints in order, starting with the one that answered last. It moves on only after a transport failure: 429, any other non-2xx, a timeout, a network error, an unreadable body, or `UNKNOWN_BLOCK` from a node that lags behind. A JSON-RPC answer such as `UNKNOWN_ACCOUNT` or a contract error is final, because another node would say the same. Every query keeps its `block_id`, so a switch mid-scan does not change what the scan reads. If every endpoint fails, the scan fails with the last error (for example `RATE_LIMITED`, which stays retryable). The worst case is one timeout (15 s) per endpoint per call. In the Worker each extra attempt is one more Cloudflare subrequest, and `REQUEST_BUDGET` counts calls, not attempts. So a scan that fails over a lot uses more of the per-run subrequest limit. Tests: `packages/key-doctor/test/rpc-failover.test.ts`.
+3. NearBlocks stays out of the scan path. It is an option for later only if a run confirms that `/keys` returns the time each key was added.

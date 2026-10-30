@@ -121,7 +121,7 @@ async function run(cmd: Command, inc: Incoming, env: Env, typing: () => void): P
 async function watchTarget(
   id: string,
   network: Network,
-  rpcUrl: string | undefined,
+  rpcUrl: string[] | undefined,
   inc: Incoming,
   env: Env,
   typing: () => void,

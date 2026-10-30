@@ -1,6 +1,7 @@
 // UC7 daily key diff (§8.6): scan each watched target, diff with its baseline, move the baseline, alert on changes.
 import { diffReports, isKdError, scanTarget, type KdAlert, type KdDiff, type KdReport, type Network } from "key-doctor";
 import type { Env } from "../env.ts";
+import { rpcUrlsFor } from "../core.ts";
 import { latestSnapshot, pruneSnapshots, saveSnapshot } from "../store/snapshots.ts";
 import { alertMessage, deliver } from "./deliver.ts";
 import type { JobResult } from "./proposals.ts";
@@ -57,7 +58,7 @@ export async function runDailyJob(env: Env, only?: string): Promise<JobResult> {
   const targets = only === undefined ? results : results.filter((r) => r.target === only.trim().toLowerCase());
 
   for (const { target, network } of targets) {
-    const rpcUrl = network === "mainnet" ? env.RPC_URL_MAINNET : env.RPC_URL_TESTNET;
+    const rpcUrl = rpcUrlsFor(env, network);
     let diff: KdDiff;
     let curr: KdReport;
     try {

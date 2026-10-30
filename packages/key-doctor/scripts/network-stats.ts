@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { isKdError, scanDao, type KdReport, type Network } from "../src/index.ts";
-import { createRpc, DEFAULT_RPC_URL } from "../src/rpc.ts";
+import { createRpc, DEFAULT_RPC_URLS } from "../src/rpc.ts";
 import { RULESET_VERSION } from "../src/rules/thresholds.ts";
 import { aggregate, toMarkdown } from "./network-stats-lib.ts";
 
@@ -29,7 +29,7 @@ const { values } = parseArgs({
 });
 const network = values.network as Network;
 if (network !== "mainnet" && network !== "testnet") throw new Error("--network must be mainnet or testnet");
-const rpcUrl = values.rpc ?? DEFAULT_RPC_URL[network];
+const rpcUrl = values.rpc ?? DEFAULT_RPC_URLS[network];
 const activeDays = Number(values["active-days"]);
 const outDir = values.out as string;
 const cacheDir = join(outDir, "raw", "network-stats", network);

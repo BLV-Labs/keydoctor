@@ -14,7 +14,7 @@ import { toIsoSeconds } from "./age.ts";
 import { fail, isKdError } from "./errors.ts";
 import { ACTION_TEXT, formatNear, proposalAlertText, roleLabel, voterAlertText, type AlertText } from "./messages.ts";
 import { accountKind, isDigits, isRecord, parsePolicy, resolveTarget, type Policy } from "./parse.ts";
-import { createRpc, DEFAULT_RPC_URL, type Rpc } from "./rpc.ts";
+import { createRpc, DEFAULT_RPC_URLS, type Rpc } from "./rpc.ts";
 import { approvalsNeeded, permits } from "./rules/dao.ts";
 import {
   BLOCK_TIME_MS,
@@ -207,7 +207,7 @@ const codeOf = (e: unknown): string => (isKdError(e) ? e.kd.code : "RPC_ERROR");
 async function newFullAccessKey(
   voter: string,
   head: HeadBlock,
-  opts: { network: Network; rpcUrl?: string; windowHours: number },
+  opts: { network: Network; rpcUrl?: string | readonly string[]; windowHours: number },
 ): Promise<Evidence | null> {
   const report = await scanAccount(voter, {
     network: opts.network,
@@ -252,7 +252,7 @@ export async function checkProposals(
   const target = resolveTarget(daoId, opts);
   const dao = target.id;
   const network = target.network;
-  const rpcUrl = opts.rpcUrl ?? DEFAULT_RPC_URL[network];
+  const rpcUrl = opts.rpcUrl ?? DEFAULT_RPC_URLS[network];
   const rpc: Rpc = createRpc({ url: rpcUrl });
   const windowHours = opts.newKeyWindowHours ?? NEW_KEY_WINDOW_HOURS;
 

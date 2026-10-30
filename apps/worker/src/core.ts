@@ -8,10 +8,20 @@ export interface TargetArgs {
   network?: Network;
 }
 
+/**
+ * The configured RPC endpoints for a network: `RPC_URL_*` holds one URL or a comma-separated list, tried in
+ * order on rate limits and transport failures. Undefined means the library default (DEFAULT_RPC_URLS).
+ */
+export function rpcUrlsFor(env: Env, network: Network): string[] | undefined {
+  const raw = network === "mainnet" ? env.RPC_URL_MAINNET : env.RPC_URL_TESTNET;
+  const urls = (raw ?? "").split(",").map((u) => u.trim()).filter((u) => u !== "");
+  return urls.length > 0 ? urls : undefined;
+}
+
 /** Resolves the target (throws INVALID_TARGET) and picks the configured RPC for its network. */
-export function resolve(args: TargetArgs, env: Env): { id: string; network: Network; rpcUrl?: string } {
+export function resolve(args: TargetArgs, env: Env): { id: string; network: Network; rpcUrl?: string[] } {
   const t = resolveTarget(args.target, args.network === undefined ? {} : { network: args.network });
-  const rpcUrl = t.network === "mainnet" ? env.RPC_URL_MAINNET : env.RPC_URL_TESTNET;
+  const rpcUrl = rpcUrlsFor(env, t.network);
   return { id: t.id, network: t.network, ...(rpcUrl ? { rpcUrl } : {}) };
 }
 
