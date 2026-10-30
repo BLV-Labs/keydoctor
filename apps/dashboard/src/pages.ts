@@ -4,8 +4,8 @@ import { icon } from "./icons.ts";
 import { breadcrumb } from "./report.ts";
 import { BOT_URL, homeHref, routeHref } from "./route.ts";
 
-export const EXAMPLE_DAO = "kdd1793327513.sputnik-v2.testnet";
-export const EXAMPLE_ACCOUNT = "test1.duonghb3.testnet";
+export const EXAMPLE_DAO = "kdoncall.sputnik-v2.testnet";
+export const EXAMPLE_ACCOUNT = "kdoncall-p.testnet";
 
 export function renderLayout(content: Html, network: Network = "testnet"): Html {
   return html`<a class="skip" href="#main">Skip to content</a>
