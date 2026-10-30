@@ -11,66 +11,72 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&amp;family=Fira+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
 <style>
-body{margin:0;background:#F6F7F9}
-a{color:#1E3A5F;cursor:pointer;transition:color .2s,background-color .2s}a:hover{color:#0F2742}button{cursor:pointer}
-a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #2E6BB8;outline-offset:2px}
+.kd{--kd-page:#F6F7F9;--kd-surface:#FFFFFF;--kd-surface-muted:#F9FAFB;--kd-border:#E4E7EC;--kd-border-strong:#D0D5DD;--kd-border-input:#667085;--kd-text:#101828;--kd-text-2:#344054;--kd-text-muted:#475467;--kd-primary:#1E3A5F;--kd-primary-hover:#0F2742;--kd-on-primary:#FFFFFF;--kd-primary-tint:#E8EEF5;--kd-focus:#2E6BB8;--kd-high:#B42318;--kd-high-bg:#FEF3F2;--kd-high-border:#FECDCA;--kd-high-text:#7A271A;--kd-cleanup:#93370D;--kd-cleanup-bg:#FFFAEB;--kd-cleanup-border:#FEDF89;--kd-ok:#067647;--kd-ok-bg:#ECFDF3;--kd-ok-border:#ABEFC6;--kd-note-bg:#F2F4F7;--kd-info-border:#B9CBE0;--kd-high-edge:#F04438;--kd-cleanup-edge:#DC6803;--kd-backdrop:rgba(16, 24, 40, 0.6);--kd-shadow:0 20px 48px rgba(16, 24, 40, 0.25);color-scheme:light}
+.kd[data-theme="dark"]{--kd-page:#0B1017;--kd-surface:#121821;--kd-surface-muted:#161D27;--kd-border:#232C38;--kd-border-strong:#3A4656;--kd-border-input:#6B7A8F;--kd-text:#E6EDF5;--kd-text-2:#C3CDD9;--kd-text-muted:#9AA7B6;--kd-primary:#8DB8EC;--kd-primary-hover:#B3D0F3;--kd-on-primary:#0B1017;--kd-primary-tint:#1B2A3D;--kd-focus:#6EA8FE;--kd-high:#F97066;--kd-high-bg:#2A1414;--kd-high-border:#5C2420;--kd-high-text:#FDA29B;--kd-cleanup:#FDB022;--kd-cleanup-bg:#2A1F0B;--kd-cleanup-border:#5C4210;--kd-ok:#47CD89;--kd-ok-bg:#0E2A1D;--kd-ok-border:#1F5A3D;--kd-note-bg:#1C2430;--kd-info-border:#2D4A6F;--kd-high-edge:#F97066;--kd-cleanup-edge:#FDB022;--kd-backdrop:rgba(0, 0, 0, 0.7);--kd-shadow:0 20px 48px rgba(0, 0, 0, 0.6);color-scheme:dark}
+body{margin:0;background:#0B1017}
+a{color:var(--kd-primary);cursor:pointer;transition:color .2s,background-color .2s}a:hover{color:var(--kd-primary-hover)}button{cursor:pointer}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid var(--kd-focus);outline-offset:2px}
 @media (prefers-reduced-motion: reduce){*{transition:none !important}}
 </style>
 </helmet>
-<div style="min-height: 100vh; background: #F6F7F9; color: #101828; font-family: 'Fira Sans', system-ui, sans-serif; font-size: 16px; line-height: 1.5;">
-  <header style="background: #FFFFFF; border-bottom: 1px solid #E4E7EC;">
+<div class="kd" data-theme="{{theme}}" style="min-height: 100vh; background: var(--kd-page); color: var(--kd-text); font-family: 'Fira Sans', system-ui, sans-serif; font-size: 14px; line-height: 1.5;">
+  <header style="background: var(--kd-surface); border-bottom: 1px solid var(--kd-border);">
     <div style="max-width: 1200px; margin: 0 auto; padding: 14px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 16px 28px;">
-      <a href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: #101828;">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#1E3A5F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z"></path><path d="M12 9v6M9 12h6"></path></svg>
-        <span style="font-weight: 700; font-size: 18px; letter-spacing: -0.01em;">Key Doctor</span>
+      <a href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--kd-text);">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--kd-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z"></path><path d="M12 9v6M9 12h6"></path></svg>
+        <span style="font-weight: 700; font-size: 16px; letter-spacing: -0.01em;">Key Doctor</span>
       </a>
-      <nav aria-label="Main" style="display: flex; flex-wrap: wrap; gap: 4px 20px; flex: 1 1 auto;">
-        <a href="Main.dc.html" style="color: #101828; font-weight: 600; text-decoration: none; padding: 10px 0;">Check</a>
-        <a href="#stats" style="color: #475467; text-decoration: none; padding: 10px 0;">Network stats</a>
-        <a href="https://t.me/KeyDoctorOnCallBot" target="_blank" rel="noopener" style="color: #475467; text-decoration: none; padding: 10px 0;">Telegram bot</a>
+      <nav aria-label="Main" style="display: flex; flex-wrap: wrap; gap: 4px 20px;">
+        <a href="Main.dc.html" style="color: var(--kd-text); font-weight: 600; text-decoration: none; padding: 10px 0;">Check</a>
+        <a href="#stats" style="color: var(--kd-text-muted); text-decoration: none; padding: 10px 0;">Network stats</a>
+        <a href="https://t.me/KeyDoctorOnCallBot" target="_blank" rel="noopener" style="color: var(--kd-text-muted); text-decoration: none; padding: 10px 0;">Telegram bot</a>
       </nav>
+      <button type="button" onClick="{{toggleTheme}}" aria-label="Dark theme" aria-pressed="{{isDark}}" style="margin-left: auto; flex: none; width: 44px; height: 44px; border: 0; border-radius: 8px; background: transparent; color: var(--kd-text-muted); display: inline-flex; align-items: center; justify-content: center;">
+        <sc-if value="{{isLight}}" hint-placeholder-val="{{true}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"></path></svg></sc-if>
+        <sc-if value="{{isDark}}" hint-placeholder-val="{{false}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg></sc-if>
+      </button>
     </div>
   </header>
 
   <main style="max-width: 1200px; margin: 0 auto; padding: 72px 24px 64px; display: flex; flex-direction: column; gap: 56px;">
     <section style="display: flex; flex-direction: column; gap: 28px; max-width: 760px;">
       <div style="display: flex; flex-direction: column; gap: 16px;">
-        <p style="margin: 0; font-size: 14px; font-weight: 600; color: #1E3A5F; letter-spacing: 0.04em; text-transform: uppercase;">Key health for NEAR accounts and DAO councils</p>
-        <h1 style="margin: 0; font-size: 44px; line-height: 1.15; font-weight: 700; letter-spacing: -0.02em;">Key Doctor checks your keys, and stays on call while you sleep.</h1>
-        <p style="margin: 0; font-size: 18px; color: #475467;">Enter your own NEAR account, or a Sputnik DAO to check its whole council. Key Doctor reads the public keys on chain, scores the risk with fixed rules, and shows how to clean up each key. No sign-in, and it never holds anyone's keys.</p>
+        <p style="margin: 0; font-size: 13px; font-weight: 600; color: var(--kd-primary); letter-spacing: 0.04em; text-transform: uppercase;">Key health for NEAR accounts and DAO councils</p>
+        <h1 style="margin: 0; font-size: 36px; line-height: 1.15; font-weight: 700; letter-spacing: -0.02em;">Key Doctor checks your keys, and stays on call while you sleep.</h1>
+        <p style="margin: 0; font-size: 16px; color: var(--kd-text-muted);">Enter your own NEAR account, or a Sputnik DAO to check its whole council. Key Doctor reads the public keys on chain, scores the risk with fixed rules, and shows how to clean up each key. No sign-in, and it never holds anyone's keys.</p>
       </div>
 
-      <form style="display: flex; flex-direction: column; gap: 10px; background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 20px;">
-        <label for="target" style="font-size: 14px; font-weight: 600; color: #344054;">NEAR account or DAO</label>
+      <form style="display: flex; flex-direction: column; gap: 10px; background: var(--kd-surface); border: 1px solid var(--kd-border); border-radius: 12px; padding: 20px;">
+        <label for="target" style="font-size: 13px; font-weight: 600; color: var(--kd-text-2);">NEAR account or DAO</label>
         <div style="display: flex; flex-wrap: wrap; gap: 12px;">
-          <input id="target" type="text" value="kd-demo.sputnik-dao.testnet" style="flex: 1 1 320px; min-width: 0; min-height: 48px; padding: 0 14px; border: 1px solid #667085; border-radius: 8px; font-family: 'Fira Code', ui-monospace, monospace; font-size: 16px; color: #101828; background: #FFFFFF;">
-          <a href="Council.dc.html" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 28px; border-radius: 8px; background: #1E3A5F; color: #FFFFFF; font-weight: 600; text-decoration: none;">
+          <input id="target" type="text" value="kd-demo.sputnik-dao.testnet" style="flex: 1 1 320px; min-width: 0; min-height: 48px; padding: 0 14px; border: 1px solid var(--kd-border-input); border-radius: 8px; font-family: 'Fira Code', ui-monospace, monospace; font-size: 16px; color: var(--kd-text); background: var(--kd-surface);">
+          <a href="Council.dc.html" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 28px; border-radius: 8px; background: var(--kd-primary); color: var(--kd-on-primary); font-weight: 600; text-decoration: none;">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
             Check
           </a>
         </div>
-        <p style="margin: 0; font-size: 14px; color: #475467;">The network comes from the name suffix: <span style="font-family: 'Fira Code', monospace;">.near</span> is mainnet, <span style="font-family: 'Fira Code', monospace;">.testnet</span> is testnet.</p>
+        <p style="margin: 0; font-size: 13px; color: var(--kd-text-muted);">The network comes from the name suffix: <span style="font-family: 'Fira Code', monospace;">.near</span> is mainnet, <span style="font-family: 'Fira Code', monospace;">.testnet</span> is testnet.</p>
         <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 6px;">
-          <span style="font-size: 14px; color: #475467;">Try:</span>
-          <a href="Account.dc.html" style="display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: 999px; background: #E8EEF5; color: #1E3A5F; font-size: 14px; text-decoration: none;"><span style="font-weight: 600;">Personal</span><span style="font-family: 'Fira Code', monospace;">a.kd-demo.testnet</span></a>
-          <a href="Council.dc.html" style="display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: 999px; background: #E8EEF5; color: #1E3A5F; font-size: 14px; text-decoration: none;"><span style="font-weight: 600;">DAO council</span><span style="font-family: 'Fira Code', monospace;">kd-demo.sputnik-dao.testnet</span></a>
+          <span style="font-size: 13px; color: var(--kd-text-muted);">Try:</span>
+          <a href="Account.dc.html" style="display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: 999px; background: var(--kd-primary-tint); color: var(--kd-primary); font-size: 13px; text-decoration: none;"><span style="font-weight: 600;">Personal</span><span style="font-family: 'Fira Code', monospace;">a.kd-demo.testnet</span></a>
+          <a href="Council.dc.html" style="display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: 999px; background: var(--kd-primary-tint); color: var(--kd-primary); font-size: 13px; text-decoration: none;"><span style="font-weight: 600;">DAO council</span><span style="font-family: 'Fira Code', monospace;">kd-demo.sputnik-dao.testnet</span></a>
         </div>
       </form>
     </section>
 
     <section aria-labelledby="who" style="display: flex; flex-direction: column; gap: 20px;">
       <div style="display: flex; flex-direction: column; gap: 4px;">
-        <h2 id="who" style="margin: 0; font-size: 22px; font-weight: 600;">One account, or a whole council</h2>
-        <p style="margin: 0; color: #475467;">A council member is an ordinary NEAR account that sits in a DAO's council. Every account gets the same checks and alerts; a DAO scan simply checks all its council accounts at once.</p>
+        <h2 id="who" style="margin: 0; font-size: 18px; font-weight: 600;">One account, or a whole council</h2>
+        <p style="margin: 0; color: var(--kd-text-muted);">A council member is an ordinary NEAR account that sits in a DAO's council. Every account gets the same checks and alerts; a DAO scan simply checks all its council accounts at once.</p>
       </div>
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px;">
-        <div style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 12px;">
+        <div style="background: var(--kd-surface); border: 1px solid var(--kd-border); border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 12px;">
           <div style="display: flex; align-items: center; gap: 12px;">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#1E3A5F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c0-4 4-6 8-6s8 2 8 6"></path></svg>
-            <h3 style="margin: 0; font-size: 18px; font-weight: 600;">Any NEAR account</h3>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--kd-primary)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c0-4 4-6 8-6s8 2 8 6"></path></svg>
+            <h3 style="margin: 0; font-size: 16px; font-weight: 600;">Any NEAR account</h3>
           </div>
-          <p style="margin: 0; font-size: 14px; color: #475467;">Yours, or a council member's.</p>
-          <ul style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: #344054;">
+          <p style="margin: 0; font-size: 13px; color: var(--kd-text-muted);">Yours, or a council member's.</p>
+          <ul style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--kd-text-2);">
             <li>See every key on the account, with one plain sentence each.</li>
             <li>Find unused, old or too-powerful keys and remove them in Meteor.</li>
             <li>Move to post-quantum ML-DSA keys without locking yourself out.</li>
@@ -78,13 +84,13 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #2E6B
           </ul>
           <a href="Account.dc.html" style="align-self: flex-start; font-weight: 600; text-decoration: none; padding: 10px 0;">Check an account →</a>
         </div>
-        <div style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 12px;">
+        <div style="background: var(--kd-surface); border: 1px solid var(--kd-border); border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 12px;">
           <div style="display: flex; align-items: center; gap: 12px;">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#1E3A5F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"></circle><circle cx="17" cy="9" r="2.5"></circle><path d="M2.5 20c0-3.5 3-5.5 6.5-5.5s6.5 2 6.5 5.5M15 14.6c3 0 6.5 1.4 6.5 4.9"></path></svg>
-            <h3 style="margin: 0; font-size: 18px; font-weight: 600;">A whole DAO council</h3>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--kd-primary)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"></circle><circle cx="17" cy="9" r="2.5"></circle><path d="M2.5 20c0-3.5 3-5.5 6.5-5.5s6.5 2 6.5 5.5M15 14.6c3 0 6.5 1.4 6.5 4.9"></path></svg>
+            <h3 style="margin: 0; font-size: 16px; font-weight: 600;">A whole DAO council</h3>
           </div>
-          <p style="margin: 0; font-size: 14px; color: #475467;">Everything on the left for every council account, plus:</p>
-          <ul style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: #344054;">
+          <p style="margin: 0; font-size: 13px; color: var(--kd-text-muted);">Everything on the left for every council account, plus:</p>
+          <ul style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--kd-text-2);">
             <li>Check all council accounts in one scan, sorted by risk.</li>
             <li>See the voting rules: who approves transfers and how many votes it takes.</li>
             <li>Alert the council group before the final vote when a voter just got a new full-access key.</li>
@@ -96,60 +102,64 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #2E6B
     </section>
 
     <section aria-labelledby="how" style="display: flex; flex-direction: column; gap: 20px;">
-      <h2 id="how" style="margin: 0; font-size: 22px; font-weight: 600;">What Key Doctor does</h2>
+      <h2 id="how" style="margin: 0; font-size: 18px; font-weight: 600;">What Key Doctor does</h2>
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px;">
-        <div style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 10px;">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#1E3A5F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"></circle><path d="M11 12l9-9M17 6l3 3M15 8l2 2"></path></svg>
-          <h3 style="margin: 0; font-size: 18px; font-weight: 600;">Check keys</h3>
-          <p style="margin: 0; color: #475467;">Reads every access key of an account, or of each council member, explains each key in one sentence, and scores the risk.</p>
+        <div style="background: var(--kd-surface); border: 1px solid var(--kd-border); border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 10px;">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--kd-primary)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"></circle><path d="M11 12l9-9M17 6l3 3M15 8l2 2"></path></svg>
+          <h3 style="margin: 0; font-size: 16px; font-weight: 600;">Check keys</h3>
+          <p style="margin: 0; color: var(--kd-text-muted);">Reads every access key of an account, or of each council member, explains each key in one sentence, and scores the risk.</p>
         </div>
-        <div style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 10px;">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#1E3A5F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 13h12l1-13M9 7V4h6v3"></path></svg>
-          <h3 style="margin: 0; font-size: 18px; font-weight: 600;">Clean up safely</h3>
-          <p style="margin: 0; color: #475467;">A step-by-step plan you sign yourself in Meteor Wallet. Progress updates when you rescan. It never suggests deleting your last full-access key.</p>
+        <div style="background: var(--kd-surface); border: 1px solid var(--kd-border); border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 10px;">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--kd-primary)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 13h12l1-13M9 7V4h6v3"></path></svg>
+          <h3 style="margin: 0; font-size: 16px; font-weight: 600;">Clean up safely</h3>
+          <p style="margin: 0; color: var(--kd-text-muted);">A step-by-step plan you sign yourself in Meteor Wallet. Progress updates when you rescan. It never suggests deleting your last full-access key.</p>
         </div>
-        <div style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 10px;">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#1E3A5F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.9 1.9 0 003.4 0"></path></svg>
-          <h3 style="margin: 0; font-size: 18px; font-weight: 600;">On Call</h3>
-          <p style="margin: 0; color: #475467;">Compares your keys every day and messages you on Telegram when one changes. For a DAO, it also checks proposals every 15 minutes and warns the council before the final vote.</p>
+        <div style="background: var(--kd-surface); border: 1px solid var(--kd-border); border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 10px;">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--kd-primary)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.9 1.9 0 003.4 0"></path></svg>
+          <h3 style="margin: 0; font-size: 16px; font-weight: 600;">On Call</h3>
+          <p style="margin: 0; color: var(--kd-text-muted);">Compares your keys every day and messages you on Telegram when one changes. For a DAO, it also checks proposals every 15 minutes and warns the council before the final vote.</p>
         </div>
       </div>
     </section>
 
     <section id="stats" aria-labelledby="stats-h" style="display: flex; flex-direction: column; gap: 20px;">
       <div style="display: flex; flex-direction: column; gap: 4px;">
-        <h2 id="stats-h" style="margin: 0; font-size: 22px; font-weight: 600;">Network stats</h2>
-        <p style="margin: 0; color: #475467;">Measured on 632 active DAOs. The script to reproduce them is in the repo.</p>
+        <h2 id="stats-h" style="margin: 0; font-size: 18px; font-weight: 600;">Network stats</h2>
+        <p style="margin: 0; color: var(--kd-text-muted);">Measured on 632 active DAOs. The script to reproduce them is in the repo.</p>
       </div>
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px;">
-        <div style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 6px;">
-          <p style="margin: 0; font-size: 40px; font-weight: 700; letter-spacing: -0.02em;">1 person</p>
-          <p style="margin: 0; color: #475467;">Median council size. One compromised account is enough to drain the treasury.</p>
+        <div style="background: var(--kd-surface); border: 1px solid var(--kd-border); border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 6px;">
+          <p style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -0.02em;">1 person</p>
+          <p style="margin: 0; color: var(--kd-text-muted);">Median council size. One compromised account is enough to drain the treasury.</p>
         </div>
-        <div style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 6px;">
-          <p style="margin: 0; font-size: 40px; font-weight: 700; letter-spacing: -0.02em;">4 / 480</p>
-          <p style="margin: 0; color: #475467;">Council members with an ML-DSA key, and all 4 still keep their old Ed25519 full-access keys.</p>
+        <div style="background: var(--kd-surface); border: 1px solid var(--kd-border); border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 6px;">
+          <p style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -0.02em;">4 / 480</p>
+          <p style="margin: 0; color: var(--kd-text-muted);">Council members with an ML-DSA key, and all 4 still keep their old Ed25519 full-access keys.</p>
         </div>
-        <div style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 6px;">
-          <p style="margin: 0; font-size: 40px; font-weight: 700; letter-spacing: -0.02em;">83%</p>
-          <p style="margin: 0; color: #475467;">Function-call keys that have never been used.</p>
+        <div style="background: var(--kd-surface); border: 1px solid var(--kd-border); border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 6px;">
+          <p style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -0.02em;">83%</p>
+          <p style="margin: 0; color: var(--kd-text-muted);">Function-call keys that have never been used.</p>
         </div>
       </div>
     </section>
   </main>
 
-  <footer style="border-top: 1px solid #E4E7EC; background: #FFFFFF;">
-    <div style="max-width: 1200px; margin: 0 auto; padding: 20px 24px; display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: 14px; color: #475467;">
+  <footer style="border-top: 1px solid var(--kd-border); background: var(--kd-surface);">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 20px 24px; display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: 13px; color: var(--kd-text-muted);">
       <span>Reads only public data through NEAR RPC. Never signs transactions, never holds keys.</span>
       <span>MIT licensed · built at NEAR HACKATHON</span>
     </div>
   </footer>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1560}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"$preview":{"width":1440,"height":1560}}'>
 class Component extends DCLogic {
   renderVals() {
-    return {};
+    return {
+      theme: (this.state && this.state.themeOverride) || (this.props.theme ?? 'light'),
+      toggleTheme: () => this.setState({ themeOverride: ((this.state && this.state.themeOverride) || (this.props.theme ?? 'light')) === 'dark' ? 'light' : 'dark' }),
+      isDark: ((this.state && this.state.themeOverride) || (this.props.theme ?? 'light')) === 'dark',
+      isLight: ((this.state && this.state.themeOverride) || (this.props.theme ?? 'light')) !== 'dark',};
   }
 }
 </script>

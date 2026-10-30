@@ -3,6 +3,7 @@ import { planSteps, type Level, type Step, type StepId } from "./cleanup.ts";
 import { formatInt, keyAgeMs, relativeAge, truncateKey } from "./format.ts";
 import { clamp } from "./clamp.ts";
 import { html, type Html } from "./html.ts";
+import { WALLETS } from "./wallets.ts";
 import { icon, statusIcon } from "./icons.ts";
 import { breadcrumb, keyButton } from "./report.ts";
 import { keyDialogShell, viewButton } from "./key-detail.ts";
@@ -28,7 +29,7 @@ const DONE_WHEN: Record<StepId, string> = {
 
 const HOW: Record<StepId, string> = {
   revoke_app_keys:
-    "Open Meteor Wallet as this account and revoke these keys one at a time with the Revoke button on each key, or in Meteor Wallet (Meteor groups them under connected apps). An app only asks you to connect again.",
+    "Connect your wallet as this account and revoke these keys one at a time with the Revoke button on each key, or in the wallet itself (Meteor groups them under connected apps). An app only asks you to connect again.",
   delete_old_full_access:
     "Before you delete a full-access key: each one usually belongs to a seed phrase or a device, and that seed phrase or device loses access. Check that you can still sign with the key you keep. Then delete the keys one at a time with the Delete button on each key.",
   add_ml_dsa:
@@ -52,9 +53,11 @@ function keyList(step: Step, m: Member, report: KdReport, statusId: string | nul
       const reasons = keyReasons(k, m);
       const severity = keySeverity(k, m);
       return html`<li class="${severity ? `key-${severity}` : ""}">
+        <div class="key-info">
         <span class="mono" title="${k.public_key}">${truncateKey(k.public_key)}</span>
         <span class="muted small">${t.label}${t.detail ? html` · <span class="mono">${t.detail}</span>` : ""} · added ${relativeAge(keyAgeMs(k, report.chain.block_timestamp)).toLowerCase()} · ${k.use_count === null ? "uses unknown" : `${formatInt(k.use_count)} uses`}</span>
         ${reasons.length > 0 ? clamp(html`<span class="small">${reasons.join(" · ")}</span>`, 2) : ""}
+        </div>
         <span class="actions">${statusId === null ? "" : keyButton(k, statusId)}${viewButton(k)}</span>
       </li>`;
     })}
@@ -76,6 +79,24 @@ function stepCard(step: Step, m: Member, report: KdReport, blocked: string | nul
     ${!step.done && step.keys.length > 0 && !blocked ? html`<p class="small muted" id="sign-status-${step.id}" role="status"></p>` : ""}
     <p class="small muted">${DONE_WHEN[step.id]}</p>
   </li>`;
+}
+
+/** Opened by Connect Wallet, Revoke and Delete: the user picks the wallet that will sign. */
+function walletDialog(): Html {
+  return html`<dialog id="wallet-dialog" class="dialog" aria-labelledby="wallet-h">
+    <div class="dialog-inner">
+      <div class="dialog-head">
+        <div class="stack-xs">
+          <h2 id="wallet-h" class="h2">Choose a wallet</h2>
+          <p class="muted">The wallet opens its own window and shows every change before you approve it.</p>
+        </div>
+        <button type="button" class="icon-btn" data-action="close-dialog" aria-label="Close">${icon.close()}</button>
+      </div>
+      <div class="dialog-box stack-sm">
+        ${WALLETS.map((w) => html`<button type="button" class="btn btn-secondary" data-action="choose-wallet" data-wallet="${w.id}">${w.label}</button>`)}
+      </div>
+    </div>
+  </dialog>`;
 }
 
 export function renderCleanup(report: KdReport, from: string | null, level: Level, paging: Paging = NO_PAGING): Html {
@@ -104,7 +125,7 @@ export function renderCleanup(report: KdReport, from: string | null, level: Leve
     ${recent
       ? html`<section role="alert" class="alert-box">${icon.alert()}<div class="stack-xs">
           <p class="alert-title">Delete this key now</p>
-          <p>Full-access key <span class="mono">${truncateKey(recent.key.public_key)}</span> was added ${relativeAge(recent.ageMs).toLowerCase()}. If you did not add it, delete it in Meteor Wallet before anything else, and check the account from a device you trust.</p>
+          <p>Full-access key <span class="mono">${truncateKey(recent.key.public_key)}</span> was added ${relativeAge(recent.ageMs).toLowerCase()}. If you did not add it, delete it in your wallet before anything else, and check the account from a device you trust.</p>
         </div></section>`
       : ""}
     <p class="small muted" id="wallet-status" role="status"></p>
@@ -121,5 +142,6 @@ export function renderCleanup(report: KdReport, from: string | null, level: Leve
       ${steps.map((s) => stepCard(s, m, report, s.id === "delete_remaining_ed25519" && !steps.slice(0, 4).every((x) => x.done) ? "Still needed: finish steps 1 to 4 first." : null, paging))}
     </ol>
     ${keyDialogShell()}
+    ${walletDialog()}
     <p class="small muted">${firstOpen ? `Next: step ${firstOpen.number}.` : "All steps are done."} Key Doctor never signs transactions or holds keys: every change happens in your wallet, and this page reads the result from the chain when you rescan.</p>`;
 }

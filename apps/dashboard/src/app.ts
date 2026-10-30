@@ -11,6 +11,7 @@ import { PROPOSALS_ID, PROPOSALS_LIST, renderProposals } from "./proposals-view.
 import { renderAccount, renderCouncil } from "./report.ts";
 import { homeHref, parseRoute, resolveInput, routeHref, type Route } from "./route.ts";
 import { renderWatchDialog, renderWatchLinks } from "./watch.ts";
+import { isWalletId, walletLabel, type WalletId } from "./wallets.ts";
 
 declare const __KD_WORKER_URL__: string;
 /** Set at build time (KD_WORKER_URL); empty means the MVP dialog with no Worker call. */
@@ -51,8 +52,41 @@ const UNKNOWN_ERROR: KdError = {
   retryable: true,
 };
 
+const THEME_KEY = "kd.theme";
+type Theme = "light" | "dark";
+
+const currentTheme = (): Theme => (document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+
+/** Applies a theme; `save` remembers it, otherwise the page keeps following the system setting. */
+function setTheme(theme: Theme, save: boolean): void {
+  document.documentElement.dataset.theme = theme;
+  if (save) {
+    try {
+      localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      // Not remembered across visits; this page still switches.
+    }
+  }
+  document.querySelector(".theme-toggle")?.setAttribute("aria-pressed", String(theme === "dark"));
+}
+
+function savedTheme(): Theme | null {
+  try {
+    const t = localStorage.getItem(THEME_KEY);
+    return t === "dark" || t === "light" ? t : null;
+  } catch {
+    return null;
+  }
+}
+
+// Follow the system setting until the user picks a theme with the header switch.
+window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
+  if (savedTheme() === null) setTheme(e.matches ? "dark" : "light", false);
+});
+
 function paint(content: Html, title: string, focusMain: boolean, network: Network): void {
   root.innerHTML = renderLayout(content, network).value;
+  setTheme(currentTheme(), false);
   document.title = title;
   revealClampToggles(root);
   if (focusMain) document.getElementById("main")?.focus();
@@ -170,8 +204,8 @@ function closeDialog(dialog: HTMLDialogElement): void {
   dialog.close();
 }
 
-/** Signs an accepted plan through Meteor, or shows why the guards refused it. Re-renders on success. */
-function signPlan(button: HTMLButtonElement, status: HTMLElement, plan: DeletePlan): void {
+/** Signs an accepted plan through the chosen wallet, or shows why the guards refused it. Re-renders on success. */
+function signPlan(button: HTMLButtonElement, status: HTMLElement, plan: DeletePlan, walletId: WalletId): void {
   if (!plan.ok) {
     status.textContent = plan.errors.map((e) => GUARD_TEXT[e]).join(" ");
     return;
@@ -179,16 +213,70 @@ function signPlan(button: HTMLButtonElement, status: HTMLElement, plan: DeletePl
   const account = lastReport!.target.id;
   const network = lastReport!.chain.network;
   button.disabled = true;
-  status.textContent = "Waiting for Meteor Wallet. Check the transaction there before you approve.";
+  status.textContent = `Waiting for ${walletLabel(walletId)}. Check the transaction there before you approve.`;
   // Loaded on demand: the wallet SDK is large and only needed when someone signs.
   import("./wallet.ts")
-    .then((w) => w.signDeleteKeys(account, network, plan, (t) => (status.textContent = t)))
+    .then((w) => w.signDeleteKeys(account, network, plan, walletId, (t) => (status.textContent = t)))
     .then(() => {
       void render(false);
     })
     .catch((e: unknown) => {
       button.disabled = false;
       status.textContent = `Not done: ${e instanceof Error ? e.message : "the wallet did not sign."}`;
+    });
+}
+
+let pendingWallet: ((id: WalletId) => void) | null = null;
+
+/** Opens the wallet dialog; `then` runs with the wallet the user picks. Closing the dialog drops it. */
+function askWallet(trigger: HTMLElement, then: (id: WalletId) => void): void {
+  const dialog = document.getElementById("wallet-dialog") as HTMLDialogElement | null;
+  if (dialog === null) return;
+  pendingWallet = then;
+  dialogTrigger = trigger;
+  dialog.showModal();
+  void decorateWallets(dialog);
+}
+
+/** Fills each wallet button with the name and icon its SDK module declares; the static label stays if loading fails. */
+async function decorateWallets(dialog: HTMLElement): Promise<void> {
+  try {
+    const { walletMetadata } = await import("./wallet.ts");
+    const meta = await walletMetadata(lastReport?.chain.network ?? "testnet");
+    for (const button of dialog.querySelectorAll<HTMLButtonElement>("[data-wallet]")) {
+      const m = meta[button.dataset.wallet ?? ""];
+      if (m === undefined || button.querySelector("img") !== null) continue;
+      const img = document.createElement("img");
+      img.src = m.iconUrl;
+      img.alt = "";
+      img.width = img.height = 24;
+      button.prepend(img);
+      button.lastChild!.textContent = m.name;
+    }
+  } catch {
+    // keep the static labels
+  }
+}
+
+/** Read-only connect request (no contractId, so no key is added). */
+function connectWallet(status: HTMLElement, walletId: WalletId): void {
+  // The Meteor extension injects window.meteorCom; without it the SDK falls back to a web popup.
+  if (walletId === "meteor-wallet" && !("meteorCom" in window)) {
+    const link = document.createElement("a");
+    link.href = METEOR_INSTALL_URL;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = "Install the Meteor Wallet extension";
+    status.replaceChildren(link, " in this browser, then reload this page.");
+    return;
+  }
+  status.textContent = `Check the ${walletLabel(walletId)} window.`;
+  import("./wallet.ts")
+    .then((w) => w.openWallet(lastReport!.chain.network, walletId))
+    .then(() => (status.textContent = ""))
+    .catch((e: unknown) => {
+      const msg = e instanceof Error ? e.message : "";
+      status.textContent = /closed/i.test(msg) ? "Wallet window closed." : `Not opened: ${msg || "the wallet did not respond."}`;
     });
 }
 
@@ -223,34 +311,35 @@ root.addEventListener("click", (event) => {
       const m = lastReport?.members[0];
       const status = document.getElementById(el.dataset.status ?? "");
       if (!lastReport || !m || !status || !el.dataset.key) break;
-      signPlan(el as HTMLButtonElement, status, buildDeletePlan(m, [el.dataset.key], null));
+      const plan = buildDeletePlan(m, [el.dataset.key], null);
+      if (!plan.ok) {
+        status.textContent = plan.errors.map((e) => GUARD_TEXT[e]).join(" ");
+        break;
+      }
+      const button = el as HTMLButtonElement;
+      askWallet(el, (walletId) => signPlan(button, status, plan, walletId));
       break;
     }
     case "open-wallet": {
       const status = document.getElementById("wallet-status");
       if (!lastReport || !status) break;
-      // The Meteor extension injects window.meteorCom; without it the SDK falls back to a web popup.
-      if (!("meteorCom" in window)) {
-        const link = document.createElement("a");
-        link.href = METEOR_INSTALL_URL;
-        link.target = "_blank";
-        link.rel = "noopener";
-        link.textContent = "Install the Meteor Wallet extension";
-        status.replaceChildren(link, " in this browser, then reload this page.");
-        break;
-      }
-      status.textContent = "Check the Meteor Wallet popup.";
-      import("./wallet.ts")
-        .then((w) => w.openWallet(lastReport!.chain.network))
-        .then(() => (status.textContent = ""))
-        .catch((e: unknown) => {
-          const msg = e instanceof Error ? e.message : "";
-          status.textContent = /closed/i.test(msg) ? "Wallet window closed." : `Not opened: ${msg || "the wallet did not respond."}`;
-        });
+      askWallet(el, (walletId) => connectWallet(status, walletId));
+      break;
+    }
+    case "choose-wallet": {
+      const walletId = el.dataset.wallet;
+      const choose = pendingWallet;
+      pendingWallet = null;
+      const open = el.closest("dialog");
+      if (open !== null) closeDialog(open);
+      if (choose !== null && isWalletId(walletId)) choose(walletId);
       break;
     }
     case "rescan":
       void render(false);
+      break;
+    case "theme":
+      setTheme(currentTheme() === "dark" ? "light" : "dark", true);
       break;
     case "toggle-more":
       toggleClamp(el);

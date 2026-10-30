@@ -36,7 +36,7 @@ const options = {
   minify: !serve,
   sourcemap: serve,
   logLevel: "info",
-  alias: { buffer: "buffer/", util: "util/" },
+  alias: { buffer: "buffer/", util: "util/", crypto: join(here, "crypto-shim.mjs") },
   inject: [join(here, "buffer-shim.mjs")],
   define: { global: "globalThis", "process.env.NODE_ENV": JSON.stringify("production"), "process.env": "{}", "process.browser": "true", "process.version": JSON.stringify(""), "process.platform": JSON.stringify("browser"), __KD_WORKER_URL__: JSON.stringify(workerUrl) },
 };

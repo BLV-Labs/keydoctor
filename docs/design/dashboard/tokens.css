@@ -1,14 +1,26 @@
 /*
  * Key Doctor dashboard design tokens, taken from the approved mockup
- * (docs/design/dashboard/mockup). Light theme only for the hackathon.
- * Every text/background pair below passes WCAG AA (lowest: --kd-ok on --kd-ok-bg, 5.40:1).
+ * (docs/design/dashboard/mockup). Two themes: light (below) and dark (further down).
+ * The dark theme follows the system setting unless the header switch picks one (html[data-theme]).
+ * Every text/background pair passes WCAG AA in both themes (lowest light: --kd-ok on --kd-ok-bg, 5.40:1;
+ * lowest dark: --kd-high on --kd-high-bg, 6.24:1).
  */
 :root {
+  color-scheme: light;
   /* Type */
   --kd-font-sans: "Fira Sans", system-ui, sans-serif;
   --kd-font-mono: "Fira Code", ui-monospace, monospace; /* account ids, public keys, commands, block heights */
-  --kd-text-base: 16px;
   --kd-leading: 1.5;
+  /* Type scale: compact, data-first. Body and tables 14px; inputs stay 16px so phones do not zoom on focus. */
+  --kd-fs-2xs: 11px;      /* column heads, monograms */
+  --kd-fs-xs: 12px;       /* tags, small pills, mobile cell labels */
+  --kd-fs-sm: 13px;       /* meta, notes, breadcrumbs, row buttons, pills */
+  --kd-fs-base: 14px;     /* body, tables, dialogs, buttons */
+  --kd-fs-md: 16px;       /* card titles, h3, lead, inputs */
+  --kd-fs-lg: 18px;       /* section titles (h2) */
+  --kd-fs-xl: 24px;       /* page title (h1), tile values */
+  --kd-fs-display: 36px;  /* home hero */
+  --kd-text-base: var(--kd-fs-base);
 
   /* Neutrals */
   --kd-page: #F6F7F9;
@@ -24,6 +36,7 @@
   /* Brand */
   --kd-primary: #1E3A5F;         /* navy: primary buttons, links */
   --kd-primary-hover: #0F2742;
+  --kd-on-primary: #FFFFFF;      /* text on primary buttons and step numbers */
   --kd-primary-tint: #E8EEF5;    /* example chips */
   --kd-focus: #2E6BB8;           /* 3px focus ring, 2px offset */
 
@@ -45,6 +58,36 @@
   --kd-touch: 44px;       /* minimum control height */
   --kd-container: 1200px; /* 960px for the cleanup plan */
   --kd-gutter: 24px;
+  --kd-shadow-dialog: 0 20px 48px rgba(16, 24, 40, 0.25);
+  --kd-backdrop: rgba(16, 24, 40, 0.6);
+}
+
+/* Dark theme: same roles, lighter accents on near-black surfaces. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --kd-page: #0B1017;
+  --kd-surface: #121821;
+  --kd-surface-muted: #161D27;
+  --kd-border: #232C38;
+  --kd-border-strong: #3A4656;
+  --kd-border-input: #6B7A8F;
+  --kd-text: #E6EDF5;
+  --kd-text-2: #C3CDD9;
+  --kd-text-muted: #9AA7B6;
+  --kd-primary: #8DB8EC;
+  --kd-primary-hover: #B3D0F3;
+  --kd-on-primary: #0B1017;
+  --kd-primary-tint: #1B2A3D;
+  --kd-primary-tint-hover: #22354D;
+  --kd-focus: #6EA8FE;
+  --kd-high: #F97066;     --kd-high-bg: #2A1414;    --kd-high-border: #5C2420;    --kd-high-text: #FDA29B;
+  --kd-cleanup: #FDB022;  --kd-cleanup-bg: #2A1F0B; --kd-cleanup-border: #5C4210;
+  --kd-ok: #47CD89;       --kd-ok-bg: #0E2A1D;      --kd-ok-border: #1F5A3D;
+  --kd-note: #C3CDD9;     --kd-note-bg: #1C2430;    --kd-note-border: #3A4656;
+  --kd-info: #8DB8EC;     --kd-info-bg: #17263A;    --kd-info-border: #2D4A6F;
+  --kd-high-edge: #F97066;  --kd-cleanup-edge: #FDB022;
+  --kd-shadow-dialog: 0 20px 48px rgba(0, 0, 0, 0.6);
+  --kd-backdrop: rgba(0, 0, 0, 0.7);
 }
 
 a:focus-visible,

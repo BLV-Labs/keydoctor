@@ -100,6 +100,15 @@ describe("GĐ8 delete guards (UC8 safety rules)", () => {
 });
 
 describe("GĐ8 cleanup page", () => {
+  it("asks which wallet to use in a dialog, with no wallet picked up front", () => {
+    const out = renderCleanup(accountReport(0), null, "safe").value;
+    assert.doesNotMatch(out, /<select/);
+    assert.match(out, /<dialog id="wallet-dialog"/);
+    for (const [id, label] of [["meteor-wallet", "Meteor Wallet"], ["here-wallet", "Here Wallet"], ["hot-wallet", "HOT Wallet"]]) {
+      assert.match(out, new RegExp(`data-action="choose-wallet" data-wallet="${id}">${label}</button>`));
+    }
+  });
+
   it("shows progress, the urgent new key, ordered key lists and Meteor links", () => {
     const out = renderCleanup(accountReport(0), "kd-demo.sputnik-dao.testnet", "safe");
     const t = text(out);

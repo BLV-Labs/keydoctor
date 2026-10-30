@@ -7,6 +7,7 @@ import { keyApproval, keyDialogShell, viewButton } from "./key-detail.ts";
 import { proposalsPlaceholder } from "./proposals-view.ts";
 import { NO_PAGING, pageOf, pager, slicePage, type Paging } from "./paging.ts";
 import { routeHref } from "./route.ts";
+import { avatar, cardHead } from "./ui.ts";
 import {
   STATUS_LABEL,
   adminMembers,
@@ -78,7 +79,7 @@ function memberRow(member: Member, dao: string, network: Network): Html {
   const reason = failed ? `Couldn't read this account. ${mainReason(member)}` : mainReason(member);
   return html`<li>
     <a class="member-row${failed ? " member-row-error" : ""}" href="${routeHref(member.account_id, dao, network)}" data-nav>
-      <span class="cell"><span class="cell-label">Member</span><span class="mono wrap">${member.account_id}</span></span>
+      <span class="cell"><span class="cell-label">Member</span><span class="who">${avatar(member.account_id)}<span class="mono wrap">${member.account_id}</span></span></span>
       <span class="cell"><span class="cell-label">Status</span>${failed ? statusPill("note", true) : statusPill(member.status, true)}</span>
       <span class="cell"><span class="cell-label">Full-access / app keys</span>${failed ? "Unknown" : keyMix(member)}</span>
       <span class="cell reason reason-${failed ? "high" : member.status}"><span class="cell-label">Main reason</span><span class="line-2" title="${reason}">${reason}</span></span>
@@ -168,10 +169,7 @@ export function renderCouncil(report: KdReport, paging: Paging = NO_PAGING): Htm
     ${flagCards(report.dao_flags, "DAO issues", "dao-flags-h")}
 
     <section aria-labelledby="members-h" class="card flush" tabindex="-1" data-list-anchor="${MEMBERS_LIST}">
-      <div class="card-head">
-        <h2 id="members-h" class="h2">Council members</h2>
-        <span class="muted small">Sorted by risk · ${keyTotals(report)}</span>
-      </div>
+      ${cardHead("members-h", "Council members", `Sorted by risk · ${keyTotals(report)}`)}
       <div class="table-scroll">
         <div class="member-table">
           <div class="member-row member-head" aria-hidden="true">
@@ -214,7 +212,7 @@ function newKeyAlert(member: Member, report: KdReport, inCouncil: boolean): Html
 export function keyButton(k: KeyInfo, statusId: string): Html {
   const full = k.permission.type === "full_access";
   const verb = full ? "Delete" : "Revoke";
-  return html`<button type="button" class="btn ${full ? "btn-danger" : "btn-warn"} self-start" data-action="delete-key" data-key="${k.public_key}" data-status="${statusId}" aria-label="${verb} key ${truncateKey(k.public_key)} with Meteor">${verb}</button>`;
+  return html`<button type="button" class="btn ${full ? "btn-danger" : "btn-warn"} self-start" data-action="delete-key" data-key="${k.public_key}" data-status="${statusId}" aria-label="${verb} key ${truncateKey(k.public_key)} with your wallet">${verb}</button>`;
 }
 
 /** `isNew`: a full-access key added in the last 48 hours (the one the alert box names). Only that row is tinted. */
@@ -225,10 +223,10 @@ function keyRow(key: KeyInfo, member: Member, report: KdReport, isNew: boolean):
   const severity = keySeverity(key, member);
   return html`<tr${isNew ? html` class="row-new"` : ""}>
     <td data-label="Public key"><span class="mono" title="${key.public_key}">${truncateKey(key.public_key)}</span></td>
-    <td data-label="Type">${type.label}${key.permission.type === "full_access" ? html`<br><span class="muted small mono wrap">${type.detail}</span>` : ""}</td>
+    <td data-label="Type"><span class="nowrap">${type.label}</span>${key.permission.type === "full_access" ? html`<br><span class="muted small mono wrap">${type.detail}</span>` : ""}</td>
     <td data-label="Approved for">${approval.contract === null ? html`<span class="muted">${approval.label}</span>` : html`<span class="mono wrap">${approval.contract}</span>`}</td>
     <td data-label="Added">${relativeAge(keyAgeMs(key, report.chain.block_timestamp))}${isNew ? html`<br><span class="pill pill-sm pill-high">${statusIcon("high", 12)}New key</span>` : ""}</td>
-    <td data-label="Uses">${key.use_count === null ? "Unknown" : formatInt(key.use_count)}</td>
+    <td data-label="Uses" class="num">${key.use_count === null ? "Unknown" : formatInt(key.use_count)}</td>
     <td data-label="Why it matters">${reasons.length === 0
       ? html`<span class="muted">No issue found</span>`
       : html`<div class="reason-cell">${severity ? statusPill(severity, true) : ""}${clamp(reasons.join(" · "), 2)}</div>`}</td>
@@ -236,26 +234,23 @@ function keyRow(key: KeyInfo, member: Member, report: KdReport, isNew: boolean):
   </tr>`;
 }
 
-function keysTable(member: Member, report: KdReport, paging: Paging): Html {
+function keysTable(member: Member, report: KdReport, paging: Paging, cleanupHref?: string): Html {
   const { items: keys, window } = slicePage(member.keys, pageOf(paging, KEYS_LIST));
   const recent = new Set(recentFullAccessKeys(member, report.chain.block_timestamp).map((r) => r.key.public_key));
   return html`<section aria-labelledby="keys-h" class="card flush" tabindex="-1" data-list-anchor="${KEYS_LIST}">
-    <div class="card-head">
-      <h2 id="keys-h" class="h2">Every key</h2>
-      <span class="muted small">Key age is estimated from the nonce</span>
-    </div>
+    ${cardHead("keys-h", "Every key", "Key age is estimated from the nonce", cleanupHref ? { href: cleanupHref, label: "Cleanup plan" } : undefined)}
     ${member.keys.length === 0
       ? html`<p class="pad muted">This account has no access keys.</p>`
       : html`<div class="table-scroll">
           <table class="key-table">
-            <thead><tr><th scope="col">Public key</th><th scope="col">Type</th><th scope="col">Approved for</th><th scope="col">Added</th><th scope="col">Uses</th><th scope="col">Why it matters</th><th scope="col">Action</th></tr></thead>
+            <thead><tr><th scope="col">Public key</th><th scope="col">Type</th><th scope="col">Approved for</th><th scope="col">Added</th><th scope="col" class="num">Uses</th><th scope="col">Why it matters</th><th scope="col">Action</th></tr></thead>
             <tbody>${keys.map((k) => keyRow(k, member, report, recent.has(k.public_key)))}</tbody>
           </table>
         </div>
         ${pager(KEYS_LIST, "Keys", window, paging)}
         <p class="pad small muted" id="key-status" role="status"></p>
         ${keyDialogShell()}`}
-    <p class="pad small muted footnote">Revoke and Delete ask Meteor Wallet to remove one key; you approve the transaction there. Key Doctor never signs transactions and never holds keys.</p>
+    <p class="pad small muted footnote">Revoke and Delete ask your wallet (Meteor, Here or HOT) to remove one key; you approve the transaction there. Key Doctor never signs transactions and never holds keys.</p>
   </section>`;
 }
 
@@ -264,6 +259,7 @@ export function renderAccount(report: KdReport, from: string | null, paging: Pag
   const id = report.target.id;
   if (member === undefined) return html`${breadcrumb(id, from)}<p>Empty report.</p>`;
   const inCouncil = from !== null;
+  const cleanupHref = member.error === null ? `${routeHref(id, from, report.chain.network)}&view=cleanup` : undefined;
   return html`${breadcrumb(id, from)}
     <section class="page-head">
       <div class="stack-sm grow">
@@ -275,13 +271,13 @@ export function renderAccount(report: KdReport, from: string | null, paging: Pag
           ? html`<p class="meta">Opened from the council of <a href="${routeHref(from)}" data-nav class="mono">${from}</a>. The checks are the same for any account.</p>`
           : ""}
       </div>
-      ${reportActions(member.error === null ? `${routeHref(id, from, report.chain.network)}&view=cleanup` : undefined, member.status)}
+      ${reportActions(cleanupHref, member.status)}
     </section>
     ${member.error !== null ? html`<section role="alert" class="alert-box">${icon.alert()}<p>${mainReason(member)}</p></section>` : ""}
     ${newKeyAlert(member, report, inCouncil)}
     ${member.flags.length === 0 && member.error === null
       ? html`<section class="card pad ok-box">${statusIcon("ok", 18)}<p>No issues found for this account.</p></section>`
       : flagCards(member.flags, "Issues found", "flags-h")}
-    ${keysTable(member, report, paging)}
+    ${keysTable(member, report, paging, cleanupHref)}
     <section class="two-col">${limitsCard(report)}</section>`;
 }
