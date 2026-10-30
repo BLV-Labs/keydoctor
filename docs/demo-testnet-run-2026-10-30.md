@@ -20,7 +20,25 @@ Live run of `scripts/demo-testnet/demo.sh` against the deployed Worker, using ex
 | 8 | `demo.sh governance` | `bot2` proposed adding `kdd1793327513-newcomer.testnet` to the council, proposal id 1 | `F2nSKdZ71Qv8CUhdmjzuHxsnCSBBfuhEGE2rFcRj4pq4` |
 | 9 | `demo.sh run-check` (second) | `alerts_sent: 1`, only the new governance alert; the voter alert for proposal 0 was not sent again; `errors: []` | none (Worker call) |
 
-Second alert: `testnet:kdd1793327513.sputnik-v2.testnet:governance_change_proposal:1:-`. Telegram text for it: _pending._
+Second alert: `testnet:kdd1793327513.sputnik-v2.testnet:governance_change_proposal:1:-`. Telegram message received in the group:
+
+```text
+Key Doctor On Call
+ĐỔI QUYỀN DAO: kdd1793327513.sputnik-v2.testnet
+
+Đề xuất 1: thêm kdd1793327513-newcomer.testnet vào role council. Đề xuất này thay đổi ai kiểm soát DAO.
+Phiếu: 0/2 đã duyệt. Còn chờ: test1.duonghb3.testnet, bot1.duonghb3.testnet, bot2.duonghb3.testnet
+
+Trước khi bỏ phiếu: xác minh với người tạo đề xuất bot2.duonghb3.testnet qua kênh khác (gọi điện, gặp trực tiếp) rằng chính họ tạo nó.
+
+— English —
+GOVERNANCE CHANGE: kdd1793327513.sputnik-v2.testnet
+
+Proposal 1: add kdd1793327513-newcomer.testnet to role council. It changes who controls the DAO.
+Votes: 0/2 approved. Still to vote: test1.duonghb3.testnet, bot1.duonghb3.testnet, bot2.duonghb3.testnet
+
+Before you vote: verify with the proposer bot2.duonghb3.testnet through another channel (call or meet in person) that they created it.
+```
 
 Alert sent: `testnet:kdd1793327513.sputnik-v2.testnet:voter_new_full_access_key:0:bot1.duonghb3.testnet`.
 
