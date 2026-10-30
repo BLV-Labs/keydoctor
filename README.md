@@ -52,6 +52,15 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 
 3. **Ask the MCP server for the same verdict**
 
+   Hosted Worker, no token needed:
+
+   ```bash
+   curl -s https://key-doctor.duonghb53.workers.dev/mcp -H 'content-type: application/json' \
+     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"diagnose","arguments":{"target":"kdoncall.sputnik-v2.testnet"}}}'
+   ```
+
+   Or run it locally:
+
    ```bash
    cp apps/worker/.dev.vars.example apps/worker/.dev.vars
    pnpm --filter worker db:migrate:local
@@ -67,11 +76,13 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 
    You get `kd.report_summary.v1` with the same `summary.status` and member statuses as the dashboard.
 
-4. **Use it from an agent (Claude Code)**
+4. **Use it from an agent (Claude Code)** (see also [Agents](#agents))
 
    ```bash
-   claude mcp add --transport http key-doctor http://localhost:8787/mcp
+   claude mcp add --transport http key-doctor https://key-doctor.duonghb53.workers.dev/mcp
    ```
+
+   For a local Worker use `http://localhost:8787/mcp` instead.
 
    Then ask "check the keys of kdoncall.sputnik-v2.testnet". The agent calls `diagnose`. For the dashboard's detail it has two read-only tools: `list_keys` (one row per access key: member, what it is approved for, age, uses, flags; filter by `account_id`, `permission`, `flagged_only`) and `list_proposals` (the DAO's proposals newest first with votes and who still has to vote; page with `limit` and `offset`). `compare` returns `kd.diff.v1` against the stored baseline and moves the baseline only when you ask (`update_baseline: true`). `watch` returns two one-time Telegram links (`kd.watch_link.v1`): opening one subscribes that chat.
 
@@ -112,8 +123,16 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 | GĐ8 | Cleanup plan, per-key Revoke / Delete signed in Meteor Wallet | Built; Revoke and Delete verified on testnet with a real Meteor account (2026-10-30). No bulk delete |
 | GĐ9 | Daily key diff (02:00 UTC) | Built; deployed with the Worker, not yet seen firing live |
 | GĐ10 | Network stats script | Built; numbers pending a live run |
-| GĐ12 | One-tap watch links: `POST /api/watch-link`, MCP `watch`, `/start <code>`, dashboard "Create links" | Built; deployed with the Worker, not yet checked live |
+| GĐ12 | One-tap watch links: `POST /api/watch-link`, MCP `watch`, `/start <code>`, dashboard "Create links" | Deployed with the Worker; MCP `watch` is in `tools/list`, a link has not been opened live yet |
 | GĐ11, GĐ13 | History backtest, NearBlocks key dates | Not built (Roadmap) |
+
+## Agents
+
+The Worker serves MCP over Streamable HTTP at `https://key-doctor.duonghb53.workers.dev/mcp`. There is no auth for now, so anyone can call every tool. `diagnose`, `list_keys` and `list_proposals` are read-only. `compare` and `watch` write to D1 (`compare` moves the baseline only with `update_baseline: true`). There is no rate limit yet. The dashboard shows the same commands on its **Agents** page.
+
+```bash
+claude mcp add --transport http key-doctor https://key-doctor.duonghb53.workers.dev/mcp
+```
 
 ## How it works
 
