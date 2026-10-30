@@ -38,6 +38,7 @@ main:focus { outline: none; }
 .main-nav a { color: var(--kd-text-muted); text-decoration: none; padding: 10px 0; }
 .main-nav a:first-child { color: var(--kd-text); font-weight: 600; }
 .theme-toggle { margin-left: auto; }
+.wallet-ctl { flex-wrap: wrap; }
 .theme-sun { display: none; }
 [data-theme="dark"] .theme-sun { display: inline-flex; } [data-theme="dark"] .theme-moon { display: none; }
 .theme-moon, .theme-sun { align-items: center; }
@@ -98,6 +99,9 @@ main:focus { outline: none; }
 .btn-tint { background: var(--kd-primary-tint); color: var(--kd-primary); }
 .btn-tint:hover { background: var(--kd-primary-tint-hover); color: var(--kd-primary-hover); }
 .btn-sm { font-size: var(--kd-fs-sm); padding: 0 14px; }
+[hidden] { display: none !important; }
+.btn-locked, .btn-locked:hover { background: var(--kd-surface); color: var(--kd-text-muted); border: 1px dashed currentColor; opacity: .7; cursor: not-allowed; }
+.wallet-bar { align-items: center; }
 .btn:disabled, .btn.is-disabled { opacity: .45; cursor: default; pointer-events: none; }
 
 .breadcrumb { font-size: var(--kd-fs-sm); color: var(--kd-text-muted); display: flex; gap: 8px; flex-wrap: wrap; overflow-wrap: anywhere; }
@@ -247,6 +251,7 @@ li:last-child > .member-row { border-bottom: 0; }
   /* Header: logo and theme switch on the first row, the nav on its own row below. */
   .header-inner { gap: 4px 16px; }
   .theme-toggle { order: 2; }
+  .wallet-ctl { order: 2; }
   .main-nav { order: 3; flex-basis: 100%; }
   .member-row { min-height: 0; }
   .pager-btns { justify-content: space-between; }
