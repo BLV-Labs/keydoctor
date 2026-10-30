@@ -62,7 +62,7 @@ export function renderWatchDialog(target: string, type: "dao" | "account", worke
     ${workerUrl
       ? html`<div class="dialog-box stack-sm" aria-live="polite" id="watch-links">
           <p class="strong">Or use a one-tap link</p>
-          <button type="button" class="btn btn-secondary self-start" data-action="watch-links" data-target="${target}">Create links</button>
+          <button type="button" class="btn btn-secondary self-start" data-action="watch-links" data-target="${target}">Create one-tap links</button>
         </div>`
       : ""}
     <div class="dialog-box stack-sm">

@@ -6,6 +6,7 @@ import type { KdReport, KeyInfo, Member, ProposalInfo } from "key-doctor";
 import { renderCleanup } from "../src/cleanup-view.ts";
 import { pageHref, pager, pageWindow, parsePaging, slicePage } from "../src/paging.ts";
 import { renderProposals } from "../src/proposals-view.ts";
+import { keySeverity, recentFullAccessKeys } from "../src/view.ts";
 import { renderAccount, renderCouncil } from "../src/report.ts";
 
 const require = createRequire(import.meta.url);
@@ -108,6 +109,17 @@ describe("risk colors and long text", () => {
     const out = renderAccount(manyKeys(1), null).value;
     assert.equal((out.match(/class="row-new"/g) ?? []).length, 1);
     assert.match(out, /New key<\/span>/);
+  });
+
+  it("the new key's row tint and its New key pill follow the key's worst flag, so they agree with the reason pill", () => {
+    const r = manyKeys(1);
+    const m = r.members[0] as Member;
+    const { key } = recentFullAccessKeys(m, r.chain.block_timestamp)[0]!;
+    const tone = keySeverity(key, m) ?? "high";
+    const out = renderAccount(r, null).value;
+    const row = out.match(/<tr class="row-new"[^>]*>[\s\S]*?<\/tr>/)![0];
+    assert.equal(row.match(/data-tone="(\w+)"/)?.[1] ?? "high", tone);
+    assert.match(row, new RegExp(`pill pill-sm pill-${tone}">[^]*?New key`));
   });
 
   it("risk explanations and cleanup instructions are never cut", () => {

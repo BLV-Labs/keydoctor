@@ -9,7 +9,7 @@ import { keyReasons, keyType } from "./view.ts";
 export const keyDialogShell = (): Html => html`<dialog id="key-dialog" class="dialog" aria-labelledby="key-h"></dialog>`;
 
 export function viewButton(k: KeyInfo): Html {
-  return html`<button type="button" class="btn btn-secondary self-start" data-action="view-key" data-key="${k.public_key}" aria-label="View key ${truncateKey(k.public_key)}">View</button>`;
+  return html`<button type="button" class="btn btn-secondary self-start" data-action="view-key" data-key="${k.public_key}" aria-label="View key ${truncateKey(k.public_key)}">Details</button>`;
 }
 
 /** Who the key is approved for: the dApp contract of an app key, or any contract for a full-access key. */

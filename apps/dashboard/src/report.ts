@@ -2,7 +2,7 @@ import type { Flag, KdReport, KeyInfo, Member, Network, Status } from "key-docto
 import { formatInt, formatThreshold, formatUtc, keyAgeMs, plural, relativeAge, truncateKey, yoctoToNear } from "./format.ts";
 import { walletBar } from "./session.ts";
 import { clamp } from "./clamp.ts";
-import { html, type Html } from "./html.ts";
+import { escape, Html as RawHtml, html, type Html } from "./html.ts";
 import { icon, statusIcon } from "./icons.ts";
 import { keyApproval, keyDialogShell, viewButton } from "./key-detail.ts";
 import { proposalsPlaceholder } from "./proposals-view.ts";
@@ -227,17 +227,24 @@ export function keyButton(k: KeyInfo, statusId: string): Html {
   return html`<button type="button" class="btn ${full ? "btn-danger" : "btn-warn"} btn-locked self-start" data-action="delete-key" data-key="${k.public_key}" data-status="${statusId}" aria-disabled="true" data-verb="${verb}" aria-label="${verb} key ${truncateKey(k.public_key)} with your wallet">${verb}</button>`;
 }
 
+/** A contract name that may wrap only after a dot, so `app.testnet` never splits as `app.testne` / `t`. */
+function breakAfterDots(name: string): Html {
+  return new RawHtml(name.split(".").map(escape).join(".<wbr>"));
+}
+
 /** `isNew`: a full-access key added in the last 48 hours (the one the alert box names). Only that row is tinted. */
 function keyRow(key: KeyInfo, member: Member, report: KdReport, isNew: boolean): Html {
   const type = keyType(key);
   const approval = keyApproval(key);
   const reasons = keyReasons(key, member);
   const severity = keySeverity(key, member);
-  return html`<tr${isNew ? html` class="row-new"` : ""}>
+  // A new key's tint and pill follow its worst flag, so a yellow "Needs cleanup" reason never sits in a pink row.
+  const tone: Status = severity ?? "high";
+  return html`<tr${isNew ? html` class="row-new"${tone === "high" ? "" : html` data-tone="${tone}"`}` : ""}>
     <td data-label="Public key"><span class="mono" title="${key.public_key}">${truncateKey(key.public_key)}</span></td>
-    <td data-label="Type"><span class="nowrap">${type.label}</span>${key.permission.type === "full_access" ? html`<br><span class="muted small mono wrap">${type.detail}</span>` : ""}</td>
-    <td data-label="Approved for">${approval.contract === null ? html`<span class="muted">${approval.label}</span>` : html`<span class="mono wrap">${approval.contract}</span>`}</td>
-    <td data-label="Added">${relativeAge(keyAgeMs(key, report.chain.block_timestamp))}${isNew ? html`<br><span class="pill pill-sm pill-high">${statusIcon("high", 12)}New key</span>` : ""}</td>
+    <td data-label="Type"><span class="nowrap">${type.label}</span>${key.permission.type === "full_access" ? html` <span class="muted small mono">${type.detail}</span>` : ""}</td>
+    <td data-label="Approved for">${approval.contract === null ? html`<span class="muted">${approval.label}</span>` : html`<span class="mono wrap-soft">${breakAfterDots(approval.contract)}</span>`}</td>
+    <td data-label="Added">${relativeAge(keyAgeMs(key, report.chain.block_timestamp))}${isNew ? html`<br><span class="pill pill-sm pill-${tone}">${statusIcon(tone, 12)}New key</span>` : ""}</td>
     <td data-label="Uses" class="num">${key.use_count === null ? "Unknown" : formatInt(key.use_count)}</td>
     <td data-label="Why it matters">${reasons.length === 0
       ? html`<span class="muted">No issue found</span>`
