@@ -17,6 +17,10 @@ Live run of `scripts/demo-testnet/demo.sh` against the deployed Worker, using ex
 | 5 | function-call key (for the revoke test) | `test1` got `ed25519:8B6kfHb8r5MddweEkJwp3XWv19tS6o4U5mLUJ8QWsCVw`, `act_proposal` on the DAO only, allowance 0.25 NEAR | `CJy3hMp4hUb2Svoj99qrMUpD4to5Ko8YrWmS2jor4oJg` |
 | 6 | `demo.sh vote` | `bot1` approved proposal 0 | `AfmWM28BphdLrLyf8Wzzapys1HU8J1ZPsnagC4zgYtzh` |
 | 7 | `demo.sh run-check` | `targets_checked: 1`, `alerts_sent: 1`, `errors: []` | none (Worker call) |
+| 8 | `demo.sh governance` | `bot2` proposed adding `kdd1793327513-newcomer.testnet` to the council, proposal id 1 | `F2nSKdZ71Qv8CUhdmjzuHxsnCSBBfuhEGE2rFcRj4pq4` |
+| 9 | `demo.sh run-check` (second) | `alerts_sent: 1`, only the new governance alert; the voter alert for proposal 0 was not sent again; `errors: []` | none (Worker call) |
+
+Second alert: `testnet:kdd1793327513.sputnik-v2.testnet:governance_change_proposal:1:-`. Telegram text for it: _pending._
 
 Alert sent: `testnet:kdd1793327513.sputnik-v2.testnet:voter_new_full_access_key:0:bot1.duonghb3.testnet`.
 
@@ -51,6 +55,8 @@ Checked against the chain: the message names the right proposal, the right voter
 | `test1.duonghb3.testnet` | 99 | full access `916N…` (block 107455695), function call `8B6k…` (block 275391266, new) |
 | `kdd1793327513.sputnik-v2.testnet` | 7 | none (DAO contract; 6 NEAR create deposit + 1 NEAR proposal bond) |
 
+State below was read after step 7, before steps 8 and 9 (`bot2` paid another 1 NEAR bond, the DAO now holds 8 NEAR).
+
 Proposal 0: `InProgress`, `vote_counts` `{"council":[1,0,0]}`, votes `{"bot1.duonghb3.testnet":"Approve"}`, proposer `bot2.duonghb3.testnet`. One more approval passes it.
 
 ## What this shows
@@ -60,8 +66,6 @@ Proposal 0: `InProgress`, `vote_counts` `{"council":[1,0,0]}`, votes `{"bot1.duo
 
 ## Not done yet
 
-- Second `run-check` for the same proposal (check the alert is not repeated).
-- `demo.sh governance` and the governance alert.
 - `/changes` after the daily job.
 - Revoke test in Meteor Wallet: the dashboard has no Revoke or Delete buttons yet (blocked on O5, then C4).
 
