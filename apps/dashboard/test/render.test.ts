@@ -260,6 +260,12 @@ describe("proposal list (C7)", () => {
     assert.match(t, /Still to vote: b\.kd-demo\.testnet/);
   });
 
+  it("a token transfer is never shown as NEAR", () => {
+    const t = text(renderProposals(result([info({ transfer: { token_id: "usdt.testnet", receiver_id: "auditor.testnet", amount: "5000000" } })])));
+    assert.match(t, /5000000 units of token usdt\.testnet to auditor\.testnet/);
+    assert.doesNotMatch(t, /NEAR to/);
+  });
+
   it("hides pending voters once the proposal is no longer open", () => {
     const t = text(renderProposals(result([info({ status: "Approved", pending_voters: ["b.kd-demo.testnet"] })])));
     assert.doesNotMatch(t, /Still to vote/);

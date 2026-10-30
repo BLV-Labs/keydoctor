@@ -26,13 +26,19 @@ function votesLine(p: ProposalInfo): string {
   return `${formatInt(approve)} approve${need}${reject > 0 ? `, ${formatInt(reject)} reject` : ""}`;
 }
 
+/** A token transfer shows the raw amount and token id: NEAR decimals would misstate it. */
+function transferLine(t: NonNullable<ProposalInfo["transfer"]>): Html {
+  const amount = t.token_id === "" ? html`${t.amount === "?" ? "?" : yoctoToNear(t.amount)} NEAR` : html`${t.amount} units of token <span class="mono wrap">${t.token_id}</span>`;
+  return html`<p>Send <strong>${amount}</strong> to <span class="mono wrap">${t.receiver_id}</span></p>`;
+}
+
 function row(p: ProposalInfo): Html {
   const voters = Object.entries(p.votes);
   return html`<li class="stack-xs pad">
     <div class="tags">
       <span class="tag">#${String(p.id)}</span><span class="tag">${kindText(p.kind_label)}</span><span class="tag">${p.status}</span>
     </div>
-    ${p.transfer ? html`<p>Send <strong>${yoctoToNear(p.transfer.amount)} NEAR</strong> to <span class="mono wrap">${p.transfer.receiver_id}</span></p>` : ""}
+    ${p.transfer ? transferLine(p.transfer) : ""}
     ${p.description === "" ? "" : html`<p class="wrap">${p.description}</p>`}
     <p class="small muted">Proposed by <span class="mono wrap">${p.proposer}</span> · ${votesLine(p)}</p>
     ${voters.length === 0 ? "" : html`<p class="small">${voters.map(([who, v]) => html`<span class="mono wrap">${who}</span> ${v.toLowerCase()}d · `)}</p>`}

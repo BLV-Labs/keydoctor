@@ -167,7 +167,7 @@ function proposalInfo(p: Proposal, policy: Policy, dao: string, template: string
     description: p.description,
     proposer: p.proposer,
     ...(p.label === "transfer" && {
-      transfer: { token_id: str(b.token_id), receiver_id: str(b.receiver_id), amount: str(b.amount) },
+      transfer: { token_id: str(b.token_id) === "" ? "" : safeId(b.token_id), receiver_id: safeId(b.receiver_id), amount: isDigits(str(b.amount)) ? str(b.amount) : "?" },
     }),
     status: p.status,
     votes: { ...p.votes },
