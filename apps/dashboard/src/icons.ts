@@ -23,6 +23,8 @@ export const icon = {
   key: () => svg(28, '<circle cx="8" cy="15" r="4"></circle><path d="M11 12l9-9M17 6l3 3M15 8l2 2"></path>', 1.8),
   list: () => svg(28, '<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"></path>', 1.8),
   bellLarge: () => svg(28, '<path d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.9 1.9 0 003.4 0"></path>', 1.8),
+  sun: () => svg(18, '<circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>'),
+  moon: () => svg(18, '<path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"></path>'),
   alert: () => svg(22, '<path d="M12 3l10 18H2L12 3z"></path><path d="M12 10v4M12 17.5v.01"></path>'),
 };
 

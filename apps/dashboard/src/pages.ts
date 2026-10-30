@@ -16,6 +16,9 @@ export function renderLayout(content: Html, network: Network = "testnet"): Html 
           <a href="${homeHref(network)}" data-nav>Check</a>
           <a href="${BOT_URL}" target="_blank" rel="noopener">Telegram bot</a>
         </nav>
+        <button type="button" class="icon-btn theme-toggle" data-action="theme" aria-label="Dark theme" aria-pressed="false">
+          <span class="theme-moon">${icon.moon()}</span><span class="theme-sun">${icon.sun()}</span>
+        </button>
       </div>
     </header>
     <main id="main" tabindex="-1" class="container page">${content}</main>

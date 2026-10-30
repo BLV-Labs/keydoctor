@@ -52,8 +52,41 @@ const UNKNOWN_ERROR: KdError = {
   retryable: true,
 };
 
+const THEME_KEY = "kd.theme";
+type Theme = "light" | "dark";
+
+const currentTheme = (): Theme => (document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+
+/** Applies a theme; `save` remembers it, otherwise the page keeps following the system setting. */
+function setTheme(theme: Theme, save: boolean): void {
+  document.documentElement.dataset.theme = theme;
+  if (save) {
+    try {
+      localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      // Not remembered across visits; this page still switches.
+    }
+  }
+  document.querySelector(".theme-toggle")?.setAttribute("aria-pressed", String(theme === "dark"));
+}
+
+function savedTheme(): Theme | null {
+  try {
+    const t = localStorage.getItem(THEME_KEY);
+    return t === "dark" || t === "light" ? t : null;
+  } catch {
+    return null;
+  }
+}
+
+// Follow the system setting until the user picks a theme with the header switch.
+window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
+  if (savedTheme() === null) setTheme(e.matches ? "dark" : "light", false);
+});
+
 function paint(content: Html, title: string, focusMain: boolean, network: Network): void {
   root.innerHTML = renderLayout(content, network).value;
+  setTheme(currentTheme(), false);
   document.title = title;
   revealClampToggles(root);
   if (focusMain) document.getElementById("main")?.focus();
@@ -304,6 +337,9 @@ root.addEventListener("click", (event) => {
     }
     case "rescan":
       void render(false);
+      break;
+    case "theme":
+      setTheme(currentTheme() === "dark" ? "light" : "dark", true);
       break;
     case "toggle-more":
       toggleClamp(el);
