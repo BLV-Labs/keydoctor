@@ -14,7 +14,9 @@
     "stats": "pnpm --filter key-doctor stats",
     "bench": "pnpm --filter key-doctor bench",
     "find-dao": "pnpm --filter key-doctor find-dao",
-    "deploy:all": "set -a; [ -f .env ] && . ./.env; set +a; : \"${KD_WORKER_URL:?set KD_WORKER_URL in .env}\" && pnpm test && pnpm --filter dashboard build && pnpm --filter worker exec wrangler pages deploy ../dashboard/dist --project-name \"${KD_PAGES_PROJECT:-key-doctor-dashboard}\" --branch main && pnpm --filter worker run deploy"
+    "deploy:dashboard": "set -a; [ -f .env ] && . ./.env; set +a; : \"${KD_WORKER_URL:?set KD_WORKER_URL in .env}\" && pnpm --filter dashboard test && pnpm --filter dashboard build && pnpm --filter worker exec wrangler pages deploy ../dashboard/dist --project-name \"${KD_PAGES_PROJECT:-key-doctor-dashboard}\" --branch main",
+    "deploy:worker": "pnpm --filter worker test && pnpm --filter worker run deploy",
+    "deploy:all": "pnpm test && pnpm deploy:dashboard && pnpm deploy:worker"
   },
   "packageManager": "pnpm@10.34.7"
 }
