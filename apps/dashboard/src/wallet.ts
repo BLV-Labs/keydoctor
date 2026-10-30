@@ -33,3 +33,11 @@ export async function signDeleteKeys(
   });
   await wallet.signOut();
 }
+
+/** Opens the installed Meteor extension with a read-only connect request (no contractId, so no key is added). */
+export async function openWallet(network: Network): Promise<void> {
+  const selector = await setupWalletSelector({ network, modules: [setupMeteorWallet()], allowMultipleSelectors: true });
+  const wallet = await selector.wallet("meteor-wallet");
+  await wallet.signIn({ accounts: [] });
+  await wallet.signOut();
+}

@@ -2,7 +2,7 @@
 import { isKdError, scanAccount, scanTarget, type KdError, type KdReport, type Network } from "key-doctor";
 import type { Html } from "./html.ts";
 import { renderError, renderHome, renderLayout, renderScanning } from "./pages.ts";
-import { buildDeletePlan, GUARD_TEXT, planSteps } from "./cleanup.ts";
+import { buildDeletePlan, GUARD_TEXT, METEOR_INSTALL_URL, planSteps } from "./cleanup.ts";
 import { renderCleanup } from "./cleanup-view.ts";
 import { renderAccount, renderCouncil } from "./report.ts";
 import { homeHref, parseRoute, resolveInput, routeHref, type Route } from "./route.ts";
@@ -145,6 +145,26 @@ root.addEventListener("click", (event) => {
           (el as HTMLButtonElement).disabled = false;
           status.textContent = `Not done: ${e instanceof Error ? e.message : "the wallet did not sign."}`;
         });
+      break;
+    }
+    case "open-wallet": {
+      const status = document.getElementById(`wallet-status-${el.dataset.step}`);
+      if (!lastReport || !status) break;
+      // The Meteor extension injects window.meteorCom; without it the SDK falls back to a web popup.
+      if (!("meteorCom" in window)) {
+        const link = document.createElement("a");
+        link.href = METEOR_INSTALL_URL;
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.textContent = "Install the Meteor Wallet extension";
+        status.replaceChildren(link, " in this browser, then reload this page.");
+        break;
+      }
+      status.textContent = "Check the Meteor Wallet popup.";
+      import("./wallet.ts")
+        .then((w) => w.openWallet(lastReport!.chain.network))
+        .then(() => (status.textContent = ""))
+        .catch((e: unknown) => (status.textContent = `Not opened: ${e instanceof Error ? e.message : "the wallet did not respond."}`));
       break;
     }
     case "rescan":

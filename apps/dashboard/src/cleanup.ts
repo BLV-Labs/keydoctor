@@ -1,7 +1,7 @@
 // UC8 key cleanup plan: pure functions over one kd.report.v1 member. Progress comes from chain data only.
 import type { KeyInfo, Member } from "key-doctor";
 
-export const METEOR_URL = "https://wallet.meteorwallet.app/wallet";
+export const METEOR_INSTALL_URL = "https://meteorwallet.app/";
 /** Rough cap on actions per transaction (UC8 safety rule 6); more keys are split across transactions. */
 export const MAX_ACTIONS_PER_TX = 100;
 

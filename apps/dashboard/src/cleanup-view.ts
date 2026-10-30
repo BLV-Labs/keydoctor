@@ -1,5 +1,5 @@
 import type { KdReport, KeyInfo, Member } from "key-doctor";
-import { METEOR_URL, planSteps, type Level, type Step, type StepId } from "./cleanup.ts";
+import { planSteps, type Level, type Step, type StepId } from "./cleanup.ts";
 import { formatInt, keyAgeMs, relativeAge, truncateKey } from "./format.ts";
 import { html, type Html } from "./html.ts";
 import { icon, statusIcon } from "./icons.ts";
@@ -62,7 +62,7 @@ function stepCard(step: Step, m: Member, report: KdReport, blocked: string | nul
     ${!step.done ? html`<p>${HOW[step.id]}</p>` : ""}
     ${!step.done && blocked ? html`<p class="small field-hint">${blocked}</p>` : ""}
     ${!step.done && step.keys.length > 0 && !blocked ? html`<button type="button" class="btn btn-primary self-start" data-action="delete-keys" data-step="${step.id}">${step.id === "revoke_app_keys" ? "Revoke" : "Delete"} ${step.keys.length === 1 ? "this key" : `these ${step.keys.length} keys`} with Meteor</button><p class="small muted" id="sign-status-${step.id}" role="status"></p>` : ""}
-    ${!step.done && step.id !== "test_sign" ? html`<a class="btn btn-secondary self-start" href="${METEOR_URL}" target="_blank" rel="noopener">Open Meteor Wallet</a>` : ""}
+    ${!step.done && step.id !== "test_sign" ? html`<button type="button" class="btn btn-secondary self-start" data-action="open-wallet" data-step="${step.id}">Open Meteor Wallet</button><p class="small muted" id="wallet-status-${step.id}" role="status"></p>` : ""}
     <p class="small muted">${DONE_WHEN[step.id]}</p>
   </li>`;
 }
