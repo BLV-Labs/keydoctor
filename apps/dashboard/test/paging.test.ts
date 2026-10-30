@@ -98,8 +98,8 @@ describe("paged lists", () => {
 describe("risk colors and long text", () => {
   it("Delete is red, Revoke is amber; a risky account makes the cleanup plan the one primary action", () => {
     const out = renderAccount(manyKeys(1), null).value;
-    assert.match(out, /class="btn btn-danger self-start"[^>]*>Delete</);
-    assert.match(out, /class="btn btn-warn self-start"[^>]*>Revoke</);
+    assert.match(out, /class="btn btn-danger btn-locked self-start"[^>]*>Delete</);
+    assert.match(out, /class="btn btn-warn btn-locked self-start"[^>]*>Revoke</);
     assert.match(out, /class="btn btn-primary" href="[^"]*view=cleanup"/);
     assert.equal((out.match(/btn-primary/g) ?? []).length, 1);
   });

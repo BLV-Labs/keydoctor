@@ -38,12 +38,16 @@ export async function signDeleteKeys(
   const label = walletLabel(walletId);
   onStep("Step 1/3: starting the wallet SDK…");
   const wallet = await connect(network, walletId);
-  onStep(`Step 2/3: connect your account in ${label}.`);
-  const accounts = await wallet.signIn({ accounts: [] });
+  // Connect Wallet already stored the session; asking again opens a second popup and the sign popup after it gets blocked.
+  let accounts = await wallet.getAccounts().catch(() => []);
+  if (!accounts.some((a) => a.accountId === accountId)) {
+    onStep(`Step 2/3: connect your account in ${label}.`);
+    accounts = await wallet.signIn({ accounts: [] });
+  }
   onStep(`Step 3/3: approve the Delete Key transaction in ${label}.`);
   if (!accounts.some((a) => a.accountId === accountId)) {
-    await wallet.signOut();
-    throw new Error(`${label} signed in as ${accounts.map((a) => a.accountId).join(", ") || "no account"}, not ${accountId}.`);
+    // No signOut: Meteor answers it with its own "Sign Out Request" popup that nobody approves, so the promise never settles.
+    throw new Error(`${label} is connected as ${accounts.map((a) => a.accountId).join(", ") || "no account"}, not ${accountId}. Switch account in ${label} and try again.`);
   }
   // The plural call opens the wallet's own approval window; the singular one signs with an app key we never ask for.
   await wallet.signAndSendTransactions({
@@ -56,8 +60,15 @@ export async function signDeleteKeys(
   // No signOut here: Meteor answers it with its own "Sign Out Request" popup. The session holds no access key.
 }
 
-/** Opens the chosen wallet with a read-only connect request (no contractId, so no key is added). */
-export async function openWallet(network: Network, walletId: WalletId): Promise<void> {
+/** Connects the chosen wallet (no contractId, so no key is added) and returns the account ids it holds. Reuses a stored session. */
+export async function openWallet(network: Network, walletId: WalletId): Promise<string[]> {
   const wallet = await connect(network, walletId);
-  await wallet.signIn({ accounts: [] });
+  let accounts = await wallet.getAccounts().catch(() => []);
+  if (accounts.length === 0) accounts = await wallet.signIn({ accounts: [] });
+  return accounts.map((a) => a.accountId);
+}
+
+/** Ends the wallet session so the next Connect Wallet asks again. */
+export async function disconnectWallet(network: Network, walletId: WalletId): Promise<void> {
+  await (await connect(network, walletId)).signOut();
 }

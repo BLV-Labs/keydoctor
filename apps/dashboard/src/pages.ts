@@ -1,7 +1,8 @@
 import type { KdError, Network } from "key-doctor";
 import { html, type Html } from "./html.ts";
 import { icon } from "./icons.ts";
-import { breadcrumb } from "./report.ts";
+import { walletDialog } from "./cleanup-view.ts";
+import { breadcrumb, walletControls } from "./report.ts";
 import { BOT_URL, homeHref, routeHref } from "./route.ts";
 
 export const EXAMPLE_DAO = "kdoncall.sputnik-v2.testnet";
@@ -19,6 +20,7 @@ export function renderLayout(content: Html, network: Network = "testnet"): Html 
         <button type="button" class="icon-btn theme-toggle" data-action="theme" aria-label="Dark theme" aria-pressed="false">
           <span class="theme-moon">${icon.moon()}</span><span class="theme-sun">${icon.sun()}</span>
         </button>
+        ${walletControls()}
       </div>
     </header>
     <main id="main" tabindex="-1" class="container page">${content}</main>
@@ -27,7 +29,8 @@ export function renderLayout(content: Html, network: Network = "testnet"): Html 
         <span>Reads only public data through NEAR RPC. Never signs transactions, never holds keys.</span>
         <span>MIT licensed · built at NEAR HACKATHON</span>
       </div>
-    </footer>`;
+    </footer>
+    ${walletDialog()}`;
 }
 
 function chip(kind: string, target: string): Html {
