@@ -18,7 +18,8 @@ Current state:
 - GĐ6 and GĐ9 are built (`apps/worker/src/jobs`, `test/jobs.test.ts`, `scripts/demo-testnet/demo.sh`). They are done after the live demo run.
 - GĐ5 is built (`packages/key-doctor/test/proposals.test.ts`). It is done once the owner checks the four Sputnik facts in `fixtures/README.md` on a testnet DAO.
 - GĐ1 is done: the live-run checklist was recorded on 2026-10-29.
-- GĐ7 is built. It is not deployed yet.
+- GĐ7 is built and deployed to Pages (`https://key-doctor-dashboard.pages.dev`); the Worker, D1 and the Telegram webhook are live too (O1 done on 2026-10-30, `pnpm deploy:all`).
+- GĐ6 live run on 2026-10-30: voter-key alert and governance alert both reached the group, and the second `run-check` did not repeat the first alert. Details: `docs/demo-testnet-run-2026-10-30.md`.
 
 | Step | Phase | Work | Why now / gate |
 |---|---|---|---|
@@ -40,9 +41,9 @@ Open question for the owner (2026-10-29): `/changes` and MCP `compare` on a targ
 
 Tick each box when done and tell Claude the result (numbers, names, block heights) so it can record it.
 
-- [ ] **O1 Deploy.** Create `@KeyDoctorOnCallBot` (BotFather), the Cloudflare account and D1, then follow README "Deploy": `wrangler d1 create key-doctor`, put the id in `apps/worker/wrangler.toml`, `pnpm --filter worker db:migrate:remote`, `wrangler secret put` for the four secrets, `pnpm --filter worker deploy`, `setWebhook`, and Pages for the dashboard. Unblocks steps 3, 4, 6, 8 and GĐ12.
-- [ ] **O2 Demo run.** Run `scripts/demo-testnet/demo.sh` on testnet. Create the accounts at least 48 hours before (see the script header). Unblocks step 5 (milestone 8/11).
-- [ ] **O3 GĐ5 live check.** Check the four Sputnik proposal facts in `packages/key-doctor/fixtures/README.md` ("GĐ5 live-run checklist").
+- [x] **O1 Deploy.** Done 2026-10-30 (D1, Worker, webhook and Pages are live; the dashboard-vs-`/check` comparison, `/list` and `/unwatch` checks, and an MCP `diagnose` curl are still open). Create `@KeyDoctorOnCallBot` (BotFather), the Cloudflare account and D1, then follow README "Deploy": `wrangler d1 create key-doctor`, put the id in `apps/worker/wrangler.toml`, `pnpm --filter worker db:migrate:remote`, `wrangler secret put` for the four secrets, `pnpm --filter worker deploy`, `setWebhook`, and Pages for the dashboard. Unblocks steps 3, 4, 6, 8 and GĐ12.
+- [~] **O2 Demo run.** Ran 2026-10-30 on `kdd1793327513.sputnik-v2.testnet` with existing old accounts (PR #14): steps `dao` to the second `run-check` passed. Left: the Meteor revoke test and key cleanup on `bot1`/`test1`. Run `scripts/demo-testnet/demo.sh` on testnet. Create the accounts at least 48 hours before (see the script header). Unblocks step 5 (milestone 8/11).
+- [x] **O3 GĐ5 live check.** Done 2026-10-29: facts 1 and 2 confirmed, 3 and 4 partly (see `fixtures/README.md`). Check the four Sputnik proposal facts in `packages/key-doctor/fixtures/README.md` ("GĐ5 live-run checklist").
 - [ ] **O4 Stats.** Run `pnpm stats` (mainnet, live RPC; it takes a while). Paste `data/network-stats.md` into the README and commit `data/network-stats.json`.
 - [ ] **O5 Meteor signing test** (§13.5): does Meteor through wallet-selector sign several `DeleteKey` actions in one transaction, and a `DeleteKey` for a full-access key? Does it say which key it signs with? Decides the rest of step 7.
 - [ ] **O6 Decide** the open question above (does `/changes` write a first baseline?).
@@ -55,6 +56,7 @@ Tick each box when done and tell Claude the result (numbers, names, block height
 - [ ] **C3** after O4: put the stats table into the README "The problem" section.
 - [ ] **C4** after O5: GĐ8 in-dashboard signing with wallet-selector + Meteor, using `buildDeletePlan` in `apps/dashboard/src/cleanup.ts` (no `signIn` with `contractId`).
 - [ ] **C5** P1, optional: GĐ13 (NearBlocks key dates), then GĐ11 (history backtest, `docs/final-idea.md` §14.1). Both need NearBlocks API access.
+- [ ] **C7** owner request 2026-10-30: show the DAO's proposal list (id, kind, status, who voted) in the dashboard DAO report. A DAO scan shows keys and voting rules only today; proposals appear only as alerts from `checkProposals`. Read `get_proposals` in the browser through the library (new export) so `kd.report.v1` does not change; decide first whether the bot `/check` shows it too. Source: `docs/final-idea.md` §14.1 data table.
 - [ ] **C6** last: a final README pass so every claim matches what is deployed (GĐ14).
 
 ### How to resume in a new session
