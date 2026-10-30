@@ -250,6 +250,22 @@ export interface CheckProposalsOptions {
   proposalUiUrlTemplate?: string;
 }
 
+export interface ListProposalsOptions {
+  network?: Network;
+  rpcUrl?: string | readonly string[];
+  /** Newest proposals to read. Default 10. */
+  limit?: number;
+  proposalUiUrlTemplate?: string;
+}
+
+export interface ListProposalsResult {
+  /** Newest first. */
+  proposals: ProposalInfo[];
+  /** Every proposal the DAO ever had (`get_last_proposal_id`). */
+  total: number;
+  errors: string[];
+}
+
 export interface CheckProposalsResult {
   alerts: KdAlert[];
   state: ProposalWatchState;

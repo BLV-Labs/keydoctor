@@ -56,7 +56,7 @@ Tick each box when done and tell Claude the result (numbers, names, block height
 - [ ] **C3** after O4: put the stats table into the README "The problem" section.
 - [x] **C4** GĐ8 in-dashboard signing built and verified on testnet 2026-10-30 (per-key Revoke / Delete buttons, wallet SDK lazy-loaded, multi-key and full-access Delete pass, O5). Original scope: in-dashboard signing with wallet-selector + Meteor, using `buildDeletePlan` in `apps/dashboard/src/cleanup.ts` (no `signIn` with `contractId`).
 - [ ] **C5** P1, optional: GĐ13 (NearBlocks key dates), then GĐ11 (history backtest, `docs/final-idea.md` §14.1). Both need NearBlocks API access.
-- [ ] **C7** owner request 2026-10-30: show the DAO's proposal list (id, kind, status, who voted) in the dashboard DAO report. A DAO scan shows keys and voting rules only today; proposals appear only as alerts from `checkProposals`. Read `get_proposals` in the browser through the library (new export) so `kd.report.v1` does not change; decide first whether the bot `/check` shows it too. Source: `docs/final-idea.md` §14.1 data table.
+- [x] **C7** (done 2026-10-30; bot `/check` stays unchanged: a chat message is too small for a list, so the list is dashboard only) owner request 2026-10-30: show the DAO's proposal list (id, kind, status, who voted) in the dashboard DAO report. A DAO scan shows keys and voting rules only today; proposals appear only as alerts from `checkProposals`. Read `get_proposals` in the browser through the library (new export) so `kd.report.v1` does not change; decide first whether the bot `/check` shows it too. Source: `docs/final-idea.md` §14.1 data table.
 - [ ] **C6** last: a final README pass so every claim matches what is deployed (GĐ14).
 
 ### How to resume in a new session

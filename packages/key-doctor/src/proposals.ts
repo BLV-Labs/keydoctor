@@ -4,6 +4,8 @@ import type {
   CheckProposalsOptions,
   CheckProposalsResult,
   KdAlert,
+  ListProposalsOptions,
+  ListProposalsResult,
   Network,
   ProposalInfo,
   ProposalWatchState,
@@ -22,6 +24,8 @@ import {
   MAX_PROPOSALS_PER_CHECK,
   MAX_VOTER_SCANS_PER_CHECK,
   NEW_KEY_WINDOW_HOURS,
+  PROPOSAL_LIST_DEFAULT,
+  PROPOSAL_LIST_MAX,
 } from "./rules/thresholds.ts";
 import { scanAccount } from "./scan.ts";
 
@@ -163,7 +167,7 @@ function proposalInfo(p: Proposal, policy: Policy, dao: string, template: string
     description: p.description,
     proposer: p.proposer,
     ...(p.label === "transfer" && {
-      transfer: { token_id: str(b.token_id), receiver_id: str(b.receiver_id), amount: str(b.amount) },
+      transfer: { token_id: str(b.token_id) === "" ? "" : safeId(b.token_id), receiver_id: safeId(b.receiver_id), amount: isDigits(str(b.amount)) ? str(b.amount) : "?" },
     }),
     status: p.status,
     votes: { ...p.votes },
@@ -373,4 +377,37 @@ export async function checkProposals(
   }
 
   return { alerts, state: { last_proposal_id: nextLast, pending }, errors };
+}
+
+/**
+ * The DAO's newest proposals, newest first, with the same tally as an alert (votes, who is still to vote).
+ * Reads RPC only. Throws when the block, `get_policy` or `get_last_proposal_id` cannot be read; a proposal that
+ * cannot be read or has a kind this tool does not know goes into `errors` and is left out.
+ */
+export async function listProposals(
+  daoId: string,
+  opts: ListProposalsOptions = {},
+): Promise<ListProposalsResult> {
+  const target = resolveTarget(daoId, opts);
+  const dao = target.id;
+  const rpc: Rpc = createRpc({ url: opts.rpcUrl ?? DEFAULT_RPC_URLS[target.network] });
+  const limit = Math.max(1, Math.min(opts.limit ?? PROPOSAL_LIST_DEFAULT, PROPOSAL_LIST_MAX));
+
+  const head = await rpc.block();
+  const total = parseLastId(await rpc.callFunction(dao, head.height, "get_last_proposal_id", {}));
+  const policy = parsePolicy(await rpc.callFunction(dao, head.height, "get_policy", {}));
+  if (policy === null) throw fail("NOT_A_DAO");
+
+  const proposals: ProposalInfo[] = [];
+  const errors: string[] = [];
+  for (let id = total - 1; id >= Math.max(0, total - limit); id--) {
+    try {
+      const p = parseProposal(await rpc.callFunction(dao, head.height, "get_proposal", { id }));
+      if (p === null || p.id !== id) throw fail("RPC_ERROR", { retryable: false });
+      proposals.push(proposalInfo(p, policy, dao, opts.proposalUiUrlTemplate));
+    } catch (e) {
+      errors.push(`proposal ${id}: ${codeOf(e)}`);
+    }
+  }
+  return { proposals, total, errors };
 }

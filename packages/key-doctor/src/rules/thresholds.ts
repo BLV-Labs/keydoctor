@@ -82,6 +82,9 @@ export const RATE_LIMIT_BACKOFF_MS = 1000;
 export const NEW_KEY_WINDOW_HOURS = 48;
 // Per call: proposals read (pending first, then new) and voters scanned; the rest wait for the next call.
 export const MAX_PROPOSALS_PER_CHECK = 12;
+/** `listProposals`: newest proposals read by default, and the most one call may read. */
+export const PROPOSAL_LIST_DEFAULT = 10;
+export const PROPOSAL_LIST_MAX = 40;
 export const MAX_VOTER_SCANS_PER_CHECK = 8;
 // Proposal descriptions are chain text: cut before they go into ProposalInfo.
 export const DESCRIPTION_MAX_LEN = 280;

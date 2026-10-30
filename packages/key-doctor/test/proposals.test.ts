@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it, type TestContext } from "node:test";
-import { checkProposals, type KdAlert, type ProposalWatchState } from "../src/index.ts";
+import { checkProposals, listProposals, type KdAlert, type ProposalWatchState } from "../src/index.ts";
 import { actionText, groupOf, parseProposal, tally } from "../src/proposals.ts";
 import { parsePolicy } from "../src/parse.ts";
 import { blockBody, fixture, installFetch, ok, rpcErr, type Req } from "./support/stub.ts";
@@ -289,5 +289,32 @@ describe("GĐ5 checkProposals: failures and caps", () => {
     demo(t);
     const narrow = await checkProposals(DAO, { last_proposal_id: 2, pending: {} }, { newKeyWindowHours: 2 });
     assert.ok(!narrow.alerts.some((a) => a.kind === "voter_new_full_access_key"));
+  });
+});
+
+describe("listProposals (dashboard proposal list)", () => {
+  it("returns the newest proposals first with the vote tally, and reads no keys", async (t) => {
+    const calls = demo(t);
+    const r = await listProposals(DAO);
+    assert.equal(r.total, 4);
+    // Ids 0 and 1 do not exist in the stub: they are reported, not hidden, and never fail the list.
+    assert.deepEqual(r.proposals.map((p) => p.id), [3, 2]);
+    assert.deepEqual(r.errors.sort(), ["proposal 0: NOT_A_DAO", "proposal 1: NOT_A_DAO"]);
+    assert.equal(r.proposals[1]?.transfer?.receiver_id.length ? true : false, true);
+    assert.ok(queries(calls).every((q) => !q.startsWith("view_access_key_list")));
+  });
+
+  it("limit caps how many proposals are read", async (t) => {
+    const calls = demo(t);
+    const r = await listProposals(DAO, { limit: 1 });
+    assert.deepEqual(r.proposals.map((p) => p.id), [3]);
+    assert.equal(queries(calls).filter((q) => q === "call_function:get_proposal").length, 1);
+  });
+
+  it("a transport failure on one proposal leaves the others", async (t) => {
+    demo(t, { down: [3] });
+    const r = await listProposals(DAO, { limit: 2 });
+    assert.deepEqual(r.proposals.map((p) => p.id), [2]);
+    assert.equal(r.errors.length, 1);
   });
 });
