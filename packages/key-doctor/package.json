@@ -13,7 +13,8 @@
     "test": "node --test \"test/**/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.src.json && tsc -p tsconfig.json",
     "stats": "node scripts/network-stats.ts",
-    "bench": "node scripts/bench-sources.ts"
+    "bench": "node scripts/bench-sources.ts",
+    "find-dao": "node scripts/find-dao.ts"
   },
   "devDependencies": {
     "typescript": "6.0.3",
