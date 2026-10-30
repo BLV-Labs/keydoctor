@@ -6,22 +6,21 @@ import { TOOLS } from "../src/mcp/server.ts";
 import { testD1, type TestD1 } from "./support/d1.ts";
 import { DAO, addKey, bytes, fixture, installChain } from "./support/rpc.ts";
 
-const TOKEN = "test-mcp-token";
 const ctx = { waitUntil: () => {} };
 
 function setup(t: TestContext) {
   const db = testD1();
-  const env: Env = { DB: db, MCP_TOKEN: TOKEN };
+  const env: Env = { DB: db };
   const chain = installChain(t);
   return { db, env, chain };
 }
 
 let nextId = 1;
-async function rpc(env: Env, method: string, params: unknown = {}, token: string | null = TOKEN) {
+async function rpc(env: Env, method: string, params: unknown = {}) {
   const res = await worker.fetch(
     new Request("https://kd.test/mcp", {
       method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...(token !== null && { authorization: `Bearer ${token}` }) },
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
       body: JSON.stringify({ jsonrpc: "2.0", id: nextId++, method, params }),
     }),
     env,
@@ -39,16 +38,11 @@ describe("GĐ3 Worker: routes and auth", () => {
     assert.equal(await res.text(), "ok");
   });
 
-  it("/mcp rejects a missing, wrong or unconfigured token with kd.error.v1 UNAUTHORIZED before any work", async (t) => {
-    const { env, chain } = setup(t);
-    for (const token of [null, "wrong", ""]) {
-      const r = await rpc(env, "tools/call", { name: "diagnose", arguments: { target: DAO } }, token);
-      assert.equal(r.status, 401);
-      assert.equal(r.body.code, "UNAUTHORIZED");
-    }
-    const noSecret = await rpc({ ...env, MCP_TOKEN: "" }, "tools/list", {}, "");
-    assert.equal(noSecret.status, 401);
-    assert.equal(chain.calls.length, 0);
+  it("/mcp needs no Authorization header: the token was dropped so judges and agents can call it directly", async (t) => {
+    const { env } = setup(t);
+    const list = await rpc(env, "tools/list");
+    assert.equal(list.status, 200);
+    assert.equal(list.body.result.tools.length, 5);
   });
 
   it("unknown paths are 404", async () => {
@@ -68,7 +62,7 @@ describe("GĐ3 MCP protocol", () => {
     assert.equal(old.body.result.protocolVersion, "2025-06-18");
 
     const note = await worker.fetch(
-      new Request("https://kd.test/mcp", { method: "POST", headers: { authorization: `Bearer ${TOKEN}` }, body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) }),
+      new Request("https://kd.test/mcp", { method: "POST", body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) }),
       env,
       ctx,
     );
@@ -83,9 +77,9 @@ describe("GĐ3 MCP protocol", () => {
 
   it("rejects bad JSON-RPC and GET", async (t) => {
     const { env } = setup(t);
-    const bad = await worker.fetch(new Request("https://kd.test/mcp", { method: "POST", headers: { authorization: `Bearer ${TOKEN}` }, body: "[1,2]" }), env, ctx);
+    const bad = await worker.fetch(new Request("https://kd.test/mcp", { method: "POST", body: "[1,2]" }), env, ctx);
     assert.equal(bad.status, 400);
-    const get = await worker.fetch(new Request("https://kd.test/mcp", { headers: { authorization: `Bearer ${TOKEN}` } }), env, ctx);
+    const get = await worker.fetch(new Request("https://kd.test/mcp", {}), env, ctx);
     assert.equal(get.status, 405);
   });
 });

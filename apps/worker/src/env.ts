@@ -26,7 +26,6 @@ export interface ScheduledController {
 
 export interface Env {
   DB: D1Database;
-  MCP_TOKEN?: string;
   RUN_CHECK_TOKEN?: string;
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_WEBHOOK_SECRET?: string;
