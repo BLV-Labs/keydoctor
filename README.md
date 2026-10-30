@@ -128,7 +128,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 
 ## Agents
 
-The Worker serves MCP over Streamable HTTP at `https://key-doctor.duonghb53.workers.dev/mcp`. There is no auth for now, so anyone can call every tool. `diagnose`, `list_keys` and `list_proposals` are read-only. `compare` and `watch` write to D1 (`compare` moves the baseline only with `update_baseline: true`). There is no rate limit yet. The dashboard shows the same commands on its **Agents** page.
+The Worker serves MCP over Streamable HTTP at `https://key-doctor.duonghb53.workers.dev/mcp`. There is no auth for now, so anyone can call every tool. `diagnose`, `list_keys` and `list_proposals` are read-only. `compare` and `watch` write to D1 (`compare` moves the baseline only with `update_baseline: true`). Each client IP is limited to 30 `tools/call` per minute (`429 RATE_LIMITED`); the counter lives in each Worker isolate's memory, so it is a soft limit. The dashboard shows the same commands on its **Agents** page.
 
 ```bash
 claude mcp add --transport http key-doctor https://key-doctor.duonghb53.workers.dev/mcp

@@ -31,6 +31,30 @@ async function rpc(env: Env, method: string, params: unknown = {}) {
 const call = async (env: Env, name: string, args: unknown) => (await rpc(env, "tools/call", { name, arguments: args })).body.result;
 const snapshots = (db: TestD1) => (db.raw.prepare("SELECT COUNT(*) AS n FROM snapshots").get() as { n: number }).n;
 
+describe("MCP rate limit", () => {
+  const callFrom = (env: Env, ip: string) =>
+    worker.fetch(
+      new Request("https://kd.test/mcp", {
+        method: "POST",
+        headers: { "content-type": "application/json", "cf-connecting-ip": ip },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "nope", arguments: {} } }),
+      }),
+      env,
+      ctx,
+    );
+
+  it("answers 429 RATE_LIMITED past the per-IP limit, per IP, and never limits tools/list", async () => {
+    const env: Env = { DB: testD1(), MCP_RATE_LIMIT_PER_MIN: "3" };
+    for (let i = 0; i < 3; i++) assert.notEqual((await callFrom(env, "203.0.113.1")).status, 429);
+    const over = await callFrom(env, "203.0.113.1");
+    assert.equal(over.status, 429);
+    assert.equal(((await over.json()) as any).code, "RATE_LIMITED");
+    assert.ok(Number(over.headers.get("retry-after")) > 0);
+    assert.notEqual((await callFrom(env, "203.0.113.2")).status, 429);
+    assert.equal((await rpc(env, "tools/list")).status, 200);
+  });
+});
+
 describe("GĐ3 Worker: routes and auth", () => {
   it("GET / answers ok without auth", async () => {
     const res = await worker.fetch(new Request("https://kd.test/"), { DB: testD1() }, ctx);

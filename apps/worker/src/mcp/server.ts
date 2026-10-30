@@ -4,6 +4,7 @@ import type { Env } from "../env.ts";
 import { compare, diagnose, listKeys, listProposals } from "../core.ts";
 import { json, kdErrorBody, readJson } from "../http.ts";
 import { createWatchLink } from "../watch-link.ts";
+import { checkRate } from "./rate-limit.ts";
 
 const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const SERVER_INFO = { name: "key-doctor", version: "0.1.0" };
@@ -151,6 +152,19 @@ export async function handleMcp(request: Request, env: Env): Promise<Response> {
   // Notifications and client responses get 202 with no body.
   if (!hasId) return new Response(null, { status: 202 });
   const params = isObj(msg.params) ? msg.params : {};
+
+  // Cloudflare always sets cf-connecting-ip; without it (local dev, tests) there is nothing to key on.
+  const ip = request.headers.get("cf-connecting-ip");
+  if (msg.method === "tools/call" && ip) {
+    const wait = checkRate(ip, Number(env.MCP_RATE_LIMIT_PER_MIN) || 30);
+    if (wait > 0) {
+      return json(
+        kdErrorBody("RATE_LIMITED", { vi: "Quá nhiều lệnh gọi MCP. Hãy thử lại sau ít phút.", en: "Too many MCP calls. Try again in a minute." }, true),
+        429,
+        { "retry-after": String(wait) },
+      );
+    }
+  }
 
   switch (msg.method) {
     case "initialize": {
