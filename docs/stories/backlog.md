@@ -29,7 +29,7 @@ Current state:
 | 4 | GĐ4 🔨 | Bot: webhook, `/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help`, `subscriptions` | Built 2026-10-29. Done after deploy plus a group test. **Checkpoint 5/11:** GĐ1–4 must run end to end |
 | 5 | GĐ6 🔨 | Proposal-watch job (15 min), `proposal_state`, `alerts_sent`, `/run-check`, `scripts/demo-testnet` | Built 2026-10-29. Done after the demo runs end to end on testnet. **Milestone 8/11:** if it does not run, stop everything else |
 | 6 | GĐ7 close-out | Deploy to Pages; check that the dashboard report matches `/check` | Needs GĐ4 |
-| 7 | GĐ8 🔨 | Cleanup plan, Delete / Revoke through Meteor | Plan page and delete guards built 2026-10-29. In-dashboard signing still blocked on the §13.5 wallet-selector + Meteor signing test |
+| 7 | GĐ8 🔨 | Cleanup plan, Delete / Revoke through Meteor | Plan page and delete guards built 2026-10-29. Revoke / Delete buttons built 2026-10-30; unverified until the §13.5 wallet-selector + Meteor signing test (O5) runs |
 | 8 | GĐ9 🔨 | Daily key diff job (02:00 UTC) | Built 2026-10-29 with GĐ6 (shared delivery). Done after deploy |
 | 9 | GĐ10 🔨 | Network stats + reproduce script | Built 2026-10-29 (`pnpm stats`). Done after the owner runs it and the table goes into the README |
 | 10 | GĐ11 → GĐ13 → GĐ12 | P1: history replay, NearBlocks key dates, watch-link | GĐ12 built 2026-10-29. GĐ11 and GĐ13 need NearBlocks and live RPC. Cut order if late: GĐ11 → GĐ13 → GĐ12 → GĐ9 |
@@ -54,7 +54,7 @@ Tick each box when done and tell Claude the result (numbers, names, block height
 - [ ] **C1** after O1/O2: point the dashboard example chips and README examples at the real demo DAO. `kd-demo.sputnik-dao.testnet` does not exist on chain; testnet DAOs live under `sputnik-v2.testnet`. Add the live URLs to the README.
 - [ ] **C2** after O3: record the results and fix `packages/key-doctor/src/proposals.ts` if any fact differs.
 - [ ] **C3** after O4: put the stats table into the README "The problem" section.
-- [ ] **C4** after O5: GĐ8 in-dashboard signing with wallet-selector + Meteor, using `buildDeletePlan` in `apps/dashboard/src/cleanup.ts` (no `signIn` with `contractId`).
+- [~] **C4** GĐ8 in-dashboard signing built 2026-10-30 (Revoke / Delete buttons, wallet SDK lazy-loaded); not yet signed with a real Meteor account (O5). Original scope: in-dashboard signing with wallet-selector + Meteor, using `buildDeletePlan` in `apps/dashboard/src/cleanup.ts` (no `signIn` with `contractId`).
 - [ ] **C5** P1, optional: GĐ13 (NearBlocks key dates), then GĐ11 (history backtest, `docs/final-idea.md` §14.1). Both need NearBlocks API access.
 - [ ] **C7** owner request 2026-10-30: show the DAO's proposal list (id, kind, status, who voted) in the dashboard DAO report. A DAO scan shows keys and voting rules only today; proposals appear only as alerts from `checkProposals`. Read `get_proposals` in the browser through the library (new export) so `kd.report.v1` does not change; decide first whether the bot `/check` shows it too. Source: `docs/final-idea.md` §14.1 data table.
 - [ ] **C6** last: a final README pass so every claim matches what is deployed (GĐ14).

@@ -2,6 +2,7 @@
 import { isKdError, scanAccount, scanTarget, type KdError, type KdReport, type Network } from "key-doctor";
 import type { Html } from "./html.ts";
 import { renderError, renderHome, renderLayout, renderScanning } from "./pages.ts";
+import { buildDeletePlan, GUARD_TEXT, planSteps } from "./cleanup.ts";
 import { renderCleanup } from "./cleanup-view.ts";
 import { renderAccount, renderCouncil } from "./report.ts";
 import { homeHref, parseRoute, resolveInput, routeHref, type Route } from "./route.ts";
@@ -14,6 +15,8 @@ const WORKER_URL = typeof __KD_WORKER_URL__ === "string" ? __KD_WORKER_URL__.rep
 const root = document.getElementById("app") as HTMLElement;
 let scanSeq = 0;
 let dialogTrigger: HTMLElement | null = null;
+let lastReport: KdReport | null = null;
+let lastLevel: "safe" | "full" = "safe";
 
 const NETWORK_KEY = "kd.network";
 
@@ -71,6 +74,8 @@ async function render(focusMain: boolean): Promise<void> {
   try {
     const report = await scan({ ...route, target, network });
     if (seq !== scanSeq) return;
+    lastReport = report;
+    lastLevel = route.level;
     const body =
       report.target.type === "dao"
         ? renderCouncil(report)
@@ -115,6 +120,31 @@ root.addEventListener("click", (event) => {
       history.replaceState(null, "", homeHref(network));
       paintHome(typed, null, network, false);
       document.querySelector<HTMLElement>(`[data-action="network"][data-network="${network}"]`)?.focus();
+      break;
+    }
+    case "delete-keys": {
+      const m = lastReport?.members[0];
+      const step = m && planSteps(m, lastLevel).find((x) => x.id === el.dataset.step);
+      const status = document.getElementById(`sign-status-${el.dataset.step}`);
+      if (!lastReport || !m || !step || !status) break;
+      const plan = buildDeletePlan(m, step.keys.map((k) => k.public_key), null);
+      if (!plan.ok) {
+        status.textContent = plan.errors.map((e) => GUARD_TEXT[e]).join(" ");
+        break;
+      }
+      const account = lastReport.target.id;
+      (el as HTMLButtonElement).disabled = true;
+      status.textContent = "Waiting for Meteor Wallet. Check the transaction there before you approve.";
+      // Loaded on demand: the wallet SDK is large and only needed when someone signs.
+      import("./wallet.ts")
+        .then((w) => w.signDeleteKeys(account, lastReport!.chain.network, plan))
+        .then(() => {
+          void render(false);
+        })
+        .catch((e: unknown) => {
+          (el as HTMLButtonElement).disabled = false;
+          status.textContent = `Not done: ${e instanceof Error ? e.message : "the wallet did not sign."}`;
+        });
       break;
     }
     case "rescan":

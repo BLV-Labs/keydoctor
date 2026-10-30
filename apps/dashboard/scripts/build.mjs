@@ -26,7 +26,9 @@ if (workerUrl) {
 
 const options = {
   entryPoints: [join(app, "src/app.ts")],
-  outfile: join(dist, "app.js"),
+  outdir: dist,
+  splitting: true,
+  chunkNames: "chunk-[hash]",
   bundle: true,
   format: "esm",
   target: "es2022",
@@ -34,7 +36,8 @@ const options = {
   minify: !serve,
   sourcemap: serve,
   logLevel: "info",
-  define: { __KD_WORKER_URL__: JSON.stringify(workerUrl) },
+  alias: { buffer: "buffer/", util: "util/" },
+  define: { global: "globalThis", "process.env.NODE_ENV": JSON.stringify("production"), "process.env": "{}", "process.browser": "true", "process.version": JSON.stringify(""), "process.platform": JSON.stringify("browser"), __KD_WORKER_URL__: JSON.stringify(workerUrl) },
 };
 
 if (serve) {
