@@ -55,7 +55,7 @@ function keyList(step: Step, m: Member, report: KdReport, statusId: string | nul
         <span class="mono" title="${k.public_key}">${truncateKey(k.public_key)}</span>
         <span class="muted small">${t.label}${t.detail ? html` · <span class="mono">${t.detail}</span>` : ""} · added ${relativeAge(keyAgeMs(k, report.chain.block_timestamp)).toLowerCase()} · ${k.use_count === null ? "uses unknown" : `${formatInt(k.use_count)} uses`}</span>
         ${reasons.length > 0 ? clamp(html`<span class="small">${reasons.join(" · ")}</span>`, 2) : ""}
-        <span class="actions">${viewButton(k)}${statusId === null ? "" : keyButton(k, statusId)}</span>
+        <span class="actions">${statusId === null ? "" : keyButton(k, statusId)}${viewButton(k)}</span>
       </li>`;
     })}
   </ol>

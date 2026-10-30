@@ -232,7 +232,7 @@ function keyRow(key: KeyInfo, member: Member, report: KdReport, isNew: boolean):
     <td data-label="Why it matters">${reasons.length === 0
       ? html`<span class="muted">No issue found</span>`
       : html`<div class="reason-cell">${severity ? statusPill(severity, true) : ""}${clamp(reasons.join(" · "), 2)}</div>`}</td>
-    <td data-label="Action"><div class="actions">${viewButton(key)}${keyButton(key, "key-status")}</div></td>
+    <td data-label="Action"><div class="actions">${keyButton(key, "key-status")}${viewButton(key)}</div></td>
   </tr>`;
 }
 
