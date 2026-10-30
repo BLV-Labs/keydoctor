@@ -4,7 +4,7 @@ import worker from "../src/index.ts";
 import type { Env } from "../src/env.ts";
 import { TOOLS } from "../src/mcp/server.ts";
 import { testD1, type TestD1 } from "./support/d1.ts";
-import { DAO, addKey, installChain } from "./support/rpc.ts";
+import { DAO, addKey, bytes, fixture, installChain } from "./support/rpc.ts";
 
 const TOKEN = "test-mcp-token";
 const ctx = { waitUntil: () => {} };
@@ -76,7 +76,7 @@ describe("GĐ3 MCP protocol", () => {
     assert.deepEqual((await rpc(env, "ping")).body.result, {});
 
     const list = await rpc(env, "tools/list");
-    assert.deepEqual(list.body.result.tools.map((x: any) => x.name), ["diagnose", "compare", "watch"]);
+    assert.deepEqual(list.body.result.tools.map((x: any) => x.name), ["diagnose", "compare", "list_keys", "list_proposals", "watch"]);
     assert.match(TOOLS[1]!.description, /Only set update_baseline=true when explicitly asked; by default the baseline does not move\./);
     assert.equal((await rpc(env, "nope")).body.error.code, -32601);
   });
@@ -173,5 +173,75 @@ describe("GĐ3 compare and the baseline", () => {
     const { env } = setup(t);
     const r = await call(env, "compare", { target: DAO, update_baseline: "yes" });
     assert.equal(r.isError, true);
+  });
+});
+
+describe("MCP list_keys (the dashboard key table)", () => {
+  it("returns one row per key with what it is approved for, age, uses and the flags raised on it; never touches D1", async (t) => {
+    const { env, db } = setup(t);
+    const r = (await call(env, "list_keys", { target: DAO })).structuredContent;
+    assert.equal(r.target.id, DAO);
+    assert.equal(r.total, r.keys.length);
+    assert.deepEqual([...new Set(r.keys.map((k: any) => k.account_id))].sort(), ["a.kd-demo.testnet", "b.kd-demo.testnet", "c.kd-demo.testnet"]);
+    const app = r.keys.find((k: any) => k.permission.type === "function_call" && k.account_id === "b.kd-demo.testnet");
+    assert.equal(app.permission.receiver_id, "game.kd-demo.testnet");
+    assert.ok("age_days" in app && "use_count" in app && Array.isArray(app.roles));
+    assert.ok(r.keys.every((k: any) => !("flag_ids" in k)));
+    assert.ok(r.keys.some((k: any) => k.flags.length > 0 && k.flags[0].messages.en.title));
+    assert.deepEqual(db.log, []);
+  });
+
+  it("filters by member, permission and flagged_only", async (t) => {
+    const { env } = setup(t);
+    const onlyB = (await call(env, "list_keys", { target: DAO, account_id: "b.kd-demo.testnet" })).structuredContent;
+    assert.ok(onlyB.keys.length > 0 && onlyB.keys.every((k: any) => k.account_id === "b.kd-demo.testnet"));
+    const fc = (await call(env, "list_keys", { target: DAO, permission: "function_call" })).structuredContent;
+    assert.ok(fc.keys.length > 0 && fc.keys.every((k: any) => k.permission.type === "function_call"));
+    const flagged = (await call(env, "list_keys", { target: DAO, flagged_only: true })).structuredContent;
+    const all = (await call(env, "list_keys", { target: DAO })).structuredContent;
+    assert.ok(flagged.total > 0 && flagged.total < all.total);
+    assert.ok(flagged.keys.every((k: any) => k.flags.length > 0));
+  });
+
+  it("rejects bad arguments", async (t) => {
+    const { env } = setup(t);
+    for (const args of [{ permission: "root" }, { flagged_only: "yes" }, { account_id: 5 }, { limit: 3 }]) {
+      const r = await call(env, "list_keys", { target: DAO, ...args });
+      assert.equal(r.isError, true, JSON.stringify(args));
+    }
+  });
+});
+
+describe("MCP list_proposals", () => {
+  function demo(chain: ReturnType<typeof setup>["chain"]) {
+    const proposals: Record<number, unknown> = {
+      0: { ...fixture<object>("sputnik/get_proposal.2.transfer.json"), id: 0 },
+      1: { ...fixture<object>("sputnik/get_proposal.3.add_member.json"), id: 1 },
+      2: { ...fixture<object>("sputnik/get_proposal.2.transfer.json"), id: 2 },
+    };
+    chain.views.get_last_proposal_id = () => bytes(3);
+    chain.views.get_proposal = (args: { id: number }) => bytes(proposals[args.id]);
+  }
+
+  it("lists newest first with votes and pending voters, and pages with limit/offset", async (t) => {
+    const { env, chain, db } = setup(t);
+    demo(chain);
+    const r = (await call(env, "list_proposals", { target: DAO })).structuredContent;
+    assert.equal(r.total, 3);
+    assert.deepEqual(r.proposals.map((p: any) => p.id), [2, 1, 0]);
+    assert.ok(r.proposals.every((p: any) => typeof p.status === "string" && Array.isArray(p.pending_voters)));
+    const page = (await call(env, "list_proposals", { target: DAO, limit: 1, offset: 1 })).structuredContent;
+    assert.deepEqual(page.proposals.map((p: any) => p.id), [1]);
+    assert.deepEqual(db.log, []);
+  });
+
+  it("rejects out-of-range paging and a non-DAO target comes back as an error", async (t) => {
+    const { env } = setup(t);
+    for (const args of [{ limit: 0 }, { limit: 51 }, { offset: -1 }, { limit: 1.5 }]) {
+      assert.equal((await call(env, "list_proposals", { target: DAO, ...args })).isError, true, JSON.stringify(args));
+    }
+    const account = await call(env, "list_proposals", { target: "b.kd-demo.testnet" });
+    assert.equal(account.isError, true);
+    assert.equal(account.structuredContent.schema_version, "kd.error.v1");
   });
 });
