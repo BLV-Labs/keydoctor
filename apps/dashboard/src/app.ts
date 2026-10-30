@@ -241,6 +241,18 @@ function closeDialog(dialog: HTMLDialogElement): void {
   dialog.close();
 }
 
+/** The wallet answers when the transaction is submitted, so the first rescan can still list the key; read until it is gone (about 20 s at most). */
+async function waitForRemoval(plan: DeletePlan): Promise<void> {
+  const route = parseRoute(location.search);
+  if (route.target === null) return;
+  const removed = new Set(plan.transactions.flat().map((a) => a.public_key));
+  for (let i = 0; i < 10; i++) {
+    const report = await scan({ ...route, target: route.target, network: route.network ?? "testnet" }).catch(() => null);
+    if (report !== null && !report.members[0]?.keys.some((k) => removed.has(k.public_key))) return;
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+}
+
 /** Signs an accepted plan through the chosen wallet, or shows why the guards refused it. Re-renders on success. */
 function signPlan(button: HTMLButtonElement, status: HTMLElement, plan: DeletePlan, walletId: WalletId): void {
   if (!plan.ok) {
@@ -254,6 +266,10 @@ function signPlan(button: HTMLButtonElement, status: HTMLElement, plan: DeletePl
   // Loaded on demand: the wallet SDK is large and only needed when someone signs.
   import("./wallet.ts")
     .then((w) => w.signDeleteKeys(account, network, plan, walletId, (t) => (status.textContent = t)))
+    .then(() => {
+      status.textContent = "Approved. Waiting for the chain to show the change…";
+      return waitForRemoval(plan);
+    })
     .then(() => {
       void render(false);
     })
