@@ -262,7 +262,11 @@ li:last-child > .member-row { border-bottom: 0; }
 .step-num-done { background: var(--kd-ok); }
 .step-done { border-color: var(--kd-ok-border); }
 .key-list { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; }
-.key-list li { display: flex; flex-direction: column; gap: 2px; }
+.key-list li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; border-top: 1px solid var(--kd-border); }
+.key-list li:first-child { border-top: 0; }
+.key-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.key-list .actions { flex-shrink: 0; margin-left: auto; }
+@media (max-width: 560px) { .key-list li { flex-direction: column; align-items: flex-start; gap: 6px; } .key-list .actions { margin-left: 0; } }
 .key-list li.key-high::marker { color: var(--kd-high); font-weight: 700; }
 .key-list li.key-cleanup::marker { color: var(--kd-cleanup); font-weight: 700; }
 .field-hint { color: var(--kd-cleanup); font-weight: 500; }

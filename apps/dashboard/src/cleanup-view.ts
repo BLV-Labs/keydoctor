@@ -53,9 +53,11 @@ function keyList(step: Step, m: Member, report: KdReport, statusId: string | nul
       const reasons = keyReasons(k, m);
       const severity = keySeverity(k, m);
       return html`<li class="${severity ? `key-${severity}` : ""}">
+        <div class="key-info">
         <span class="mono" title="${k.public_key}">${truncateKey(k.public_key)}</span>
         <span class="muted small">${t.label}${t.detail ? html` · <span class="mono">${t.detail}</span>` : ""} · added ${relativeAge(keyAgeMs(k, report.chain.block_timestamp)).toLowerCase()} · ${k.use_count === null ? "uses unknown" : `${formatInt(k.use_count)} uses`}</span>
         ${reasons.length > 0 ? clamp(html`<span class="small">${reasons.join(" · ")}</span>`, 2) : ""}
+        </div>
         <span class="actions">${statusId === null ? "" : keyButton(k, statusId)}${viewButton(k)}</span>
       </li>`;
     })}

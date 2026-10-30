@@ -212,7 +212,7 @@ function newKeyAlert(member: Member, report: KdReport, inCouncil: boolean): Html
 export function keyButton(k: KeyInfo, statusId: string): Html {
   const full = k.permission.type === "full_access";
   const verb = full ? "Delete" : "Revoke";
-  return html`<button type="button" class="btn ${full ? "btn-danger" : "btn-warn"} self-start" data-action="delete-key" data-key="${k.public_key}" data-status="${statusId}" aria-label="${verb} key ${truncateKey(k.public_key)} with Meteor">${verb}</button>`;
+  return html`<button type="button" class="btn ${full ? "btn-danger" : "btn-warn"} self-start" data-action="delete-key" data-key="${k.public_key}" data-status="${statusId}" aria-label="${verb} key ${truncateKey(k.public_key)} with your wallet">${verb}</button>`;
 }
 
 /** `isNew`: a full-access key added in the last 48 hours (the one the alert box names). Only that row is tinted. */
