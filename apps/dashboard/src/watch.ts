@@ -2,6 +2,19 @@ import { html, type Html } from "./html.ts";
 import { icon } from "./icons.ts";
 import { BOT_URL, BOT_USERNAME } from "./route.ts";
 
+/** What an alert subscription delivers (the check lines of the watch dialog and the On Call page). */
+export function alertLines(isDao: boolean): Html {
+  return html`<p class="check-line">${icon.check()}<span>${
+      isDao
+        ? "A daily message at 02:00 UTC when a key is added to or removed from any council account, or the council changes."
+        : "A daily message at 02:00 UTC when a key is added to or removed from this account."
+    }</span></p>
+    ${isDao
+      ? html`<p class="check-line">${icon.check()}<span>A warning before the final vote when a voter on a pending proposal has a new full-access key. Checked every 15 minutes.</span></p>
+        <p class="check-line">${icon.check()}<span>A warning for every new proposal that changes members, policy or contract code.</span></p>`
+      : ""}`;
+}
+
 export const watchCommand = (target: string): string => `/watch ${target}`;
 
 /** One-tap links from POST /api/watch-link (kd.watch_link.v1, P1). Chain-free: only the Worker's own URLs. */
@@ -54,15 +67,8 @@ export function renderWatchDialog(target: string, type: "dao" | "account", worke
       : ""}
     <div class="dialog-box stack-sm">
       <p class="strong">You will get</p>
-      <p class="check-line">${icon.check()}<span>${
-        isDao
-          ? "A daily message at 02:00 UTC when a key is added to or removed from any council account, or the council changes."
-          : "A daily message at 02:00 UTC when a key is added to or removed from this account."
-      }</span></p>
-      ${isDao
-        ? html`<p class="check-line">${icon.check()}<span>A warning before the final vote when a voter on a pending proposal has a new full-access key. Checked every 15 minutes.</span></p>
-          <p class="check-line">${icon.check()}<span>A warning for every new proposal that changes members, policy or contract code.</span></p>`
-        : html`<p class="small muted">Proposal warnings come with a DAO. If this account sits in a council, also send <span class="mono">/watch</span> with the DAO name.</p>`}
+      ${alertLines(isDao)}
+      ${isDao ? "" : html`<p class="small muted">Proposal warnings come with a DAO. If this account sits in a council, also send <span class="mono">/watch</span> with the DAO name.</p>`}
     </div>
     <p class="dialog-foot small muted">${icon.info()}<span>This page does not store subscriptions. List and cancel them in the bot with <span class="mono">/list</span> and <span class="mono">/unwatch</span>.</span></p>
     </div>

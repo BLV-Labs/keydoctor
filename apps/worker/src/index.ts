@@ -59,10 +59,7 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const { pathname } = new URL(request.url);
     if (pathname === "/" && request.method === "GET") return new Response("ok", { headers: { "content-type": "text/plain" } });
-    if (pathname === "/mcp") {
-      if (!(await hasBearer(request, env.MCP_TOKEN))) return unauthorized();
-      return handleMcp(request, env);
-    }
+    if (pathname === "/mcp") return handleMcp(request, env);
     if (pathname === "/telegram" && request.method === "POST") return handleTelegram(request, env, ctx);
     if (pathname === "/run-check" && request.method === "POST") return runCheck(request, env);
     if (pathname === "/api/watch-link" && (request.method === "POST" || request.method === "OPTIONS")) return watchLink(request, env);

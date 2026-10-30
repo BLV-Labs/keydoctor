@@ -26,7 +26,6 @@ export interface ScheduledController {
 
 export interface Env {
   DB: D1Database;
-  MCP_TOKEN?: string;
   RUN_CHECK_TOKEN?: string;
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_WEBHOOK_SECRET?: string;
@@ -40,6 +39,8 @@ export interface Env {
   ALERT_LANG?: string;
   /** Telegram bot username for deep links (default KeyDoctorOnCallBot). */
   BOT_USERNAME?: string;
+  /** `tools/call` limit per client IP per minute on /mcp (default 30). */
+  MCP_RATE_LIMIT_PER_MIN?: string;
   /** One RPC URL or a comma-separated list, tried in order on rate limits and transport failures. */
   RPC_URL_TESTNET?: string;
   RPC_URL_MAINNET?: string;

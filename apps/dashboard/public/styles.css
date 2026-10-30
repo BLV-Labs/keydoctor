@@ -36,7 +36,11 @@ main:focus { outline: none; }
 .brand svg { color: var(--kd-primary); }
 .main-nav { display: flex; flex-wrap: wrap; gap: 4px 20px; }
 .main-nav a { color: var(--kd-text-muted); text-decoration: none; padding: 10px 0; }
-.main-nav a:first-child { color: var(--kd-text); font-weight: 600; }
+.main-nav a[aria-current="page"] { color: var(--kd-text); font-weight: 600; }
+.info-table { width: 100%; min-width: 480px; border-collapse: collapse; font-size: var(--kd-fs-base); }
+.info-table th, .info-table td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--kd-border); }
+.info-table th { font-size: var(--kd-fs-2xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--kd-text-muted); background: var(--kd-surface-muted); }
+.info-table tr:last-child td { border-bottom: 0; }
 .theme-toggle { margin-left: auto; }
 .wallet-ctl { flex-wrap: wrap; }
 .theme-sun { display: none; }
