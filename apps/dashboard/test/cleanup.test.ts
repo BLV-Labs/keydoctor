@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 import type { KdReport, KeyInfo, Member } from "key-doctor";
 import { appKeysToRevoke, buildDeletePlan, GUARD_TEXT, MAX_ACTIONS_PER_TX, oldFullAccessKeys, planSteps } from "../src/cleanup.ts";
 import { renderCleanup } from "../src/cleanup-view.ts";
+import { renderLayout } from "../src/pages.ts";
 import { parseRoute } from "../src/route.ts";
 
 const require = createRequire(import.meta.url);
@@ -101,7 +102,7 @@ describe("GĐ8 delete guards (UC8 safety rules)", () => {
 
 describe("GĐ8 cleanup page", () => {
   it("asks which wallet to use in a dialog, with no wallet picked up front", () => {
-    const out = renderCleanup(accountReport(0), null, "safe").value;
+    const out = renderLayout(renderCleanup(accountReport(0), null, "safe")).value;
     assert.doesNotMatch(out, /<select/);
     assert.match(out, /<dialog id="wallet-dialog"/);
     for (const [id, label] of [["meteor-wallet", "Meteor Wallet"], ["here-wallet", "Here Wallet"], ["hot-wallet", "HOT Wallet"]]) {
@@ -117,10 +118,12 @@ describe("GĐ8 cleanup page", () => {
     assert.match(t, /1\. Revoke app keys you do not need To do 1 key, in this order:/);
     assert.match(t, /App key with unlimited allowance · App key can call any method/);
     assert.match(out.value, /<progress class="progress" aria-labelledby="progress-label" value="0" max="4">/);
-    // One Connect Wallet button for the whole page, not one per step.
-    assert.equal((out.value.match(/data-action="open-wallet"/g) ?? []).length, 1);
-    assert.match(out.value, /data-action="open-wallet" data-wallet-off>Connect Wallet<\/button>/);
-    assert.match(out.value, /data-action="disconnect-wallet" data-wallet-on hidden>Disconnect<\/button>/);
+    // Connect Wallet lives in the site header (every page), never in the cleanup page itself.
+    assert.doesNotMatch(out.value, /data-action="open-wallet"/);
+    const layout = renderLayout(out).value;
+    assert.equal((layout.match(/data-action="open-wallet"/g) ?? []).length, 1);
+    assert.match(layout, /data-action="open-wallet" data-wallet-off>Connect Wallet<\/button>/);
+    assert.match(layout, /class="btn btn-danger" data-action="disconnect-wallet" data-wallet-on hidden>Disconnect<\/button>/);
     assert.doesNotMatch(out.value, /Open Meteor Wallet<\/button>/);
     // Every listed key gets a View button, and the page carries the dialog they fill.
     assert.equal((out.value.match(/data-action="view-key"/g) ?? []).length, (out.value.match(/<li class="key-/g) ?? []).length);

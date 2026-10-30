@@ -210,10 +210,11 @@ function newKeyAlert(member: Member, report: KdReport, inCouncil: boolean): Html
 
 /** Connect Wallet until a wallet is connected; then its name and Disconnect. app.ts flips the `hidden` halves. */
 export function walletControls(): Html {
-  return html`<div class="actions" data-wallet-ctl>
+  return html`<div class="actions wallet-ctl" data-wallet-ctl>
     <button type="button" class="btn btn-tint" data-action="open-wallet" data-wallet-off>Connect Wallet</button>
     <span class="pill pill-sm pill-ok" data-wallet-on data-wallet-name hidden></span>
-    <button type="button" class="btn btn-secondary" data-action="disconnect-wallet" data-wallet-on hidden>Disconnect</button>
+    <button type="button" class="btn btn-danger" data-action="disconnect-wallet" data-wallet-on hidden>Disconnect</button>
+    <span class="small muted" id="wallet-status" role="status"></span>
   </div>`;
 }
 
@@ -258,8 +259,7 @@ function keysTable(member: Member, report: KdReport, paging: Paging, cleanupHref
         </div>
         ${pager(KEYS_LIST, "Keys", window, paging)}
         <div class="pad stack-sm">
-          ${walletControls()}
-          <p class="small muted" id="wallet-status" role="status">Revoke and Delete turn on once your wallet is connected as this account. View always works.</p>
+          <p class="small muted">Revoke and Delete turn on once the wallet connected at the top right holds this account. View always works.</p>
           <p class="small muted" id="key-status" role="status"></p>
         </div>
         ${keyDialogShell()}`}

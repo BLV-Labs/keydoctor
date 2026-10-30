@@ -4,7 +4,7 @@ import { revealClampToggles, toggleClamp } from "./clamp.ts";
 import type { Html } from "./html.ts";
 import { renderError, renderHome, renderLayout, renderScanning } from "./pages.ts";
 import { buildDeletePlan, GUARD_TEXT, METEOR_INSTALL_URL, type DeletePlan } from "./cleanup.ts";
-import { renderCleanup, walletDialog } from "./cleanup-view.ts";
+import { renderCleanup } from "./cleanup-view.ts";
 import { PAGE_SIZE, pageOf, parsePaging, type Paging } from "./paging.ts";
 import { renderKeyDetail } from "./key-detail.ts";
 import { PROPOSALS_ID, PROPOSALS_LIST, renderProposals } from "./proposals-view.ts";
@@ -88,6 +88,7 @@ function paint(content: Html, title: string, focusMain: boolean, network: Networ
   root.innerHTML = renderLayout(content, network).value;
   setTheme(currentTheme(), false);
   document.title = title;
+  syncWallet();
   revealClampToggles(root);
   if (focusMain) document.getElementById("main")?.focus();
 }
@@ -115,10 +116,11 @@ function paintReport(report: KdReport, route: Route, paging: Paging, seq: number
         : renderAccount(report, route.from, paging);
   paint(body, `${target} · Key Doctor`, false, report.chain.network);
   root.insertAdjacentHTML("beforeend", renderWatchDialog(target, report.target.type, WORKER_URL).value);
-  if (report.target.type === "account" && route.view !== "cleanup") root.insertAdjacentHTML("beforeend", walletDialog().value);
   syncWallet();
   if (report.target.type === "dao") void paintProposals(report.target.id, report.chain.network, pageOf(paging, PROPOSALS_LIST), paging, seq);
 }
+
+const currentNetwork = (): Network => parseRoute(location.search).network ?? lastReport?.chain.network ?? storedNetwork();
 
 /** The wallet Connect Wallet last connected and the accounts it holds; Revoke and Delete sign with it. */
 let connected: { walletId: WalletId; accounts: string[] } | null = null;
@@ -292,13 +294,12 @@ function connectWallet(status: HTMLElement, walletId: WalletId): void {
   }
   status.textContent = `Check the ${walletLabel(walletId)} window.`;
   import("./wallet.ts")
-    .then((w) => w.openWallet(lastReport!.chain.network, walletId))
+    .then((w) => w.openWallet(currentNetwork(), walletId))
     .then((accounts) => {
       connected = { walletId, accounts };
-      const target = lastReport!.target.id;
-      status.textContent = accounts.includes(target)
-        ? `Connected as ${target}. Revoke and Delete are on.`
-        : `${walletLabel(walletId)} holds ${accounts.join(", ") || "no account"}, not ${target}. Revoke and Delete stay off.`;
+      const target = lastReport?.target.id;
+      status.textContent =
+        target === undefined || accounts.includes(target) ? "" : `${walletLabel(walletId)} holds ${accounts.join(", ") || "no account"}, not ${target}. Revoke and Delete stay off.`;
       syncWallet();
     })
     .catch((e: unknown) => {
@@ -349,7 +350,7 @@ root.addEventListener("click", (event) => {
     }
     case "open-wallet": {
       const status = document.getElementById("wallet-status");
-      if (!lastReport || !status) break;
+      if (!status) break;
       askWallet(el, (walletId) => connectWallet(status, walletId));
       break;
     }
@@ -361,7 +362,7 @@ root.addEventListener("click", (event) => {
       syncWallet();
       if (status) status.textContent = "Disconnecting…";
       import("./wallet.ts")
-        .then((w) => w.disconnectWallet(lastReport!.chain.network, was.walletId))
+        .then((w) => w.disconnectWallet(currentNetwork(), was.walletId))
         .then(() => status && (status.textContent = "Wallet disconnected."))
         .catch(() => status && (status.textContent = "Disconnected here; the wallet may still hold the session."));
       break;

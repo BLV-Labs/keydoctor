@@ -5,7 +5,7 @@ import { clamp } from "./clamp.ts";
 import { html, type Html } from "./html.ts";
 import { WALLETS } from "./wallets.ts";
 import { icon, statusIcon } from "./icons.ts";
-import { breadcrumb, keyButton, walletControls } from "./report.ts";
+import { breadcrumb, keyButton } from "./report.ts";
 import { keyDialogShell, viewButton } from "./key-detail.ts";
 import { NO_PAGING, pageOf, pager, slicePage, type Paging } from "./paging.ts";
 import { routeHref } from "./route.ts";
@@ -118,7 +118,6 @@ export function renderCleanup(report: KdReport, from: string | null, level: Leve
       </div>
       <div class="actions">
         <a class="btn btn-secondary" href="${routeHref(id, from, report.chain.network)}" data-nav>Back to profile</a>
-        ${walletControls()}
         <button type="button" class="btn btn-primary" data-action="rescan">${icon.rescan()}Rescan</button>
       </div>
     </section>
@@ -128,7 +127,6 @@ export function renderCleanup(report: KdReport, from: string | null, level: Leve
           <p>Full-access key <span class="mono">${truncateKey(recent.key.public_key)}</span> was added ${relativeAge(recent.ageMs).toLowerCase()}. If you did not add it, delete it in your wallet before anything else, and check the account from a device you trust.</p>
         </div></section>`
       : ""}
-    <p class="small muted" id="wallet-status" role="status"></p>
     <section class="stack-sm" aria-label="Cleanup level">
       <div class="segmented" role="group" aria-label="Cleanup level">
         <a class="seg" href="${href("safe")}" data-nav aria-pressed="${String(level === "safe")}">Safe cleanup</a>
@@ -142,6 +140,5 @@ export function renderCleanup(report: KdReport, from: string | null, level: Leve
       ${steps.map((s) => stepCard(s, m, report, s.id === "delete_remaining_ed25519" && !steps.slice(0, 4).every((x) => x.done) ? "Still needed: finish steps 1 to 4 first." : null, paging))}
     </ol>
     ${keyDialogShell()}
-    ${walletDialog()}
     <p class="small muted">${firstOpen ? `Next: step ${firstOpen.number}.` : "All steps are done."} Key Doctor never signs transactions or holds keys: every change happens in your wallet, and this page reads the result from the chain when you rescan.</p>`;
 }
