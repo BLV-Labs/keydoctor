@@ -193,17 +193,22 @@ function newKeyAlert(member: Member, report: KdReport, inCouncil: boolean): Html
   </section>`;
 }
 
+/** One Revoke (app key) or Delete (full-access key) button; the click reports to the element `statusId`. */
+export function keyButton(k: KeyInfo, statusId: string): Html {
+  const verb = k.permission.type === "full_access" ? "Delete" : "Revoke";
+  return html`<button type="button" class="btn btn-secondary self-start" data-action="delete-key" data-key="${k.public_key}" data-status="${statusId}" aria-label="${verb} key ${truncateKey(k.public_key)} with Meteor">${verb}</button>`;
+}
+
 function keyRow(key: KeyInfo, member: Member, report: KdReport): Html {
   const type = keyType(key);
   const reasons = keyReasons(key, member);
-  const full = key.permission.type === "full_access";
   return html`<tr>
     <td data-label="Public key"><span class="mono" title="${key.public_key}">${truncateKey(key.public_key)}</span></td>
     <td data-label="Type">${type.label}${type.detail ? html`<br><span class="muted small mono wrap">${type.detail}</span>` : ""}</td>
     <td data-label="Added">${relativeAge(keyAgeMs(key, report.chain.block_timestamp))}</td>
     <td data-label="Uses">${key.use_count === null ? "Unknown" : formatInt(key.use_count)}</td>
     <td data-label="Why it matters">${reasons.length === 0 ? html`<span class="muted">No issue found</span>` : reasons.join(" · ")}</td>
-    <td data-label="Action"><button type="button" class="btn btn-secondary" data-action="delete-key" data-key="${key.public_key}" aria-label="${full ? "Delete" : "Revoke"} key ${truncateKey(key.public_key)} with Meteor">${full ? "Delete" : "Revoke"}</button></td>
+    <td data-label="Action">${keyButton(key, "key-status")}</td>
   </tr>`;
 }
 

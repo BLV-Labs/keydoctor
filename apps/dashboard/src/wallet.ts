@@ -31,7 +31,7 @@ export async function signDeleteKeys(
       actions: tx.map((a) => actionCreators.deleteKey(PublicKey.from(a.public_key))),
     })),
   });
-  await wallet.signOut();
+  // No signOut here: Meteor answers it with its own "Sign Out Request" popup. The session holds no access key.
 }
 
 /** Opens the installed Meteor extension with a read-only connect request (no contractId, so no key is added). */
@@ -39,5 +39,4 @@ export async function openWallet(network: Network): Promise<void> {
   const selector = await setupWalletSelector({ network, modules: [setupMeteorWallet()], allowMultipleSelectors: true });
   const wallet = await selector.wallet("meteor-wallet");
   await wallet.signIn({ accounts: [] });
-  await wallet.signOut();
 }

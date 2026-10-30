@@ -134,13 +134,13 @@ describe("GĐ8 cleanup page", () => {
 });
 
 describe("GĐ8 sign buttons", () => {
-  it("shows Revoke for app keys and Delete for full-access keys, only on steps with keys to remove", () => {
-    const out = text(renderCleanup(accountReport(0), null, "safe"));
-    assert.match(out, /Revoke this key with Meteor/);
-    assert.match(out, /Delete (this key|these \d+ keys) with Meteor/);
+  it("each key in a step gets its own Revoke/Delete button, and no step deletes several keys at once", () => {
     const html = renderCleanup(accountReport(0), null, "safe").value;
-    assert.equal((html.match(/data-action="delete-keys"/g) ?? []).length, 2);
-    assert.doesNotMatch(text(renderCleanup(accountReport(2), null, "safe")), /with Meteor/);
+    assert.doesNotMatch(html, /data-action="delete-keys"/);
+    assert.doesNotMatch(html, /these \d+ keys with Meteor/);
+    assert.match(html, /data-action="delete-key" data-key="[^"]+" data-status="sign-status-[a-z_]+"[^>]*>Revoke<\/button>/);
+    assert.match(html, /data-action="delete-key" data-key="[^"]+" data-status="sign-status-[a-z_]+"[^>]*>Delete<\/button>/);
+    assert.doesNotMatch(renderCleanup(accountReport(2), null, "safe").value, /data-action="delete-key"/);
   });
 
   it("every guard error has a user-facing text, so a refused plan never fails silently", () => {

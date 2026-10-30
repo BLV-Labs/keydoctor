@@ -3,7 +3,7 @@ import { planSteps, type Level, type Step, type StepId } from "./cleanup.ts";
 import { formatInt, keyAgeMs, relativeAge, truncateKey } from "./format.ts";
 import { html, type Html } from "./html.ts";
 import { icon, statusIcon } from "./icons.ts";
-import { breadcrumb } from "./report.ts";
+import { breadcrumb, keyButton } from "./report.ts";
 import { routeHref } from "./route.ts";
 import { keyReasons, keyType, recentFullAccessKeys } from "./view.ts";
 
@@ -25,9 +25,9 @@ const DONE_WHEN: Record<StepId, string> = {
 
 const HOW: Record<StepId, string> = {
   revoke_app_keys:
-    "Open Meteor Wallet as this account and remove these keys (Meteor groups them under connected apps; it can revoke several at once). An app only asks you to connect again.",
+    "Open Meteor Wallet as this account and revoke these keys one at a time with the Revoke button on each key, or in Meteor Wallet (Meteor groups them under connected apps). An app only asks you to connect again.",
   delete_old_full_access:
-    "Before you delete a full-access key: each one usually belongs to a seed phrase or a device, and that seed phrase or device loses access. Check that you can still sign with the key you keep. Then delete the listed keys in Meteor Wallet.",
+    "Before you delete a full-access key: each one usually belongs to a seed phrase or a device, and that seed phrase or device loses access. Check that you can still sign with the key you keep. Then delete the keys one at a time with the Delete button on each key.",
   add_ml_dsa:
     "Do this after steps 1 and 2. In Meteor Wallet, open the post-quantum (PQ) screen and add an ML-DSA key. The account needs some NEAR for the fee. Back up the new key the way Meteor tells you to.",
   test_sign: "Sign any small transaction with the ML-DSA key in Meteor and wait for it to finalize. Skipping this test is dangerous.",
@@ -35,7 +35,8 @@ const HOW: Record<StepId, string> = {
     "Only when the ML-DSA key is backed up and your wallets, hardware wallet and daily apps all work with it. Delete the remaining Ed25519 full-access keys in Meteor.",
 };
 
-function keyList(keys: readonly KeyInfo[], m: Member, report: KdReport): Html {
+/** `statusId` set = each key gets its own Revoke/Delete button, reporting to that status element. */
+function keyList(keys: readonly KeyInfo[], m: Member, report: KdReport, statusId: string | null): Html {
   if (keys.length === 0) return html``;
   return html`<ol class="key-list">
     ${keys.map((k) => {
@@ -45,6 +46,7 @@ function keyList(keys: readonly KeyInfo[], m: Member, report: KdReport): Html {
         <span class="mono" title="${k.public_key}">${truncateKey(k.public_key)}</span>
         <span class="muted small">${t.label}${t.detail ? html` · <span class="mono">${t.detail}</span>` : ""} · added ${relativeAge(keyAgeMs(k, report.chain.block_timestamp)).toLowerCase()} · ${k.use_count === null ? "uses unknown" : `${formatInt(k.use_count)} uses`}</span>
         ${reasons.length > 0 ? html`<span class="small">${reasons.join(" · ")}</span>` : ""}
+        ${statusId === null ? "" : keyButton(k, statusId)}
       </li>`;
     })}
   </ol>`;
@@ -57,11 +59,11 @@ function stepCard(step: Step, m: Member, report: KdReport, blocked: string | nul
       <h2 class="h3">${step.number}. ${TITLE[step.id]}</h2>
       <span class="pill pill-sm ${step.done ? "pill-ok" : "pill-note"}">${step.done ? "Done" : "To do"}</span>
     </div>
-    ${!step.done && step.keys.length > 0 ? html`<p class="small muted">${step.keys.length === 1 ? "1 key" : `${step.keys.length} keys`}, in this order:</p>${keyList(step.keys, m, report)}` : ""}
+    ${!step.done && step.keys.length > 0 ? html`<p class="small muted">${step.keys.length === 1 ? "1 key" : `${step.keys.length} keys`}, in this order:</p>${keyList(step.keys, m, report, blocked ? null : `sign-status-${step.id}`)}` : ""}
     ${step.keep ? html`<p class="small"><strong>Keep:</strong> <span class="mono">${truncateKey(step.keep.public_key)}</span> (${formatInt(step.keep.use_count ?? 0)} uses). Key Doctor never lists the last full-access key.</p>` : ""}
     ${!step.done ? html`<p>${HOW[step.id]}</p>` : ""}
     ${!step.done && blocked ? html`<p class="small field-hint">${blocked}</p>` : ""}
-    ${!step.done && step.keys.length > 0 && !blocked ? html`<button type="button" class="btn btn-primary self-start" data-action="delete-keys" data-step="${step.id}">${step.id === "revoke_app_keys" ? "Revoke" : "Delete"} ${step.keys.length === 1 ? "this key" : `these ${step.keys.length} keys`} with Meteor</button><p class="small muted" id="sign-status-${step.id}" role="status"></p>` : ""}
+    ${!step.done && step.keys.length > 0 && !blocked ? html`<p class="small muted" id="sign-status-${step.id}" role="status"></p>` : ""}
     ${!step.done && step.id !== "test_sign" ? html`<button type="button" class="btn btn-secondary self-start" data-action="open-wallet" data-step="${step.id}">Open Meteor Wallet</button><p class="small muted" id="wallet-status-${step.id}" role="status"></p>` : ""}
     <p class="small muted">${DONE_WHEN[step.id]}</p>
   </li>`;

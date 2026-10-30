@@ -2,7 +2,7 @@
 import { isKdError, scanAccount, scanTarget, type KdError, type KdReport, type Network } from "key-doctor";
 import type { Html } from "./html.ts";
 import { renderError, renderHome, renderLayout, renderScanning } from "./pages.ts";
-import { buildDeletePlan, GUARD_TEXT, METEOR_INSTALL_URL, planSteps, type DeletePlan } from "./cleanup.ts";
+import { buildDeletePlan, GUARD_TEXT, METEOR_INSTALL_URL, type DeletePlan } from "./cleanup.ts";
 import { renderCleanup } from "./cleanup-view.ts";
 import { renderAccount, renderCouncil } from "./report.ts";
 import { homeHref, parseRoute, resolveInput, routeHref, type Route } from "./route.ts";
@@ -16,7 +16,6 @@ const root = document.getElementById("app") as HTMLElement;
 let scanSeq = 0;
 let dialogTrigger: HTMLElement | null = null;
 let lastReport: KdReport | null = null;
-let lastLevel: "safe" | "full" = "safe";
 
 const NETWORK_KEY = "kd.network";
 
@@ -75,7 +74,6 @@ async function render(focusMain: boolean): Promise<void> {
     const report = await scan({ ...route, target, network });
     if (seq !== scanSeq) return;
     lastReport = report;
-    lastLevel = route.level;
     const body =
       report.target.type === "dao"
         ? renderCouncil(report)
@@ -144,17 +142,9 @@ root.addEventListener("click", (event) => {
       document.querySelector<HTMLElement>(`[data-action="network"][data-network="${network}"]`)?.focus();
       break;
     }
-    case "delete-keys": {
-      const m = lastReport?.members[0];
-      const step = m && planSteps(m, lastLevel).find((x) => x.id === el.dataset.step);
-      const status = document.getElementById(`sign-status-${el.dataset.step}`);
-      if (!lastReport || !m || !step || !status) break;
-      signPlan(el as HTMLButtonElement, status, buildDeletePlan(m, step.keys.map((k) => k.public_key), null));
-      break;
-    }
     case "delete-key": {
       const m = lastReport?.members[0];
-      const status = document.getElementById("key-status");
+      const status = document.getElementById(el.dataset.status ?? "");
       if (!lastReport || !m || !status || !el.dataset.key) break;
       signPlan(el as HTMLButtonElement, status, buildDeletePlan(m, [el.dataset.key], null));
       break;
