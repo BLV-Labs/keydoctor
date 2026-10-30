@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Key Doctor · Key details</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&amp;family=Fira+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+.kd{--kd-page:#F6F7F9;--kd-surface:#FFFFFF;--kd-surface-muted:#F9FAFB;--kd-border:#E4E7EC;--kd-border-strong:#D0D5DD;--kd-border-input:#667085;--kd-text:#101828;--kd-text-2:#344054;--kd-text-muted:#475467;--kd-primary:#1E3A5F;--kd-primary-hover:#0F2742;--kd-on-primary:#FFFFFF;--kd-primary-tint:#E8EEF5;--kd-focus:#2E6BB8;--kd-high:#B42318;--kd-high-bg:#FEF3F2;--kd-high-border:#FECDCA;--kd-high-text:#7A271A;--kd-cleanup:#93370D;--kd-cleanup-bg:#FFFAEB;--kd-cleanup-border:#FEDF89;--kd-ok:#067647;--kd-ok-bg:#ECFDF3;--kd-ok-border:#ABEFC6;--kd-note-bg:#F2F4F7;--kd-info-border:#B9CBE0;--kd-high-edge:#F04438;--kd-cleanup-edge:#DC6803;--kd-backdrop:rgba(16, 24, 40, 0.6);--kd-shadow:0 20px 48px rgba(16, 24, 40, 0.25);color-scheme:light}
+.kd[data-theme="dark"]{--kd-page:#0B1017;--kd-surface:#121821;--kd-surface-muted:#161D27;--kd-border:#232C38;--kd-border-strong:#3A4656;--kd-border-input:#6B7A8F;--kd-text:#E6EDF5;--kd-text-2:#C3CDD9;--kd-text-muted:#9AA7B6;--kd-primary:#8DB8EC;--kd-primary-hover:#B3D0F3;--kd-on-primary:#0B1017;--kd-primary-tint:#1B2A3D;--kd-focus:#6EA8FE;--kd-high:#F97066;--kd-high-bg:#2A1414;--kd-high-border:#5C2420;--kd-high-text:#FDA29B;--kd-cleanup:#FDB022;--kd-cleanup-bg:#2A1F0B;--kd-cleanup-border:#5C4210;--kd-ok:#47CD89;--kd-ok-bg:#0E2A1D;--kd-ok-border:#1F5A3D;--kd-note-bg:#1C2430;--kd-info-border:#2D4A6F;--kd-high-edge:#F97066;--kd-cleanup-edge:#FDB022;--kd-backdrop:rgba(0, 0, 0, 0.7);--kd-shadow:0 20px 48px rgba(0, 0, 0, 0.6);color-scheme:dark}
+body{margin:0;background:#0B1017}
+a{color:var(--kd-primary);cursor:pointer;transition:color .2s,background-color .2s}a:hover{color:var(--kd-primary-hover)}button{cursor:pointer}
+a:focus-visible,button:focus-visible{outline:3px solid var(--kd-focus);outline-offset:2px}
+@media (prefers-reduced-motion: reduce){*{transition:none !important}}
+</style>
+</helmet>
+<div class="kd" data-theme="{{theme}}" style="min-height: 100vh; background: var(--kd-backdrop); font-family: 'Fira Sans', system-ui, sans-serif; font-size: 14px; line-height: 1.5; color: var(--kd-text); display: flex; align-items: center; justify-content: center; padding: 48px 16px; box-sizing: border-box;">
+  <div role="dialog" aria-modal="true" aria-labelledby="key-h" style="width: 100%; max-width: 560px; background: var(--kd-surface); border-radius: 16px; box-shadow: var(--kd-shadow); display: flex; flex-direction: column; overflow: hidden;">
+    <div style="padding: 24px 24px 16px; display: flex; gap: 16px; align-items: flex-start; justify-content: space-between;">
+      <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0;">
+        <div><span style="{{pillStyle}}">{{typeLabel}}</span></div>
+        <h2 id="key-h" style="margin: 0; font-size: 18px; font-weight: 600;">Key details</h2>
+        <p style="margin: 0; color: var(--kd-text-muted);">On <span style="font-family: 'Fira Code', monospace; font-weight: 600; color: var(--kd-text); overflow-wrap: anywhere;">a.kd-demo.testnet</span></p>
+      </div>
+      <a href="{{closeHref}}" aria-label="Close" style="flex: none; width: 44px; height: 44px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--kd-text-muted);">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+      </a>
+    </div>
+    <dl style="margin: 0 24px 24px; border: 1px solid var(--kd-border); border-radius: 10px; overflow: hidden;">
+      <sc-for list="{{rows}}" as="r" hint-placeholder-count="6">
+        <div style="{{r.style}}">
+          <dt style="margin: 0; font-size: 13px; color: var(--kd-text-muted);">{{r.label}}</dt>
+          <dd style="{{r.valueStyle}}">{{r.value}}<sc-if value="{{r.hasNote}}" hint-placeholder-val="{{false}}"><span style="display: block; font-size: 13px; color: var(--kd-text-muted);">{{r.note}}</span></sc-if></dd>
+        </div>
+      </sc-for>
+    </dl>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"keyType":{"editor":"enum","options":["full","app"],"default":"full"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const full = (this.props.keyType ?? 'full') === 'full';
+    const mono = "margin: 0; font-family: 'Fira Code', monospace; overflow-wrap: anywhere;";
+    const plain = 'margin: 0; overflow-wrap: anywhere;';
+    const list = full ? [
+      { label: 'Public key', value: 'ed25519:zsNxJRqtpFdNtZhWDw2v1nNT419ozWMtpKi24cxgFW3', valueStyle: mono },
+      { label: 'Permission', value: 'Full access: can do anything with this account, including deleting it and moving all its NEAR.', valueStyle: plain },
+      { label: 'Added', value: 'Nov 2, 2026, 22:49 UTC (about 3 hours ago)', note: 'Estimated from the nonce, block 182,330,555', valueStyle: plain },
+      { label: 'Uses', value: '0', valueStyle: plain },
+      { label: 'Nonce', value: '182330555000000', valueStyle: mono },
+      { label: 'Why it matters', value: 'Too many full-access keys · Key never used', valueStyle: plain }
+    ] : [
+      { label: 'Public key', value: 'ed25519:5Fq8mKcY2vQ7eRbLx9TnW3hJdP4sA6uZ1gN8oVkW6Aj', valueStyle: mono },
+      { label: 'Permission', value: 'App key: can only call the contract below, and cannot move NEAR out of the account.', valueStyle: plain },
+      { label: 'Approved for (dApp contract)', value: 'game.kd-demo.testnet', valueStyle: mono },
+      { label: 'Allowed methods', value: 'Any method', valueStyle: plain },
+      { label: 'Fee allowance', value: 'Unlimited', valueStyle: plain },
+      { label: 'Added', value: 'Apr 4, 2026, 10:12 UTC (about 7 months ago)', note: 'Estimated from the nonce, block 171,204,388', valueStyle: plain },
+      { label: 'Uses', value: '31', valueStyle: plain },
+      { label: 'Nonce', value: '171204388000031', valueStyle: mono },
+      { label: 'Why it matters', value: 'App key with unlimited allowance · App key can call any method', valueStyle: plain }
+    ];
+    const rows = list.map((r, i) => ({
+      ...r,
+      hasNote: !!r.note,
+      note: r.note || '',
+      style: 'display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 16px; padding: 12px 16px;' + (i < list.length - 1 ? ' border-bottom: 1px solid var(--kd-border);' : '') + (i % 2 === 0 ? ' background: var(--kd-surface-muted);' : '')
+    }));
+    const pill = (c, bg, b) => 'display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; color: ' + c + '; background: ' + bg + '; border: 1px solid ' + b + '; border-radius: 999px; padding: 2px 10px; white-space: nowrap;';
+    return {
+      theme: this.props.theme ?? 'light',
+      closeHref: 'Account.dc.html',
+      typeLabel: full ? 'Full access' : 'App key',
+      pillStyle: full ? pill('var(--kd-high)', 'var(--kd-high-bg)', 'var(--kd-high-border)') : pill('var(--kd-text-2)', 'var(--kd-note-bg)', 'var(--kd-border-strong)'),
+      rows: rows
+    };
+  }
+}
+</script>
+</body>
+</html>
