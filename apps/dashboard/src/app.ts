@@ -4,7 +4,7 @@ import { revealClampToggles, toggleClamp } from "./clamp.ts";
 import type { Html } from "./html.ts";
 import { renderError, renderHome, renderLayout, renderScanning } from "./pages.ts";
 import { buildDeletePlan, GUARD_TEXT, METEOR_INSTALL_URL, type DeletePlan } from "./cleanup.ts";
-import { renderCleanup } from "./cleanup-view.ts";
+import { renderCleanup, walletDialog } from "./cleanup-view.ts";
 import { PAGE_SIZE, pageOf, parsePaging, type Paging } from "./paging.ts";
 import { renderKeyDetail } from "./key-detail.ts";
 import { PROPOSALS_ID, PROPOSALS_LIST, renderProposals } from "./proposals-view.ts";
@@ -115,7 +115,27 @@ function paintReport(report: KdReport, route: Route, paging: Paging, seq: number
         : renderAccount(report, route.from, paging);
   paint(body, `${target} · Key Doctor`, false, report.chain.network);
   root.insertAdjacentHTML("beforeend", renderWatchDialog(target, report.target.type, WORKER_URL).value);
+  if (report.target.type === "account" && route.view !== "cleanup") root.insertAdjacentHTML("beforeend", walletDialog().value);
+  syncWallet();
   if (report.target.type === "dao") void paintProposals(report.target.id, report.chain.network, pageOf(paging, PROPOSALS_LIST), paging, seq);
+}
+
+/** The wallet Connect Wallet last connected and the accounts it holds; Revoke and Delete sign with it. */
+let connected: { walletId: WalletId; accounts: string[] } | null = null;
+
+/** Revoke and Delete work only when the connected wallet holds the account on screen. View is never touched.
+ *  Also shows the wallet name and Disconnect in place of Connect Wallet while a wallet is connected. */
+function syncWallet(): void {
+  const ok = connected !== null && lastReport !== null && connected.accounts.includes(lastReport.target.id);
+  for (const b of root.querySelectorAll<HTMLButtonElement>('[data-action="delete-key"]')) {
+    b.disabled = !ok;
+    b.title = ok ? "" : "Connect Wallet as this account to enable";
+  }
+  for (const el of root.querySelectorAll<HTMLElement>("[data-wallet-off]")) el.hidden = connected !== null;
+  for (const el of root.querySelectorAll<HTMLElement>("[data-wallet-on]")) el.hidden = connected === null;
+  for (const el of root.querySelectorAll<HTMLElement>("[data-wallet-name]")) {
+    el.textContent = connected === null ? "" : `${walletLabel(connected.walletId)} · ${connected.accounts.join(", ") || "no account"}`;
+  }
 }
 
 /** `rescan` false re-renders from the last report when the URL still points at it (page changes, back/forward). */
@@ -273,7 +293,14 @@ function connectWallet(status: HTMLElement, walletId: WalletId): void {
   status.textContent = `Check the ${walletLabel(walletId)} window.`;
   import("./wallet.ts")
     .then((w) => w.openWallet(lastReport!.chain.network, walletId))
-    .then(() => (status.textContent = ""))
+    .then((accounts) => {
+      connected = { walletId, accounts };
+      const target = lastReport!.target.id;
+      status.textContent = accounts.includes(target)
+        ? `Connected as ${target}. Revoke and Delete are on.`
+        : `${walletLabel(walletId)} holds ${accounts.join(", ") || "no account"}, not ${target}. Revoke and Delete stay off.`;
+      syncWallet();
+    })
     .catch((e: unknown) => {
       const msg = e instanceof Error ? e.message : "";
       status.textContent = /closed/i.test(msg) ? "Wallet window closed." : `Not opened: ${msg || "the wallet did not respond."}`;
@@ -316,14 +343,27 @@ root.addEventListener("click", (event) => {
         status.textContent = plan.errors.map((e) => GUARD_TEXT[e]).join(" ");
         break;
       }
-      const button = el as HTMLButtonElement;
-      askWallet(el, (walletId) => signPlan(button, status, plan, walletId));
+      if (connected === null) break;
+      signPlan(el as HTMLButtonElement, status, plan, connected.walletId);
       break;
     }
     case "open-wallet": {
       const status = document.getElementById("wallet-status");
       if (!lastReport || !status) break;
       askWallet(el, (walletId) => connectWallet(status, walletId));
+      break;
+    }
+    case "disconnect-wallet": {
+      const status = document.getElementById("wallet-status");
+      const was = connected;
+      if (was === null) break;
+      connected = null;
+      syncWallet();
+      if (status) status.textContent = "Disconnecting…";
+      import("./wallet.ts")
+        .then((w) => w.disconnectWallet(lastReport!.chain.network, was.walletId))
+        .then(() => status && (status.textContent = "Wallet disconnected."))
+        .catch(() => status && (status.textContent = "Disconnected here; the wallet may still hold the session."));
       break;
     }
     case "choose-wallet": {

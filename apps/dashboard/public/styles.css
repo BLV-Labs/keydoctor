@@ -97,6 +97,7 @@ main:focus { outline: none; }
 .btn-tint { background: var(--kd-primary-tint); color: var(--kd-primary); }
 .btn-tint:hover { background: var(--kd-primary-tint-hover); color: var(--kd-primary-hover); }
 .btn-sm { font-size: var(--kd-fs-sm); padding: 0 14px; }
+[hidden] { display: none !important; }
 .btn:disabled, .btn.is-disabled { opacity: .45; cursor: default; pointer-events: none; }
 
 .breadcrumb { font-size: var(--kd-fs-sm); color: var(--kd-text-muted); display: flex; gap: 8px; flex-wrap: wrap; overflow-wrap: anywhere; }

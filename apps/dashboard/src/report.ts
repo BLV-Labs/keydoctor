@@ -208,6 +208,15 @@ function newKeyAlert(member: Member, report: KdReport, inCouncil: boolean): Html
   </section>`;
 }
 
+/** Connect Wallet until a wallet is connected; then its name and Disconnect. app.ts flips the `hidden` halves. */
+export function walletControls(): Html {
+  return html`<div class="actions" data-wallet-ctl>
+    <button type="button" class="btn btn-tint" data-action="open-wallet" data-wallet-off>Connect Wallet</button>
+    <span class="pill pill-sm pill-ok" data-wallet-on data-wallet-name hidden></span>
+    <button type="button" class="btn btn-secondary" data-action="disconnect-wallet" data-wallet-on hidden>Disconnect</button>
+  </div>`;
+}
+
 /** One Revoke (app key) or Delete (full-access key) button; the click reports to the element `statusId`. */
 export function keyButton(k: KeyInfo, statusId: string): Html {
   const full = k.permission.type === "full_access";
@@ -248,7 +257,11 @@ function keysTable(member: Member, report: KdReport, paging: Paging, cleanupHref
           </table>
         </div>
         ${pager(KEYS_LIST, "Keys", window, paging)}
-        <p class="pad small muted" id="key-status" role="status"></p>
+        <div class="pad stack-sm">
+          ${walletControls()}
+          <p class="small muted" id="wallet-status" role="status">Revoke and Delete turn on once your wallet is connected as this account. View always works.</p>
+          <p class="small muted" id="key-status" role="status"></p>
+        </div>
         ${keyDialogShell()}`}
     <p class="pad small muted footnote">Revoke and Delete ask your wallet (Meteor, Here or HOT) to remove one key; you approve the transaction there. Key Doctor never signs transactions and never holds keys.</p>
   </section>`;

@@ -60,8 +60,15 @@ export async function signDeleteKeys(
   // No signOut here: Meteor answers it with its own "Sign Out Request" popup. The session holds no access key.
 }
 
-/** Opens the chosen wallet with a read-only connect request (no contractId, so no key is added). */
-export async function openWallet(network: Network, walletId: WalletId): Promise<void> {
+/** Connects the chosen wallet (no contractId, so no key is added) and returns the account ids it holds. Reuses a stored session. */
+export async function openWallet(network: Network, walletId: WalletId): Promise<string[]> {
   const wallet = await connect(network, walletId);
-  await wallet.signIn({ accounts: [] });
+  let accounts = await wallet.getAccounts().catch(() => []);
+  if (accounts.length === 0) accounts = await wallet.signIn({ accounts: [] });
+  return accounts.map((a) => a.accountId);
+}
+
+/** Ends the wallet session so the next Connect Wallet asks again. */
+export async function disconnectWallet(network: Network, walletId: WalletId): Promise<void> {
+  await (await connect(network, walletId)).signOut();
 }

@@ -119,7 +119,8 @@ describe("GĐ8 cleanup page", () => {
     assert.match(out.value, /<progress class="progress" aria-labelledby="progress-label" value="0" max="4">/);
     // One Connect Wallet button for the whole page, not one per step.
     assert.equal((out.value.match(/data-action="open-wallet"/g) ?? []).length, 1);
-    assert.match(out.value, /data-action="open-wallet">Connect Wallet<\/button>/);
+    assert.match(out.value, /data-action="open-wallet" data-wallet-off>Connect Wallet<\/button>/);
+    assert.match(out.value, /data-action="disconnect-wallet" data-wallet-on hidden>Disconnect<\/button>/);
     assert.doesNotMatch(out.value, /Open Meteor Wallet<\/button>/);
     // Every listed key gets a View button, and the page carries the dialog they fill.
     assert.equal((out.value.match(/data-action="view-key"/g) ?? []).length, (out.value.match(/<li class="key-/g) ?? []).length);
