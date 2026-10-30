@@ -51,7 +51,7 @@ Tick each box when done and tell Claude the result (numbers, names, block height
 
 ### Claude tasks (next sessions)
 
-- [x] **C1** Done 2026-10-30: dashboard chips and README examples use the neutral demo set `kdoncall-{a,b,c}.testnet` (council), DAO `kdoncall.sputnik-v2.testnet` and cleanup account `kdoncall-p.testnet` (created 2026-10-30 with 3 full-access and 2 function-call keys); the README has a Live demo section with the Pages URLs.
+- [x] **C1** Done 2026-10-30: dashboard chips and README examples use the neutral demo set `kdoncall-{a,b,c}.testnet` (council), DAO `kdoncall.sputnik-v2.testnet` and cleanup account `kdoncall-p.testnet` (created 2026-10-30 with 3 full-access and 2 function-call keys); the demo DAO council was later grown to 11 members (`kdpg347643-3..10` added by vote) so member paging shows, and transfers now need 6 of 11 votes; the README has a Live demo section with the Pages URLs.
 - [ ] **C2** after O3: record the results and fix `packages/key-doctor/src/proposals.ts` if any fact differs.
 - [ ] **C3** after O4: put the stats table into the README "The problem" section.
 - [x] **C4** GĐ8 in-dashboard signing built and verified on testnet 2026-10-30 (per-key Revoke / Delete buttons, wallet SDK lazy-loaded, multi-key and full-access Delete pass, O5). Original scope: in-dashboard signing with wallet-selector + Meteor, using `buildDeletePlan` in `apps/dashboard/src/cleanup.ts` (no `signIn` with `contractId`).
