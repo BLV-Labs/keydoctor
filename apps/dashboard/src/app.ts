@@ -164,7 +164,10 @@ root.addEventListener("click", (event) => {
       import("./wallet.ts")
         .then((w) => w.openWallet(lastReport!.chain.network))
         .then(() => (status.textContent = ""))
-        .catch((e: unknown) => (status.textContent = `Not opened: ${e instanceof Error ? e.message : "the wallet did not respond."}`));
+        .catch((e: unknown) => {
+          const msg = e instanceof Error ? e.message : "";
+          status.textContent = /closed/i.test(msg) ? "Wallet window closed." : `Not opened: ${msg || "the wallet did not respond."}`;
+        });
       break;
     }
     case "rescan":
