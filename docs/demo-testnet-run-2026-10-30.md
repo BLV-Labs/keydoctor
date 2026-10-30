@@ -20,7 +20,27 @@ Live run of `scripts/demo-testnet/demo.sh` against the deployed Worker, using ex
 
 Alert sent: `testnet:kdd1793327513.sputnik-v2.testnet:voter_new_full_access_key:0:bot1.duonghb3.testnet`.
 
-Telegram message text: _pending, to be pasted from the group._
+Telegram message received in the group (Vietnamese and English in one message, as the bot sends it):
+
+```text
+Key Doctor On Call
+CẢNH BÁO: kdd1793327513.sputnik-v2.testnet
+
+Đề xuất 0: chuyển 1 NEAR cho test1.duonghb3.testnet. bot1.duonghb3.testnet có khóa toàn quyền mới thêm chưa tới 1 giờ trước khi bỏ phiếu. Tài khoản có thể đã bị chiếm.
+Phiếu: 1/2 đã duyệt. Còn chờ: test1.duonghb3.testnet, bot2.duonghb3.testnet
+
+Trước khi bỏ phiếu: xác minh với bot1.duonghb3.testnet qua kênh khác (gọi điện, gặp trực tiếp).
+
+— English —
+ALERT: kdd1793327513.sputnik-v2.testnet
+
+Proposal 0: transfer 1 NEAR to test1.duonghb3.testnet. bot1.duonghb3.testnet has a new full-access key added less than an hour before voting. The account may be compromised.
+Votes: 1/2 approved. Still to vote: test1.duonghb3.testnet, bot2.duonghb3.testnet
+
+Before you vote: verify with bot1.duonghb3.testnet through another channel (call or meet in person).
+```
+
+Checked against the chain: the message names the right proposal, the right voter and the right pending voters; "1/2" matches the 2-vote threshold.
 
 ## Account state after step 7
 
