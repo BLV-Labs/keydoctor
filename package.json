@@ -13,7 +13,8 @@
     "build": "pnpm -r --if-present run build",
     "stats": "pnpm --filter key-doctor stats",
     "bench": "pnpm --filter key-doctor bench",
-    "find-dao": "pnpm --filter key-doctor find-dao"
+    "find-dao": "pnpm --filter key-doctor find-dao",
+    "deploy:all": "set -a; [ -f .env ] && . ./.env; set +a; : \"${KD_WORKER_URL:?set KD_WORKER_URL in .env}\" && pnpm test && pnpm --filter dashboard build && pnpm --filter worker exec wrangler pages deploy ../dashboard/dist --project-name \"${KD_PAGES_PROJECT:-key-doctor-dashboard}\" && pnpm --filter worker run deploy"
   },
   "packageManager": "pnpm@10.34.7"
 }
