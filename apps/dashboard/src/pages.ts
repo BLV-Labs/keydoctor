@@ -53,7 +53,7 @@ export function renderHome(value: string, error: string | null, network: Network
       <div class="stack">
         <p class="eyebrow">Key health for NEAR accounts and DAO councils</p>
         <h1 class="display">Key Doctor checks your keys, and stays on call while you sleep.</h1>
-        <p class="lead">Enter your own NEAR account, or a Sputnik DAO to check its whole council. Key Doctor reads the public keys on chain, scores the risk with fixed rules, and explains each key. No sign-in, and it never holds anyone's keys.</p>
+        <p class="lead">Enter your own NEAR account, or a Sputnik DAO to check its whole council. Key Doctor reads the public keys on chain, scores the risk with fixed rules, and explains each key. No sign-in needed to check. Connecting a wallet is only for removing your own keys. Key Doctor never holds anyone's keys.</p>
       </div>
       <form id="check-form" class="card pad stack-sm" novalidate>
         <div class="form-head">

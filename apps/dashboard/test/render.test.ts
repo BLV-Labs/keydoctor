@@ -10,7 +10,8 @@ import { PROPOSALS_ID, renderProposals } from "../src/proposals-view.ts";
 import { renderKeyDetail } from "../src/key-detail.ts";
 import { renderAccount, renderCouncil } from "../src/report.ts";
 import { parseRoute, resolveInput, routeHref } from "../src/route.ts";
-import { groupFlags, keyMix, mainReason, recentFullAccessKeys, sortMembers } from "../src/view.ts";
+import { STATUS_LABEL, groupFlags, keyMix, mainReason, recentFullAccessKeys, sortMembers } from "../src/view.ts";
+import { viewButton } from "../src/key-detail.ts";
 import { renderWatchDialog, renderWatchLinks } from "../src/watch.ts";
 
 const require = createRequire(import.meta.url);
@@ -178,7 +179,7 @@ describe("pages", () => {
     assert.match(out, /<th scope="col">Approved for<\/th>/);
     assert.equal((out.match(/data-action="view-key"/g) ?? []).length, member.keys.length);
     for (const k of member.keys) {
-      if (k.permission.type === "function_call") assert.match(out, new RegExp(`data-label="Approved for"><span class="mono wrap">${k.permission.receiver_id.replace(/\./g, "\\.")}</span>`));
+      if (k.permission.type === "function_call") assert.match(out, new RegExp(`data-label="Approved for"><span class="mono wrap-soft">${k.permission.receiver_id.split(".").map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\.<wbr>")}</span>`));
     }
     assert.match(out, /Any contract/);
   });
@@ -311,5 +312,18 @@ describe("proposal list (C7)", () => {
   it("hostile chain text in a description never becomes markup", () => {
     const out = renderProposals(result([info({ description: "<img src=x onerror=alert(1)>" })])).value;
     assert.doesNotMatch(out, /<img/);
+  });
+});
+
+describe("labels and key table wording", () => {
+  it("uses Needs cleanup / Info for the status labels, Details for the key button, and one-tap links", () => {
+    assert.equal(STATUS_LABEL.cleanup, "Needs cleanup");
+    assert.equal(STATUS_LABEL.note, "Info");
+    assert.match(viewButton({ public_key: "ed25519:abc" } as never).value, />Details</);
+    assert.match(renderWatchDialog("a.testnet", "account", "https://w").value, />Create one-tap links</);
+  });
+
+  it("home page says checking needs no sign-in and a wallet is only for removing your own keys", () => {
+    assert.match(text(renderHome("", null)), /No sign-in needed to check\. Connecting a wallet is only for removing your own keys\./);
   });
 });
