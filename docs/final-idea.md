@@ -791,6 +791,8 @@ Theo v2 (màn nhập, council, hồ sơ account, kế hoạch dọn, số liệu
   - Sau khi account đã ký bằng ML-DSA, dashboard không nhờ ví ký qua wallet-selector được nữa: các bước còn lại chuyển sang hướng dẫn trong Meteor.
   - **Thứ tự:** xóa khóa app và khóa toàn quyền cũ **trước** khi bật ML-DSA (sau đó ví ký bằng ML-DSA, dashboard không nhờ ký được nữa). Chi tiết: UC8 trong `usecase.md`.
   - **An toàn:** dashboard **chặn** xóa khóa toàn quyền cuối cùng và khóa ví đang dùng để ký (kiểm trước khi dựng giao dịch); hiện ba cảnh báo (seed phrase gắn với khóa, sao lưu khóa ML-DSA, kiểm app còn chạy) trước khi xóa khóa toàn quyền; luôn có màn xem trước danh sách khóa sẽ xóa.
+  - **Chốt xóa Ed25519 cuối và cảnh báo:** bước xóa khóa Ed25519 toàn quyền cuối cùng (làm trong Meteor) chỉ mở khi có khóa ML-DSA toàn quyền và khóa đó đã ký ít nhất một giao dịch thật (đọc từ nonce: khác `block_thêm × 10^6`). Khi người dùng định xóa hết Ed25519, hiện cảnh báo xác nhận từng dòng (Here/HOT không còn ký được, mất khóa ML-DSA là mất account, khó đảo ngược, sao lưu khóa). Chi tiết: quy tắc 7, 8 trong UC8.
+  - **Bắt buộc theo thứ tự:** bước sau khóa cho đến khi bước trước xanh theo dữ liệu chain; không có nút bỏ qua.
   - **Kết nối ví không được đẻ thêm khóa:** không dùng `signIn` kèm `contractId` (sẽ tạo function-call key mới). Chỉ kết nối để ký giao dịch.
   - Tiến độ từng bước tự tích xanh khi quét lại.
 - **Quyền riêng tư:** bỏ ví dụ DAO thật khỏi bản public; dùng account testnet.

@@ -562,6 +562,22 @@ Bước 1 và 2 làm **trước** khi bật ML-DSA, vì sau khi ví chuyển san
    - Kiểm ví, ví cứng, dApp hằng ngày còn chạy với account chỉ có ML-DSA.
 5. **Kết nối ví không được đẻ thêm khóa:** không dùng `signIn` kèm `contractId`.
 6. Giới hạn số action mỗi giao dịch (khoảng 100); nhiều hơn thì chia nhiều giao dịch.
+7. **Bắt buộc theo thứ tự dọn.** Mỗi bước chỉ mở khi bước trước đã xanh theo dữ liệu chain (bảng "Tiến độ đọc từ chain"); bước chưa mở thì nút bị khóa kèm lý do, không có nút bỏ qua. Dashboard không dựng giao dịch, và không hiện hướng dẫn thực hiện, cho bước chưa mở.
+8. **Chốt xóa Ed25519 toàn quyền cuối cùng** (làm trước bước 4): chỉ mở khi cùng lúc có:
+   - Có ít nhất một khóa ML-DSA **toàn quyền** trên chain.
+   - Khóa ML-DSA đó **đã ký ít nhất một giao dịch thật**. Dashboard không thấy private key nên đọc bằng nonce: khóa mới thêm có nonce tròn `block_thêm × 10^6`, ký rồi thì nonce lệch khỏi số tròn.
+   - Khóa ML-DSA đã qua đủ thời gian chờ chốt của Meteor (nếu có).
+   Thiếu một điều kiện thì dashboard không hướng dẫn bước 4, hiện rõ điều kiện nào còn thiếu. Dashboard luôn không tự dựng giao dịch này: bước 4 làm trong Meteor và nên do chính khóa ML-DSA ký.
+
+### Cảnh báo "xóa hết Ed25519"
+
+Hiện khi người dùng chọn bước 4, hoặc chọn một tập khóa mà sau khi xóa account không còn khóa Ed25519 toàn quyền nào. Phải tích xác nhận từng dòng, không có nút đồng ý chung:
+
+- Sau bước này **Here và HOT không còn ký được** cho account (chúng chỉ giữ Ed25519); chỉ ví hỗ trợ ML-DSA (hiện là Meteor) hoặc CLI hỗ trợ ML-DSA ký được.
+- **Mất khóa ML-DSA là mất account vĩnh viễn:** seed phrase Ed25519 cũ hết tác dụng vì khóa đó đã bị xóa khỏi chain, không có đường khôi phục.
+- Việc này **không đảo ngược dễ dàng:** thêm lại khóa Ed25519 phải do khóa ML-DSA ký.
+- Khóa app (đăng nhập dApp) đã bị xóa ở bước 1; chưa rõ function-call key có dùng được kiểu ML-DSA, nên dApp có thể phải đăng nhập lại hoặc chưa chạy.
+- Người dùng xác nhận đã sao lưu khóa ML-DSA ở nơi khác thiết bị đang dùng.
 
 ### Tiến độ đọc từ chain
 
@@ -571,7 +587,7 @@ Bước 1 và 2 làm **trước** khi bật ML-DSA, vì sau khi ví chuyển san
 | Xóa khóa toàn quyền cũ | Các khóa đã chọn không còn; còn ít nhất một khóa toàn quyền |
 | Thêm ML-DSA | Có ≥1 khóa ML-DSA toàn quyền |
 | Ký thử | Khóa ML-DSA có số lần dùng ≥ 1 |
-| Chuyển hẳn | Không còn Ed25519 toàn quyền |
+| Chuyển hẳn | Không còn Ed25519 toàn quyền (chỉ mở sau khi đạt chốt 8) |
 
 ### Hai mức dọn
 
