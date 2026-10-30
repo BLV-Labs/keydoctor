@@ -311,6 +311,16 @@ describe("listProposals (dashboard proposal list)", () => {
     assert.equal(queries(calls).filter((q) => q === "call_function:get_proposal").length, 1);
   });
 
+  it("offset pages back through older proposals and past the end reads none", async (t) => {
+    const calls = demo(t);
+    const r = await listProposals(DAO, { limit: 1, offset: 1 });
+    assert.deepEqual(r.proposals.map((p) => p.id), [2]);
+    assert.equal(r.total, 4);
+    const past = await listProposals(DAO, { limit: 10, offset: 4 });
+    assert.deepEqual([past.proposals.length, past.errors.length, past.total], [0, 0, 4]);
+    assert.equal(queries(calls).filter((q) => q === "call_function:get_proposal").length, 1);
+  });
+
   it("a transport failure on one proposal leaves the others", async (t) => {
     demo(t, { down: [3] });
     const r = await listProposals(DAO, { limit: 2 });

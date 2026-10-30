@@ -1,10 +1,12 @@
 // Browser entry: routing, scanning and DOM events. Rendering lives in pure modules that tests run in Node.
-import { isKdError, listProposals, scanAccount, scanTarget, type KdError, type KdReport, type Network } from "key-doctor";
+import { isKdError, listProposals, scanAccount, scanTarget, type KdError, type KdReport, type ListProposalsResult, type Network } from "key-doctor";
+import { revealClampToggles, toggleClamp } from "./clamp.ts";
 import type { Html } from "./html.ts";
 import { renderError, renderHome, renderLayout, renderScanning } from "./pages.ts";
 import { buildDeletePlan, GUARD_TEXT, METEOR_INSTALL_URL, type DeletePlan } from "./cleanup.ts";
 import { renderCleanup } from "./cleanup-view.ts";
-import { PROPOSALS_ID, renderProposals } from "./proposals-view.ts";
+import { PAGE_SIZE, pageOf, parsePaging, type Paging } from "./paging.ts";
+import { PROPOSALS_ID, PROPOSALS_LIST, renderProposals } from "./proposals-view.ts";
 import { renderAccount, renderCouncil } from "./report.ts";
 import { homeHref, parseRoute, resolveInput, routeHref, type Route } from "./route.ts";
 import { renderWatchDialog, renderWatchLinks } from "./watch.ts";
@@ -17,6 +19,10 @@ const root = document.getElementById("app") as HTMLElement;
 let scanSeq = 0;
 let dialogTrigger: HTMLElement | null = null;
 let lastReport: KdReport | null = null;
+/** What the last scan was for: a page change on the same report re-renders from it instead of rescanning. */
+let lastScanKey = "";
+/** Proposal pages already read for the last scan, by page number (null = the read failed). */
+const proposalPages = new Map<number, ListProposalsResult | null>();
 
 const NETWORK_KEY = "kd.network";
 
@@ -47,8 +53,11 @@ const UNKNOWN_ERROR: KdError = {
 function paint(content: Html, title: string, focusMain: boolean, network: Network): void {
   root.innerHTML = renderLayout(content, network).value;
   document.title = title;
+  revealClampToggles(root);
   if (focusMain) document.getElementById("main")?.focus();
 }
+
+const scanKey = (route: Route): string => [route.target, route.from, route.view, route.level, route.network].join("|");
 
 /** A council member and a cleanup plan are always accounts; anything else goes through scanTarget (DAO first). */
 function scan(route: Route & { target: string; network: Network }): Promise<KdReport> {
@@ -60,9 +69,31 @@ function paintHome(value: string, error: string | null, network: Network, focusM
   paint(renderHome(value, error, network), "Key Doctor · Check keys", focusMain, network);
 }
 
-async function render(focusMain: boolean): Promise<void> {
+/** Paints a scanned report for the route; DAO reports then fill in the proposal page. */
+function paintReport(report: KdReport, route: Route, paging: Paging, seq: number): void {
+  const target = report.target.id;
+  const body =
+    report.target.type === "dao"
+      ? renderCouncil(report, paging)
+      : route.view === "cleanup"
+        ? renderCleanup(report, route.from, route.level, paging)
+        : renderAccount(report, route.from, paging);
+  paint(body, `${target} · Key Doctor`, false, report.chain.network);
+  root.insertAdjacentHTML("beforeend", renderWatchDialog(target, report.target.type, WORKER_URL).value);
+  if (report.target.type === "dao") void paintProposals(report.target.id, report.chain.network, pageOf(paging, PROPOSALS_LIST), paging, seq);
+}
+
+/** `rescan` false re-renders from the last report when the URL still points at it (page changes, back/forward). */
+async function render(focusMain: boolean, rescan = true): Promise<void> {
   const route = parseRoute(location.search);
+  const paging = parsePaging(location.search);
   const seq = ++scanSeq;
+  if (!rescan && route.target !== null && lastReport !== null && scanKey(route) === lastScanKey) {
+    paintReport(lastReport, route, paging, seq);
+    // Back/forward between pages of one report: keep the scroll position the browser restores.
+    if (focusMain) document.getElementById("main")?.focus({ preventScroll: true });
+    return;
+  }
   if (route.target === null) {
     const error = route.invalid === null ? null : "Invalid target. Enter a valid .near or .testnet account name.";
     paintHome(route.invalid ?? "", error, route.network ?? storedNetwork(), focusMain);
@@ -75,15 +106,9 @@ async function render(focusMain: boolean): Promise<void> {
     const report = await scan({ ...route, target, network });
     if (seq !== scanSeq) return;
     lastReport = report;
-    const body =
-      report.target.type === "dao"
-        ? renderCouncil(report)
-        : route.view === "cleanup"
-          ? renderCleanup(report, route.from, route.level)
-          : renderAccount(report, route.from);
-    paint(body, `${target} · Key Doctor`, false, network);
-    root.insertAdjacentHTML("beforeend", renderWatchDialog(target, report.target.type, WORKER_URL).value);
-    if (report.target.type === "dao") void paintProposals(report.target.id, report.chain.network, seq);
+    lastScanKey = scanKey(route);
+    proposalPages.clear();
+    paintReport(report, route, paging, seq);
   } catch (e) {
     if (seq !== scanSeq) return;
     if (!isKdError(e)) console.error("scan failed", { target, error: e });
@@ -91,11 +116,47 @@ async function render(focusMain: boolean): Promise<void> {
   }
 }
 
-/** Fills the Proposals section after the council report; a failed read never touches the report. */
-async function paintProposals(dao: string, network: Network, seq: number): Promise<void> {
-  const result = await listProposals(dao, { network }).catch(() => null);
+/**
+ * Fills the Proposals section after the council report with one page of proposals; a failed read never touches
+ * the report. A page past the end (an old link) shows the last page instead.
+ */
+async function paintProposals(dao: string, network: Network, page: number, paging: Paging, seq: number): Promise<void> {
+  // A page already read paints at once, so changing another list's page does not flash "Loading proposals…".
+  const cached = proposalPages.get(page);
+  const box0 = document.getElementById(PROPOSALS_ID);
+  if (cached !== undefined && box0 !== null) {
+    box0.innerHTML = renderProposals(cached, page, paging).value;
+    revealClampToggles(box0);
+    return;
+  }
+  const read = async (p: number): Promise<ListProposalsResult | null> => {
+    if (proposalPages.has(p)) return proposalPages.get(p) ?? null;
+    const result = await listProposals(dao, { network, limit: PAGE_SIZE, offset: (p - 1) * PAGE_SIZE }).catch(() => null);
+    if (seq === scanSeq) proposalPages.set(p, result);
+    return result;
+  };
+  let shown = page;
+  let result = await read(page);
+  const last = result === null ? 1 : Math.max(1, Math.ceil(result.total / PAGE_SIZE));
+  if (result !== null && page > last) {
+    shown = last;
+    result = await read(last);
+  }
   const box = document.getElementById(PROPOSALS_ID);
-  if (seq === scanSeq && box !== null) box.innerHTML = renderProposals(result).value;
+  if (seq !== scanSeq || box === null) return;
+  box.innerHTML = renderProposals(result, shown, paging).value;
+  revealClampToggles(box);
+}
+
+/** A Previous/Next link: new URL, same report, then bring the list's top into view. */
+function changePage(link: HTMLAnchorElement): void {
+  const list = link.dataset.pageList ?? "";
+  history.pushState(null, "", link.getAttribute("href") ?? "./");
+  void render(false, false).then(() => {
+    const anchor = document.querySelector<HTMLElement>(`[data-list-anchor="${CSS.escape(list)}"]`);
+    anchor?.scrollIntoView({ block: "start" });
+    anchor?.focus({ preventScroll: true });
+  });
 }
 
 function navigate(href: string): void {
@@ -131,8 +192,14 @@ function signPlan(button: HTMLButtonElement, status: HTMLElement, plan: DeletePl
 }
 
 root.addEventListener("click", (event) => {
-  const el = (event.target as HTMLElement).closest<HTMLElement>("a[data-nav], [data-action]");
+  const el = (event.target as HTMLElement).closest<HTMLElement>("a[data-nav], a[data-page-list], [data-action]");
   if (el === null) return;
+  if (el instanceof HTMLAnchorElement && el.hasAttribute("data-page-list")) {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+    event.preventDefault();
+    changePage(el);
+    return;
+  }
   if (el instanceof HTMLAnchorElement && el.hasAttribute("data-nav")) {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
     event.preventDefault();
@@ -183,6 +250,9 @@ root.addEventListener("click", (event) => {
     }
     case "rescan":
       void render(false);
+      break;
+    case "toggle-more":
+      toggleClamp(el);
       break;
     case "watch":
       if (dialog === null) break;
@@ -256,5 +326,11 @@ root.addEventListener("submit", (event) => {
   }
 });
 
-window.addEventListener("popstate", () => void render(true));
+window.addEventListener("popstate", () => void render(true, false));
+
+let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => revealClampToggles(root), 150);
+});
 void render(false);

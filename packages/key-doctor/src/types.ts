@@ -255,6 +255,8 @@ export interface ListProposalsOptions {
   rpcUrl?: string | readonly string[];
   /** Newest proposals to read. Default 10. */
   limit?: number;
+  /** Newest proposals to skip first, for paging (page n = offset (n - 1) * limit). Default 0. */
+  offset?: number;
   proposalUiUrlTemplate?: string;
 }
 
