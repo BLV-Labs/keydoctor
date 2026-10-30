@@ -2,7 +2,7 @@
 import { isKdError, scanAccount, scanTarget, type KdError, type KdReport, type Network } from "key-doctor";
 import type { Html } from "./html.ts";
 import { renderError, renderHome, renderLayout, renderScanning } from "./pages.ts";
-import { buildDeletePlan, GUARD_TEXT, METEOR_INSTALL_URL, planSteps } from "./cleanup.ts";
+import { buildDeletePlan, GUARD_TEXT, METEOR_INSTALL_URL, planSteps, type DeletePlan } from "./cleanup.ts";
 import { renderCleanup } from "./cleanup-view.ts";
 import { renderAccount, renderCouncil } from "./report.ts";
 import { homeHref, parseRoute, resolveInput, routeHref, type Route } from "./route.ts";
@@ -101,6 +101,28 @@ function closeDialog(dialog: HTMLDialogElement): void {
   dialog.close();
 }
 
+/** Signs an accepted plan through Meteor, or shows why the guards refused it. Re-renders on success. */
+function signPlan(button: HTMLButtonElement, status: HTMLElement, plan: DeletePlan): void {
+  if (!plan.ok) {
+    status.textContent = plan.errors.map((e) => GUARD_TEXT[e]).join(" ");
+    return;
+  }
+  const account = lastReport!.target.id;
+  const network = lastReport!.chain.network;
+  button.disabled = true;
+  status.textContent = "Waiting for Meteor Wallet. Check the transaction there before you approve.";
+  // Loaded on demand: the wallet SDK is large and only needed when someone signs.
+  import("./wallet.ts")
+    .then((w) => w.signDeleteKeys(account, network, plan, (t) => (status.textContent = t)))
+    .then(() => {
+      void render(false);
+    })
+    .catch((e: unknown) => {
+      button.disabled = false;
+      status.textContent = `Not done: ${e instanceof Error ? e.message : "the wallet did not sign."}`;
+    });
+}
+
 root.addEventListener("click", (event) => {
   const el = (event.target as HTMLElement).closest<HTMLElement>("a[data-nav], [data-action]");
   if (el === null) return;
@@ -127,24 +149,14 @@ root.addEventListener("click", (event) => {
       const step = m && planSteps(m, lastLevel).find((x) => x.id === el.dataset.step);
       const status = document.getElementById(`sign-status-${el.dataset.step}`);
       if (!lastReport || !m || !step || !status) break;
-      const plan = buildDeletePlan(m, step.keys.map((k) => k.public_key), null);
-      if (!plan.ok) {
-        status.textContent = plan.errors.map((e) => GUARD_TEXT[e]).join(" ");
-        break;
-      }
-      const account = lastReport.target.id;
-      (el as HTMLButtonElement).disabled = true;
-      status.textContent = "Waiting for Meteor Wallet. Check the transaction there before you approve.";
-      // Loaded on demand: the wallet SDK is large and only needed when someone signs.
-      import("./wallet.ts")
-        .then((w) => w.signDeleteKeys(account, lastReport!.chain.network, plan, (t) => (status.textContent = t)))
-        .then(() => {
-          void render(false);
-        })
-        .catch((e: unknown) => {
-          (el as HTMLButtonElement).disabled = false;
-          status.textContent = `Not done: ${e instanceof Error ? e.message : "the wallet did not sign."}`;
-        });
+      signPlan(el as HTMLButtonElement, status, buildDeletePlan(m, step.keys.map((k) => k.public_key), null));
+      break;
+    }
+    case "delete-key": {
+      const m = lastReport?.members[0];
+      const status = document.getElementById("key-status");
+      if (!lastReport || !m || !status || !el.dataset.key) break;
+      signPlan(el as HTMLButtonElement, status, buildDeletePlan(m, [el.dataset.key], null));
       break;
     }
     case "open-wallet": {
