@@ -32,6 +32,9 @@
   --kd-cleanup: #93370D;  --kd-cleanup-bg: #FFFAEB; --kd-cleanup-border: #FEDF89;
   --kd-ok: #067647;       --kd-ok-bg: #ECFDF3;      --kd-ok-border: #ABEFC6;
   --kd-note: #344054;     --kd-note-bg: #F2F4F7;    --kd-note-border: #D0D5DD;
+  --kd-info: #1E3A5F;     --kd-info-bg: #E8EEF5;    --kd-info-border: #B9CBE0;   /* open proposals */
+  /* Risk-colored button outlines: 3:1 against white so the button edge reads */
+  --kd-high-edge: #F04438;  --kd-cleanup-edge: #DC6803;  --kd-primary-tint-hover: #D5E0EC;
 
   /* Shape and space */
   --kd-radius-sm: 6px;    /* tags */

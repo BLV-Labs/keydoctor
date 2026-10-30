@@ -381,6 +381,7 @@ export async function checkProposals(
 
 /**
  * The DAO's newest proposals, newest first, with the same tally as an alert (votes, who is still to vote).
+ * `offset` skips that many of the newest first, so a page reads only its own proposals.
  * Reads RPC only. Throws when the block, `get_policy` or `get_last_proposal_id` cannot be read; a proposal that
  * cannot be read or has a kind this tool does not know goes into `errors` and is left out.
  */
@@ -392,6 +393,7 @@ export async function listProposals(
   const dao = target.id;
   const rpc: Rpc = createRpc({ url: opts.rpcUrl ?? DEFAULT_RPC_URLS[target.network] });
   const limit = Math.max(1, Math.min(opts.limit ?? PROPOSAL_LIST_DEFAULT, PROPOSAL_LIST_MAX));
+  const offset = Math.max(0, Math.floor(opts.offset ?? 0));
 
   const head = await rpc.block();
   const total = parseLastId(await rpc.callFunction(dao, head.height, "get_last_proposal_id", {}));
@@ -400,7 +402,7 @@ export async function listProposals(
 
   const proposals: ProposalInfo[] = [];
   const errors: string[] = [];
-  for (let id = total - 1; id >= Math.max(0, total - limit); id--) {
+  for (let id = total - 1 - offset; id >= Math.max(0, total - offset - limit); id--) {
     try {
       const p = parseProposal(await rpc.callFunction(dao, head.height, "get_proposal", { id }));
       if (p === null || p.id !== id) throw fail("RPC_ERROR", { retryable: false });

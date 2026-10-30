@@ -113,6 +113,18 @@ export function keyReasons(key: KeyInfo, member: Member): string[] {
   return titles;
 }
 
+/** The worst severity among the flags that name this key, or null when none does. */
+export function keySeverity(key: KeyInfo, member: Member): Severity | null {
+  let worst: Severity | null = null;
+  for (const id of key.flag_ids) {
+    const flag =
+      member.flags.find((f) => f.rule_id === id && f.public_key === key.public_key) ??
+      member.flags.find((f) => f.rule_id === id && f.public_key === undefined);
+    if (flag !== undefined && (worst === null || RANK[flag.severity] > RANK[worst])) worst = flag.severity;
+  }
+  return worst;
+}
+
 export function keyType(key: KeyInfo): { label: string; detail: string | null } {
   const curve = key.curve === "ml_dsa" ? "ML-DSA" : key.curve === "ed25519" ? "Ed25519" : "Unknown curve";
   if (key.permission.type === "full_access") return { label: "Full access", detail: curve };

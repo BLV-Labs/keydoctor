@@ -1,11 +1,13 @@
-import type { KdReport, KeyInfo, Member } from "key-doctor";
+import type { KdReport, Member } from "key-doctor";
 import { planSteps, type Level, type Step, type StepId } from "./cleanup.ts";
 import { formatInt, keyAgeMs, relativeAge, truncateKey } from "./format.ts";
+import { clamp } from "./clamp.ts";
 import { html, type Html } from "./html.ts";
 import { icon, statusIcon } from "./icons.ts";
 import { breadcrumb, keyButton } from "./report.ts";
+import { NO_PAGING, pageOf, pager, slicePage, type Paging } from "./paging.ts";
 import { routeHref } from "./route.ts";
-import { keyReasons, keyType, recentFullAccessKeys } from "./view.ts";
+import { keyReasons, keySeverity, keyType, recentFullAccessKeys } from "./view.ts";
 
 const TITLE: Record<StepId, string> = {
   revoke_app_keys: "Revoke app keys you do not need",
@@ -35,41 +37,48 @@ const HOW: Record<StepId, string> = {
     "Only when the ML-DSA key is backed up and your wallets, hardware wallet and daily apps all work with it. Delete the remaining Ed25519 full-access keys in Meteor.",
 };
 
+/** The list id a step's keys page under (`step1_page` in the URL). */
+export const stepList = (step: Step): string => `step${String(step.number)}`;
+
 /** `statusId` set = each key gets its own Revoke/Delete button, reporting to that status element. */
-function keyList(keys: readonly KeyInfo[], m: Member, report: KdReport, statusId: string | null): Html {
-  if (keys.length === 0) return html``;
-  return html`<ol class="key-list">
+function keyList(step: Step, m: Member, report: KdReport, statusId: string | null, paging: Paging): Html {
+  if (step.keys.length === 0) return html``;
+  const list = stepList(step);
+  const { items: keys, window } = slicePage(step.keys, pageOf(paging, list));
+  return html`<ol class="key-list" start="${String(window.first)}">
     ${keys.map((k) => {
       const t = keyType(k);
       const reasons = keyReasons(k, m);
-      return html`<li>
+      const severity = keySeverity(k, m);
+      return html`<li class="${severity ? `key-${severity}` : ""}">
         <span class="mono" title="${k.public_key}">${truncateKey(k.public_key)}</span>
         <span class="muted small">${t.label}${t.detail ? html` · <span class="mono">${t.detail}</span>` : ""} · added ${relativeAge(keyAgeMs(k, report.chain.block_timestamp)).toLowerCase()} · ${k.use_count === null ? "uses unknown" : `${formatInt(k.use_count)} uses`}</span>
-        ${reasons.length > 0 ? html`<span class="small">${reasons.join(" · ")}</span>` : ""}
+        ${reasons.length > 0 ? clamp(html`<span class="small">${reasons.join(" · ")}</span>`, 2) : ""}
         ${statusId === null ? "" : keyButton(k, statusId)}
       </li>`;
     })}
-  </ol>`;
+  </ol>
+  ${pager(list, `Step ${String(step.number)} keys`, window, paging)}`;
 }
 
-function stepCard(step: Step, m: Member, report: KdReport, blocked: string | null): Html {
-  return html`<li class="card pad stack-sm step-card${step.done ? " step-done" : ""}">
+function stepCard(step: Step, m: Member, report: KdReport, blocked: string | null, paging: Paging): Html {
+  return html`<li class="card pad stack-sm step-card${step.done ? " step-done" : ""}" tabindex="-1" data-list-anchor="${stepList(step)}">
     <div class="step-head">
       <span class="step-num${step.done ? " step-num-done" : ""}" aria-hidden="true">${step.done ? statusIcon("ok", 16) : String(step.number)}</span>
       <h2 class="h3">${step.number}. ${TITLE[step.id]}</h2>
       <span class="pill pill-sm ${step.done ? "pill-ok" : "pill-note"}">${step.done ? "Done" : "To do"}</span>
     </div>
-    ${!step.done && step.keys.length > 0 ? html`<p class="small muted">${step.keys.length === 1 ? "1 key" : `${step.keys.length} keys`}, in this order:</p>${keyList(step.keys, m, report, blocked ? null : `sign-status-${step.id}`)}` : ""}
+    ${!step.done && step.keys.length > 0 ? html`<p class="small muted">${step.keys.length === 1 ? "1 key" : `${step.keys.length} keys`}, in this order:</p>${keyList(step, m, report, blocked ? null : `sign-status-${step.id}`, paging)}` : ""}
     ${step.keep ? html`<p class="small"><strong>Keep:</strong> <span class="mono">${truncateKey(step.keep.public_key)}</span> (${formatInt(step.keep.use_count ?? 0)} uses). Key Doctor never lists the last full-access key.</p>` : ""}
     ${!step.done ? html`<p>${HOW[step.id]}</p>` : ""}
     ${!step.done && blocked ? html`<p class="small field-hint">${blocked}</p>` : ""}
     ${!step.done && step.keys.length > 0 && !blocked ? html`<p class="small muted" id="sign-status-${step.id}" role="status"></p>` : ""}
-    ${!step.done && step.id !== "test_sign" ? html`<button type="button" class="btn btn-secondary self-start" data-action="open-wallet" data-step="${step.id}">Open Meteor Wallet</button><p class="small muted" id="wallet-status-${step.id}" role="status"></p>` : ""}
+    ${!step.done && step.id !== "test_sign" ? html`<button type="button" class="btn btn-tint self-start" data-action="open-wallet" data-step="${step.id}">Open Meteor Wallet</button><p class="small muted" id="wallet-status-${step.id}" role="status"></p>` : ""}
     <p class="small muted">${DONE_WHEN[step.id]}</p>
   </li>`;
 }
 
-export function renderCleanup(report: KdReport, from: string | null, level: Level): Html {
+export function renderCleanup(report: KdReport, from: string | null, level: Level, paging: Paging = NO_PAGING): Html {
   const m = report.members[0];
   const id = report.target.id;
   if (m === undefined || report.target.type !== "account") return html`${breadcrumb(id, from)}<p>The cleanup plan is for one account.</p>`;
@@ -107,7 +116,7 @@ export function renderCleanup(report: KdReport, from: string | null, level: Leve
         : "Adds step 5. Only after the ML-DSA key is backed up and everything you use works with it."}</p>
     </section>
     <ol class="plain stack" role="list">
-      ${steps.map((s) => stepCard(s, m, report, s.id === "delete_remaining_ed25519" && !steps.slice(0, 4).every((x) => x.done) ? "Still needed: finish steps 1 to 4 first." : null))}
+      ${steps.map((s) => stepCard(s, m, report, s.id === "delete_remaining_ed25519" && !steps.slice(0, 4).every((x) => x.done) ? "Still needed: finish steps 1 to 4 first." : null, paging))}
     </ol>
     <p class="small muted">${firstOpen ? `Next: step ${firstOpen.number}.` : "All steps are done."} Key Doctor never signs transactions or holds keys: every change happens in your wallet, and this page reads the result from the chain when you rescan.</p>`;
 }

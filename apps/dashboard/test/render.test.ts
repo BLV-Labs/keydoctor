@@ -154,7 +154,7 @@ describe("pages", () => {
     assert.match(t, /Opened from the council of kd-demo\.sputnik-dao\.testnet/);
     for (const f of (r.members[0] as Member).flags) assert.ok(t.includes(f.messages.en.explain), f.rule_id);
     assert.match(t, /KEY_UNUSED × 2/);
-    assert.equal((out.value.match(/<tr>/g) ?? []).length, 1 + (r.members[0] as Member).keys.length);
+    assert.equal((out.value.match(/<tr[ >]/g) ?? []).length, 1 + (r.members[0] as Member).keys.length);
   });
 
   it("every key row has one Meteor action: Delete for a full-access key, Revoke for an app key", () => {
@@ -253,8 +253,8 @@ describe("proposal list (C7)", () => {
 
   it("shows what a voter needs to decide: amount, receiver, votes so far and who still has to vote", () => {
     const t = text(renderProposals(result([info({})], 4)));
-    assert.match(t, /Newest 1 of 4/);
-    assert.match(t, /#2 Transfer InProgress/);
+    assert.match(t, /Newest first · 4 in total/);
+    assert.match(t, /#2 Transfer In progress/);
     assert.match(t, /Send 2 NEAR to auditor\.testnet/);
     assert.match(t, /1 approve of 2 needed/);
     assert.match(t, /Still to vote: b\.kd-demo\.testnet/);
@@ -274,8 +274,8 @@ describe("proposal list (C7)", () => {
   it("says plainly when there are no proposals, when the read failed, and when some were unreadable", () => {
     assert.match(text(renderProposals(result([], 0))), /no proposals yet/);
     assert.match(text(renderProposals(null)), /Could not read proposals/);
-    assert.match(text(renderProposals(result([], 3, ["proposal 2: RPC_ERROR"]))), /No proposal could be read/);
-    assert.match(text(renderProposals(result([info({})], 3, ["proposal 1: NOT_A_DAO"]))), /1 proposal\(s\) could not be read/);
+    assert.match(text(renderProposals(result([], 3, ["proposal 2: RPC_ERROR"]))), /No proposal on this page could be read/);
+    assert.match(text(renderProposals(result([info({})], 3, ["proposal 1: NOT_A_DAO"]))), /1 proposal\(s\) on this page could not be read/);
   });
 
   it("hostile chain text in a description never becomes markup", () => {
