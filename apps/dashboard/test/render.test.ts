@@ -176,8 +176,8 @@ describe("pages", () => {
   it("home and error pages", () => {
     const home = renderHome("", "Invalid target.").value;
     assert.match(home, /aria-invalid="true"/);
-    assert.match(home, /a\.kd-demo-83e785\.testnet/);
-    assert.match(home, /kd-demo-83e785\.sputnik-v2\.testnet/);
+    assert.match(home, /test1\.duonghb3\.testnet/);
+    assert.match(home, /kdd1793327513\.sputnik-v2\.testnet/);
     assert.match(home, /data-network="testnet" aria-pressed="true"/);
     const main = renderHome("", null, "mainnet").value;
     assert.match(main, /data-network="mainnet" aria-pressed="true"/);
