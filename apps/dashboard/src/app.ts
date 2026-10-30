@@ -2,14 +2,14 @@
 import { isKdError, listProposals, scanAccount, scanTarget, type KdError, type KdReport, type ListProposalsResult, type Network } from "key-doctor";
 import { revealClampToggles, toggleClamp } from "./clamp.ts";
 import type { Html } from "./html.ts";
-import { renderError, renderHome, renderLayout, renderScanning } from "./pages.ts";
+import { renderAgents, renderError, renderHome, renderLayout, renderOnCall, renderScanning } from "./pages.ts";
 import { buildDeletePlan, GUARD_TEXT, METEOR_INSTALL_URL, type DeletePlan } from "./cleanup.ts";
 import { renderCleanup } from "./cleanup-view.ts";
 import { PAGE_SIZE, pageOf, parsePaging, type Paging } from "./paging.ts";
 import { renderKeyDetail } from "./key-detail.ts";
 import { PROPOSALS_ID, PROPOSALS_LIST, renderProposals } from "./proposals-view.ts";
 import { renderAccount, renderCouncil } from "./report.ts";
-import { homeHref, parseRoute, resolveInput, routeHref, type Route } from "./route.ts";
+import { homeHref, parseRoute, resolveInput, routeHref, type Page, type Route } from "./route.ts";
 import { renderWatchDialog, renderWatchLinks } from "./watch.ts";
 import { isWalletId, walletLabel, type WalletId } from "./wallets.ts";
 
@@ -84,8 +84,8 @@ window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener("change", (
   if (savedTheme() === null) setTheme(e.matches ? "dark" : "light", false);
 });
 
-function paint(content: Html, title: string, focusMain: boolean, network: Network): void {
-  root.innerHTML = renderLayout(content, network).value;
+function paint(content: Html, title: string, focusMain: boolean, network: Network, page: Page = "check"): void {
+  root.innerHTML = renderLayout(content, network, page).value;
   setTheme(currentTheme(), false);
   document.title = title;
   revealClampToggles(root);
@@ -127,6 +127,12 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
     paintReport(lastReport, route, paging, seq);
     // Back/forward between pages of one report: keep the scroll position the browser restores.
     if (focusMain) document.getElementById("main")?.focus({ preventScroll: true });
+    return;
+  }
+  if (route.target === null && route.page !== "check") {
+    const network = route.network ?? storedNetwork();
+    if (route.page === "oncall") paint(renderOnCall(), "On Call · Key Doctor", focusMain, network, "oncall");
+    else paint(renderAgents(WORKER_URL), "Agents · Key Doctor", focusMain, network, "agents");
     return;
   }
   if (route.target === null) {

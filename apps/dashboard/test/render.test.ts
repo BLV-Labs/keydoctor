@@ -5,7 +5,7 @@ import { describe, it } from "node:test";
 import type { KdReport, ListProposalsResult, Member, ProposalInfo } from "key-doctor";
 import { escape, html } from "../src/html.ts";
 import { formatThreshold, formatUtc, relativeAge, truncateKey, yoctoToNear } from "../src/format.ts";
-import { renderError, renderHome } from "../src/pages.ts";
+import { renderAgents, renderError, renderHome, renderLayout, renderOnCall } from "../src/pages.ts";
 import { PROPOSALS_ID, renderProposals } from "../src/proposals-view.ts";
 import { renderKeyDetail } from "../src/key-detail.ts";
 import { renderAccount, renderCouncil } from "../src/report.ts";
@@ -54,6 +54,7 @@ describe("format", () => {
 describe("route", () => {
   it("normalizes the target and drops an invalid `from`", () => {
     assert.deepEqual(parseRoute("?target=A.KD-Demo.testnet&from=kd-demo.sputnik-dao.testnet"), {
+      page: "check",
       target: "a.kd-demo.testnet",
       invalid: null,
       from: "kd-demo.sputnik-dao.testnet",
@@ -62,6 +63,7 @@ describe("route", () => {
       network: "testnet",
     });
     assert.deepEqual(parseRoute("?target=bad name&from=x"), {
+      page: "check",
       target: null,
       invalid: "bad name",
       from: null,
@@ -311,5 +313,50 @@ describe("proposal list (C7)", () => {
   it("hostile chain text in a description never becomes markup", () => {
     const out = renderProposals(result([info({ description: "<img src=x onerror=alert(1)>" })])).value;
     assert.doesNotMatch(out, /<img/);
+  });
+});
+
+describe("nav and the On Call / Agents pages", () => {
+  const nav = (page: "check" | "oncall" | "agents") => renderLayout(html`<p>x</p>`, "testnet", page).value.match(/<nav[\s\S]*?<\/nav>/)![0];
+
+  it("has Check, On Call and Agents, marks only the current page, and no longer links out to t.me", () => {
+    for (const [page, label] of [["check", "Check"], ["oncall", "On Call"], ["agents", "Agents"]] as const) {
+      const n = nav(page);
+      assert.equal((n.match(/<a /g) ?? []).length, 3);
+      assert.equal((n.match(/aria-current="page"/g) ?? []).length, 1);
+      assert.match(n, new RegExp(`aria-current="page">${label}<`));
+      assert.ok(!n.includes("t.me"));
+    }
+  });
+
+  it("?page= picks the page without a target, and ?target= wins", () => {
+    assert.equal(parseRoute("?page=oncall").page, "oncall");
+    assert.equal(parseRoute("?page=agents").page, "agents");
+    assert.equal(parseRoute("?page=nope").page, "check");
+    assert.equal(parseRoute("").page, "check");
+    assert.equal(parseRoute("?page=agents&target=kdoncall-p.testnet").page, "check");
+  });
+
+  it("On Call explains the schedule, the setup steps and every bot command", () => {
+    const t = text(renderOnCall());
+    assert.match(t, /every 15 minutes/);
+    assert.match(t, /02:00 UTC/);
+    for (const c of ["/check", "/changes", "/watch", "/unwatch", "/list", "/help"]) assert.ok(t.includes(c), c);
+    assert.match(renderOnCall().value, /href="https:\/\/t\.me\/KeyDoctorOnCallBot"/);
+  });
+
+  it("Agents shows the endpoint with copy commands, all five tools, and falls back to self-host without a Worker URL", () => {
+    const withUrl = renderAgents("https://kd.example.workers.dev").value;
+    assert.match(withUrl, /data-command="claude mcp add --transport http key-doctor https:\/\/kd\.example\.workers\.dev\/mcp"/);
+    assert.match(withUrl, /data-command="https:\/\/kd\.example\.workers\.dev\/mcp"/);
+    for (const tool of ["diagnose", "list_keys", "list_proposals", "compare", "watch"]) assert.ok(withUrl.includes(tool), tool);
+    const none = text(renderAgents(""));
+    assert.match(none, /Self-host: see the README/);
+    assert.ok(!none.includes("claude mcp add"));
+  });
+
+  it("the home page links to both pages", () => {
+    const v = renderHome("", null).value;
+    assert.ok(v.includes('href="?page=oncall"') && v.includes('href="?page=agents"'));
   });
 });
