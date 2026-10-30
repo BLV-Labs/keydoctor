@@ -1,0 +1,140 @@
+{
+  "schema": "kd.bench_sources.v1",
+  "network": "mainnet",
+  "run_at": "2026-10-30T01:59:52Z",
+  "runs": 5,
+  "account": {
+    "keys": 32
+  },
+  "dao": null,
+  "nearblocks_key": false,
+  "nearblocks_key_fields": [
+    "account_id",
+    "created",
+    "deleted",
+    "permission_kind",
+    "public_key"
+  ],
+  "sources": [
+    {
+      "source": "rpc.mainnet.near.org",
+      "kind": "rpc",
+      "calls": {
+        "block (final)": {
+          "n": 5,
+          "ok": 5,
+          "limited": 0,
+          "failed": 0,
+          "p50": 3137.1887079999997,
+          "p95": 3156.8192500000005,
+          "min": 3089.818083000002,
+          "max": 3156.8192500000005
+        },
+        "view_access_key_list": {
+          "n": 5,
+          "ok": 5,
+          "limited": 0,
+          "failed": 0,
+          "p50": 3098.6385840000003,
+          "p95": 3156.8082920000015,
+          "min": 3091.5621660000033,
+          "max": 3156.8082920000015
+        },
+        "view_account": {
+          "n": 5,
+          "ok": 5,
+          "limited": 0,
+          "failed": 0,
+          "p50": 3089.196041999996,
+          "p95": 3127.130624999998,
+          "min": 3081.964458000002,
+          "max": 3127.130624999998
+        }
+      },
+      "scan": {
+        "n": 5,
+        "ok": 2,
+        "limited": 3,
+        "failed": 0,
+        "p50": 12633.353500000012,
+        "p95": 28074.480584000004,
+        "min": 12633.353500000012,
+        "max": 28074.480584000004,
+        "members": 1
+      }
+    },
+    {
+      "source": "rpc.mainnet.fastnear.com",
+      "kind": "rpc",
+      "calls": {
+        "block (final)": {
+          "n": 5,
+          "ok": 5,
+          "limited": 0,
+          "failed": 0,
+          "p50": 88.38008299999638,
+          "p95": 259.5057499999966,
+          "min": 86.29641699999047,
+          "max": 259.5057499999966
+        },
+        "view_access_key_list": {
+          "n": 5,
+          "ok": 5,
+          "limited": 0,
+          "failed": 0,
+          "p50": 87.21941700000025,
+          "p95": 114.53254099999322,
+          "min": 80.18620899999223,
+          "max": 114.53254099999322
+        },
+        "view_account": {
+          "n": 5,
+          "ok": 5,
+          "limited": 0,
+          "failed": 0,
+          "p50": 85.5319579999923,
+          "p95": 154.93845899999724,
+          "min": 77.62600000000384,
+          "max": 154.93845899999724
+        }
+      },
+      "scan": {
+        "n": 5,
+        "ok": 4,
+        "limited": 1,
+        "failed": 0,
+        "p50": 842.7354579999956,
+        "p95": 935.250040999992,
+        "min": 824.7956659999909,
+        "max": 935.250040999992,
+        "members": 1
+      }
+    },
+    {
+      "source": "NearBlocks API (api.nearblocks.io)",
+      "kind": "nearblocks",
+      "calls": {
+        "GET /v1/account/{id}": {
+          "n": 5,
+          "ok": 5,
+          "limited": 0,
+          "failed": 0,
+          "p50": 425.1422920000041,
+          "p95": 1171.1107090000005,
+          "min": 388.13841699999466,
+          "max": 1171.1107090000005
+        },
+        "GET /v1/account/{id}/keys": {
+          "n": 5,
+          "ok": 5,
+          "limited": 0,
+          "failed": 0,
+          "p50": 507.02799999999115,
+          "p95": 1240.93841599999,
+          "min": 413.2445829999924,
+          "max": 1240.93841599999
+        }
+      }
+    }
+  ]
+}
