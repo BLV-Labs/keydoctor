@@ -108,7 +108,10 @@ describe("GĐ8 cleanup page", () => {
     assert.match(t, /1\. Revoke app keys you do not need To do 1 key, in this order:/);
     assert.match(t, /App key with unlimited allowance · App key can call any method/);
     assert.match(out.value, /<progress class="progress" aria-labelledby="progress-label" value="0" max="4">/);
-    assert.match(out.value, /data-action="open-wallet" data-step="revoke_app_keys">Open Meteor Wallet<\/button>/);
+    // One Connect Wallet button for the whole page, not one per step.
+    assert.equal((out.value.match(/data-action="open-wallet"/g) ?? []).length, 1);
+    assert.match(out.value, /data-action="open-wallet">Connect Wallet<\/button>/);
+    assert.doesNotMatch(out.value, /Open Meteor Wallet<\/button>/);
     assert.match(out.value, /aria-pressed="true">Safe cleanup/);
     assert.doesNotMatch(t, /Delete the remaining Ed25519/);
   });

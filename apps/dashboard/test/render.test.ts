@@ -7,6 +7,7 @@ import { escape, html } from "../src/html.ts";
 import { formatThreshold, formatUtc, relativeAge, truncateKey, yoctoToNear } from "../src/format.ts";
 import { renderError, renderHome } from "../src/pages.ts";
 import { PROPOSALS_ID, renderProposals } from "../src/proposals-view.ts";
+import { renderKeyDetail } from "../src/key-detail.ts";
 import { renderAccount, renderCouncil } from "../src/report.ts";
 import { parseRoute, resolveInput, routeHref } from "../src/route.ts";
 import { groupFlags, keyMix, mainReason, recentFullAccessKeys, sortMembers } from "../src/view.ts";
@@ -167,6 +168,35 @@ describe("pages", () => {
     assert.equal((out.match(/>Delete<\/button>/g) ?? []).length, full);
     assert.equal((out.match(/>Revoke<\/button>/g) ?? []).length, member.keys.length - full);
     for (const k of member.keys) assert.ok(out.includes(`data-key="${k.public_key}"`), k.public_key);
+  });
+
+  it("key table names the dApp each app key is approved for, and every row has a View button", () => {
+    const r = dao();
+    const member = r.members[0] as Member;
+    const report: KdReport = { ...r, target: { type: "account", id: "a.kd-demo.testnet" }, members: [member] };
+    const out = renderAccount(report, null).value;
+    assert.match(out, /<th scope="col">Approved for<\/th>/);
+    assert.equal((out.match(/data-action="view-key"/g) ?? []).length, member.keys.length);
+    for (const k of member.keys) {
+      if (k.permission.type === "function_call") assert.match(out, new RegExp(`data-label="Approved for"><span class="mono wrap">${k.permission.receiver_id.replace(/\./g, "\\.")}</span>`));
+    }
+    assert.match(out, /Any contract/);
+  });
+
+  it("key detail shows the dApp, methods and allowance of an app key, and says a full-access key can do anything", () => {
+    const r = dao();
+    const member = r.members[0] as Member;
+    const report: KdReport = { ...r, target: { type: "account", id: "a.kd-demo.testnet" }, members: [member] };
+    const app = member.keys.find((k) => k.permission.type === "function_call");
+    const full = member.keys.find((k) => k.permission.type === "full_access");
+    assert.ok(app && full);
+    const a = text(renderKeyDetail(app, member, report));
+    assert.ok(a.includes(app.public_key));
+    assert.match(a, /Approved for \(dApp contract\)/);
+    assert.ok(a.includes((app.permission as { receiver_id: string }).receiver_id));
+    assert.match(a, /Allowed methods/);
+    assert.match(a, /Fee allowance/);
+    assert.match(text(renderKeyDetail(full, member, report)), /Full access: can do anything/);
   });
 
   it("account page without issues says so, and the plain account has no council line", () => {

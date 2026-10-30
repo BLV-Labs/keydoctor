@@ -73,7 +73,6 @@ function stepCard(step: Step, m: Member, report: KdReport, blocked: string | nul
     ${!step.done ? html`<p>${HOW[step.id]}</p>` : ""}
     ${!step.done && blocked ? html`<p class="small field-hint">${blocked}</p>` : ""}
     ${!step.done && step.keys.length > 0 && !blocked ? html`<p class="small muted" id="sign-status-${step.id}" role="status"></p>` : ""}
-    ${!step.done && step.id !== "test_sign" ? html`<button type="button" class="btn btn-tint self-start" data-action="open-wallet" data-step="${step.id}">Open Meteor Wallet</button><p class="small muted" id="wallet-status-${step.id}" role="status"></p>` : ""}
     <p class="small muted">${DONE_WHEN[step.id]}</p>
   </li>`;
 }
@@ -97,6 +96,7 @@ export function renderCleanup(report: KdReport, from: string | null, level: Leve
       </div>
       <div class="actions">
         <a class="btn btn-secondary" href="${routeHref(id, from, report.chain.network)}" data-nav>Back to profile</a>
+        <button type="button" class="btn btn-tint" data-action="open-wallet">Connect Wallet</button>
         <button type="button" class="btn btn-primary" data-action="rescan">${icon.rescan()}Rescan</button>
       </div>
     </section>
@@ -106,6 +106,7 @@ export function renderCleanup(report: KdReport, from: string | null, level: Leve
           <p>Full-access key <span class="mono">${truncateKey(recent.key.public_key)}</span> was added ${relativeAge(recent.ageMs).toLowerCase()}. If you did not add it, delete it in Meteor Wallet before anything else, and check the account from a device you trust.</p>
         </div></section>`
       : ""}
+    <p class="small muted" id="wallet-status" role="status"></p>
     <section class="stack-sm" aria-label="Cleanup level">
       <div class="segmented" role="group" aria-label="Cleanup level">
         <a class="seg" href="${href("safe")}" data-nav aria-pressed="${String(level === "safe")}">Safe cleanup</a>

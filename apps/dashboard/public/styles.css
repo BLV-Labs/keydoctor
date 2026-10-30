@@ -122,7 +122,7 @@ li:last-child > .member-row { border-bottom: 0; }
 .member-row .view { justify-self: end; color: var(--kd-primary); font-weight: 600; font-size: 14px; white-space: nowrap; }
 .cell-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-.key-table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 15px; }
+.key-table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 15px; }
 .key-table th { text-align: left; font-size: 13px; font-weight: 600; color: var(--kd-text-muted); background: var(--kd-surface-muted); padding: 12px 16px; border-bottom: 1px solid var(--kd-border); }
 .key-table td:first-child .mono { white-space: nowrap; }
 .key-table td { padding: 14px 16px; border-bottom: 1px solid var(--kd-note-bg); vertical-align: top; color: var(--kd-text-2); }

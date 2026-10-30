@@ -6,6 +6,7 @@ import { renderError, renderHome, renderLayout, renderScanning } from "./pages.t
 import { buildDeletePlan, GUARD_TEXT, METEOR_INSTALL_URL, type DeletePlan } from "./cleanup.ts";
 import { renderCleanup } from "./cleanup-view.ts";
 import { PAGE_SIZE, pageOf, parsePaging, type Paging } from "./paging.ts";
+import { renderKeyDetail } from "./key-detail.ts";
 import { PROPOSALS_ID, PROPOSALS_LIST, renderProposals } from "./proposals-view.ts";
 import { renderAccount, renderCouncil } from "./report.ts";
 import { homeHref, parseRoute, resolveInput, routeHref, type Route } from "./route.ts";
@@ -226,7 +227,7 @@ root.addEventListener("click", (event) => {
       break;
     }
     case "open-wallet": {
-      const status = document.getElementById(`wallet-status-${el.dataset.step}`);
+      const status = document.getElementById("wallet-status");
       if (!lastReport || !status) break;
       // The Meteor extension injects window.meteorCom; without it the SDK falls back to a web popup.
       if (!("meteorCom" in window)) {
@@ -259,9 +260,21 @@ root.addEventListener("click", (event) => {
       dialogTrigger = el;
       dialog.showModal();
       break;
-    case "close-dialog":
-      if (dialog !== null) closeDialog(dialog);
+    case "view-key": {
+      const m = lastReport?.members[0];
+      const key = m?.keys.find((k) => k.public_key === el.dataset.key);
+      const keyDialog = document.getElementById("key-dialog") as HTMLDialogElement | null;
+      if (!lastReport || !m || !key || keyDialog === null) break;
+      keyDialog.innerHTML = renderKeyDetail(key, m, lastReport).value;
+      dialogTrigger = el;
+      keyDialog.showModal();
       break;
+    }
+    case "close-dialog": {
+      const open = el.closest("dialog") ?? dialog;
+      if (open !== null) closeDialog(open);
+      break;
+    }
     case "copy-command": {
       const label = el.querySelector("[data-copy-label]");
       navigator.clipboard
