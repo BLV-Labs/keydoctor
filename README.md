@@ -104,15 +104,15 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 | GĐ0 | pnpm monorepo, data contracts (`packages/key-doctor/src/types.ts`), fixtures | Done |
 | GĐ1 | Scan library: `scanAccount`, `scanDao`, `scanTarget`, 13 rules, vi/en messages | Done (checked against live testnet RPC) |
 | GĐ2 | `diffReports`, `toSummary` | Done |
-| GĐ3 | Worker: MCP `diagnose`, `compare`, D1 baselines, Bearer auth | Built, runs on local workerd; not deployed |
-| GĐ4 | Telegram bot: `/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help` | Built; not deployed |
+| GĐ3 | Worker: MCP `diagnose`, `compare`, `list_keys`, `list_proposals`, `watch`, D1 baselines, Bearer auth | Deployed on Cloudflare; `tools/list` returns the five tools and Claude Code connects (2026-10-30) |
+| GĐ4 | Telegram bot: `/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help` | Deployed; webhook live. `/list` and `/unwatch` not yet checked on the live bot |
 | GĐ5 | `checkProposals` | Built; four Sputnik proposal facts still to confirm live (`packages/key-doctor/fixtures/README.md`) |
-| GĐ6 | Proposal watch cron, `alerts_sent`, `/run-check`, demo script | Built; demo not yet run on testnet |
-| GĐ7 | Dashboard: check, council, account, alerts dialog | Built; not deployed to Pages |
-| GĐ8 | Cleanup plan | Plan page and delete guards built. Signing deletes inside the dashboard waits on a Meteor signing test; until then keys are removed in Meteor Wallet |
-| GĐ9 | Daily key diff (02:00 UTC) | Built; not deployed |
+| GĐ6 | Proposal watch cron, `alerts_sent`, `/run-check`, demo script | Deployed; live testnet run 2026-10-30: voter-key and governance alerts reached the group, the second `run-check` repeated nothing ([`docs/demo-testnet-run-2026-10-30.md`](docs/demo-testnet-run-2026-10-30.md)) |
+| GĐ7 | Dashboard: check, council, proposal list, account, key detail (what a key is approved for, the dApp), alerts dialog | Deployed to Pages |
+| GĐ8 | Cleanup plan, per-key Revoke / Delete signed in Meteor Wallet | Built; Revoke and Delete verified on testnet with a real Meteor account (2026-10-30). No bulk delete |
+| GĐ9 | Daily key diff (02:00 UTC) | Built; deployed with the Worker, not yet seen firing live |
 | GĐ10 | Network stats script | Built; numbers pending a live run |
-| GĐ12 | One-tap watch links: `POST /api/watch-link`, MCP `watch`, `/start <code>`, dashboard "Create links" | Built; not deployed |
+| GĐ12 | One-tap watch links: `POST /api/watch-link`, MCP `watch`, `/start <code>`, dashboard "Create links" | Built; deployed with the Worker, not yet checked live |
 | GĐ11, GĐ13 | History backtest, NearBlocks key dates | Not built (Roadmap) |
 
 ## How it works
@@ -170,14 +170,13 @@ On post-quantum keys: no quantum computer breaks these keys today. The reason to
 - A key added and then removed between two scans is not seen. Key age is an estimate from the nonce and a 1.2 s block time.
 - Scans read public NEAR RPC through FastNEAR (`rpc.<network>.fastnear.com`, free tier) and fall back to `rpc.<network>.near.org` on a rate limit or an outage; see [`docs/data-sources-benchmark.md`](docs/data-sources-benchmark.md) for why and the measured numbers. Public RPC rate-limits heavy use. The Cloudflare free plan limits outbound requests per run, so the proposal job handles at most `MAX_DAOS_PER_RUN` DAOs per run (default 5), at most 12 proposals and 8 voter scans per DAO.
 - Scan caps: 100 keys per account, 21 council members, 50 roles.
-- Four Sputnik v2 facts that `checkProposals` relies on (proposal-id semantics, proposal JSON, status values, kind labels) were taken from the contract source and still need a live check.
-- The dashboard does not yet sign key deletions itself. The cleanup plan sends you to Meteor Wallet.
+- Four Sputnik v2 facts that `checkProposals` relies on (proposal-id semantics, proposal JSON, status values, kind labels) were taken from the contract source. A live check on a testnet DAO (2026-10-29) confirmed the first two; the other two are only partly confirmed (`packages/key-doctor/fixtures/README.md`).
+- Revoke and Delete work one key at a time. The wallet does not say which key it signs with, so the dashboard keeps two full-access keys. There is no bulk delete.
 - Cron messages are bilingual by default (`ALERT_LANG`), because subscriptions do not store a language.
 
 ## Roadmap
 
 - Show the exact time each key was added, from the NearBlocks indexer (`/v1/account/{id}/keys` returns `created` / `deleted`), next to the nonce-based estimate. See `docs/data-sources-benchmark.md`.
-- Sign key deletions in the dashboard through wallet-selector (several app keys in one signature), once the Meteor signing test passes.
 - Backtest the proposal rules on 12 months of history (`kd.backtest.v1`), using NearBlocks for keys added and later removed.
 - Exact key creation dates from NearBlocks, and more rules.
 - **Agent Guard:** a Sputnik role that approves only in-policy transfers, moving from "detect and warn" to "block".
