@@ -156,6 +156,18 @@ describe("pages", () => {
     assert.equal((out.value.match(/<tr>/g) ?? []).length, 1 + (r.members[0] as Member).keys.length);
   });
 
+  it("every key row has one Meteor action: Delete for a full-access key, Revoke for an app key", () => {
+    const r = dao();
+    const member = r.members[0] as Member;
+    const report: KdReport = { ...r, target: { type: "account", id: "a.kd-demo.testnet" }, members: [member] };
+    const out = renderAccount(report, null).value;
+    const full = member.keys.filter((k) => k.permission.type === "full_access").length;
+    assert.equal((out.match(/data-action="delete-key"/g) ?? []).length, member.keys.length);
+    assert.equal((out.match(/>Delete<\/button>/g) ?? []).length, full);
+    assert.equal((out.match(/>Revoke<\/button>/g) ?? []).length, member.keys.length - full);
+    for (const k of member.keys) assert.ok(out.includes(`data-key="${k.public_key}"`), k.public_key);
+  });
+
   it("account page without issues says so, and the plain account has no council line", () => {
     const r = dao();
     const report: KdReport = { ...r, target: { type: "account", id: "c.kd-demo.testnet" }, members: [r.members[2] as Member] };

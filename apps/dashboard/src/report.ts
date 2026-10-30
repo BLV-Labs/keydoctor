@@ -193,6 +193,12 @@ function newKeyAlert(member: Member, report: KdReport, inCouncil: boolean): Html
   </section>`;
 }
 
+/** One Revoke (app key) or Delete (full-access key) button; the click reports to the element `statusId`. */
+export function keyButton(k: KeyInfo, statusId: string): Html {
+  const verb = k.permission.type === "full_access" ? "Delete" : "Revoke";
+  return html`<button type="button" class="btn btn-secondary self-start" data-action="delete-key" data-key="${k.public_key}" data-status="${statusId}" aria-label="${verb} key ${truncateKey(k.public_key)} with Meteor">${verb}</button>`;
+}
+
 function keyRow(key: KeyInfo, member: Member, report: KdReport): Html {
   const type = keyType(key);
   const reasons = keyReasons(key, member);
@@ -202,6 +208,7 @@ function keyRow(key: KeyInfo, member: Member, report: KdReport): Html {
     <td data-label="Added">${relativeAge(keyAgeMs(key, report.chain.block_timestamp))}</td>
     <td data-label="Uses">${key.use_count === null ? "Unknown" : formatInt(key.use_count)}</td>
     <td data-label="Why it matters">${reasons.length === 0 ? html`<span class="muted">No issue found</span>` : reasons.join(" · ")}</td>
+    <td data-label="Action">${keyButton(key, "key-status")}</td>
   </tr>`;
 }
 
@@ -215,11 +222,12 @@ function keysTable(member: Member, report: KdReport): Html {
       ? html`<p class="pad muted">This account has no access keys.</p>`
       : html`<div class="table-scroll">
           <table class="key-table">
-            <thead><tr><th scope="col">Public key</th><th scope="col">Type</th><th scope="col">Added</th><th scope="col">Uses</th><th scope="col">Why it matters</th></tr></thead>
+            <thead><tr><th scope="col">Public key</th><th scope="col">Type</th><th scope="col">Added</th><th scope="col">Uses</th><th scope="col">Why it matters</th><th scope="col">Action</th></tr></thead>
             <tbody>${member.keys.map((k) => keyRow(k, member, report))}</tbody>
           </table>
-        </div>`}
-    <p class="pad small muted footnote">Key Doctor only reads keys. Remove a key in your own wallet, for example Meteor Wallet. Key Doctor never signs transactions and never holds keys.</p>
+        </div>
+        <p class="pad small muted" id="key-status" role="status"></p>`}
+    <p class="pad small muted footnote">Revoke and Delete ask Meteor Wallet to remove one key; you approve the transaction there. Key Doctor never signs transactions and never holds keys.</p>
   </section>`;
 }
 
