@@ -177,10 +177,12 @@ On post-quantum keys: no quantum computer breaks these keys today. The reason to
 
 ## Deploy
 
-1. `wrangler d1 create key-doctor` and put the id into `apps/worker/wrangler.toml`.
+`wrangler` is installed in `apps/worker` only, so run it as `pnpm --filter worker exec wrangler ...` from the repo root.
+
+1. `pnpm --filter worker exec wrangler d1 create key-doctor` and put the id into `apps/worker/wrangler.toml`.
 2. `pnpm --filter worker db:migrate:remote`.
-3. `wrangler secret put` for `MCP_TOKEN`, `RUN_CHECK_TOKEN`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET`.
-4. `pnpm --filter worker deploy`.
+3. `pnpm --filter worker exec wrangler secret put <NAME>` for `MCP_TOKEN`, `RUN_CHECK_TOKEN`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET`.
+4. `pnpm --filter worker run deploy` (`run` is needed: bare `deploy` is a built-in pnpm command).
 5. Register the bot webhook:
 
    ```bash
@@ -188,7 +190,7 @@ On post-quantum keys: no quantum computer breaks these keys today. The reason to
      -d url=https://<your-worker>.workers.dev/telegram -d secret_token=$TELEGRAM_WEBHOOK_SECRET -d 'allowed_updates=["message"]'
    ```
 
-6. `KD_WORKER_URL=https://<your-worker>.workers.dev pnpm --filter dashboard build` and publish `apps/dashboard/dist/` on Cloudflare Pages. `KD_WORKER_URL` turns on the dashboard's one-tap watch links and adds the Worker to the CSP in `_headers`; leave it out for the copy-the-command dialog only. On the Worker, set `DASHBOARD_URL` (for the "View on dashboard" buttons) and `DASHBOARD_ORIGIN` (the Pages origin allowed to call `/api/watch-link`).
+6. `KD_WORKER_URL=https://<your-worker>.workers.dev pnpm --filter dashboard build` and publish it with `pnpm --filter worker exec wrangler pages deploy ../dashboard/dist --project-name <name>`. `KD_WORKER_URL` turns on the dashboard's one-tap watch links and adds the Worker to the CSP in `_headers`; leave it out for the copy-the-command dialog only. On the Worker, set `DASHBOARD_URL` (for the "View on dashboard" buttons) and `DASHBOARD_ORIGIN` (the Pages origin allowed to call `/api/watch-link`).
 
 ## Libraries, AI-written code and prepared data
 
