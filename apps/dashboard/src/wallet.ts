@@ -15,8 +15,13 @@ export async function signDeleteKeys(accountId: string, network: Network, plan: 
     await wallet.signOut();
     throw new Error(`Meteor signed in as ${accounts.map((a) => a.accountId).join(", ") || "no account"}, not ${accountId}.`);
   }
-  for (const tx of plan.transactions) {
-    await wallet.signAndSendTransaction({ signerId: accountId, receiverId: accountId, actions: tx.map((a) => actionCreators.deleteKey(PublicKey.from(a.public_key))) });
-  }
+  // The plural call opens Meteor's own approval window; the singular one signs with an app key we never ask for.
+  await wallet.signAndSendTransactions({
+    transactions: plan.transactions.map((tx) => ({
+      signerId: accountId,
+      receiverId: accountId,
+      actions: tx.map((a) => actionCreators.deleteKey(PublicKey.from(a.public_key))),
+    })),
+  });
   await wallet.signOut();
 }
