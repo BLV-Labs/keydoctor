@@ -8,7 +8,7 @@ compatibility_date = "2026-10-01"
 binding = "DB"
 database_name = "key-doctor"
 # Replace with the id printed by `wrangler d1 create key-doctor`.
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "a7ab0080-7623-4914-bab6-979e63ff8328"
 migrations_dir = "migrations"
 
 # Proposal watch every 15 minutes, daily key diff at 02:00 UTC (src/index.ts PROPOSAL_CRON, DAILY_CRON).
@@ -19,8 +19,8 @@ crons = ["*/15 * * * *", "0 2 * * *"]
 NEW_KEY_WINDOW_HOURS = "48"
 MAX_DAOS_PER_RUN = "5"
 PENDING_SUB_TTL_MINUTES = "30"
-DASHBOARD_URL = ""
-DASHBOARD_ORIGIN = ""
+DASHBOARD_URL = "https://key-doctor-dashboard.pages.dev"
+DASHBOARD_ORIGIN = "https://key-doctor-dashboard.pages.dev"
 PROPOSAL_UI_URL_TEMPLATE = ""
 ALERT_LANG = "both"
 RPC_URL_TESTNET = "https://rpc.testnet.fastnear.com,https://rpc.testnet.near.org"
