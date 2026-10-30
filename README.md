@@ -16,10 +16,18 @@ Network-wide numbers come from one reproducible command (`pnpm stats`, see below
 |---|---|---|
 | Check | Every key of an account or a whole council, with the reason each one matters and a fixed-rule risk score | Dashboard, Telegram `/check`, MCP `diagnose` |
 | On Call | A warning before the final vote when a voter has a new full-access key. Warnings for proposals that change members, policy or contract code. A daily key-change message | Telegram bot (cron every 15 minutes and at 02:00 UTC) |
-| Clean up | A step-by-step plan in a safe order, ticked from chain data when you rescan | Dashboard (`view=cleanup`), changes signed by you in Meteor Wallet |
+| Clean up | A step-by-step plan in a safe order, ticked from chain data when you rescan. Revoke or Delete one key at a time | Dashboard (`view=cleanup`), each change signed by you in Meteor Wallet |
 | Compare | What changed since the last baseline | Telegram `/changes`, MCP `compare` |
 
 Fixed rules make every conclusion. **No AI is used in the product**, and Key Doctor **never signs transactions or holds keys**.
+
+## Live demo (testnet)
+
+- Dashboard: <https://key-doctor-dashboard.pages.dev>
+- Council report: <https://key-doctor-dashboard.pages.dev/?target=kdd1793327513.sputnik-v2.testnet>
+- Account cleanup plan: <https://key-doctor-dashboard.pages.dev/?target=test1.duonghb3.testnet&view=cleanup>
+
+The scan runs in your browser against public testnet RPC. Revoke and Delete need the Meteor Wallet extension and the account's own key.
 
 ## Try it: do X, see Y
 
@@ -40,7 +48,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
    pnpm --filter dashboard dev
    ```
 
-   Open `http://localhost:8788/?target=verdict-panel-p8n6.sputnik-v2.testnet`. The scan runs in your browser against public NEAR RPC. You see the council report: status, council size and votes needed for a transfer, members sorted by risk, voting rules and the limits of the scan. The **Testnet / Mainnet** switch on the home page picks the network for a name typed without a `.near` / `.testnet` suffix (and for implicit accounts); a typed suffix always wins. Mainnet shows no example names. Click a member to see its key profile. On an account, **Open cleanup plan** shows the cleanup steps. **Get Telegram alerts** shows the `/watch` command to copy.
+   Open `http://localhost:8788/?target=kdd1793327513.sputnik-v2.testnet`. The scan runs in your browser against public NEAR RPC. You see the council report: status, council size and votes needed for a transfer, members sorted by risk, voting rules and the limits of the scan. The **Testnet / Mainnet** switch on the home page picks the network for a name typed without a `.near` / `.testnet` suffix (and for implicit accounts); a typed suffix always wins. Mainnet shows no example names. Click a member to see its key profile. On an account, **Open cleanup plan** shows the cleanup steps. **Get Telegram alerts** shows the `/watch` command to copy.
 
 3. **Ask the MCP server for the same verdict**
 
@@ -54,7 +62,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 
    ```bash
    curl -s http://localhost:8787/mcp -H 'authorization: Bearer change-me-mcp' -H 'content-type: application/json' \
-     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"diagnose","arguments":{"target":"verdict-panel-p8n6.sputnik-v2.testnet"}}}'
+     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"diagnose","arguments":{"target":"kdd1793327513.sputnik-v2.testnet"}}}'
    ```
 
    You get `kd.report_summary.v1` with the same `summary.status` and member statuses as the dashboard. Without the header the answer is `401` with `kd.error.v1` `UNAUTHORIZED`.
@@ -65,7 +73,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
    claude mcp add --transport http key-doctor http://localhost:8787/mcp --header "Authorization: Bearer change-me-mcp"
    ```
 
-   Then ask "check the keys of verdict-panel-p8n6.sputnik-v2.testnet". The agent calls `diagnose`. `compare` returns `kd.diff.v1` against the stored baseline and moves the baseline only when you ask (`update_baseline: true`). `watch` returns two one-time Telegram links (`kd.watch_link.v1`): opening one subscribes that chat.
+   Then ask "check the keys of kdd1793327513.sputnik-v2.testnet". The agent calls `diagnose`. `compare` returns `kd.diff.v1` against the stored baseline and moves the baseline only when you ask (`update_baseline: true`). `watch` returns two one-time Telegram links (`kd.watch_link.v1`): opening one subscribes that chat.
 
 5. **Telegram bot and the testnet demo** (needs a deployed Worker, see [Deploy](#deploy))
 
@@ -84,7 +92,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 7. **Benchmark the data sources** (NEAR RPC endpoints vs the NearBlocks API)
 
    ```bash
-   pnpm bench --account <your-account>.testnet --dao verdict-panel-p8n6.sputnik-v2.testnet --runs 5
+   pnpm bench --account <your-account>.testnet --dao kdd1793327513.sputnik-v2.testnet --runs 5
    ```
 
    The script prints p50/p95 latency per call, the time of a full scan through each RPC, and, with `--burst N`, when each source starts answering 429. Method, published rate limits and why NearBlocks cannot replace RPC: [`docs/data-sources-benchmark.md`](docs/data-sources-benchmark.md).
