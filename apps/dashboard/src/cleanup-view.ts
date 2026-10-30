@@ -6,6 +6,7 @@ import { html, type Html } from "./html.ts";
 import { WALLETS } from "./wallets.ts";
 import { icon, statusIcon } from "./icons.ts";
 import { breadcrumb, keyButton } from "./report.ts";
+import { walletBar } from "./session.ts";
 import { keyDialogShell, viewButton } from "./key-detail.ts";
 import { NO_PAGING, pageOf, pager, slicePage, type Paging } from "./paging.ts";
 import { routeHref } from "./route.ts";
@@ -121,6 +122,7 @@ export function renderCleanup(report: KdReport, from: string | null, level: Leve
         <button type="button" class="btn btn-primary" data-action="rescan">${icon.rescan()}Rescan</button>
       </div>
     </section>
+    ${walletBar("visitor", id, null, report.chain.network)}
     ${recent
       ? html`<section role="alert" class="alert-box">${icon.alert()}<div class="stack-xs">
           <p class="alert-title">Delete this key now</p>

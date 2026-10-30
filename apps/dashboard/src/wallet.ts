@@ -46,8 +46,8 @@ export async function signDeleteKeys(
   }
   onStep(`Step 3/3: approve the Delete Key transaction in ${label}.`);
   if (!accounts.some((a) => a.accountId === accountId)) {
-    await wallet.signOut();
-    throw new Error(`${label} signed in as ${accounts.map((a) => a.accountId).join(", ") || "no account"}, not ${accountId}.`);
+    // No signOut: Meteor answers it with its own "Sign Out Request" popup that nobody approves, so the promise never settles.
+    throw new Error(`${label} is connected as ${accounts.map((a) => a.accountId).join(", ") || "no account"}, not ${accountId}. Switch account in ${label} and try again.`);
   }
   // The plural call opens the wallet's own approval window; the singular one signs with an app key we never ask for.
   await wallet.signAndSendTransactions({

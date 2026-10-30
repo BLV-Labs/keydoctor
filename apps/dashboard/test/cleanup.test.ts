@@ -118,10 +118,11 @@ describe("GĐ8 cleanup page", () => {
     assert.match(t, /1\. Revoke app keys you do not need To do 1 key, in this order:/);
     assert.match(t, /App key with unlimited allowance · App key can call any method/);
     assert.match(out.value, /<progress class="progress" aria-labelledby="progress-label" value="0" max="4">/);
-    // Connect Wallet lives in the site header (every page), never in the cleanup page itself.
-    assert.doesNotMatch(out.value, /data-action="open-wallet"/);
+    // The header (every page) carries Connect Wallet; the page itself has the owner-only wallet bar.
+    assert.equal((out.value.match(/data-action="open-wallet"/g) ?? []).length, 1);
+    assert.match(out.value, /data-wallet-bar/);
     const layout = renderLayout(out).value;
-    assert.equal((layout.match(/data-action="open-wallet"/g) ?? []).length, 1);
+    assert.equal((layout.match(/data-action="open-wallet"/g) ?? []).length, 2);
     assert.match(layout, /data-action="open-wallet" data-wallet-off>Connect Wallet<\/button>/);
     assert.match(layout, /class="btn btn-danger" data-action="disconnect-wallet" data-wallet-on hidden>Disconnect<\/button>/);
     assert.doesNotMatch(out.value, /Open Meteor Wallet<\/button>/);

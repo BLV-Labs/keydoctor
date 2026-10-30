@@ -12,6 +12,7 @@ import { renderAccount, renderCouncil } from "./report.ts";
 import { homeHref, parseRoute, resolveInput, routeHref, type Route } from "./route.ts";
 import { renderWatchDialog, renderWatchLinks } from "./watch.ts";
 import { isWalletId, walletLabel, type WalletId } from "./wallets.ts";
+import { connectedAccount, forgetConnected, lockedNotice, rememberConnected, viewerRole, walletBar, type Role } from "./session.ts";
 
 declare const __KD_WORKER_URL__: string;
 /** Set at build time (KD_WORKER_URL); empty means the MVP dialog with no Worker call. */
@@ -124,14 +125,33 @@ const currentNetwork = (): Network => parseRoute(location.search).network ?? las
 
 /** The wallet Connect Wallet last connected and the accounts it holds; Revoke and Delete sign with it. */
 let connected: { walletId: WalletId; accounts: string[]; iconUrl?: string } | null = null;
+/** Display state restored from a past visit; the wallet is asked again whenever something is signed. */
+let restoredFor: Network | null = null;
+
+function restoreConnected(network: Network): void {
+  if (connected !== null || restoredFor === network) return;
+  restoredFor = network;
+  connected = connectedAccount(network);
+}
+
+const viewerRoleNow = (): Role => viewerRole(connected?.accounts ?? null, lastReport?.target.id ?? "");
 
 /** Revoke and Delete work only when the connected wallet holds the account on screen. View is never touched.
  *  Also shows the wallet name and Disconnect in place of Connect Wallet while a wallet is connected. */
 function syncWallet(): void {
-  const ok = connected !== null && lastReport !== null && connected.accounts.includes(lastReport.target.id);
+  restoreConnected(currentNetwork());
+  const role = viewerRoleNow();
+  const id = lastReport?.target.id ?? "";
   for (const b of root.querySelectorAll<HTMLButtonElement>('[data-action="delete-key"]')) {
-    b.disabled = !ok;
-    b.title = ok ? "" : "Connect Wallet as this account to enable";
+    const locked = role !== "owner";
+    b.classList.toggle("btn-locked", locked);
+    b.setAttribute("aria-disabled", String(locked));
+    b.title = locked ? lockedNotice(role, id, connected?.accounts ?? null).text : "";
+  }
+  if (lastReport !== null) {
+    for (const bar of root.querySelectorAll<HTMLElement>("[data-wallet-bar]")) {
+      bar.outerHTML = walletBar(role, id, connected?.accounts ?? null, lastReport.chain.network).value;
+    }
   }
   for (const el of root.querySelectorAll<HTMLElement>("[data-wallet-off]")) el.hidden = connected !== null;
   for (const el of root.querySelectorAll<HTMLElement>("[data-wallet-on]")) el.hidden = connected === null;
@@ -275,8 +295,25 @@ function signPlan(button: HTMLButtonElement, status: HTMLElement, plan: DeletePl
     })
     .catch((e: unknown) => {
       button.disabled = false;
+      if (e instanceof Error && /^.* is connected as /.test(e.message)) {
+        connected = null;
+        forgetConnected(network);
+        syncWallet();
+      }
       status.textContent = `Not done: ${e instanceof Error ? e.message : "the wallet did not sign."}`;
     });
+}
+
+/** A locked Revoke/Delete was clicked: say why in the status line, with the button that fixes it. No wallet window opens. */
+function explainLock(status: HTMLElement): void {
+  const role = viewerRoleNow();
+  const notice = lockedNotice(role, lastReport?.target.id ?? "", connected?.accounts ?? null);
+  const fix = document.createElement("button");
+  fix.type = "button";
+  fix.className = "btn btn-tint";
+  fix.dataset.action = notice.action === "switch" ? "switch-account" : "open-wallet";
+  fix.textContent = notice.action === "switch" ? "Switch account" : "Connect Wallet";
+  status.replaceChildren(`${notice.text} `, fix);
 }
 
 let pendingWallet: ((id: WalletId) => void) | null = null;
@@ -328,6 +365,7 @@ function connectWallet(status: HTMLElement, walletId: WalletId): void {
     .then((w) => w.openWallet(currentNetwork(), walletId))
     .then((accounts) => {
       connected = { walletId, accounts };
+      rememberConnected(currentNetwork(), { walletId, accounts });
       const target = lastReport?.target.id;
       status.textContent =
         target === undefined || accounts.includes(target) ? "" : `${walletLabel(walletId)} holds ${accounts.join(", ") || "no account"}, not ${target}. Revoke and Delete stay off.`;
@@ -379,12 +417,15 @@ root.addEventListener("click", (event) => {
       const m = lastReport?.members[0];
       const status = document.getElementById(el.dataset.status ?? "");
       if (!lastReport || !m || !status || !el.dataset.key) break;
+      if (connected === null || viewerRoleNow() !== "owner") {
+        explainLock(status);
+        break;
+      }
       const plan = buildDeletePlan(m, [el.dataset.key], null);
       if (!plan.ok) {
         status.textContent = plan.errors.map((e) => GUARD_TEXT[e]).join(" ");
         break;
       }
-      if (connected === null) break;
       signPlan(el as HTMLButtonElement, status, plan, connected.walletId);
       break;
     }
@@ -399,12 +440,24 @@ root.addEventListener("click", (event) => {
       const was = connected;
       if (was === null) break;
       connected = null;
+      forgetConnected(currentNetwork());
       syncWallet();
       if (status) status.textContent = "Disconnecting…";
       import("./wallet.ts")
         .then((w) => w.disconnectWallet(currentNetwork(), was.walletId))
         .then(() => status && (status.textContent = ""))
         .catch(() => status && (status.textContent = "Disconnected here; the wallet may still hold the session."));
+      break;
+    }
+    case "switch-account": {
+      // Forget the display state, then ask again. The wallet picks the account; Disconnect there if it keeps the old one.
+      connected = null;
+      forgetConnected(currentNetwork());
+      syncWallet();
+      askWallet(el, (walletId) => {
+        const status = document.getElementById("wallet-status");
+        if (status) connectWallet(status, walletId);
+      });
       break;
     }
     case "choose-wallet": {
@@ -435,7 +488,7 @@ root.addEventListener("click", (event) => {
       const key = m?.keys.find((k) => k.public_key === el.dataset.key);
       const keyDialog = document.getElementById("key-dialog") as HTMLDialogElement | null;
       if (!lastReport || !m || !key || keyDialog === null) break;
-      keyDialog.innerHTML = renderKeyDetail(key, m, lastReport).value;
+      keyDialog.innerHTML = renderKeyDetail(key, m, lastReport, viewerRoleNow()).value;
       dialogTrigger = el;
       keyDialog.showModal();
       break;

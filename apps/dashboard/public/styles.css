@@ -99,6 +99,8 @@ main:focus { outline: none; }
 .btn-tint:hover { background: var(--kd-primary-tint-hover); color: var(--kd-primary-hover); }
 .btn-sm { font-size: var(--kd-fs-sm); padding: 0 14px; }
 [hidden] { display: none !important; }
+.btn-locked, .btn-locked:hover { background: var(--kd-surface); color: var(--kd-text-muted); border: 1px dashed currentColor; opacity: .7; cursor: not-allowed; }
+.wallet-bar { align-items: center; }
 .btn:disabled, .btn.is-disabled { opacity: .45; cursor: default; pointer-events: none; }
 
 .breadcrumb { font-size: var(--kd-fs-sm); color: var(--kd-text-muted); display: flex; gap: 8px; flex-wrap: wrap; overflow-wrap: anywhere; }
