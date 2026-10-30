@@ -363,7 +363,7 @@ root.addEventListener("click", (event) => {
       if (status) status.textContent = "Disconnecting…";
       import("./wallet.ts")
         .then((w) => w.disconnectWallet(currentNetwork(), was.walletId))
-        .then(() => status && (status.textContent = "Wallet disconnected."))
+        .then(() => status && (status.textContent = ""))
         .catch(() => status && (status.textContent = "Disconnected here; the wallet may still hold the session."));
       break;
     }
