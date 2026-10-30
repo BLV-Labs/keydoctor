@@ -137,7 +137,7 @@ root.addEventListener("click", (event) => {
       status.textContent = "Waiting for Meteor Wallet. Check the transaction there before you approve.";
       // Loaded on demand: the wallet SDK is large and only needed when someone signs.
       import("./wallet.ts")
-        .then((w) => w.signDeleteKeys(account, lastReport!.chain.network, plan))
+        .then((w) => w.signDeleteKeys(account, lastReport!.chain.network, plan, (t) => (status.textContent = t)))
         .then(() => {
           void render(false);
         })
