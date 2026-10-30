@@ -3,6 +3,7 @@ import { formatInt, formatThreshold, formatUtc, keyAgeMs, plural, relativeAge, t
 import { clamp } from "./clamp.ts";
 import { html, type Html } from "./html.ts";
 import { icon, statusIcon } from "./icons.ts";
+import { keyApproval, keyDialogShell, viewButton } from "./key-detail.ts";
 import { proposalsPlaceholder } from "./proposals-view.ts";
 import { NO_PAGING, pageOf, pager, slicePage, type Paging } from "./paging.ts";
 import { routeHref } from "./route.ts";
@@ -219,17 +220,19 @@ export function keyButton(k: KeyInfo, statusId: string): Html {
 /** `isNew`: a full-access key added in the last 48 hours (the one the alert box names). Only that row is tinted. */
 function keyRow(key: KeyInfo, member: Member, report: KdReport, isNew: boolean): Html {
   const type = keyType(key);
+  const approval = keyApproval(key);
   const reasons = keyReasons(key, member);
   const severity = keySeverity(key, member);
   return html`<tr${isNew ? html` class="row-new"` : ""}>
     <td data-label="Public key"><span class="mono" title="${key.public_key}">${truncateKey(key.public_key)}</span></td>
-    <td data-label="Type">${type.label}${type.detail ? html`<br><span class="muted small mono wrap">${type.detail}</span>` : ""}</td>
+    <td data-label="Type">${type.label}${key.permission.type === "full_access" ? html`<br><span class="muted small mono wrap">${type.detail}</span>` : ""}</td>
+    <td data-label="Approved for">${approval.contract === null ? html`<span class="muted">${approval.label}</span>` : html`<span class="mono wrap">${approval.contract}</span>`}</td>
     <td data-label="Added">${relativeAge(keyAgeMs(key, report.chain.block_timestamp))}${isNew ? html`<br><span class="pill pill-sm pill-high">${statusIcon("high", 12)}New key</span>` : ""}</td>
     <td data-label="Uses">${key.use_count === null ? "Unknown" : formatInt(key.use_count)}</td>
     <td data-label="Why it matters">${reasons.length === 0
       ? html`<span class="muted">No issue found</span>`
       : html`<div class="reason-cell">${severity ? statusPill(severity, true) : ""}${clamp(reasons.join(" · "), 2)}</div>`}</td>
-    <td data-label="Action">${keyButton(key, "key-status")}</td>
+    <td data-label="Action"><div class="actions">${keyButton(key, "key-status")}${viewButton(key)}</div></td>
   </tr>`;
 }
 
@@ -245,12 +248,13 @@ function keysTable(member: Member, report: KdReport, paging: Paging): Html {
       ? html`<p class="pad muted">This account has no access keys.</p>`
       : html`<div class="table-scroll">
           <table class="key-table">
-            <thead><tr><th scope="col">Public key</th><th scope="col">Type</th><th scope="col">Added</th><th scope="col">Uses</th><th scope="col">Why it matters</th><th scope="col">Action</th></tr></thead>
+            <thead><tr><th scope="col">Public key</th><th scope="col">Type</th><th scope="col">Approved for</th><th scope="col">Added</th><th scope="col">Uses</th><th scope="col">Why it matters</th><th scope="col">Action</th></tr></thead>
             <tbody>${keys.map((k) => keyRow(k, member, report, recent.has(k.public_key)))}</tbody>
           </table>
         </div>
         ${pager(KEYS_LIST, "Keys", window, paging)}
-        <p class="pad small muted" id="key-status" role="status"></p>`}
+        <p class="pad small muted" id="key-status" role="status"></p>
+        ${keyDialogShell()}`}
     <p class="pad small muted footnote">Revoke and Delete ask Meteor Wallet to remove one key; you approve the transaction there. Key Doctor never signs transactions and never holds keys.</p>
   </section>`;
 }
