@@ -8,7 +8,7 @@ import {
   type MemberErrorCode,
 } from "./messages.ts";
 import { accountKind, parsePolicy, resolveTarget, toKeyInfo, type RawKey } from "./parse.ts";
-import { createRpc, DEFAULT_RPC_URL, type Rpc } from "./rpc.ts";
+import { createRpc, DEFAULT_RPC_URLS, type Rpc } from "./rpc.ts";
 import { countKeys, isPqReady } from "./rules/account.ts";
 import { analyzePolicy } from "./rules/dao.ts";
 import { daoLevelFlags, evaluateKeys } from "./rules/index.ts";
@@ -149,7 +149,7 @@ const nowIso = () => toIsoSeconds(Date.now());
 
 export async function scanAccount(id: string, opts: ScanOptions = {}): Promise<KdReport> {
   const target = resolveTarget(id, opts);
-  const rpc = createRpc({ url: opts.rpcUrl ?? DEFAULT_RPC_URL[target.network] });
+  const rpc = createRpc({ url: opts.rpcUrl ?? DEFAULT_RPC_URLS[target.network] });
 
   const head = await rpc.block(opts.blockHeight);
   const rawKeys = await rpc.viewAccessKeyList(target.id, head.height);
@@ -202,7 +202,7 @@ const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0
 
 export async function scanDao(id: string, opts: ScanOptions = {}): Promise<KdReport> {
   const target = resolveTarget(id, opts);
-  const rpc = createRpc({ url: opts.rpcUrl ?? DEFAULT_RPC_URL[target.network] });
+  const rpc = createRpc({ url: opts.rpcUrl ?? DEFAULT_RPC_URLS[target.network] });
   const concurrency = clampConcurrency(opts.concurrency);
 
   const head = await rpc.block(opts.blockHeight);

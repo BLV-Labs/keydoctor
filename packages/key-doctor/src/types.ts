@@ -242,7 +242,8 @@ export interface ProposalWatchState {
 
 export interface CheckProposalsOptions {
   network?: Network;
-  rpcUrl?: string;
+  /** One endpoint, or several tried in order on rate limits and transport failures. Default: DEFAULT_RPC_URLS. */
+  rpcUrl?: string | readonly string[];
   /** Default 48. */
   newKeyWindowHours?: number;
   /** e.g. "https://<ui>/{dao}/proposals/{id}" */
@@ -296,7 +297,8 @@ export interface KdError {
 
 export interface ScanOptions {
   network?: Network;
-  rpcUrl?: string;
+  /** One endpoint, or several tried in order on rate limits and transport failures. Default: DEFAULT_RPC_URLS. */
+  rpcUrl?: string | readonly string[];
   /** Pin every query in the scan to this block. */
   blockHeight?: number;
   skipReceiverCheck?: boolean;

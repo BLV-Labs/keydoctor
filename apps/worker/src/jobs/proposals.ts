@@ -1,6 +1,7 @@
 // UC6 proposal watch (§8.5): one checkProposals per DAO, not per subscription.
 import { checkProposals, isKdError, resolveTarget, type Network } from "key-doctor";
 import type { D1Database, Env } from "../env.ts";
+import { rpcUrlsFor } from "../core.ts";
 import { getProposalState, saveProposalState } from "../store/proposal-state.ts";
 import { alertMessage, deliver } from "./deliver.ts";
 
@@ -44,7 +45,7 @@ export async function runProposalJob(env: Env, only?: string): Promise<JobResult
   }
 
   for (const { target, network } of daos) {
-    const rpcUrl = network === "mainnet" ? env.RPC_URL_MAINNET : env.RPC_URL_TESTNET;
+    const rpcUrl = rpcUrlsFor(env, network);
     let checked;
     try {
       const prev = await getProposalState(env.DB, target, network);

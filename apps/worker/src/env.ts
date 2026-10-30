@@ -40,6 +40,7 @@ export interface Env {
   ALERT_LANG?: string;
   /** Telegram bot username for deep links (default KeyDoctorOnCallBot). */
   BOT_USERNAME?: string;
+  /** One RPC URL or a comma-separated list, tried in order on rate limits and transport failures. */
   RPC_URL_TESTNET?: string;
   RPC_URL_MAINNET?: string;
 }

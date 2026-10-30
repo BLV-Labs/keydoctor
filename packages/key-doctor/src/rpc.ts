@@ -4,9 +4,13 @@ import { fail } from "./errors.ts";
 import { isDigits, isRecord, parseRawKey, type RawKey } from "./parse.ts";
 import { RPC_TIMEOUT_MS } from "./rules/thresholds.ts";
 
-export const DEFAULT_RPC_URL: Record<Network, string> = {
-  mainnet: "https://rpc.mainnet.near.org",
-  testnet: "https://rpc.testnet.near.org",
+/**
+ * Default endpoints, tried in order. FastNEAR answered about 12x faster than near.org on testnet
+ * (docs/data-sources-benchmark.md); near.org stays as the fallback when FastNEAR rate-limits or fails.
+ */
+export const DEFAULT_RPC_URLS: Record<Network, readonly string[]> = {
+  mainnet: ["https://rpc.mainnet.fastnear.com", "https://rpc.mainnet.near.org"],
+  testnet: ["https://rpc.testnet.fastnear.com", "https://rpc.testnet.near.org"],
 };
 
 export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
@@ -45,8 +49,25 @@ function unwrap(body: unknown, blockPinnedByCaller: boolean, contractFailureIsNo
   return result;
 }
 
-export function createRpc(cfg: { url: string; fetchImpl?: FetchLike }): Rpc {
+/** A failure of the endpoint itself (no answer, HTTP error, unreadable body): the next endpoint may do better. */
+class TransportFailure {
+  readonly error: Error;
+  constructor(error: Error) {
+    this.error = error;
+  }
+}
+
+/**
+ * `url` may list several endpoints. Each call tries them in order, starting from the one that answered last,
+ * and moves on only after a transport failure (429, any other non-2xx, timeout, network error, unreadable
+ * body). A JSON-RPC answer, even an error such as UNKNOWN_ACCOUNT, is final: another node would say the same.
+ * Every query carries its block_id, so switching endpoints mid-scan does not change what the scan reads.
+ */
+export function createRpc(cfg: { url: string | readonly string[]; fetchImpl?: FetchLike }): Rpc {
   const doFetch: FetchLike = cfg.fetchImpl ?? ((...a) => globalThis.fetch(...a));
+  const urls = typeof cfg.url === "string" ? [cfg.url] : [...cfg.url];
+  if (urls.length === 0) throw fail("RPC_ERROR", { retryable: false });
+  let preferred = 0;
 
   async function call(
     method: string,
@@ -54,29 +75,55 @@ export function createRpc(cfg: { url: string; fetchImpl?: FetchLike }): Rpc {
     blockPinnedByCaller = false,
     contractFailureIsNotADao = false,
   ): Promise<Record<string, unknown>> {
+    let last: Error | undefined;
+    for (let i = 0; i < urls.length; i++) {
+      const idx = (preferred + i) % urls.length;
+      try {
+        const result = await attempt(urls[idx] as string, method, params, blockPinnedByCaller, contractFailureIsNotADao);
+        preferred = idx;
+        return result;
+      } catch (e) {
+        if (!(e instanceof TransportFailure)) throw e;
+        last = e.error;
+      }
+    }
+    throw last as Error;
+  }
+
+  async function attempt(
+    url: string,
+    method: string,
+    params: Record<string, unknown>,
+    blockPinnedByCaller: boolean,
+    contractFailureIsNotADao: boolean,
+  ): Promise<Record<string, unknown>> {
     const ctl = new AbortController();
     // Stays armed until the body is parsed, so a stalled body read also times out.
     const timer = setTimeout(() => ctl.abort(), RPC_TIMEOUT_MS);
     try {
       let res: Response;
       try {
-        res = await doFetch(cfg.url, {
+        res = await doFetch(url, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ jsonrpc: "2.0", id: "kd", method, params }),
           signal: ctl.signal,
         });
       } catch {
-        throw fail("RPC_ERROR");
+        throw new TransportFailure(fail("RPC_ERROR"));
       }
-      if (res.status === 429) throw fail("RATE_LIMITED");
-      if (res.status >= 500) throw fail("RPC_ERROR");
-      if (res.status < 200 || res.status >= 300) throw fail("RPC_ERROR", { retryable: false });
+      if (res.status === 429) throw new TransportFailure(fail("RATE_LIMITED"));
+      if (res.status >= 500) throw new TransportFailure(fail("RPC_ERROR"));
+      if (res.status < 200 || res.status >= 300) throw new TransportFailure(fail("RPC_ERROR", { retryable: false }));
       let body: unknown;
       try {
         body = await res.json();
       } catch {
-        throw fail("RPC_ERROR");
+        throw new TransportFailure(fail("RPC_ERROR"));
+      }
+      // A node that lags behind may not have the block yet; another endpoint may.
+      if (isRecord(body) && isRecord(body.error) && isRecord(body.error.cause) && body.error.cause.name === "UNKNOWN_BLOCK") {
+        throw new TransportFailure(fail("RPC_ERROR", { retryable: !blockPinnedByCaller }));
       }
       return unwrap(body, blockPinnedByCaller, contractFailureIsNotADao);
     } finally {
