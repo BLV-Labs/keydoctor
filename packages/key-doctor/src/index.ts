@@ -4,6 +4,7 @@ export { scanAccount, scanDao, scanTarget } from "./scan.ts";
 export { resolveTarget } from "./parse.ts";
 export { diffReports } from "./diff.ts";
 export { toSummary } from "./summary.ts";
+export { guardVerdict } from "./guard.ts";
 export { checkProposals, listProposals } from "./proposals.ts";
 export { KdErrorException, isKdError } from "./errors.ts";
 export { RULESET_VERSION } from "./rules/thresholds.ts";

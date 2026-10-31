@@ -41,11 +41,11 @@ const present = (r: KdReport, rule: string): boolean =>
   [...r.members.flatMap((m) => m.flags), ...r.dao_flags].some((f) => f.rule_id === rule);
 
 describe("S4 corpus layout", () => {
-  it("holds exactly 26 rule files and LIMIT_NON_GROUP_ADMIN.json, one pos and one neg per rule id", () => {
+  it("holds exactly 28 rule files and LIMIT_NON_GROUP_ADMIN.json, one pos and one neg per rule id", () => {
     const expected = [...RULE_ORDER.flatMap((r) => [`${r}.pos.json`, `${r}.neg.json`]), "LIMIT_NON_GROUP_ADMIN.json"].sort();
-    assert.equal(RULE_ORDER.length, 13);
+    assert.equal(RULE_ORDER.length, 14);
     assert.deepEqual(files, expected);
-    assert.equal(files.length, 27);
+    assert.equal(files.length, 29);
   });
 
   it("every case is testnet, under kd-corpus names, and its fires flag matches its file name", () => {
@@ -90,6 +90,12 @@ describe("S4-AC1 negatives sit just under the threshold", () => {
   it("FA_OLD neg is aged 730 days, pos 731", async () => {
     assert.equal((await scan("FA_OLD.neg.json")).members[0]!.keys[0]!.age_days, 730);
     assert.equal((await scan("FA_OLD.pos.json")).members[0]!.keys[0]!.age_days, 731);
+  });
+  it("FA_RECENT pos was added exactly 48 h (144000 blocks) before the scan block, neg one block earlier", async () => {
+    for (const [f, blocks] of [["FA_RECENT.pos.json", 144_000], ["FA_RECENT.neg.json", 144_001]] as const) {
+      const r = await scan(f);
+      assert.equal(r.chain.block_height - r.members[0]!.keys[0]!.created.block_height!, blocks, f);
+    }
   });
   it("FA_BOT_LIKE neg has 999 uses, pos 1000", async () => {
     assert.equal((await scan("FA_BOT_LIKE.neg.json")).members[0]!.keys[0]!.use_count, 999);

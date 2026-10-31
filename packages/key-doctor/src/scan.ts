@@ -32,6 +32,8 @@ export interface MemberInput {
   roles: string[];
   keys: KeyInfo[];
   error: string | null;
+  /** The block every query of the scan is pinned to. */
+  scan_height: number;
   /** Set for DAO council members. */
   dao?: { daoId: string; admin: boolean };
 }
@@ -44,7 +46,7 @@ export function buildMember(input: MemberInput): Member {
   const skipRules = input.error !== null || input.account_kind === "missing";
   const { flags, keys } = skipRules
     ? { flags: [] as Flag[], keys: input.keys }
-    : evaluateKeys(input.account_id, input.keys, input.dao);
+    : evaluateKeys(input.account_id, input.keys, input.scan_height, input.dao);
   const c = countKeys(keys);
   const status: Status = skipRules ? "note" : worst(flags.map((f) => f.severity));
   return {
@@ -174,6 +176,7 @@ export async function scanAccount(id: string, opts: ScanOptions = {}): Promise<K
     roles: [],
     keys: withReceivers(keys, receivers.exists),
     error: null,
+    scan_height: head.height,
   });
 
   return {
@@ -258,6 +261,7 @@ export async function scanDao(id: string, opts: ScanOptions = {}): Promise<KdRep
       roles: analysis.memberRoles.get(memberId) ?? [],
       keys: withReceivers(keys, receivers.exists),
       error: read.state === "error" ? read.code : null,
+      scan_height: head.height,
       dao: { daoId: target.id, admin: analysis.adminMembers.has(memberId) },
     }),
   );

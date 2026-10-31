@@ -1,6 +1,6 @@
 import type { KeyInfo } from "../types.ts";
 import type { MessageRuleId } from "../messages.ts";
-import { FA_BOT_LIKE_USES, FA_OLD_DAYS } from "./thresholds.ts";
+import { BLOCK_TIME_MS, FA_BOT_LIKE_USES, FA_OLD_DAYS, NEW_KEY_WINDOW_BLOCKS } from "./thresholds.ts";
 
 export interface RuleHit {
   rule_id: MessageRuleId;
@@ -14,8 +14,8 @@ export interface RuleHit {
   receiver_id?: string;
 }
 
-/** Rules that look at one key at a time, in key order. */
-export function keyRules(keys: KeyInfo[]): RuleHit[] {
+/** Rules that look at one key at a time, in key order. `scanHeight` is the block the scan is pinned to. */
+export function keyRules(keys: KeyInfo[], scanHeight: number): RuleHit[] {
   const hits: RuleHit[] = [];
   for (const key of keys) {
     const fullAccess = key.permission.type === "full_access";
@@ -34,6 +34,15 @@ export function keyRules(keys: KeyInfo[]): RuleHit[] {
     }
     if (fullAccess && (key.created.source === "unknown" || (key.age_days !== null && key.age_days > FA_OLD_DAYS))) {
       hits.push({ rule_id: "FA_OLD", scope: "key", public_key: key.public_key, evidence: { age_days: key.age_days } });
+    }
+    const added = key.created.block_height;
+    if (fullAccess && added !== null && scanHeight - added <= NEW_KEY_WINDOW_BLOCKS) {
+      hits.push({
+        rule_id: "FA_RECENT",
+        scope: "key",
+        public_key: key.public_key,
+        evidence: { key_added_block: added, hours_ago: Math.floor(((scanHeight - added) * BLOCK_TIME_MS) / 3_600_000) },
+      });
     }
     if (key.use_count === 0) {
       hits.push({ rule_id: "KEY_UNUSED", scope: "key", public_key: key.public_key, evidence: { use_count: 0 } });

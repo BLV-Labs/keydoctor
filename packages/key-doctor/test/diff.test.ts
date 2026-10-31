@@ -111,6 +111,25 @@ describe("GĐ2 diffReports: keys", () => {
     assert.ok(d.changes.filter((c) => c.type === "flag_raised").every((c) => c.severity === "cleanup"));
   });
 
+  it("FA_RECENT never shows as flag_raised or flag_cleared: key_added already reports the key, and the flag ages out by clock", () => {
+    // Raised together with the new key: one high key_added, no duplicate FA_RECENT flag_raised.
+    const prev = dao();
+    const curr = later(dao());
+    const b = member(curr, B);
+    b.keys.push(faKey("ed25519:NewKey111", ["FA_RECENT"]));
+    b.flags.push(flag("FA_RECENT", "high", B, "ed25519:NewKey111"));
+    const raised = diffReports(prev, curr);
+    assert.deepEqual(raised.changes.map((c) => c.type), ["key_added"]);
+
+    // 48 h later the same key loses FA_RECENT with no change on chain: the daily diff stays quiet.
+    const aged = later(structuredClone(curr), 144_000);
+    const agedB = member(aged, B);
+    agedB.flags = agedB.flags.filter((f) => f.rule_id !== "FA_RECENT");
+    const cleared = diffReports(curr, aged);
+    assert.equal(cleared.summary.has_changes, false);
+    assert.ok(member(dao(), A).flags.some((f) => f.rule_id === "FA_RECENT"), "kd-demo member a holds a FA_RECENT flag");
+  });
+
   it("a new app key is note, unless it matches FC_DAO_VOTE (high)", () => {
     const prev = dao();
     const curr = later(dao());
@@ -242,7 +261,7 @@ describe("GĐ2 diffReports: skips", () => {
     member(curr, A).flags = [];
     const d = diffReports(prev, curr);
     assert.deepEqual(d.changes.map((c) => c.type), ["key_added"]);
-    assert.ok(d.limitations.includes("The ruleset changed from 2026-11-01 to 2026-12-01; flag changes are not compared."));
+    assert.ok(d.limitations.includes("The ruleset changed from 2026-11-02 to 2026-12-01; flag changes are not compared."));
   });
 
   it("DAO-level flags are compared under the DAO id", () => {

@@ -1,6 +1,6 @@
 {
   "schema_version": "kd.report.v1",
-  "ruleset_version": "2026-11-01",
+  "ruleset_version": "2026-11-02",
   "generated_at": "2026-11-03T02:00:12Z",
   "chain": {
     "network": "testnet",
@@ -87,6 +87,7 @@
           "age_days": 0,
           "flag_ids": [
             "FA_MANY",
+            "FA_RECENT",
             "KEY_UNUSED"
           ]
         },
@@ -208,6 +209,29 @@
               "title": "Too many full-access keys",
               "explain": "The account has 5 full-access keys. Leaking any one of them loses the whole account.",
               "fix": "Keep as few keys as possible and delete the ones you do not use."
+            }
+          }
+        },
+        {
+          "rule_id": "FA_RECENT",
+          "severity": "high",
+          "scope": "key",
+          "account_id": "a.kd-demo.testnet",
+          "public_key": "ed25519:zsNxJRqtpFdNtZhWDw2v1nNT419ozWMtpKi24cxgFW3",
+          "evidence": {
+            "key_added_block": 182330555,
+            "hours_ago": 3
+          },
+          "messages": {
+            "vi": {
+              "title": "Khóa toàn quyền mới thêm",
+              "explain": "Khóa toàn quyền này được thêm khoảng 3 giờ trước. Nếu chủ account không tự thêm, account có thể đã bị chiếm.",
+              "fix": "Nếu không nhận ra khóa này, xóa nó ngay bằng một khóa bạn tin cậy, rồi kiểm tra tài sản trong account."
+            },
+            "en": {
+              "title": "New full-access key",
+              "explain": "This full-access key was added about 3 hours ago. If the owner did not add it, the account may be compromised.",
+              "fix": "If you do not recognise this key, delete it now with a key you trust, then check the account's funds."
             }
           }
         },

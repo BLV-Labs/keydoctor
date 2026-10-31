@@ -1,0 +1,40 @@
+{
+  "target": "fa-recent-pos.kd-corpus.testnet",
+  "scan": "account",
+  "network": "testnet",
+  "rule": "FA_RECENT",
+  "fires": true,
+  "note": "full-access key added at block 182196111: exactly 144000 blocks (48 h) before head 182340111",
+  "responses": {
+    "block": {
+      "jsonrpc": "2.0",
+      "id": "kd",
+      "result": {
+        "author": "validator.testnet",
+        "header": {
+          "height": 182340111,
+          "hash": "x",
+          "timestamp_nanosec": "1793671210000000000"
+        },
+        "chunks": []
+      }
+    },
+    "query/view_access_key_list/fa-recent-pos.kd-corpus.testnet": {
+      "jsonrpc": "2.0",
+      "id": "kd",
+      "result": {
+        "block_hash": "x",
+        "block_height": 182340111,
+        "keys": [
+          {
+            "public_key": "ed25519:M89ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqr",
+            "access_key": {
+              "nonce": 182196111000005,
+              "permission": "FullAccess"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

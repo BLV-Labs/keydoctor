@@ -310,6 +310,32 @@ export interface KdError {
 }
 
 // ---------------------------------------------------------------------------
+// kd.guard.v1 (§4.8)
+// ---------------------------------------------------------------------------
+
+export type GuardVerdict = "allow" | "review" | "block";
+
+export interface GuardReason {
+  /** A rule id, or a member error code when the keys could not be read. */
+  code: string;
+  severity: Severity;
+  public_key?: string;
+  /** One line: the flag title and explanation, or the member error text. */
+  messages: { vi: string; en: string };
+}
+
+export interface KdGuard {
+  schema_version: "kd.guard.v1";
+  ruleset_version: string;
+  network: Network;
+  block_height: number;
+  verdict: GuardVerdict;
+  account: { id: string; status: Status; flags: string[]; error: string | null };
+  /** Empty when the verdict is allow. Most severe first. */
+  reasons: GuardReason[];
+}
+
+// ---------------------------------------------------------------------------
 // Library options (§7)
 // ---------------------------------------------------------------------------
 

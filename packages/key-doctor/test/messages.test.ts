@@ -14,6 +14,7 @@ const nonEmpty = (s: unknown): void => {
 // The evidence each rule really emits (see src/rules/*.ts).
 const EVIDENCE: Record<MessageRuleId, Record<string, unknown>> = {
   FA_MANY: { full_access_ed25519: 5 },
+  FA_RECENT: { key_added_block: 182_330_111, hours_ago: 3 },
   DAO_ADMIN: { approvals_needed: 1 },
   FC_DAO_VOTE: { any_method: false },
   FA_MULTIPLE: { full_access_ed25519: 2 },
@@ -29,9 +30,9 @@ const EVIDENCE: Record<MessageRuleId, Record<string, unknown>> = {
 };
 
 describe("S3-AC6 rule texts", () => {
-  it("the 13 rule ids in RULE_ORDER and in the message table are the same set", () => {
+  it("the 14 rule ids in RULE_ORDER and in the message table are the same set", () => {
     assert.deepEqual(Object.keys(EVIDENCE).sort(), [...RULE_ORDER].sort());
-    assert.equal(RULE_ORDER.length, 13);
+    assert.equal(RULE_ORDER.length, 14);
   });
 
   for (const id of RULE_ORDER) {

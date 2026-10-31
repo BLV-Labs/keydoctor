@@ -194,6 +194,7 @@ Nguồn chuẩn: `packages/key-doctor/src/types.ts`. Muốn đổi thì tăng `s
 | `kd.alert.v1` | `checkProposals` | Worker gửi bot, bảng chống trùng |
 | `ProposalWatchState` | `checkProposals` | Worker lưu D1 |
 | `kd.watch_link.v1` | Worker | Tool `watch`, `/api/watch-link` |
+| `kd.guard.v1` | `guardVerdict` | Tool `guard` (agent pre-flight) |
 | `kd.error.v1` | Worker | Mọi tool và endpoint khi lỗi |
 
 Quy ước chung: mức độ `high` / `cleanup` / `note`; yoctoNEAR là chuỗi; thời gian ISO 8601 UTC.
@@ -394,7 +395,7 @@ export interface KdDiff {
 }
 ```
 
-Quy ước `diffReports(prev, curr)`: hàm thuần; `prev = null` → `is_baseline: true`, `changes: []`; thành viên có `error` ở một trong hai báo cáo thì bỏ qua và ghi `limitations`; khác `ruleset_version` thì bỏ qua thay đổi về cờ; `key_added` full-access → `high`, khớp `FC_DAO_VOTE` → `high`, `role_changed` thành Admin → `high`, `flag_raised` theo mức rule, còn lại `note`; luôn ghi giới hạn "khóa thêm rồi xóa giữa hai lần quét không thấy".
+Quy ước `diffReports(prev, curr)`: hàm thuần; `prev = null` → `is_baseline: true`, `changes: []`; thành viên có `error` ở một trong hai báo cáo thì bỏ qua và ghi `limitations`; khác `ruleset_version` thì bỏ qua thay đổi về cờ; cờ theo đồng hồ (`FA_RECENT`) không sinh `flag_raised` / `flag_cleared` vì khóa mới đã có `key_added` và cờ tự hết sau 48 giờ; `key_added` full-access → `high`, khớp `FC_DAO_VOTE` → `high`, `role_changed` thành Admin → `high`, `flag_raised` theo mức rule, còn lại `note`; luôn ghi giới hạn "khóa thêm rồi xóa giữa hai lần quét không thấy".
 
 ### 4.4 `kd.alert.v1`
 
@@ -514,6 +515,31 @@ export interface KdError {
 }
 ```
 
+### 4.8 `kd.guard.v1`
+
+```ts
+export type GuardVerdict = "allow" | "review" | "block";
+
+export interface GuardReason {
+  code: string;            // rule_id, hoặc mã lỗi thành viên khi không đọc được khóa
+  severity: Severity;
+  public_key?: string;
+  messages: { vi: string; en: string };
+}
+
+export interface KdGuard {
+  schema_version: "kd.guard.v1";
+  ruleset_version: string;
+  network: Network;
+  block_height: number;
+  verdict: GuardVerdict;
+  account: { id: string; status: Status; flags: string[]; error: string | null };
+  reasons: GuardReason[];  // rỗng khi allow; nặng nhất trước
+}
+```
+
+Quy ước `guardVerdict(report)`: hàm thuần, chỉ nhận báo cáo một account (DAO thì throw). `block` khi có cờ `FA_RECENT`. `review` khi có cờ `high` / `cleanup` khác, hoặc thành viên có `error` (rủi ro chưa rõ, không phải thấp). `allow` khi chỉ có `note`. `FA_MANY` một mình là `review`.
+
 ---
 
 ## 5. Bộ rule
@@ -537,6 +563,7 @@ Rule viết bằng code, ngưỡng ở `src/rules/thresholds.ts`. Đổi ngưỡ
 | `FC_DAO_VOTE` | high | Thành viên council có function-call key vào DAO cho phép `act_proposal` hoặc mọi hàm | Đề xuất (T5) |
 | `FA_BOT_LIKE` | cleanup | Full-access dùng rất nhiều lần, nghi bot/agent | Đề xuất (T5) |
 | `COUNCIL_SMALL` | note | Council 1 đến 2 người | Đề xuất (T5) |
+| `FA_RECENT` | high | Khóa full-access thêm trong 48 giờ gần nhất (theo block trong nonce) | Agent guard (ruleset `2026-11-02`) |
 
 ### 5.2 Rule canh đề xuất (`checkProposals`)
 
@@ -632,6 +659,7 @@ Ba tool, dùng chung hàm với bot:
 | `diagnose` | `target`, `network?`, `detail?` (`summary` mặc định / `full`) | `kd.report_summary.v1` / `kd.report.v1` | Không |
 | `compare` | `target`, `network?`, `update_baseline?` (mặc định `false`) | `kd.diff.v1` | Đọc; ghi khi chưa có mốc hoặc `update_baseline: true` |
 | `watch` (P1) | `target`, `network?` | `kd.watch_link.v1` | Ghi `pending_subscriptions` |
+| `guard` | `target` (một account), `network?` | `kd.guard.v1` | Không |
 
 Mô tả tool `compare` ghi rõ: "Chỉ đặt update_baseline=true khi được yêu cầu rõ; mặc định không dời mốc."
 

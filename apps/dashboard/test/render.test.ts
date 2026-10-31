@@ -108,7 +108,7 @@ describe("view model", () => {
 
   it("main reason is the most severe flag title from messages.en", () => {
     const [a, , c] = dao().members as Member[];
-    assert.equal(mainReason(a!), "Too many full-access keys (+5 more issues)");
+    assert.equal(mainReason(a!), "Too many full-access keys (+6 more issues)");
     assert.equal(mainReason(c!), "No issues found.");
     assert.match(mainReason({ ...c!, error: "RPC_ERROR" }), /risk is unknown, not low/);
   });
@@ -142,7 +142,7 @@ describe("pages", () => {
     assert.match(t, /Ratio 1\/2 → 2 votes/);
     assert.match(t, /0\.1 NEAR/);
     assert.match(t, /Key age is estimated from the access-key nonce/);
-    assert.match(t, /Scanned at block 182,340,111 · Nov 3, 2026, 02:00 UTC · ruleset 2026-11-01/);
+    assert.match(t, /Scanned at block 182,340,111 · Nov 3, 2026, 02:00 UTC · ruleset 2026-11-02/);
     // Status is never color alone: the pill carries a text label.
     assert.match(out.value, /class="pill pill-high[^"]*"><svg[^>]*aria-hidden="true"[^>]*>.*?<\/svg>High risk/);
   });

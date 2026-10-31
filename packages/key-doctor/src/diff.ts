@@ -24,6 +24,8 @@ const TYPE_ORDER: ChangeType[] = [
 const keyId = (k: KeyInfo): string => `${k.public_key}|${JSON.stringify(k.permission)}`;
 const flagId = (f: Flag, owner: string): string => `${f.account_id ?? owner}|${f.rule_id}|${f.public_key ?? ""}`;
 const isAdmin = (m: Member): boolean => m.flags.some((f) => f.rule_id === "DAO_ADMIN");
+// FA_RECENT follows the clock, not the chain: key_added already reports the new key, and it clears by itself after the window.
+const CLOCK_FLAGS = new Set(["FA_RECENT"]);
 const sameRoles = (a: string[], b: string[]): boolean => [...a].sort().join("\n") === [...b].sort().join("\n");
 
 function keyAdded(account: string, k: KeyInfo): Change {
@@ -52,8 +54,9 @@ function keyRemoved(account: string, k: KeyInfo): Change {
 }
 
 function flagChanges(before: readonly Flag[], after: readonly Flag[], owner: string): Change[] {
-  const prev = new Map(before.map((f) => [flagId(f, owner), f]));
-  const curr = new Map(after.map((f) => [flagId(f, owner), f]));
+  const tracked = (flags: readonly Flag[]) => flags.filter((f) => !CLOCK_FLAGS.has(f.rule_id));
+  const prev = new Map(tracked(before).map((f) => [flagId(f, owner), f]));
+  const curr = new Map(tracked(after).map((f) => [flagId(f, owner), f]));
   const out: Change[] = [];
   for (const [id, f] of curr) {
     if (prev.has(id)) continue;
