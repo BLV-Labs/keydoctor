@@ -14,8 +14,11 @@
   "dependencies": {
     "@near-js/crypto": "2.5.1",
     "@near-wallet-selector/core": "10.1.4",
+    "@near-wallet-selector/here-wallet": "10.1.4",
+    "@near-wallet-selector/hot-wallet": "10.1.4",
     "@near-wallet-selector/meteor-wallet": "10.1.4",
-    "key-doctor": "workspace:*"
+    "key-doctor": "workspace:*",
+    "near-api-js": "6.5.1"
   },
   "devDependencies": {
     "@types/node": "22.19.1",

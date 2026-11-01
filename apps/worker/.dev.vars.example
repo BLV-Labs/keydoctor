@@ -1,5 +1,4 @@
 # Copy to .dev.vars for `pnpm --filter worker dev`. Never commit .dev.vars.
-MCP_TOKEN=change-me-mcp
 RUN_CHECK_TOKEN=change-me-run-check
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_WEBHOOK_SECRET=change-me-webhook

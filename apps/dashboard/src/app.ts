@@ -2,15 +2,17 @@
 import { isKdError, listProposals, scanAccount, scanTarget, type KdError, type KdReport, type ListProposalsResult, type Network } from "key-doctor";
 import { revealClampToggles, toggleClamp } from "./clamp.ts";
 import type { Html } from "./html.ts";
-import { renderError, renderHome, renderLayout, renderScanning } from "./pages.ts";
+import { renderAgents, renderError, renderHome, renderLayout, renderOnCall, renderScanning } from "./pages.ts";
 import { buildDeletePlan, GUARD_TEXT, METEOR_INSTALL_URL, type DeletePlan } from "./cleanup.ts";
 import { renderCleanup } from "./cleanup-view.ts";
 import { PAGE_SIZE, pageOf, parsePaging, type Paging } from "./paging.ts";
 import { renderKeyDetail } from "./key-detail.ts";
 import { PROPOSALS_ID, PROPOSALS_LIST, renderProposals } from "./proposals-view.ts";
 import { renderAccount, renderCouncil } from "./report.ts";
-import { homeHref, parseRoute, resolveInput, routeHref, type Route } from "./route.ts";
+import { homeHref, parseRoute, resolveInput, routeHref, type Page, type Route } from "./route.ts";
 import { renderWatchDialog, renderWatchLinks } from "./watch.ts";
+import { isWalletId, walletLabel, type WalletId } from "./wallets.ts";
+import { connectedAccount, forgetConnected, lockedNotice, rememberConnected, viewerRole, walletBar, type Role } from "./session.ts";
 
 declare const __KD_WORKER_URL__: string;
 /** Set at build time (KD_WORKER_URL); empty means the MVP dialog with no Worker call. */
@@ -51,9 +53,43 @@ const UNKNOWN_ERROR: KdError = {
   retryable: true,
 };
 
-function paint(content: Html, title: string, focusMain: boolean, network: Network): void {
-  root.innerHTML = renderLayout(content, network).value;
+const THEME_KEY = "kd.theme";
+type Theme = "light" | "dark";
+
+const currentTheme = (): Theme => (document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+
+/** Applies a theme; `save` remembers it, otherwise the page keeps following the system setting. */
+function setTheme(theme: Theme, save: boolean): void {
+  document.documentElement.dataset.theme = theme;
+  if (save) {
+    try {
+      localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      // Not remembered across visits; this page still switches.
+    }
+  }
+  document.querySelector(".theme-toggle")?.setAttribute("aria-pressed", String(theme === "dark"));
+}
+
+function savedTheme(): Theme | null {
+  try {
+    const t = localStorage.getItem(THEME_KEY);
+    return t === "dark" || t === "light" ? t : null;
+  } catch {
+    return null;
+  }
+}
+
+// Follow the system setting until the user picks a theme with the header switch.
+window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
+  if (savedTheme() === null) setTheme(e.matches ? "dark" : "light", false);
+});
+
+function paint(content: Html, title: string, focusMain: boolean, network: Network, page: Page = "check"): void {
+  root.innerHTML = renderLayout(content, network, page).value;
+  setTheme(currentTheme(), false);
   document.title = title;
+  syncWallet();
   revealClampToggles(root);
   if (focusMain) document.getElementById("main")?.focus();
 }
@@ -81,7 +117,62 @@ function paintReport(report: KdReport, route: Route, paging: Paging, seq: number
         : renderAccount(report, route.from, paging);
   paint(body, `${target} · Key Doctor`, false, report.chain.network);
   root.insertAdjacentHTML("beforeend", renderWatchDialog(target, report.target.type, WORKER_URL).value);
+  syncWallet();
   if (report.target.type === "dao") void paintProposals(report.target.id, report.chain.network, pageOf(paging, PROPOSALS_LIST), paging, seq);
+}
+
+const currentNetwork = (): Network => parseRoute(location.search).network ?? lastReport?.chain.network ?? storedNetwork();
+
+/** The wallet Connect Wallet last connected and the accounts it holds; Revoke and Delete sign with it. */
+let connected: { walletId: WalletId; accounts: string[]; iconUrl?: string } | null = null;
+/** Display state restored from a past visit; the wallet is asked again whenever something is signed. */
+let restoredFor: Network | null = null;
+
+function restoreConnected(network: Network): void {
+  if (connected !== null || restoredFor === network) return;
+  restoredFor = network;
+  connected = connectedAccount(network);
+}
+
+const viewerRoleNow = (): Role => viewerRole(connected?.accounts ?? null, lastReport?.target.id ?? "");
+
+/** Revoke and Delete work only when the connected wallet holds the account on screen. View is never touched.
+ *  Also shows the wallet name and Disconnect in place of Connect Wallet while a wallet is connected. */
+function syncWallet(): void {
+  restoreConnected(currentNetwork());
+  const role = viewerRoleNow();
+  const id = lastReport?.target.id ?? "";
+  for (const b of root.querySelectorAll<HTMLButtonElement>('[data-action="delete-key"]')) {
+    const locked = role !== "owner";
+    b.classList.toggle("btn-locked", locked);
+    b.setAttribute("aria-disabled", String(locked));
+    b.title = locked ? lockedNotice(role, id, connected?.accounts ?? null).text : "";
+  }
+  if (lastReport !== null) {
+    for (const bar of root.querySelectorAll<HTMLElement>("[data-wallet-bar]")) {
+      bar.outerHTML = walletBar(role, id, connected?.accounts ?? null, lastReport.chain.network).value;
+    }
+  }
+  for (const el of root.querySelectorAll<HTMLElement>("[data-wallet-off]")) el.hidden = connected !== null;
+  for (const el of root.querySelectorAll<HTMLElement>("[data-wallet-on]")) el.hidden = connected === null;
+  for (const el of root.querySelectorAll<HTMLElement>("[data-wallet-name]")) {
+    if (connected === null) {
+      el.replaceChildren();
+      continue;
+    }
+    el.title = walletLabel(connected.walletId);
+    const name = document.createElement("span");
+    name.textContent = connected.accounts.join(", ") || "no account";
+    if (connected.iconUrl === undefined) {
+      el.replaceChildren(name);
+      continue;
+    }
+    const img = document.createElement("img");
+    img.src = connected.iconUrl;
+    img.alt = "";
+    img.width = img.height = 16;
+    el.replaceChildren(img, name);
+  }
 }
 
 /** `rescan` false re-renders from the last report when the URL still points at it (page changes, back/forward). */
@@ -93,6 +184,12 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
     paintReport(lastReport, route, paging, seq);
     // Back/forward between pages of one report: keep the scroll position the browser restores.
     if (focusMain) document.getElementById("main")?.focus({ preventScroll: true });
+    return;
+  }
+  if (route.target === null && route.page !== "check") {
+    const network = route.network ?? storedNetwork();
+    if (route.page === "oncall") paint(renderOnCall(), "On Call · Key Doctor", focusMain, network, "oncall");
+    else paint(renderAgents(WORKER_URL), "Agents · Key Doctor", focusMain, network, "agents");
     return;
   }
   if (route.target === null) {
@@ -170,8 +267,20 @@ function closeDialog(dialog: HTMLDialogElement): void {
   dialog.close();
 }
 
-/** Signs an accepted plan through Meteor, or shows why the guards refused it. Re-renders on success. */
-function signPlan(button: HTMLButtonElement, status: HTMLElement, plan: DeletePlan): void {
+/** The wallet answers when the transaction is submitted, so the first rescan can still list the key; read until it is gone (about 20 s at most). */
+async function waitForRemoval(plan: DeletePlan): Promise<void> {
+  const route = parseRoute(location.search);
+  if (route.target === null) return;
+  const removed = new Set(plan.transactions.flat().map((a) => a.public_key));
+  for (let i = 0; i < 10; i++) {
+    const report = await scan({ ...route, target: route.target, network: route.network ?? "testnet" }).catch(() => null);
+    if (report !== null && !report.members[0]?.keys.some((k) => removed.has(k.public_key))) return;
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+}
+
+/** Signs an accepted plan through the chosen wallet, or shows why the guards refused it. Re-renders on success. */
+function signPlan(button: HTMLButtonElement, status: HTMLElement, plan: DeletePlan, walletId: WalletId): void {
   if (!plan.ok) {
     status.textContent = plan.errors.map((e) => GUARD_TEXT[e]).join(" ");
     return;
@@ -179,16 +288,107 @@ function signPlan(button: HTMLButtonElement, status: HTMLElement, plan: DeletePl
   const account = lastReport!.target.id;
   const network = lastReport!.chain.network;
   button.disabled = true;
-  status.textContent = "Waiting for Meteor Wallet. Check the transaction there before you approve.";
+  status.textContent = `Waiting for ${walletLabel(walletId)}. Check the transaction there before you approve.`;
   // Loaded on demand: the wallet SDK is large and only needed when someone signs.
   import("./wallet.ts")
-    .then((w) => w.signDeleteKeys(account, network, plan, (t) => (status.textContent = t)))
+    .then((w) => w.signDeleteKeys(account, network, plan, walletId, (t) => (status.textContent = t)))
+    .then(() => {
+      status.textContent = "Approved. Waiting for the chain to show the change…";
+      return waitForRemoval(plan);
+    })
     .then(() => {
       void render(false);
     })
     .catch((e: unknown) => {
       button.disabled = false;
+      if (e instanceof Error && /^.* is connected as /.test(e.message)) {
+        connected = null;
+        forgetConnected(network);
+        syncWallet();
+      }
       status.textContent = `Not done: ${e instanceof Error ? e.message : "the wallet did not sign."}`;
+    });
+}
+
+/** A locked Revoke/Delete was clicked: say why in the status line, with the button that fixes it. No wallet window opens. */
+function explainLock(status: HTMLElement): void {
+  const role = viewerRoleNow();
+  const notice = lockedNotice(role, lastReport?.target.id ?? "", connected?.accounts ?? null);
+  const fix = document.createElement("button");
+  fix.type = "button";
+  fix.className = "btn btn-tint";
+  fix.dataset.action = notice.action === "switch" ? "switch-account" : "open-wallet";
+  fix.textContent = notice.action === "switch" ? "Switch account" : "Connect Wallet";
+  status.replaceChildren(`${notice.text} `, fix);
+}
+
+let pendingWallet: ((id: WalletId) => void) | null = null;
+
+/** Opens the wallet dialog; `then` runs with the wallet the user picks. Closing the dialog drops it. */
+function askWallet(trigger: HTMLElement, then: (id: WalletId) => void): void {
+  const dialog = document.getElementById("wallet-dialog") as HTMLDialogElement | null;
+  if (dialog === null) return;
+  pendingWallet = then;
+  dialogTrigger = trigger;
+  dialog.showModal();
+  void decorateWallets(dialog);
+}
+
+/** Fills each wallet button with the name and icon its SDK module declares; the static label stays if loading fails. */
+async function decorateWallets(dialog: HTMLElement): Promise<void> {
+  try {
+    const { walletMetadata } = await import("./wallet.ts");
+    const meta = await walletMetadata(lastReport?.chain.network ?? "testnet");
+    for (const button of dialog.querySelectorAll<HTMLButtonElement>("[data-wallet]")) {
+      const m = meta[button.dataset.wallet ?? ""];
+      if (m === undefined || button.querySelector("img") !== null) continue;
+      const img = document.createElement("img");
+      img.src = m.iconUrl;
+      img.alt = "";
+      img.width = img.height = 24;
+      button.prepend(img);
+      button.lastChild!.textContent = m.name;
+    }
+  } catch {
+    // keep the static labels
+  }
+}
+
+/** Read-only connect request (no contractId, so no key is added). */
+function connectWallet(status: HTMLElement, walletId: WalletId): void {
+  // The Meteor extension injects window.meteorCom; without it the SDK falls back to a web popup.
+  if (walletId === "meteor-wallet" && !("meteorCom" in window)) {
+    const link = document.createElement("a");
+    link.href = METEOR_INSTALL_URL;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = "Install the Meteor Wallet extension";
+    status.replaceChildren(link, " in this browser, then reload this page.");
+    return;
+  }
+  status.textContent = `Check the ${walletLabel(walletId)} window.`;
+  import("./wallet.ts")
+    .then((w) => w.openWallet(currentNetwork(), walletId))
+    .then((accounts) => {
+      connected = { walletId, accounts };
+      rememberConnected(currentNetwork(), { walletId, accounts });
+      const target = lastReport?.target.id;
+      status.textContent =
+        target === undefined || accounts.includes(target) ? "" : `${walletLabel(walletId)} holds ${accounts.join(", ") || "no account"}, not ${target}. Revoke and Delete stay off.`;
+      syncWallet();
+      // The icon the wallet's own SDK module declares; the chip shows the name alone if it cannot be read.
+      void import("./wallet.ts")
+        .then((w) => w.walletMetadata(currentNetwork()))
+        .then((meta) => {
+          if (connected?.walletId !== walletId) return;
+          connected.iconUrl = meta[walletId]?.iconUrl;
+          syncWallet();
+        })
+        .catch(() => {});
+    })
+    .catch((e: unknown) => {
+      const msg = e instanceof Error ? e.message : "";
+      status.textContent = /closed/i.test(msg) ? "Wallet window closed." : `Not opened: ${msg || "the wallet did not respond."}`;
     });
 }
 
@@ -223,34 +423,63 @@ root.addEventListener("click", (event) => {
       const m = lastReport?.members[0];
       const status = document.getElementById(el.dataset.status ?? "");
       if (!lastReport || !m || !status || !el.dataset.key) break;
-      signPlan(el as HTMLButtonElement, status, buildDeletePlan(m, [el.dataset.key], null));
+      if (connected === null || viewerRoleNow() !== "owner") {
+        explainLock(status);
+        break;
+      }
+      const plan = buildDeletePlan(m, [el.dataset.key], null);
+      if (!plan.ok) {
+        status.textContent = plan.errors.map((e) => GUARD_TEXT[e]).join(" ");
+        break;
+      }
+      signPlan(el as HTMLButtonElement, status, plan, connected.walletId);
       break;
     }
     case "open-wallet": {
       const status = document.getElementById("wallet-status");
-      if (!lastReport || !status) break;
-      // The Meteor extension injects window.meteorCom; without it the SDK falls back to a web popup.
-      if (!("meteorCom" in window)) {
-        const link = document.createElement("a");
-        link.href = METEOR_INSTALL_URL;
-        link.target = "_blank";
-        link.rel = "noopener";
-        link.textContent = "Install the Meteor Wallet extension";
-        status.replaceChildren(link, " in this browser, then reload this page.");
-        break;
-      }
-      status.textContent = "Check the Meteor Wallet popup.";
+      if (!status) break;
+      askWallet(el, (walletId) => connectWallet(status, walletId));
+      break;
+    }
+    case "disconnect-wallet": {
+      const status = document.getElementById("wallet-status");
+      const was = connected;
+      if (was === null) break;
+      connected = null;
+      forgetConnected(currentNetwork());
+      syncWallet();
+      if (status) status.textContent = "Disconnecting…";
       import("./wallet.ts")
-        .then((w) => w.openWallet(lastReport!.chain.network))
-        .then(() => (status.textContent = ""))
-        .catch((e: unknown) => {
-          const msg = e instanceof Error ? e.message : "";
-          status.textContent = /closed/i.test(msg) ? "Wallet window closed." : `Not opened: ${msg || "the wallet did not respond."}`;
-        });
+        .then((w) => w.disconnectWallet(currentNetwork(), was.walletId))
+        .then(() => status && (status.textContent = ""))
+        .catch(() => status && (status.textContent = "Disconnected here; the wallet may still hold the session."));
+      break;
+    }
+    case "switch-account": {
+      // Forget the display state, then ask again. The wallet picks the account; Disconnect there if it keeps the old one.
+      connected = null;
+      forgetConnected(currentNetwork());
+      syncWallet();
+      askWallet(el, (walletId) => {
+        const status = document.getElementById("wallet-status");
+        if (status) connectWallet(status, walletId);
+      });
+      break;
+    }
+    case "choose-wallet": {
+      const walletId = el.dataset.wallet;
+      const choose = pendingWallet;
+      pendingWallet = null;
+      const open = el.closest("dialog");
+      if (open !== null) closeDialog(open);
+      if (choose !== null && isWalletId(walletId)) choose(walletId);
       break;
     }
     case "rescan":
       void render(false);
+      break;
+    case "theme":
+      setTheme(currentTheme() === "dark" ? "light" : "dark", true);
       break;
     case "toggle-more":
       toggleClamp(el);
@@ -265,7 +494,7 @@ root.addEventListener("click", (event) => {
       const key = m?.keys.find((k) => k.public_key === el.dataset.key);
       const keyDialog = document.getElementById("key-dialog") as HTMLDialogElement | null;
       if (!lastReport || !m || !key || keyDialog === null) break;
-      keyDialog.innerHTML = renderKeyDetail(key, m, lastReport).value;
+      keyDialog.innerHTML = renderKeyDetail(key, m, lastReport, viewerRoleNow()).value;
       dialogTrigger = el;
       keyDialog.showModal();
       break;

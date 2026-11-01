@@ -13,7 +13,7 @@ const ctx = { waitUntil: () => {} };
 function setup(t: TestContext) {
   const db = testD1();
   const chain = installChain(t);
-  const env: Env = { DB: db, MCP_TOKEN: "m", TELEGRAM_BOT_TOKEN: "1:x", DASHBOARD_ORIGIN: ORIGIN, PENDING_SUB_TTL_MINUTES: "30" };
+  const env: Env = { DB: db, TELEGRAM_BOT_TOKEN: "1:x", DASHBOARD_ORIGIN: ORIGIN, PENDING_SUB_TTL_MINUTES: "30" };
   return { db, chain, env };
 }
 const rows = (db: TestD1, sql: string) => (db.raw.prepare(sql).all() as any[]).map((r) => ({ ...r }));

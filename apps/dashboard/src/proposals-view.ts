@@ -5,6 +5,7 @@ import { clamp } from "./clamp.ts";
 import { formatInt, yoctoToNear } from "./format.ts";
 import { html, type Html } from "./html.ts";
 import { statusIcon } from "./icons.ts";
+import { cardHead } from "./ui.ts";
 import { NO_PAGING, PAGE_SIZE, pager, pageWindow, type Paging } from "./paging.ts";
 
 /** The section renderCouncil paints at once; `renderProposals` fills it. */
@@ -93,7 +94,7 @@ function row(p: ProposalInfo): Html {
 }
 
 const head = (note: string): Html =>
-  html`<div class="card-head"><h2 id="proposals-h" class="h2">Proposals</h2><span class="muted small">${note}</span></div>`;
+  cardHead("proposals-h", "Proposals", note);
 
 export function proposalsPlaceholder(): Html {
   return html`<section id="${PROPOSALS_ID}" aria-labelledby="proposals-h" class="card flush" tabindex="-1" data-list-anchor="${PROPOSALS_LIST}">

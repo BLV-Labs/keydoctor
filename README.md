@@ -16,7 +16,7 @@ Network-wide numbers come from one reproducible command (`pnpm stats`, see below
 |---|---|---|
 | Check | Every key of an account or a whole council, with the reason each one matters and a fixed-rule risk score | Dashboard, Telegram `/check`, MCP `diagnose`, `list_keys` |
 | On Call | A warning before the final vote when a voter has a new full-access key. Warnings for proposals that change members, policy or contract code. A daily key-change message | Telegram bot (cron every 15 minutes and at 02:00 UTC) |
-| Clean up | A step-by-step plan in a safe order, ticked from chain data when you rescan. Revoke or Delete one key at a time | Dashboard (`view=cleanup`), each change signed by you in Meteor Wallet |
+| Clean up | A step-by-step plan in a safe order, ticked from chain data when you rescan. Revoke or Delete one key at a time | Dashboard (`view=cleanup`), each change signed by you in Meteor, Here or HOT Wallet (your pick) |
 | Compare | What changed since the last baseline | Telegram `/changes`, MCP `compare` |
 
 Fixed rules make every conclusion. **No AI is used in the product**, and Key Doctor **never signs transactions or holds keys**.
@@ -27,7 +27,7 @@ Fixed rules make every conclusion. **No AI is used in the product**, and Key Doc
 - Council report: <https://key-doctor-dashboard.pages.dev/?target=kdoncall.sputnik-v2.testnet>
 - Account cleanup plan: <https://key-doctor-dashboard.pages.dev/?target=kdoncall-p.testnet&view=cleanup>
 
-The scan runs in your browser against public testnet RPC. Revoke and Delete need the Meteor Wallet extension and the account's own key.
+The scan runs in your browser against public testnet RPC. Revoke and Delete need Meteor Wallet (extension), Here Wallet or HOT Wallet, and the account's own key. **Connect Wallet**, Revoke and Delete open a dialog where you pick the wallet. Meteor is the only wallet checked on testnet so far; Here and HOT load and open their widget but have not signed a Delete yet.
 
 ## Try it: do X, see Y
 
@@ -52,6 +52,15 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 
 3. **Ask the MCP server for the same verdict**
 
+   Hosted Worker, no token needed:
+
+   ```bash
+   curl -s https://key-doctor.duonghb53.workers.dev/mcp -H 'content-type: application/json' \
+     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"diagnose","arguments":{"target":"kdoncall.sputnik-v2.testnet"}}}'
+   ```
+
+   Or run it locally:
+
    ```bash
    cp apps/worker/.dev.vars.example apps/worker/.dev.vars
    pnpm --filter worker db:migrate:local
@@ -61,17 +70,19 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
    In another shell:
 
    ```bash
-   curl -s http://localhost:8787/mcp -H 'authorization: Bearer change-me-mcp' -H 'content-type: application/json' \
+   curl -s http://localhost:8787/mcp -H 'content-type: application/json' \
      -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"diagnose","arguments":{"target":"kdoncall.sputnik-v2.testnet"}}}'
    ```
 
-   You get `kd.report_summary.v1` with the same `summary.status` and member statuses as the dashboard. Without the header the answer is `401` with `kd.error.v1` `UNAUTHORIZED`.
+   You get `kd.report_summary.v1` with the same `summary.status` and member statuses as the dashboard.
 
-4. **Use it from an agent (Claude Code)**
+4. **Use it from an agent (Claude Code)** (see also [Agents](#agents))
 
    ```bash
-   claude mcp add --transport http key-doctor http://localhost:8787/mcp --header "Authorization: Bearer change-me-mcp"
+   claude mcp add --transport http key-doctor https://key-doctor.duonghb53.workers.dev/mcp
    ```
+
+   For a local Worker use `http://localhost:8787/mcp` instead.
 
    Then ask "check the keys of kdoncall.sputnik-v2.testnet". The agent calls `diagnose`. For the dashboard's detail it has two read-only tools: `list_keys` (one row per access key: member, what it is approved for, age, uses, flags; filter by `account_id`, `permission`, `flagged_only`) and `list_proposals` (the DAO's proposals newest first with votes and who still has to vote; page with `limit` and `offset`). `compare` returns `kd.diff.v1` against the stored baseline and moves the baseline only when you ask (`update_baseline: true`). `watch` returns two one-time Telegram links (`kd.watch_link.v1`): opening one subscribes that chat.
 
@@ -104,16 +115,24 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 | GĐ0 | pnpm monorepo, data contracts (`packages/key-doctor/src/types.ts`), fixtures | Done |
 | GĐ1 | Scan library: `scanAccount`, `scanDao`, `scanTarget`, 13 rules, vi/en messages | Done (checked against live testnet RPC) |
 | GĐ2 | `diffReports`, `toSummary` | Done |
-| GĐ3 | Worker: MCP `diagnose`, `compare`, D1 baselines, Bearer auth | Built, runs on local workerd; not deployed |
-| GĐ4 | Telegram bot: `/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help` | Built; not deployed |
+| GĐ3 | Worker: MCP `diagnose`, `compare`, `list_keys`, `list_proposals`, `watch`, D1 baselines, no auth for now | Deployed on Cloudflare; `tools/list` returns the five tools and Claude Code connects (2026-10-30) |
+| GĐ4 | Telegram bot: `/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help` | Deployed; webhook live. `/list` and `/unwatch` not yet checked on the live bot |
 | GĐ5 | `checkProposals` | Built; four Sputnik proposal facts still to confirm live (`packages/key-doctor/fixtures/README.md`) |
-| GĐ6 | Proposal watch cron, `alerts_sent`, `/run-check`, demo script | Built; demo not yet run on testnet |
-| GĐ7 | Dashboard: check, council, account, alerts dialog | Built; not deployed to Pages |
-| GĐ8 | Cleanup plan | Plan page and delete guards built. Signing deletes inside the dashboard waits on a Meteor signing test; until then keys are removed in Meteor Wallet |
-| GĐ9 | Daily key diff (02:00 UTC) | Built; not deployed |
+| GĐ6 | Proposal watch cron, `alerts_sent`, `/run-check`, demo script | Deployed; live testnet run 2026-10-30: voter-key and governance alerts reached the group, the second `run-check` repeated nothing ([`docs/demo-testnet-run-2026-10-30.md`](docs/demo-testnet-run-2026-10-30.md)) |
+| GĐ7 | Dashboard: check, council, proposal list, account, key detail (what a key is approved for, the dApp), alerts dialog | Deployed to Pages |
+| GĐ8 | Cleanup plan, per-key Revoke / Delete signed in Meteor Wallet | Built; Revoke and Delete verified on testnet with a real Meteor account (2026-10-30). No bulk delete |
+| GĐ9 | Daily key diff (02:00 UTC) | Built; deployed with the Worker, not yet seen firing live |
 | GĐ10 | Network stats script | Built; numbers pending a live run |
-| GĐ12 | One-tap watch links: `POST /api/watch-link`, MCP `watch`, `/start <code>`, dashboard "Create links" | Built; not deployed |
+| GĐ12 | One-tap watch links: `POST /api/watch-link`, MCP `watch`, `/start <code>`, dashboard "Create links" | Deployed with the Worker; MCP `watch` is in `tools/list`, a link has not been opened live yet |
 | GĐ11, GĐ13 | History backtest, NearBlocks key dates | Not built (Roadmap) |
+
+## Agents
+
+The Worker serves MCP over Streamable HTTP at `https://key-doctor.duonghb53.workers.dev/mcp`. There is no auth for now, so anyone can call every tool. `diagnose`, `list_keys` and `list_proposals` are read-only. `compare` and `watch` write to D1 (`compare` moves the baseline only with `update_baseline: true`). Each client IP is limited to 30 `tools/call` per minute (`429 RATE_LIMITED`); the counter lives in each Worker isolate's memory, so it is a soft limit. The dashboard shows the same commands on its **Agents** page.
+
+```bash
+claude mcp add --transport http key-doctor https://key-doctor.duonghb53.workers.dev/mcp
+```
 
 ## How it works
 
@@ -125,7 +144,7 @@ packages/key-doctor   pure TypeScript library, fetch only (browser, Node, Worker
   checkProposals(dao, state)         → kd.alert.v1[] + new state (reads RPC only)
 apps/dashboard        static site (Cloudflare Pages), scans in the browser
 apps/worker           one Cloudflare Worker + D1
-  POST /mcp           MCP Streamable HTTP, Bearer MCP_TOKEN
+  POST /mcp           MCP Streamable HTTP, no auth for now
   POST /telegram      bot webhook, secret-token header, 200 at once + waitUntil
   POST /run-check     runs a cron job now, Bearer RUN_CHECK_TOKEN
   POST /api/watch-link  one-time /start links, CORS only for DASHBOARD_ORIGIN
@@ -163,20 +182,20 @@ On post-quantum keys: no quantum computer breaks these keys today. The reason to
 
 ## Limitations
 
+- ML-DSA keys can be added only in Meteor Wallet (its PQ screen). Key Doctor reads any ML-DSA key on chain but does not add one, and Here and HOT are not claimed to support it.
 - A DAO that needs one vote executes a proposal at once, so Key Doctor can only warn after the fact (`after_the_fact: true`).
 - Alerts arrive up to one cron period late (15 minutes). Sputnik does not store vote times.
 - Alerts reach only chats that subscribed with `/watch`. There is no way to message a NEAR account.
 - A key added and then removed between two scans is not seen. Key age is an estimate from the nonce and a 1.2 s block time.
 - Scans read public NEAR RPC through FastNEAR (`rpc.<network>.fastnear.com`, free tier) and fall back to `rpc.<network>.near.org` on a rate limit or an outage; see [`docs/data-sources-benchmark.md`](docs/data-sources-benchmark.md) for why and the measured numbers. Public RPC rate-limits heavy use. The Cloudflare free plan limits outbound requests per run, so the proposal job handles at most `MAX_DAOS_PER_RUN` DAOs per run (default 5), at most 12 proposals and 8 voter scans per DAO.
 - Scan caps: 100 keys per account, 21 council members, 50 roles.
-- Four Sputnik v2 facts that `checkProposals` relies on (proposal-id semantics, proposal JSON, status values, kind labels) were taken from the contract source and still need a live check.
-- The dashboard does not yet sign key deletions itself. The cleanup plan sends you to Meteor Wallet.
+- Four Sputnik v2 facts that `checkProposals` relies on (proposal-id semantics, proposal JSON, status values, kind labels) were taken from the contract source. A live check on a testnet DAO (2026-10-29) confirmed the first two; the other two are only partly confirmed (`packages/key-doctor/fixtures/README.md`).
+- Revoke and Delete work one key at a time. The wallet does not say which key it signs with, so the dashboard keeps two full-access keys. There is no bulk delete.
 - Cron messages are bilingual by default (`ALERT_LANG`), because subscriptions do not store a language.
 
 ## Roadmap
 
 - Show the exact time each key was added, from the NearBlocks indexer (`/v1/account/{id}/keys` returns `created` / `deleted`), next to the nonce-based estimate. See `docs/data-sources-benchmark.md`.
-- Sign key deletions in the dashboard through wallet-selector (several app keys in one signature), once the Meteor signing test passes.
 - Backtest the proposal rules on 12 months of history (`kd.backtest.v1`), using NearBlocks for keys added and later removed.
 - Exact key creation dates from NearBlocks, and more rules.
 - **Agent Guard:** a Sputnik role that approves only in-policy transfers, moving from "detect and warn" to "block".
@@ -189,7 +208,7 @@ On post-quantum keys: no quantum computer breaks these keys today. The reason to
 
 1. `pnpm --filter worker exec wrangler d1 create key-doctor` and put the id into `apps/worker/wrangler.toml`.
 2. `pnpm --filter worker db:migrate:remote`.
-3. `pnpm --filter worker exec wrangler secret put <NAME>` for `MCP_TOKEN`, `RUN_CHECK_TOKEN`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET`.
+3. `pnpm --filter worker exec wrangler secret put <NAME>` for `RUN_CHECK_TOKEN`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET`.
 4. `pnpm --filter worker run deploy` (`run` is needed: bare `deploy` is a built-in pnpm command).
 5. Register the bot webhook:
 

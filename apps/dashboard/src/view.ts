@@ -9,8 +9,8 @@ const RANK: Record<Status, number> = { ok: 0, note: 1, cleanup: 2, high: 3 };
 
 export const STATUS_LABEL: Record<Status, string> = {
   high: "High risk",
-  cleanup: "Cleanup",
-  note: "Note",
+  cleanup: "Needs cleanup",
+  note: "Info",
   ok: "OK",
 };
 

@@ -3,7 +3,11 @@ import { resolveTarget, type Network } from "key-doctor";
 export const BOT_USERNAME = "KeyDoctorOnCallBot";
 export const BOT_URL = `https://t.me/${BOT_USERNAME}`;
 
+export type Page = "check" | "oncall" | "agents";
+
 export interface Route {
+  /** The nav page: `?page=` without a target; any `?target=` is the Check page. */
+  page: Page;
   /** Normalized account id, or null for the home page. */
   target: string | null;
   /** The raw `?target=` value when it is not a valid account id. */
@@ -44,12 +48,15 @@ export function parseRoute(search: string): Route {
   const view = params.get("view") === "cleanup" ? "cleanup" : "report";
   const level = params.get("level") === "full" ? "full" : "safe";
   const network = parseNetwork(params.get("network"));
-  if (raw === null || raw.trim() === "") return { target: null, invalid: null, from: null, view: "report", level, network };
+  const p = params.get("page");
+  const page: Page = raw === null && (p === "oncall" || p === "agents") ? p : "check";
+  if (raw === null || raw.trim() === "") return { page, target: null, invalid: null, from: null, view: "report", level, network };
   const target = normalize(raw);
-  if (target === null) return { target: null, invalid: raw, from: null, view: "report", level, network };
+  if (target === null) return { page: "check", target: null, invalid: raw, from: null, view: "report", level, network };
   const fromRaw = params.get("from");
   const from = fromRaw === null ? null : normalize(fromRaw);
   return {
+    page: "check",
     target,
     invalid: null,
     from: from === target ? null : from,
@@ -86,4 +93,9 @@ export function routeHref(target: string, from?: string | null, network?: Networ
 /** The home page link that keeps the network switch on mainnet; testnet is the default. */
 export function homeHref(network: Network): string {
   return network === "mainnet" ? "?network=mainnet" : "./";
+}
+
+/** In-app link to a nav page; Check is the home page. */
+export function pageHref(page: Page, network: Network = "testnet"): string {
+  return page === "check" ? homeHref(network) : `?page=${page}`;
 }

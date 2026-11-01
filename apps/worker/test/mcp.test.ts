@@ -6,22 +6,21 @@ import { TOOLS } from "../src/mcp/server.ts";
 import { testD1, type TestD1 } from "./support/d1.ts";
 import { DAO, addKey, bytes, fixture, installChain } from "./support/rpc.ts";
 
-const TOKEN = "test-mcp-token";
 const ctx = { waitUntil: () => {} };
 
 function setup(t: TestContext) {
   const db = testD1();
-  const env: Env = { DB: db, MCP_TOKEN: TOKEN };
+  const env: Env = { DB: db };
   const chain = installChain(t);
   return { db, env, chain };
 }
 
 let nextId = 1;
-async function rpc(env: Env, method: string, params: unknown = {}, token: string | null = TOKEN) {
+async function rpc(env: Env, method: string, params: unknown = {}) {
   const res = await worker.fetch(
     new Request("https://kd.test/mcp", {
       method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...(token !== null && { authorization: `Bearer ${token}` }) },
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
       body: JSON.stringify({ jsonrpc: "2.0", id: nextId++, method, params }),
     }),
     env,
@@ -32,6 +31,30 @@ async function rpc(env: Env, method: string, params: unknown = {}, token: string
 const call = async (env: Env, name: string, args: unknown) => (await rpc(env, "tools/call", { name, arguments: args })).body.result;
 const snapshots = (db: TestD1) => (db.raw.prepare("SELECT COUNT(*) AS n FROM snapshots").get() as { n: number }).n;
 
+describe("MCP rate limit", () => {
+  const callFrom = (env: Env, ip: string) =>
+    worker.fetch(
+      new Request("https://kd.test/mcp", {
+        method: "POST",
+        headers: { "content-type": "application/json", "cf-connecting-ip": ip },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "nope", arguments: {} } }),
+      }),
+      env,
+      ctx,
+    );
+
+  it("answers 429 RATE_LIMITED past the per-IP limit, per IP, and never limits tools/list", async () => {
+    const env: Env = { DB: testD1(), MCP_RATE_LIMIT_PER_MIN: "3" };
+    for (let i = 0; i < 3; i++) assert.notEqual((await callFrom(env, "203.0.113.1")).status, 429);
+    const over = await callFrom(env, "203.0.113.1");
+    assert.equal(over.status, 429);
+    assert.equal(((await over.json()) as any).code, "RATE_LIMITED");
+    assert.ok(Number(over.headers.get("retry-after")) > 0);
+    assert.notEqual((await callFrom(env, "203.0.113.2")).status, 429);
+    assert.equal((await rpc(env, "tools/list")).status, 200);
+  });
+});
+
 describe("GĐ3 Worker: routes and auth", () => {
   it("GET / answers ok without auth", async () => {
     const res = await worker.fetch(new Request("https://kd.test/"), { DB: testD1() }, ctx);
@@ -39,16 +62,11 @@ describe("GĐ3 Worker: routes and auth", () => {
     assert.equal(await res.text(), "ok");
   });
 
-  it("/mcp rejects a missing, wrong or unconfigured token with kd.error.v1 UNAUTHORIZED before any work", async (t) => {
-    const { env, chain } = setup(t);
-    for (const token of [null, "wrong", ""]) {
-      const r = await rpc(env, "tools/call", { name: "diagnose", arguments: { target: DAO } }, token);
-      assert.equal(r.status, 401);
-      assert.equal(r.body.code, "UNAUTHORIZED");
-    }
-    const noSecret = await rpc({ ...env, MCP_TOKEN: "" }, "tools/list", {}, "");
-    assert.equal(noSecret.status, 401);
-    assert.equal(chain.calls.length, 0);
+  it("/mcp needs no Authorization header: the token was dropped so judges and agents can call it directly", async (t) => {
+    const { env } = setup(t);
+    const list = await rpc(env, "tools/list");
+    assert.equal(list.status, 200);
+    assert.equal(list.body.result.tools.length, 5);
   });
 
   it("unknown paths are 404", async () => {
@@ -68,7 +86,7 @@ describe("GĐ3 MCP protocol", () => {
     assert.equal(old.body.result.protocolVersion, "2025-06-18");
 
     const note = await worker.fetch(
-      new Request("https://kd.test/mcp", { method: "POST", headers: { authorization: `Bearer ${TOKEN}` }, body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) }),
+      new Request("https://kd.test/mcp", { method: "POST", body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) }),
       env,
       ctx,
     );
@@ -83,9 +101,9 @@ describe("GĐ3 MCP protocol", () => {
 
   it("rejects bad JSON-RPC and GET", async (t) => {
     const { env } = setup(t);
-    const bad = await worker.fetch(new Request("https://kd.test/mcp", { method: "POST", headers: { authorization: `Bearer ${TOKEN}` }, body: "[1,2]" }), env, ctx);
+    const bad = await worker.fetch(new Request("https://kd.test/mcp", { method: "POST", body: "[1,2]" }), env, ctx);
     assert.equal(bad.status, 400);
-    const get = await worker.fetch(new Request("https://kd.test/mcp", { headers: { authorization: `Bearer ${TOKEN}` } }), env, ctx);
+    const get = await worker.fetch(new Request("https://kd.test/mcp", {}), env, ctx);
     assert.equal(get.status, 405);
   });
 });

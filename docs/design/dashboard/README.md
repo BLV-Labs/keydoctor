@@ -6,7 +6,13 @@ The approved mockup for `apps/dashboard` (GĐ7, GĐ8). Build the dashboard from 
 |---|---|
 | `mockup/*.dc.html` | Source of each screen from the design canvas. Read the markup for layout, copy and states. The files need the canvas runtime (`support.js`) to render, so treat them as reference, not as code to ship. |
 | `mockup/canvas.json` | Screen list and order. |
-| `tokens.css` | Colors, type, radii, focus ring. Use these variables; do not hard-code hex values in components. |
+| `tokens.css` | Colors (light and dark), type scale, radii, focus ring. Use these variables; do not hard-code hex values or font sizes in components. |
+
+## Themes and density
+
+- **Two themes.** Light is `:root`; dark is `:root[data-theme="dark"]`. `public/theme-init.js` sets `data-theme` before the first paint (saved choice, else the system setting); the header switch saves the choice. Every text/background pair passes WCAG AA in both themes (`test/ui.test.ts` checks it). In the mockup, each screen has a **theme** tweak (Tweaks panel) and the page screens a header switch.
+- **Type scale** (`--kd-fs-*`): 11 column heads · 12 tags · 13 meta, notes, row buttons · 14 body, tables, dialogs · 16 card titles, inputs · 18 section titles · 24 page title, tile values · 36 home hero. Inputs stay 16px so phones do not zoom.
+- **Compact lists.** Card header = title + short note together, at most one link on the right. Table rows 10px × 12–20px, column heads 11px uppercase, numbers right-aligned with tabular figures, members start with a decorative two-letter monogram. Row buttons are 32px on a pointer screen and 44px on touch.
 
 Data is the GĐ0 testnet fixture (`packages/key-doctor/fixtures/reports/dao-kd-demo.report.json`), with one change listed under "Open items".
 
@@ -31,6 +37,8 @@ Data is the GĐ0 testnet fixture (`packages/key-doctor/fixtures/reports/dao-kd-d
 | 5 | `Watch.dc.html` | dialog | Telegram alerts (MVP): open bot, copy `/watch <target>`; "You will get" depends on target type | `target` |
 | 6 | `DeleteKey.dc.html` | dialog | Full-access confirm: blocks, three warnings and preview before the wallet signs | the ticked full-access `KeyInfo` |
 | 7 | `RevokeKey.dc.html` | dialog | Batch preview and confirm for app (function-call) keys before the wallet signs | the ticked app `KeyInfo[]` |
+| 8 | `WalletDialog.dc.html` | dialog | Choose the wallet that signs (Meteor, Here, HOT); logos come from each wallet's SDK at runtime | `WALLETS` |
+| 9 | `KeyDetail.dc.html` | dialog | Key details from the View button: permission, dApp contract, allowance, added, uses, nonce, why it matters | one `KeyInfo` |
 
 The `?target=` route is also the deep link the bot uses for "View on dashboard".
 
