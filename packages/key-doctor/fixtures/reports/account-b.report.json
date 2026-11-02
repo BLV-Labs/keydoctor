@@ -1,6 +1,6 @@
 {
   "schema_version": "kd.report.v1",
-  "ruleset_version": "2026-11-01",
+  "ruleset_version": "2026-11-03",
   "generated_at": "2026-11-03T02:05:00Z",
   "chain": {
     "network": "testnet",
@@ -43,10 +43,10 @@
           "permission": {
             "type": "full_access"
           },
-          "nonce": "130000000000120",
+          "nonce": "77659889000120",
           "use_count": 120,
           "created": {
-            "block_height": 130000000,
+            "block_height": 77659889,
             "at": "2024-11-06T03:17:56Z",
             "source": "nonce_estimate"
           },
@@ -62,10 +62,10 @@
             "method_names": [],
             "allowance_yocto": null
           },
-          "nonce": "160000000000015",
+          "nonce": "137659889000015",
           "use_count": 15,
           "created": {
-            "block_height": 160000000,
+            "block_height": 137659889,
             "at": "2025-12-27T19:17:56Z",
             "source": "nonce_estimate"
           },
@@ -150,6 +150,6 @@
   "dao_flags": [],
   "errors": [],
   "limitations": [
-    "Key age is estimated from the access-key nonce, assuming 1.2 s blocks."
+    "Key age is estimated from the access-key nonce, assuming 0.6 s blocks."
   ]
 }

@@ -1,12 +1,17 @@
 // Shared functions behind the MCP tools and the bot commands (§8.2, §8.3).
 import {
+  KdErrorException,
   diffReports,
+  isKdError,
+  preflightUnread,
+  preflightVerdict,
   listProposals as listDaoProposals,
   resolveTarget,
   scanTarget,
   toSummary,
   type Flag,
   type KdDiff,
+  type KdPreflight,
   type KdReport,
   type KdReportSummary,
   type KeyInfo,
@@ -14,6 +19,7 @@ import {
   type Network,
 } from "key-doctor";
 import type { Env } from "./env.ts";
+import { kdErrorBody } from "./http.ts";
 import { latestSnapshot, pruneSnapshots, saveSnapshot } from "./store/snapshots.ts";
 
 export interface TargetArgs {
@@ -50,6 +56,30 @@ export async function diagnose(
 ): Promise<KdReport | KdReportSummary> {
   const report = await scan(args, env);
   return args.detail === "full" ? report : toSummary(report);
+}
+
+/** Scan failures that leave the risk unknown: preflight answers review, not an error the agent may skip past. */
+const UNREAD_CODES = new Set<string>(["RPC_ERROR", "RATE_LIMITED", "LIMIT_EXCEEDED"]);
+
+/** Agent pre-flight: kd.preflight.v1 for one account. Never reads or writes D1. A DAO is refused: an agent pays from an account. */
+export async function preflight(args: TargetArgs, env: Env): Promise<KdPreflight> {
+  const t = resolve(args, env);
+  let report: KdReport;
+  try {
+    report = await scanTarget(t.id, { network: t.network, ...(t.rpcUrl && { rpcUrl: t.rpcUrl }) });
+  } catch (e) {
+    if (isKdError(e) && UNREAD_CODES.has(e.kd.code)) return preflightUnread(t.id, t.network, e.kd.code);
+    throw e;
+  }
+  if (report.target.type === "dao") {
+    throw new KdErrorException(
+      kdErrorBody("INVALID_TARGET", {
+        vi: "preflight chỉ kiểm tra một account. Với DAO, hãy dùng diagnose.",
+        en: "preflight checks one account. For a DAO, use diagnose.",
+      }),
+    );
+  }
+  return preflightVerdict(report);
 }
 
 /**

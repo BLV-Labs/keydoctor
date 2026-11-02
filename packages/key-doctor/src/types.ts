@@ -162,6 +162,7 @@ export interface KdDiff {
   summary: {
     has_changes: boolean;
     highest_severity: Severity | null;
+    // Report status without FA_RECENT, which follows the clock (key_added reports the new key).
     status_before: Status | null;
     status_after: Status;
     counts: Partial<Record<ChangeType, number>>;
@@ -307,6 +308,33 @@ export interface KdError {
   code: KdErrorCode;
   message: { vi: string; en: string };
   retryable: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// kd.preflight.v1 (§4.10)
+// ---------------------------------------------------------------------------
+
+export type PreflightVerdict = "allow" | "review" | "block";
+
+export interface PreflightReason {
+  /** A rule id, or a member error code when the keys could not be read. */
+  code: string;
+  severity: Severity;
+  public_key?: string;
+  /** One line: the flag title and explanation, or the member error text. */
+  messages: { vi: string; en: string };
+}
+
+export interface KdPreflight {
+  schema_version: "kd.preflight.v1";
+  ruleset_version: string;
+  network: Network;
+  /** null when the keys could not be read at all (verdict review). */
+  block_height: number | null;
+  verdict: PreflightVerdict;
+  account: { id: string; status: Status; flags: string[]; error: string | null };
+  /** Empty when the verdict is allow. Most severe first. */
+  reasons: PreflightReason[];
 }
 
 // ---------------------------------------------------------------------------

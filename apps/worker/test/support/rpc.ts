@@ -55,7 +55,7 @@ export function installChain(t: TestContext): Chain {
     chain.calls.push({ method: body.method, ...body.params });
     const p = body.params;
     let reply: unknown;
-    if (body.method === "block") reply = ok({ header: { height: chain.head, hash: "h", timestamp_nanosec: `${1793671210000 + (chain.head - HEAD) * 1200}000000` }, chunks: [] });
+    if (body.method === "block") reply = ok({ header: { height: chain.head, hash: "h", timestamp_nanosec: `${1793671210000 + (chain.head - HEAD) * 600}000000` }, chunks: [] });
     else if (p.request_type === "call_function") {
       const args = JSON.parse(Buffer.from(p.args_base64, "base64").toString() || "{}");
       const view = chain.views[p.method_name];

@@ -32,9 +32,10 @@ export function daoLevelFlags(councilSize: number): Flag[] {
 export function evaluateKeys(
   accountId: string,
   keys: KeyInfo[],
+  scanHeight: number,
   dao?: { daoId: string; admin: boolean },
 ): { flags: Flag[]; keys: KeyInfo[] } {
-  const hits: RuleHit[] = [...accountRules(keys), ...keyRules(keys), ...(dao ? daoMemberRules(keys, dao) : [])];
+  const hits: RuleHit[] = [...accountRules(keys), ...keyRules(keys, scanHeight), ...(dao ? daoMemberRules(keys, dao) : [])];
   const keyPos = new Map(keys.map((k, i) => [k.public_key, i]));
   const position = (h: RuleHit) => (h.public_key === undefined ? -1 : (keyPos.get(h.public_key) ?? -1));
 

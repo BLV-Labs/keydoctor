@@ -3,7 +3,7 @@ import { describe, it, type TestContext } from "node:test";
 import { scanAccount } from "../src/index.ts";
 import type { KdReport } from "../src/index.ts";
 import { GENESIS_HEIGHT } from "../src/rules/thresholds.ts";
-import { FA, HEAD, HEAD_TS_SEC, RECENT, ed, fc, installFetch, iso, ml, nonceAt, rawKey, world } from "./support/stub.ts";
+import { FA, HEAD, HEAD_TS_SEC, RECENT, RECENT_BLOCK, ed, fc, installFetch, iso, ml, nonceAt, rawKey, world } from "./support/stub.ts";
 
 const ID = "a.kd-demo.testnet";
 
@@ -119,7 +119,7 @@ describe("S1-AC2: account rules at their thresholds", () => {
   });
 
   it("FA_OLD: age 730 days does not fire, 731 does (remainder fixture)", async (t) => {
-    const blocksPerDay = 72_000;
+    const blocksPerDay = 144_000;
     // elapsed 730 d + 1 block short of 731 d: floor(age) = 730
     const just = HEAD - (731 * blocksPerDay - 1);
     const old = HEAD - 731 * blocksPerDay;
@@ -140,9 +140,9 @@ describe("S1-AC2: account rules at their thresholds", () => {
 
   it("KEY_UNUSED fires on any key kind with use_count 0, not on 1", async (t) => {
     const keys = [
-      ed(1, nonceAt(HEAD - 1000, 0)),
-      ed(2, nonceAt(HEAD - 1000, 0), fc("r.testnet")),
-      ed(3, nonceAt(HEAD - 1000, 1)),
+      ed(1, nonceAt(RECENT_BLOCK, 0)),
+      ed(2, nonceAt(RECENT_BLOCK, 0), fc("r.testnet")),
+      ed(3, nonceAt(RECENT_BLOCK, 1)),
     ];
     const { report } = await run(t, keys);
     assert.deepEqual(flagIds(report), ["FA_MULTIPLE", "KEY_UNUSED", "KEY_UNUSED", "PQ_NONE"]);
@@ -152,7 +152,7 @@ describe("S1-AC2: account rules at their thresholds", () => {
   });
 
   it("FA_BOT_LIKE: 999 uses no, 1000 yes, function-call key with 1000 no", async (t) => {
-    const n = (u: number) => nonceAt(HEAD - 1000, u);
+    const n = (u: number) => nonceAt(RECENT_BLOCK, u);
     assert.deepEqual(flagIds((await run(t, [ed(1, n(999))])).report), ["PQ_NONE"]);
     const hit = (await run(t, [ed(1, n(1000))])).report;
     assert.deepEqual(flagIds(hit), ["FA_BOT_LIKE", "PQ_NONE"]);
@@ -173,10 +173,10 @@ describe("S1-AC3: key age from the nonce", () => {
     assert.equal(k.nonce, String(nonceAt(HEAD, 7)));
   });
 
-  it("created.at is floored to whole seconds (1 block = 1.2 s)", async (t) => {
-    const k = await key(t, nonceAt(HEAD - 1, 1));
-    // 1793671210 - 1.2 = ...208.8 -> floor 208 (a rounding mutant gives 209)
-    assert.equal(k.created.at, iso(HEAD_TS_SEC - 2));
+  it("created.at is floored to whole seconds (1 block = 0.6 s)", async (t) => {
+    const k = await key(t, nonceAt(HEAD - 4, 1));
+    // 1793671210 - 2.4 = ...207.6 -> floor 207 (a rounding mutant gives 208)
+    assert.equal(k.created.at, iso(HEAD_TS_SEC - 3));
   });
 
   it("one block above the head is unknown, and FA_OLD fires", async (t) => {
@@ -223,7 +223,7 @@ describe("S1-AC3: key age from the nonce", () => {
 
 describe("S1-AC6: summary and counts for one member", () => {
   it("high account: counts and summary sums", async (t) => {
-    const keys = [...eds(5), ed(7, nonceAt(HEAD - 1000, 0), fc("r.testnet")), ml(8)];
+    const keys = [...eds(5), ed(7, nonceAt(RECENT_BLOCK, 0), fc("r.testnet")), ml(8)];
     const { report } = await run(t, keys);
     const m = report.members[0]!;
     assert.deepEqual(m.counts, { full_access: 6, function_call: 1, ml_dsa: 1, unused: 1 });
@@ -291,8 +291,8 @@ describe("S2-AC1: function-call key rules", () => {
 
   it("flag order: severity, then rule order, then key order", async (t) => {
     const keys = [
-      ed(1, nonceAt(HEAD - 1000, 0), fc("r.testnet", [], null)),
-      ed(2, nonceAt(HEAD - 1000, 0)),
+      ed(1, nonceAt(RECENT_BLOCK, 0), fc("r.testnet", [], null)),
+      ed(2, nonceAt(RECENT_BLOCK, 0)),
     ];
     const { report } = await run(t, keys);
     assert.deepEqual(

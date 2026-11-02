@@ -1,0 +1,17 @@
+{
+  "name": "guard-mcp",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Agent Guard MCP server (stdio): runs on the agent owner's machine and signs only request_transfer / sync_request with the agent's function-call key.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "start": "node --no-warnings=ExperimentalWarning src/index.ts",
+    "test": "node --test --no-warnings=ExperimentalWarning \"test/**/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "@types/node": "22.19.1"
+  }
+}

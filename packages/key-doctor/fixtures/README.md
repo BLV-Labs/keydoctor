@@ -13,7 +13,7 @@ Sample data for tests and for building the dashboard before the scanner exists. 
 Known placeholders, to replace in GĐ1/GĐ5 with data captured from testnet:
 
 - Sputnik `kind` labels, `vote_counts` and `submission_time` formats must be compared with the contract source.
-- `created.at` and `age_days` assume a 1.2 s block time; the real scanner reads block timestamps.
+- `created.at` and `age_days` assume a 0.6 s block time; the real scanner reads block timestamps.
 
 ## Rule corpus (`corpus/`)
 

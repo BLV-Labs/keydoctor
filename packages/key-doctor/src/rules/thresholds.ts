@@ -1,10 +1,11 @@
 import type { Network, Severity } from "../types.ts";
 
 // Changing any number in this file means bumping RULESET_VERSION.
-export const RULESET_VERSION = "2026-11-01";
+export const RULESET_VERSION = "2026-11-03";
 
 export const RULE_ORDER = [
   "FA_MANY",
+  "FA_RECENT",
   "DAO_ADMIN",
   "FC_DAO_VOTE",
   "FA_MULTIPLE",
@@ -23,6 +24,7 @@ export type RuleId = (typeof RULE_ORDER)[number];
 
 export const RULE_SEVERITY: Record<RuleId, Severity> = {
   FA_MANY: "high",
+  FA_RECENT: "high",
   DAO_ADMIN: "high",
   FC_DAO_VOTE: "high",
   FA_MULTIPLE: "cleanup",
@@ -56,8 +58,8 @@ export const ADMIN_LABELS = [
 ] as const;
 export const ADMIN_APPROVALS = 1;
 
-// Key age from the nonce.
-export const BLOCK_TIME_MS = 1200;
+// Key age from the nonce. Measured on mainnet and testnet in Nov 2026: about 0.58 s per block.
+export const BLOCK_TIME_MS = 600;
 export const MS_PER_DAY = 86_400_000;
 export const NONCE_BLOCK_DIVISOR = 1_000_000;
 export const GENESIS_HEIGHT: Record<Network, number> = { mainnet: 9_820_210, testnet: 42_376_888 };
@@ -80,6 +82,8 @@ export const RATE_LIMIT_BACKOFF_MS = 1000;
 
 // checkProposals (§4.5, §5.2). Window for "voter has a new full-access key".
 export const NEW_KEY_WINDOW_HOURS = 48;
+// FA_RECENT uses the same window, in blocks.
+export const NEW_KEY_WINDOW_BLOCKS = (NEW_KEY_WINDOW_HOURS * 3_600_000) / BLOCK_TIME_MS;
 // Per call: proposals read (pending first, then new) and voters scanned; the rest wait for the next call.
 export const MAX_PROPOSALS_PER_CHECK = 12;
 /** `listProposals`: newest proposals read by default, and the most one call may read. */

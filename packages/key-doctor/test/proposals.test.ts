@@ -282,7 +282,7 @@ describe("GĐ5 checkProposals: failures and caps", () => {
 
   it("a newer key outside the 48 h window is not reported; a custom window can include it", async (t) => {
     const oldKeyA = fixture("rpc/view_access_key_list.a.json");
-    oldKeyA.result.keys = oldKeyA.result.keys.filter((k: any) => k.access_key.nonce !== 182330555000000);
+    oldKeyA.result.keys = oldKeyA.result.keys.filter((k: any) => k.access_key.nonce !== 182320999000000);
     demo(t, { keys: { [A]: oldKeyA } });
     const r = await checkProposals(DAO, { last_proposal_id: 2, pending: {} });
     assert.ok(!r.alerts.some((a) => a.kind === "voter_new_full_access_key"));

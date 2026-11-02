@@ -1,5 +1,5 @@
 // diffReports (§4.3): pure. Compares two kd.report.v1 for the same target and lists what changed.
-import type { Change, ChangeType, Flag, KdDiff, KdReport, KeyInfo, Member, Severity } from "./types.ts";
+import type { Change, ChangeType, Flag, KdDiff, KdReport, KeyInfo, Member, Severity, Status } from "./types.ts";
 import {
   DIFF_TEXT,
   DIFF_UNSEEN_LIMITATION,
@@ -24,6 +24,16 @@ const TYPE_ORDER: ChangeType[] = [
 const keyId = (k: KeyInfo): string => `${k.public_key}|${JSON.stringify(k.permission)}`;
 const flagId = (f: Flag, owner: string): string => `${f.account_id ?? owner}|${f.rule_id}|${f.public_key ?? ""}`;
 const isAdmin = (m: Member): boolean => m.flags.some((f) => f.rule_id === "DAO_ADMIN");
+// FA_RECENT follows the clock, not the chain: key_added already reports the new key, and it clears by itself after the window.
+const CLOCK_FLAGS = new Set(["FA_RECENT"]);
+const worst = (statuses: Status[]): Status =>
+  statuses.reduce<Status>((acc, s) => (SEVERITY_RANK[s] > SEVERITY_RANK[acc] ? s : acc), "ok");
+/** The report status without CLOCK_FLAGS, so status_before/status_after never move on a flag the diff ignores. */
+function trackedStatus(r: KdReport): Status {
+  const memberStatus = (m: Member): Status =>
+    m.flags.some((f) => CLOCK_FLAGS.has(f.rule_id)) ? worst(m.flags.filter((f) => !CLOCK_FLAGS.has(f.rule_id)).map((f) => f.severity)) : m.status;
+  return worst([...r.members.map(memberStatus), ...r.dao_flags.filter((f) => !CLOCK_FLAGS.has(f.rule_id)).map((f) => f.severity)]);
+}
 const sameRoles = (a: string[], b: string[]): boolean => [...a].sort().join("\n") === [...b].sort().join("\n");
 
 function keyAdded(account: string, k: KeyInfo): Change {
@@ -52,8 +62,9 @@ function keyRemoved(account: string, k: KeyInfo): Change {
 }
 
 function flagChanges(before: readonly Flag[], after: readonly Flag[], owner: string): Change[] {
-  const prev = new Map(before.map((f) => [flagId(f, owner), f]));
-  const curr = new Map(after.map((f) => [flagId(f, owner), f]));
+  const tracked = (flags: readonly Flag[]) => flags.filter((f) => !CLOCK_FLAGS.has(f.rule_id));
+  const prev = new Map(tracked(before).map((f) => [flagId(f, owner), f]));
+  const curr = new Map(tracked(after).map((f) => [flagId(f, owner), f]));
   const out: Change[] = [];
   for (const [id, f] of curr) {
     if (prev.has(id)) continue;
@@ -194,8 +205,8 @@ export function diffReports(prev: KdReport | null, curr: KdReport): KdDiff {
     summary: {
       has_changes: changes.length > 0,
       highest_severity: highest as Severity | null,
-      status_before: prev?.summary.status ?? null,
-      status_after: curr.summary.status,
+      status_before: prev === null ? null : trackedStatus(prev),
+      status_after: trackedStatus(curr),
       counts,
     },
     changes,

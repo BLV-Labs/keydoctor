@@ -1,7 +1,7 @@
 // MCP over Streamable HTTP (§8.3): stateless JSON-RPC 2.0 with plain JSON replies (no SSE stream).
 import { isKdError, type KdError } from "key-doctor";
 import type { Env } from "../env.ts";
-import { compare, diagnose, listKeys, listProposals } from "../core.ts";
+import { compare, diagnose, preflight, listKeys, listProposals } from "../core.ts";
 import { json, kdErrorBody, readJson } from "../http.ts";
 import { createWatchLink } from "../watch-link.ts";
 import { checkRate } from "./rate-limit.ts";
@@ -85,6 +85,14 @@ export const TOOLS = [
     inputSchema: { type: "object", properties: { ...targetProps }, required: ["target"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
   },
+  {
+    name: "preflight",
+    title: "Pre-flight check before an agent signs or pays",
+    description:
+      "Scans the keys of the NEAR account an agent is about to sign or pay from, with fixed rules (no AI), and returns kd.preflight.v1 with verdict allow, review or block. block = a full-access key was added in the last 48 hours (takeover sign): do not sign. review = other high or cleanup flags, or the keys could not be read. Account targets only. Read-only; stores nothing; never signs.",
+    inputSchema: { type: "object", properties: { ...targetProps }, required: ["target"], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: true },
+  },
 ];
 
 type Id = string | number | null;
@@ -121,7 +129,7 @@ const toolResult = (payload: unknown, isError = false) => ({
   ...(isError && { isError: true }),
 });
 
-const TOOL_NAMES = ["diagnose", "compare", "list_keys", "list_proposals", "watch"] as const;
+const TOOL_NAMES = ["diagnose", "compare", "list_keys", "list_proposals", "watch", "preflight"] as const;
 type ToolName = (typeof TOOL_NAMES)[number];
 
 async function callTool(name: ToolName, args: Record<string, unknown>, env: Env) {
@@ -132,6 +140,7 @@ async function callTool(name: ToolName, args: Record<string, unknown>, env: Env)
     if (name === "list_keys") return toolResult(await listKeys(args as unknown as Parameters<typeof listKeys>[0], env));
     if (name === "list_proposals") return toolResult(await listProposals(args as unknown as Parameters<typeof listProposals>[0], env));
     if (name === "watch") return toolResult(await createWatchLink(args as unknown as Parameters<typeof createWatchLink>[0], env));
+    if (name === "preflight") return toolResult(await preflight(args as unknown as Parameters<typeof preflight>[0], env));
     return toolResult(await compare(args as unknown as Parameters<typeof compare>[0], env));
   } catch (e) {
     if (isKdError(e)) return toolResult(e.kd, true);
@@ -175,7 +184,7 @@ export async function handleMcp(request: Request, env: Env): Promise<Response> {
           capabilities: { tools: { listChanged: false } },
           serverInfo: SERVER_INFO,
           instructions:
-            "Key Doctor checks NEAR access keys and DAO proposals with fixed rules. diagnose, list_keys and list_proposals are read-only. compare moves the baseline only with update_baseline=true. It never signs or holds keys.",
+            "Key Doctor checks NEAR access keys and DAO proposals with fixed rules. diagnose, list_keys, list_proposals and preflight are read-only. Call preflight on an agent's account before it signs or pays, and stop on verdict block. compare moves the baseline only with update_baseline=true. It never signs or holds keys.",
         }),
       );
     }

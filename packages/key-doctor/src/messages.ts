@@ -28,6 +28,21 @@ const BUILDERS = {
       fix: "Keep as few keys as possible and delete the ones you do not use.",
     },
   }),
+  FA_RECENT: (e: Evidence): Messages => {
+    const ago = hoursText(num(e, "hours_ago") ?? 0);
+    return {
+      vi: {
+        title: "Khóa toàn quyền mới thêm",
+        explain: `Khóa toàn quyền này được thêm ${ago.vi} trước. Nếu chủ account không tự thêm, account có thể đã bị chiếm.`,
+        fix: "Nếu không nhận ra khóa này, xóa nó ngay bằng một khóa bạn tin cậy, rồi kiểm tra tài sản trong account.",
+      },
+      en: {
+        title: "New full-access key",
+        explain: `This full-access key was added ${ago.en} ago. If the owner did not add it, the account may be compromised.`,
+        fix: "If you do not recognise this key, delete it now with a key you trust, then check the account's funds.",
+      },
+    };
+  },
   FA_MULTIPLE: (e: Evidence): Messages => ({
     vi: {
       title: "Nhiều khóa toàn quyền",
