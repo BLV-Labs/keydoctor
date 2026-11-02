@@ -1,6 +1,6 @@
 # Guard implementation plan: GĐ15 to GĐ24
 
-Status: 2026-11-02. Owner accepted D1–D8 as recommended. GĐ15 spike built and passing in the sandbox; testnet run pending (owner, D7). Results: `docs/guard-spike-2026-11-02.md`.
+Status: 2026-11-02. Owner accepted D1–D8 as recommended. GĐ15 done: spike passed in the sandbox and on testnet (tx `AgkVkFuJhs9GijiPQ4xZGbPVmQcN3qq41tRzSU1cZAza`). Results: `docs/guard-spike-2026-11-02.md`.
 
 Governing spec: `docs/final-idea.md` §4.8, §4.9, §5.3, §5.4, §11, §12, §13.6, §13.7, §16 (G-Q1 to G-Q5), and `docs/usecase.md` UC9 to UC14 plus appendices E, F, G. This plan does not change the spec. Where the spec conflicts with `CLAUDE.md`, §1 names the conflict and asks the owner.
 

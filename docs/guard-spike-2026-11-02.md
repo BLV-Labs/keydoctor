@@ -10,9 +10,9 @@ Code: `contracts/guard/src/lib.rs` (spike contract), `contracts/guard/tests/spik
 |---|---|---|
 | Wasm builds and the NEAR VM accepts it (Rust 1.95) | `cargo near build` (cargo-near 0.22, wasm-opt post-step) + sandbox deploy | Pass. 128.6 KB. Plain `cargo build` output was not tried on chain; use cargo-near |
 | Guard self-approves, money moves in the same tx | sandbox, real testnet Sputnik wasm (`tests/res`) | Pass. Proposal `Approved`, proposer = Guard, receiver +0.1 NEAR exactly |
-| Same on testnet (GĐ15 "done when") | `scripts/guard-setup/spike.sh` | **Not run yet.** Owner runs it (plan D7) and fills the table below |
+| Same on testnet (GĐ15 "done when") | `scripts/guard-setup/spike.sh`, run by the owner (plan D7) | **Pass.** Tx `AgkVkFuJhs9GijiPQ4xZGbPVmQcN3qq41tRzSU1cZAza`: proposal 1 `Approved`, proposer = Guard, DAO → receiver 0.1 NEAR in the same tx, 0 failed receipts |
 
-GĐ15 is not done until the testnet tx hash is recorded.
+GĐ15 is done: the testnet tx hash is recorded below.
 
 ## G-Q1: role JSON and policy proposal kind
 
@@ -27,18 +27,21 @@ GĐ15 is not done until the testnet tx hash is recorded.
 ```
 
 - `act_proposal` with the extra `proposal` field is accepted by this DAO version (unknown fields are ignored), so the Guard can always send it.
+- Confirmed on testnet: the `ChangePolicy` proposal passed with 2 of 3 council votes and `get_policy` then showed the role exactly as above.
 
 ## G-Q2: gas
 
 | Measure | Sandbox | Testnet |
 |---|---|---|
-| `request_transfer` total gas burnt (whole tx, all receipts) | 12 Tgas | |
-| Guard's own receipts (`request_transfer`, `on_added`, `on_voted`) | about 0.26–0.29 Tgas each | |
-| Prepaid / static split used | 300 Tgas prepaid; add_proposal 20, on_added 120 (act_proposal 80, on_voted 10) | |
+| `request_transfer` total gas burnt (whole tx, all receipts) | 12 Tgas | 12.82 Tgas |
+| Guard's own receipts (`request_transfer`, `on_added`, `on_voted`) | about 0.26–0.29 Tgas each | 0.266 / 0.288 / 0.263 Tgas (contract logs) |
+| Prepaid / static split used | 300 Tgas prepaid; add_proposal 20, on_added 120 (act_proposal 80, on_voted 10) | same |
 
-The static split is far above need; GĐ16 can keep it (unused gas is refunded) or lower it once testnet numbers are in.
+Testnet matches the sandbox. The static split is far above need; GĐ16 can keep it (unused gas is refunded) or lower it.
 
-## Testnet run (owner fills this in)
+The proposal bond came back in the same tx: the DAO sent 1 NEAR back to the Guard once the transfer was `Approved`.
+
+## Testnet run (2026-11-02, owner)
 
 ```bash
 export KD_SPIKE_PREFIX=kdg$(date +%s)
@@ -52,10 +55,11 @@ scripts/guard-setup/spike.sh transfer
 
 | Item | Value |
 |---|---|
-| DAO | |
-| Guard account | |
-| Guard wasm sha256 | |
-| Role proposal id / tx | |
-| `request_transfer` tx hash | |
-| Transfer proposal id / status | |
-| Gas burnt (nearblocks) | |
+| Prefix | `kdg1793591704` |
+| DAO | `kdg1793591704.sputnik-v2.testnet` (council `kdg1793591704-{a,b,c}.testnet`, 2 of 3) |
+| Guard account | `kdg1793591704-guard.testnet`, agent `kdg1793591704-a.testnet` |
+| Guard wasm | sha256 `0431b9bb44fa737ff0bf1f3215697b9606535f002b3af3e1242bdbda34e5c0b9`; on-chain code hash `HNcHHBvFuq91S4NhgikLCLsDrsUWHAfAjpkWB2Q7MqA` matches the local build |
+| Role proposal | id 0 (`ChangePolicy`), votes `Gn4JXzyX7gETp4KbX4BkeS2vR22oNkSPTEZVQ8zFQrco` (a), `9PVP5pxZ9j4P94X7YxQBwUu4aXmBTeJddANERAoUWTE5` (b), status `Approved` |
+| `request_transfer` tx hash | `AgkVkFuJhs9GijiPQ4xZGbPVmQcN3qq41tRzSU1cZAza` (signed by a) |
+| Transfer proposal id / status | 1 / `Approved`, `Transfer` 0.1 NEAR to `kdg1793591704-c.testnet` |
+| Gas burnt | 12.82 Tgas (sum over the tx and all receipts, `EXPERIMENTAL_tx_status`) |
