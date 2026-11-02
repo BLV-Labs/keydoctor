@@ -181,7 +181,7 @@ apps/worker           one Cloudflare Worker + D1
 - **Only the Worker writes subscriptions.** Baselines are written only by the daily job, the first subscription to a target, and `compare` with `update_baseline: true` (or when no baseline exists yet).
 - **Proposal job:** one `checkProposals` per DAO. Each alert is sent first and recorded in `alerts_sent` after, so a crash causes a duplicate, never a missed alert. A failed send keeps the old state and retries on the next run.
 
-### Rules (ruleset `2026-11-02`)
+### Rules (ruleset `2026-11-03`)
 
 | Rule | Severity | Fires when |
 |---|---|---|
@@ -206,7 +206,7 @@ On post-quantum keys: no quantum computer breaks these keys today. The reason to
 
 ## Agent Guard (contract)
 
-`contracts/guard` is a NEAR contract that a DAO adds as a member with the `agent-guard` role (`transfer:AddProposal`, `transfer:VoteApprove`). An AI agent calls `request_transfer`. The Guard always creates a Sputnik transfer proposal. It approves the proposal itself only when the receiver is whitelisted and the amount is within the per-tx, per-recipient and rolling 24-hour limits; otherwise the proposal waits for the council. Only the DAO (by proposal) changes the limits, agents and whitelist. A guardian can pause it; only the DAO unpauses.
+`contracts/guard` is a NEAR contract that a DAO adds as a member with the `agent-guard` role (`transfer:AddProposal`, `transfer:VoteApprove`). An AI agent calls `request_transfer`. The Guard always creates a Sputnik transfer proposal. It approves the proposal itself only when the receiver is whitelisted and the amount is within the per-tx, per-recipient and rolling 24-hour limits; otherwise the proposal waits for the council. Only the DAO (by proposal) changes the limits, agents and whitelist. A guardian can pause it; only the DAO unpauses. To put an agent behind a Guard on your own DAO, see [docs/guard-integration.md](docs/guard-integration.md).
 
 Measured in the sandbox (`cargo test --test sandbox -- --nocapture`, gas price 100 million yoctoNEAR per gas, so 1 Tgas costs 0.1 mNEAR; this is the testnet and mainnet minimum):
 
