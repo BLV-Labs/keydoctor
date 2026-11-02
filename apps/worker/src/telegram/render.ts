@@ -15,6 +15,8 @@ const SEVERITY_MARK: Record<Severity, string> = { high: "🔴", cleanup: "🟠",
 const RANK: Record<Status, number> = { ok: 0, note: 1, cleanup: 2, high: 3 };
 
 const fmt = (n: number) => n.toLocaleString("en-US");
+/** `2026-10-31T02:00:59Z` -> `2026-10-31 02:00 UTC`; a scan time reads better than a block height. */
+const fmtTime = (iso: string) => `${iso.slice(0, 16).replace("T", " ")} UTC`;
 
 export function langOf(code: unknown): Lang {
   return typeof code === "string" && code.toLowerCase().startsWith("vi") ? "vi" : "en";
@@ -107,20 +109,20 @@ export function renderChanges(lang: Lang, d: KdDiff, dashboardUrl?: string): Out
   if (d.is_baseline) {
     lines.push(
       lang === "vi"
-        ? `${target}: đã lưu mốc so sánh ở block ${fmt(d.to.block_height)}. Lần sau gọi /changes sẽ thấy thay đổi.`
-        : `${target}: baseline saved at block ${fmt(d.to.block_height)}. The next /changes will show what changed.`,
+        ? `${target}: đã lưu mốc so sánh lúc ${fmtTime(d.to.generated_at)}. Lần sau gọi /changes sẽ thấy thay đổi.`
+        : `${target}: baseline saved at ${fmtTime(d.to.generated_at)}. The next /changes will show what changed.`,
     );
   } else if (!d.summary.has_changes) {
     lines.push(
       lang === "vi"
-        ? `${target}: không có thay đổi từ block ${fmt(d.from?.block_height ?? 0)} đến ${fmt(d.to.block_height)}.`
-        : `${target}: no changes from block ${fmt(d.from?.block_height ?? 0)} to ${fmt(d.to.block_height)}.`,
+        ? `${target}: không có thay đổi từ ${d.from ? fmtTime(d.from.generated_at) : "?"} đến ${fmtTime(d.to.generated_at)}.`
+        : `${target}: no changes from ${d.from ? fmtTime(d.from.generated_at) : "?"} to ${fmtTime(d.to.generated_at)}.`,
     );
   } else {
     lines.push(
       lang === "vi"
-        ? `${target}: thay đổi từ block ${fmt(d.from?.block_height ?? 0)} đến ${fmt(d.to.block_height)}`
-        : `${target}: changes from block ${fmt(d.from?.block_height ?? 0)} to ${fmt(d.to.block_height)}`,
+        ? `${target}: thay đổi từ ${d.from ? fmtTime(d.from.generated_at) : "?"} đến ${fmtTime(d.to.generated_at)}`
+        : `${target}: changes from ${d.from ? fmtTime(d.from.generated_at) : "?"} to ${fmtTime(d.to.generated_at)}`,
       "",
     );
     const shown = 10;

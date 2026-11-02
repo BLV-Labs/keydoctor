@@ -146,13 +146,15 @@ describe("GĐ4 message rendering", () => {
 
   it("/changes: baseline, no change, and changes with severity marks", () => {
     const base = daoReport();
-    assert.match(renderChanges("en", diffReports(null, base)).text, /baseline saved at block 182,340,111/);
-    const same = { ...daoReport(), chain: { ...base.chain, block_height: base.chain.block_height + 10 } };
-    assert.match(renderChanges("vi", diffReports(base, same)).text, /không có thay đổi từ block 182,340,111 đến 182,340,121/);
+    assert.match(renderChanges("en", diffReports(null, base)).text, /baseline saved at 2026-11-03 02:00 UTC/);
+    const same = { ...daoReport(), generated_at: "2026-11-04T02:00:30Z", chain: { ...base.chain, block_height: base.chain.block_height + 10 } };
+    assert.match(renderChanges("vi", diffReports(base, same)).text, /không có thay đổi từ 2026-11-03 02:00 UTC đến 2026-11-04 02:00 UTC/);
     const curr = daoReport();
     curr.members[1]!.keys.push({ ...curr.members[1]!.keys[0]!, public_key: "ed25519:Fresh" });
     const text = renderChanges("en", diffReports(base, curr)).text;
     assert.match(text, /🔴 b\.kd-demo\.testnet has a new full-access key/);
+    assert.match(text, /changes from 2026-11-03 02:00 UTC to 2026-11-03 02:00 UTC/);
+    assert.doesNotMatch(text, /block/);
   });
 
   it("proposal alert follows §9.1: voters still to vote, verify through another channel, open-proposal link", () => {
