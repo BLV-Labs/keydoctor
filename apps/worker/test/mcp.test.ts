@@ -94,7 +94,7 @@ describe("GĐ3 MCP protocol", () => {
     assert.deepEqual((await rpc(env, "ping")).body.result, {});
 
     const list = await rpc(env, "tools/list");
-    assert.deepEqual(list.body.result.tools.map((x: any) => x.name), ["diagnose", "compare", "list_keys", "list_proposals", "watch", "guard"]);
+    assert.deepEqual(list.body.result.tools.map((x: any) => x.name), ["diagnose", "compare", "list_keys", "list_proposals", "watch", "preflight"]);
     assert.match(TOOLS[1]!.description, /Only set update_baseline=true when explicitly asked; by default the baseline does not move\./);
     assert.equal((await rpc(env, "nope")).body.error.code, -32601);
   });
@@ -108,13 +108,13 @@ describe("GĐ3 MCP protocol", () => {
   });
 });
 
-describe("guard (agent pre-flight)", () => {
-  it("returns kd.guard.v1: block on the demo account with a full-access key added 3 h ago, never touches D1", async (t) => {
+describe("preflight (agent pre-flight)", () => {
+  it("returns kd.preflight.v1: block on the demo account with a full-access key added 3 h ago, never touches D1", async (t) => {
     const { env, db } = setup(t);
-    const r = await call(env, "guard", { target: "a.kd-demo.testnet" });
+    const r = await call(env, "preflight", { target: "a.kd-demo.testnet" });
     assert.equal(r.isError, undefined);
     const g = r.structuredContent;
-    assert.equal(g.schema_version, "kd.guard.v1");
+    assert.equal(g.schema_version, "kd.preflight.v1");
     assert.equal(g.verdict, "block");
     assert.ok(g.reasons.some((x: any) => x.code === "FA_RECENT"));
     assert.deepEqual(JSON.parse(r.content[0].text), g);
@@ -123,21 +123,21 @@ describe("guard (agent pre-flight)", () => {
 
   it("review for cleanup flags, allow for a clean account", async (t) => {
     const { env } = setup(t);
-    assert.equal((await call(env, "guard", { target: "b.kd-demo.testnet" })).structuredContent.verdict, "review");
-    const c = (await call(env, "guard", { target: "c.kd-demo.testnet" })).structuredContent;
+    assert.equal((await call(env, "preflight", { target: "b.kd-demo.testnet" })).structuredContent.verdict, "review");
+    const c = (await call(env, "preflight", { target: "c.kd-demo.testnet" })).structuredContent;
     assert.equal(c.verdict, "allow");
     assert.deepEqual(c.reasons, []);
   });
 
   it("refuses a DAO, extra arguments and bad names with kd.error.v1; the tool is marked read-only", async (t) => {
     const { env } = setup(t);
-    const dao = await call(env, "guard", { target: DAO });
+    const dao = await call(env, "preflight", { target: DAO });
     assert.equal(dao.isError, true);
     assert.equal(dao.structuredContent.code, "INVALID_TARGET");
     assert.match(dao.structuredContent.message.en, /use diagnose/);
-    assert.equal((await call(env, "guard", { target: "b.kd-demo.testnet", counterparty: "c.kd-demo.testnet" })).isError, true);
-    assert.equal((await call(env, "guard", { target: "not a name!" })).structuredContent.code, "INVALID_TARGET");
-    assert.equal(TOOLS.find((x) => x.name === "guard")!.annotations.readOnlyHint, true);
+    assert.equal((await call(env, "preflight", { target: "b.kd-demo.testnet", counterparty: "c.kd-demo.testnet" })).isError, true);
+    assert.equal((await call(env, "preflight", { target: "not a name!" })).structuredContent.code, "INVALID_TARGET");
+    assert.equal(TOOLS.find((x) => x.name === "preflight")!.annotations.readOnlyHint, true);
   });
 });
 

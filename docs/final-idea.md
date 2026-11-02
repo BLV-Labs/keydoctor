@@ -194,7 +194,7 @@ Nguồn chuẩn: `packages/key-doctor/src/types.ts`. Muốn đổi thì tăng `s
 | `kd.alert.v1` | `checkProposals` | Worker gửi bot, bảng chống trùng |
 | `ProposalWatchState` | `checkProposals` | Worker lưu D1 |
 | `kd.watch_link.v1` | Worker | Tool `watch`, `/api/watch-link` |
-| `kd.guard.v1` | `guardVerdict` | Tool `guard` (agent pre-flight) |
+| `kd.preflight.v1` | `preflightVerdict` | Tool `preflight` (agent pre-flight) |
 | `kd.error.v1` | Worker | Mọi tool và endpoint khi lỗi |
 
 Quy ước chung: mức độ `high` / `cleanup` / `note`; yoctoNEAR là chuỗi; thời gian ISO 8601 UTC.
@@ -515,30 +515,30 @@ export interface KdError {
 }
 ```
 
-### 4.8 `kd.guard.v1`
+### 4.8 `kd.preflight.v1`
 
 ```ts
-export type GuardVerdict = "allow" | "review" | "block";
+export type PreflightVerdict = "allow" | "review" | "block";
 
-export interface GuardReason {
+export interface PreflightReason {
   code: string;            // rule_id, hoặc mã lỗi thành viên khi không đọc được khóa
   severity: Severity;
   public_key?: string;
   messages: { vi: string; en: string };
 }
 
-export interface KdGuard {
-  schema_version: "kd.guard.v1";
+export interface KdPreflight {
+  schema_version: "kd.preflight.v1";
   ruleset_version: string;
   network: Network;
   block_height: number;
-  verdict: GuardVerdict;
+  verdict: PreflightVerdict;
   account: { id: string; status: Status; flags: string[]; error: string | null };
-  reasons: GuardReason[];  // rỗng khi allow; nặng nhất trước
+  reasons: PreflightReason[];  // rỗng khi allow; nặng nhất trước
 }
 ```
 
-Quy ước `guardVerdict(report)`: hàm thuần, chỉ nhận báo cáo một account (DAO thì throw). `block` khi có cờ `FA_RECENT`. `review` khi có cờ `high` / `cleanup` khác, hoặc thành viên có `error` (rủi ro chưa rõ, không phải thấp). `allow` khi chỉ có `note`. `FA_MANY` một mình là `review`.
+Quy ước `preflightVerdict(report)`: hàm thuần, chỉ nhận báo cáo một account (DAO thì throw). `block` khi có cờ `FA_RECENT`. `review` khi có cờ `high` / `cleanup` khác, hoặc thành viên có `error` (rủi ro chưa rõ, không phải thấp). `allow` khi chỉ có `note`. `FA_MANY` một mình là `review`.
 
 ---
 
@@ -563,7 +563,7 @@ Rule viết bằng code, ngưỡng ở `src/rules/thresholds.ts`. Đổi ngưỡ
 | `FC_DAO_VOTE` | high | Thành viên council có function-call key vào DAO cho phép `act_proposal` hoặc mọi hàm | Đề xuất (T5) |
 | `FA_BOT_LIKE` | cleanup | Full-access dùng rất nhiều lần, nghi bot/agent | Đề xuất (T5) |
 | `COUNCIL_SMALL` | note | Council 1 đến 2 người | Đề xuất (T5) |
-| `FA_RECENT` | high | Khóa full-access thêm trong 48 giờ gần nhất (theo block trong nonce) | Agent guard (ruleset `2026-11-02`) |
+| `FA_RECENT` | high | Khóa full-access thêm trong 48 giờ gần nhất (theo block trong nonce) | Agent pre-flight (ruleset `2026-11-02`) |
 
 ### 5.2 Rule canh đề xuất (`checkProposals`)
 
@@ -659,7 +659,7 @@ Ba tool, dùng chung hàm với bot:
 | `diagnose` | `target`, `network?`, `detail?` (`summary` mặc định / `full`) | `kd.report_summary.v1` / `kd.report.v1` | Không |
 | `compare` | `target`, `network?`, `update_baseline?` (mặc định `false`) | `kd.diff.v1` | Đọc; ghi khi chưa có mốc hoặc `update_baseline: true` |
 | `watch` (P1) | `target`, `network?` | `kd.watch_link.v1` | Ghi `pending_subscriptions` |
-| `guard` | `target` (một account), `network?` | `kd.guard.v1` | Không |
+| `preflight` | `target` (một account), `network?` | `kd.preflight.v1` | Không |
 
 Mô tả tool `compare` ghi rõ: "Chỉ đặt update_baseline=true khi được yêu cầu rõ; mặc định không dời mốc."
 

@@ -2,6 +2,8 @@
 
 Status: draft, 2026-11-01. Not started. Owner decides scope before any code.
 
+> 2026-11-02: item 1 shipped as MCP tool `preflight`, contract `kd.preflight.v1`, function `preflightVerdict` (renamed from `guard` / `kd.guard.v1` / `guardVerdict`). "Guard" now means the on-chain Guard contract in `docs/final-idea.md` §11. Read `guard` below as `preflight`.
+
 Target tracks: **AI Security & Defense** (primary: items 1 and 3), **Social Money** (secondary: item 2, Sputnik DAO).
 
 All three items keep the invariants: no LLM (verdicts come from fixed rules), read-only RPC, never sign, testnet names only in examples and fixtures.

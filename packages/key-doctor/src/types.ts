@@ -310,12 +310,12 @@ export interface KdError {
 }
 
 // ---------------------------------------------------------------------------
-// kd.guard.v1 (§4.8)
+// kd.preflight.v1 (§4.10)
 // ---------------------------------------------------------------------------
 
-export type GuardVerdict = "allow" | "review" | "block";
+export type PreflightVerdict = "allow" | "review" | "block";
 
-export interface GuardReason {
+export interface PreflightReason {
   /** A rule id, or a member error code when the keys could not be read. */
   code: string;
   severity: Severity;
@@ -324,15 +324,15 @@ export interface GuardReason {
   messages: { vi: string; en: string };
 }
 
-export interface KdGuard {
-  schema_version: "kd.guard.v1";
+export interface KdPreflight {
+  schema_version: "kd.preflight.v1";
   ruleset_version: string;
   network: Network;
   block_height: number;
-  verdict: GuardVerdict;
+  verdict: PreflightVerdict;
   account: { id: string; status: Status; flags: string[]; error: string | null };
   /** Empty when the verdict is allow. Most severe first. */
-  reasons: GuardReason[];
+  reasons: PreflightReason[];
 }
 
 // ---------------------------------------------------------------------------

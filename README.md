@@ -84,16 +84,16 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 
    For a local Worker use `http://localhost:8787/mcp` instead.
 
-   Then ask "check the keys of kdoncall.sputnik-v2.testnet". The agent calls `diagnose`. For the dashboard's detail it has two read-only tools: `list_keys` (one row per access key: member, what it is approved for, age, uses, flags; filter by `account_id`, `permission`, `flagged_only`) and `list_proposals` (the DAO's proposals newest first with votes and who still has to vote; page with `limit` and `offset`). `compare` returns `kd.diff.v1` against the stored baseline and moves the baseline only when you ask (`update_baseline: true`). `watch` returns two one-time Telegram links (`kd.watch_link.v1`): opening one subscribes that chat. `guard` is a pre-flight for an agent's own account before it signs or pays: it returns `kd.guard.v1` with `verdict` `allow`, `review` or `block`.
+   Then ask "check the keys of kdoncall.sputnik-v2.testnet". The agent calls `diagnose`. For the dashboard's detail it has two read-only tools: `list_keys` (one row per access key: member, what it is approved for, age, uses, flags; filter by `account_id`, `permission`, `flagged_only`) and `list_proposals` (the DAO's proposals newest first with votes and who still has to vote; page with `limit` and `offset`). `compare` returns `kd.diff.v1` against the stored baseline and moves the baseline only when you ask (`update_baseline: true`). `watch` returns two one-time Telegram links (`kd.watch_link.v1`): opening one subscribes that chat. `preflight` is a pre-flight for an agent's own account before it signs or pays: it returns `kd.preflight.v1` with `verdict` `allow`, `review` or `block`.
 
-   `scripts/demo-testnet/demo.sh` (step 5) adds a new full-access key to member a. For the next 48 hours, ask "can I pay from a.kd-demo.testnet?": the agent calls `guard` and gets `verdict: "block"` with reason `FA_RECENT`. After 48 hours the same account gets `review` or `allow`. With curl (needs a Worker deployed from this commit):
+   `scripts/demo-testnet/demo.sh` (step 5) adds a new full-access key to member a. For the next 48 hours, ask "can I pay from a.kd-demo.testnet?": the agent calls `preflight` and gets `verdict: "block"` with reason `FA_RECENT`. After 48 hours the same account gets `review` or `allow`. With curl (needs a Worker deployed from this commit):
 
    ```bash
    curl -s https://key-doctor.duonghb53.workers.dev/mcp -H 'content-type: application/json' \
-     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"guard","arguments":{"target":"a.kd-demo.testnet"}}}'
+     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"preflight","arguments":{"target":"a.kd-demo.testnet"}}}'
    ```
 
-   `block` means a full-access key was added in the last 48 hours: do not sign. `review` means other high or cleanup flags, or keys that could not be read. `allow` means notes only. `guard` takes one account; a DAO target returns `INVALID_TARGET`.
+   `block` means a full-access key was added in the last 48 hours: do not sign. `review` means other high or cleanup flags, or keys that could not be read. `allow` means notes only. `preflight` takes one account; a DAO target returns `INVALID_TARGET`.
 
 5. **Telegram bot and the testnet demo** (needs a deployed Worker, see [Deploy](#deploy))
 
@@ -125,7 +125,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 | GĐ1 | Scan library: `scanAccount`, `scanDao`, `scanTarget`, 14 rules, vi/en messages | Done (checked against live testnet RPC) |
 | GĐ2 | `diffReports`, `toSummary` | Done |
 | GĐ3 | Worker: MCP `diagnose`, `compare`, `list_keys`, `list_proposals`, `watch`, D1 baselines, no auth for now | Deployed on Cloudflare; `tools/list` returns the five tools and Claude Code connects (2026-10-30) |
-| Agent guard | `FA_RECENT` rule, `guardVerdict` (`kd.guard.v1`), MCP `guard` | Built and tested; not yet deployed, so the live Worker does not list `guard` |
+| Agent pre-flight | `FA_RECENT` rule, `preflightVerdict` (`kd.preflight.v1`), MCP `preflight` | Built and tested; not yet deployed, so the live Worker does not list `preflight` |
 | GĐ4 | Telegram bot: `/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help` | Deployed; webhook live. `/list` and `/unwatch` not yet checked on the live bot |
 | GĐ5 | `checkProposals` | Built; four Sputnik proposal facts still to confirm live (`packages/key-doctor/fixtures/README.md`) |
 | GĐ6 | Proposal watch cron, `alerts_sent`, `/run-check`, demo script | Deployed; live testnet run 2026-10-30: voter-key and governance alerts reached the group, the second `run-check` repeated nothing ([`docs/demo-testnet-run-2026-10-30.md`](docs/demo-testnet-run-2026-10-30.md)) |
@@ -138,7 +138,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 
 ## Agents
 
-The Worker serves MCP over Streamable HTTP at `https://key-doctor.duonghb53.workers.dev/mcp`. There is no auth for now, so anyone can call every tool. `diagnose`, `list_keys`, `list_proposals` and `guard` are read-only. `compare` and `watch` write to D1 (`compare` moves the baseline only with `update_baseline: true`). Each client IP is limited to 30 `tools/call` per minute (`429 RATE_LIMITED`); the counter lives in each Worker isolate's memory, so it is a soft limit. The dashboard shows the same commands on its **Agents** page.
+The Worker serves MCP over Streamable HTTP at `https://key-doctor.duonghb53.workers.dev/mcp`. There is no auth for now, so anyone can call every tool. `diagnose`, `list_keys`, `list_proposals` and `preflight` are read-only. `compare` and `watch` write to D1 (`compare` moves the baseline only with `update_baseline: true`). Each client IP is limited to 30 `tools/call` per minute (`429 RATE_LIMITED`); the counter lives in each Worker isolate's memory, so it is a soft limit. The dashboard shows the same commands on its **Agents** page.
 
 ```bash
 claude mcp add --transport http key-doctor https://key-doctor.duonghb53.workers.dev/mcp
@@ -164,7 +164,7 @@ apps/worker           one Cloudflare Worker + D1
 - **One block per scan.** Every RPC query in a scan is pinned to the same block height.
 - **Key age** comes from the access-key nonce: `floor(nonce / 10^6)` is the block where the key was added.
 - **Per-member failures** go into `members[].error` with the text "risk is unknown, not low". They never fail the whole scan.
-- **Data contracts** (`kd.report.v1`, `kd.diff.v1`, `kd.alert.v1`, `kd.guard.v1`, `kd.error.v1`, ...) are in `packages/key-doctor/src/types.ts`.
+- **Data contracts** (`kd.report.v1`, `kd.diff.v1`, `kd.alert.v1`, `kd.preflight.v1`, `kd.error.v1`, ...) are in `packages/key-doctor/src/types.ts`.
 - **Only the Worker writes subscriptions.** Baselines are written only by the daily job, the first subscription to a target, and `compare` with `update_baseline: true` (or when no baseline exists yet).
 - **Proposal job:** one `checkProposals` per DAO. Each alert is sent first and recorded in `alerts_sent` after, so a crash causes a duplicate, never a missed alert. A failed send keeps the old state and retries on the next run.
 

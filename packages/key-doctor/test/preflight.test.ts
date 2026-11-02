@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { guardVerdict, scanAccount, type Flag, type KdReport } from "../src/index.ts";
+import { preflightVerdict, scanAccount, type Flag, type KdReport } from "../src/index.ts";
 import { MEMBER_ERROR_TEXT } from "../src/messages.ts";
 import { FIXTURES, installStub, type Answer } from "./stub-rpc.ts";
 
@@ -19,10 +19,10 @@ async function scanCorpus(file: string): Promise<KdReport> {
   }
 }
 
-describe("guardVerdict: one verdict an agent can gate a payment on", () => {
+describe("preflightVerdict: one verdict an agent can gate a payment on", () => {
   it("block: a full-access key added inside the 48 h window is a takeover sign, so the agent must not sign", async () => {
-    const g = guardVerdict(await scanCorpus("FA_RECENT.pos.json"));
-    assert.equal(g.schema_version, "kd.guard.v1");
+    const g = preflightVerdict(await scanCorpus("FA_RECENT.pos.json"));
+    assert.equal(g.schema_version, "kd.preflight.v1");
     assert.equal(g.verdict, "block");
     assert.equal(g.account.id, "fa-recent-pos.kd-corpus.testnet");
     assert.equal(g.reasons[0]?.code, "FA_RECENT");
@@ -33,11 +33,11 @@ describe("guardVerdict: one verdict an agent can gate a payment on", () => {
   });
 
   it("one block outside the window the same key no longer blocks", async () => {
-    assert.notEqual(guardVerdict(await scanCorpus("FA_RECENT.neg.json")).verdict, "block");
+    assert.notEqual(preflightVerdict(await scanCorpus("FA_RECENT.neg.json")).verdict, "block");
   });
 
   it("review: cleanup flags need a human look but are not a takeover sign; notes stay out of reasons", () => {
-    const g = guardVerdict(accountB());
+    const g = preflightVerdict(accountB());
     assert.equal(g.verdict, "review");
     assert.deepEqual(g.reasons.map((r) => r.code), ["FC_UNLIMITED_ALLOWANCE", "FC_ANY_METHOD"]);
     assert.deepEqual(g.account.flags, ["FC_UNLIMITED_ALLOWANCE", "FC_ANY_METHOD", "PQ_NONE"]);
@@ -51,13 +51,13 @@ describe("guardVerdict: one verdict an agent can gate a payment on", () => {
     const r = accountB();
     const many: Flag = { ...r.members[0]!.flags[0]!, rule_id: "FA_MANY", severity: "high", scope: "account" };
     r.members[0]!.flags = [many];
-    assert.equal(guardVerdict(r).verdict, "review");
+    assert.equal(preflightVerdict(r).verdict, "review");
   });
 
   it("allow: notes only", () => {
     const r = accountB();
     r.members[0]!.flags = r.members[0]!.flags.filter((f) => f.severity === "note");
-    const g = guardVerdict(r);
+    const g = preflightVerdict(r);
     assert.equal(g.verdict, "allow");
     assert.deepEqual(g.reasons, []);
     assert.deepEqual(g.account.flags, ["PQ_NONE"]);
@@ -67,7 +67,7 @@ describe("guardVerdict: one verdict an agent can gate a payment on", () => {
     const r = accountB();
     r.members[0]!.flags = [];
     r.members[0]!.error = "RATE_LIMITED";
-    const g = guardVerdict(r);
+    const g = preflightVerdict(r);
     assert.equal(g.verdict, "review");
     assert.deepEqual(g.reasons, [{ code: "RATE_LIMITED", severity: "high", messages: MEMBER_ERROR_TEXT.RATE_LIMITED }]);
     assert.equal(g.account.error, "RATE_LIMITED");
@@ -76,8 +76,8 @@ describe("guardVerdict: one verdict an agent can gate a payment on", () => {
   it("is pure and refuses a DAO report", () => {
     const r = accountB();
     const before = JSON.stringify(r);
-    assert.deepEqual(guardVerdict(r), guardVerdict(r));
+    assert.deepEqual(preflightVerdict(r), preflightVerdict(r));
     assert.equal(JSON.stringify(r), before);
-    assert.throws(() => guardVerdict(load("reports/dao-kd-demo.report.json")), /one account/);
+    assert.throws(() => preflightVerdict(load("reports/dao-kd-demo.report.json")), /one account/);
   });
 });

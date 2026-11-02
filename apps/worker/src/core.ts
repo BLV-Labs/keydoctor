@@ -2,14 +2,14 @@
 import {
   KdErrorException,
   diffReports,
-  guardVerdict,
+  preflightVerdict,
   listProposals as listDaoProposals,
   resolveTarget,
   scanTarget,
   toSummary,
   type Flag,
   type KdDiff,
-  type KdGuard,
+  type KdPreflight,
   type KdReport,
   type KdReportSummary,
   type KeyInfo,
@@ -56,18 +56,18 @@ export async function diagnose(
   return args.detail === "full" ? report : toSummary(report);
 }
 
-/** Agent pre-flight: kd.guard.v1 for one account. Never reads or writes D1. A DAO is refused: an agent pays from an account. */
-export async function guard(args: TargetArgs, env: Env): Promise<KdGuard> {
+/** Agent pre-flight: kd.preflight.v1 for one account. Never reads or writes D1. A DAO is refused: an agent pays from an account. */
+export async function preflight(args: TargetArgs, env: Env): Promise<KdPreflight> {
   const report = await scan(args, env);
   if (report.target.type === "dao") {
     throw new KdErrorException(
       kdErrorBody("INVALID_TARGET", {
-        vi: "guard chỉ kiểm tra một account. Với DAO, hãy dùng diagnose.",
-        en: "guard checks one account. For a DAO, use diagnose.",
+        vi: "preflight chỉ kiểm tra một account. Với DAO, hãy dùng diagnose.",
+        en: "preflight checks one account. For a DAO, use diagnose.",
       }),
     );
   }
-  return guardVerdict(report);
+  return preflightVerdict(report);
 }
 
 /**
