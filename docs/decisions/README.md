@@ -25,3 +25,4 @@ Add a new record when:
 |---|---|---|---|
 | [0001](0001-gd1-done-when.md) | GĐ1 done-when: fixture corpus plus one owner live run | 2026-10-29 | Accepted |
 | [0002](0002-gd1-rule-set-reading.md) | GĐ1 rule set reading | 2026-10-29 | Accepted |
+| [0003](0003-public-read-only-mcp.md) | Open `/mcp`, no shared token | 2026-10-30 | Accepted |
