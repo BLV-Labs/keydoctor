@@ -146,7 +146,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 | GĐ11, GĐ13 | History backtest, NearBlocks key dates | Not built (Roadmap) |
 | GĐ15–GĐ17 | Agent Guard contract (`contracts/guard`) | Built; 65 unit tests and 9 sandbox tests against the real Sputnik v2 wasm. A spike version paid a transfer on testnet (2026-11-02) |
 | GĐ18 | Guard testnet setup script (`scripts/guard-setup/setup.sh`) | Ran end to end on testnet (2026-11-02): full Guard 1.0.0 deployed, role added, funded and locked; `setup.sh verify` passes |
-| GĐ19 | Guard MCP (`apps/guard-mcp`) and demo invoices (`demo/invoices/`) | Built; 42 tests with a mocked chain. Checked live on testnet, read-only (`guard_get_policy`, status lookup, the agent key). No live `guard_request_transfer` yet: the invoice demo runs after 2026-11-04 |
+| GĐ19 | Guard MCP (`apps/guard-mcp`) and demo invoices (`demo/invoices/`) | Built; 42 tests with a mocked chain. Paid `inv-001` live on testnet (2026-11-02): `auto_approved`, the DAO paid 2 NEAR to the vendor in the same tx (`BUsU9mm3fX59oxPT9cUoLp73LGfehokxoqBQyWL592A8`, 15.2 Tgas); `guard_get_request_status` then reported `executed`. The full four-invoice run is still to do |
 
 ## Agents
 

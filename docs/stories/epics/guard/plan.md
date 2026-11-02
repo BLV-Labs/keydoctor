@@ -179,6 +179,8 @@ Tests (vitest, mocked RPC): amount parsing edge cases, mapping of each contract 
 - Gas: 200 Tgas for `request_transfer` (GĐ17), 50 Tgas for `sync_request` (one `get_proposal` plus a callback).
 - `send_tx` waits for `EXECUTED_OPTIMISTIC`, so the result is the Guard's final `RequestRecord`. An RPC error other than `INVALID_TRANSACTION` / `NotEnoughAllowance` returns `UNKNOWN_OUTCOME` with the tx hash, never a retry.
 - Live on testnet, read-only (2026-11-02): `guard_get_policy` against `kdg1793603660-guard.testnet` (5 / 10 NEAR, 3 receivers), status lookup of an unknown id → `NOT_FOUND`, the agent key is a FunctionCall key on the Guard. No `guard_request_transfer` was sent: it spends DAO funds and the daily window, so it waits for the recorded demo after 2026-11-04.
+- Live payment, owner-approved (2026-11-02): `inv-001` through guard-mcp over stdio → `auto_approved`, proposal 2, tx `BUsU9mm3fX59oxPT9cUoLp73LGfehokxoqBQyWL592A8` (15.2 Tgas burnt, 14 receipts). On chain: proposal 2 `Approved` with only the Guard's vote, description `[KD-GUARD] request=52aa4973-… decision=auto reasons=- memo=INV-001`; vendor 10 → 12 NEAR, DAO −2 NEAR, Guard balance unchanged (bond returned). `guard_get_request_status` synced it to `executed`; `guard_get_policy` shows spent 2, remaining 8.
+- Before the demo: the DAO has about 6 NEAR spendable now, less than the 6.5 NEAR the three valid invoices need, so top it up. The 48 h wait is only for Key Doctor: the faucet-created council keys trip `FA_RECENT` / `voter_new_full_access_key` until 2026-11-04, which would clutter the Telegram scene. A council of older accounts would avoid the wait; the Guard does not care about key age.
 
 ### GĐ20: Key Doctor integration (1 day)
 
