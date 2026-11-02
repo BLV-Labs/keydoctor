@@ -129,6 +129,18 @@ describe("preflight (agent pre-flight)", () => {
     assert.deepEqual(c.reasons, []);
   });
 
+  it("an RPC failure is verdict review, not isError: an agent that skips errors must not pay from an unread account", async (t) => {
+    const { env, chain } = setup(t);
+    chain.keys["x.kd-demo.testnet"] = { jsonrpc: "2.0", id: "kd", error: { name: "HANDLER_ERROR", cause: { name: "INTERNAL_ERROR" } } };
+    const r = await call(env, "preflight", { target: "x.kd-demo.testnet" });
+    assert.equal(r.isError, undefined);
+    assert.equal(r.structuredContent.verdict, "review");
+    assert.equal(r.structuredContent.account.error, "RPC_ERROR");
+    assert.equal(r.structuredContent.block_height, null);
+    // A missing account is still an error: there is nothing to pay from.
+    assert.equal((await call(env, "preflight", { target: "nobody.kd-demo.testnet" })).structuredContent.code, "NOT_FOUND");
+  });
+
   it("refuses a DAO, extra arguments and bad names with kd.error.v1; the tool is marked read-only", async (t) => {
     const { env } = setup(t);
     const dao = await call(env, "preflight", { target: DAO });

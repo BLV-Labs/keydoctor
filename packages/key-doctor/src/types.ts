@@ -162,6 +162,7 @@ export interface KdDiff {
   summary: {
     has_changes: boolean;
     highest_severity: Severity | null;
+    // Report status without FA_RECENT, which follows the clock (key_added reports the new key).
     status_before: Status | null;
     status_after: Status;
     counts: Partial<Record<ChangeType, number>>;
@@ -328,7 +329,8 @@ export interface KdPreflight {
   schema_version: "kd.preflight.v1";
   ruleset_version: string;
   network: Network;
-  block_height: number;
+  /** null when the keys could not be read at all (verdict review). */
+  block_height: number | null;
   verdict: PreflightVerdict;
   account: { id: string; status: Status; flags: string[]; error: string | null };
   /** Empty when the verdict is allow. Most severe first. */

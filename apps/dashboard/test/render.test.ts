@@ -142,7 +142,7 @@ describe("pages", () => {
     assert.match(t, /Ratio 1\/2 → 2 votes/);
     assert.match(t, /0\.1 NEAR/);
     assert.match(t, /Key age is estimated from the access-key nonce/);
-    assert.match(t, /Scanned at block 182,340,111 · Nov 3, 2026, 02:00 UTC · ruleset 2026-11-02/);
+    assert.match(t, /Scanned at block 182,340,111 · Nov 3, 2026, 02:00 UTC · ruleset 2026-11-03/);
     // Status is never color alone: the pill carries a text label.
     assert.match(out.value, /class="pill pill-high[^"]*"><svg[^>]*aria-hidden="true"[^>]*>.*?<\/svg>High risk/);
   });

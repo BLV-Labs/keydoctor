@@ -77,7 +77,7 @@ export const rawKey = (pk: string, nonce: number | string, permission: unknown) 
 /** nonce = created block * 10^6 + use count */
 export const nonceAt = (height: number, uses: number) => height * 1_000_000 + uses;
 /** A block about 2.8 days before the head: past the FA_RECENT window, far from FA_OLD. */
-export const RECENT_BLOCK = HEAD - 200_000;
+export const RECENT_BLOCK = HEAD - 400_000;
 /** A recent, used key: no age, unused or new-key rule fires. */
 export const RECENT = nonceAt(RECENT_BLOCK, 5);
 export const ed = (i: number | string, nonce: number | string = RECENT, permission: unknown = FA) =>

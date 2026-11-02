@@ -17,6 +17,16 @@ export function toIsoSeconds(ms: number): string {
   return new Date(Math.floor(ms / 1000) * 1000).toISOString().replace(".000Z", "Z");
 }
 
+/** Blocks produced in `hours` hours, at BLOCK_TIME_MS per block. */
+export function hoursToBlocks(hours: number): number {
+  return (hours * 3_600_000) / BLOCK_TIME_MS;
+}
+
+/** Whole hours that `blocks` blocks take, at BLOCK_TIME_MS per block. */
+export function blocksToHours(blocks: number): number {
+  return Math.floor((blocks * BLOCK_TIME_MS) / 3_600_000);
+}
+
 export function estimateAge(nonce: string, network: Network, head: HeadBlock): KeyAge {
   const n = BigInt(nonce);
   const divisor = BigInt(NONCE_BLOCK_DIVISOR);

@@ -431,7 +431,7 @@ export interface KdDiff {
 }
 ```
 
-Quy ước `diffReports(prev, curr)`: hàm thuần; `prev = null` → `is_baseline: true`, `changes: []`; thành viên có `error` ở một trong hai báo cáo thì bỏ qua và ghi `limitations`; khác `ruleset_version` thì bỏ qua thay đổi về cờ; cờ theo đồng hồ (`FA_RECENT`) không sinh `flag_raised` / `flag_cleared` vì khóa mới đã có `key_added` và cờ tự hết sau 48 giờ; `key_added` full-access → `high`, khớp `FC_DAO_VOTE` → `high`, `role_changed` thành Admin → `high`, `flag_raised` theo mức rule, còn lại `note`; luôn ghi giới hạn "khóa thêm rồi xóa giữa hai lần quét không thấy".
+Quy ước `diffReports(prev, curr)`: hàm thuần; `prev = null` → `is_baseline: true`, `changes: []`; thành viên có `error` ở một trong hai báo cáo thì bỏ qua và ghi `limitations`; khác `ruleset_version` thì bỏ qua thay đổi về cờ; cờ theo đồng hồ (`FA_RECENT`) không sinh `flag_raised` / `flag_cleared` vì khóa mới đã có `key_added` và cờ tự hết sau 48 giờ, và `status_before` / `status_after` tính không có cờ này; `key_added` full-access → `high`, khớp `FC_DAO_VOTE` → `high`, `role_changed` thành Admin → `high`, `flag_raised` theo mức rule, còn lại `note`; luôn ghi giới hạn "khóa thêm rồi xóa giữa hai lần quét không thấy".
 
 ### 4.4 `kd.alert.v1`
 
@@ -636,14 +636,14 @@ export interface KdPreflight {
   schema_version: "kd.preflight.v1";
   ruleset_version: string;
   network: Network;
-  block_height: number;
+  block_height: number | null;  // null khi không đọc được khóa (verdict review)
   verdict: PreflightVerdict;
   account: { id: string; status: Status; flags: string[]; error: string | null };
   reasons: PreflightReason[];  // rỗng khi allow; nặng nhất trước
 }
 ```
 
-Quy ước `preflightVerdict(report)`: hàm thuần, chỉ nhận báo cáo một account (DAO thì throw). `block` khi có cờ `FA_RECENT`. `review` khi có cờ `high` / `cleanup` khác, hoặc thành viên có `error` (rủi ro chưa rõ, không phải thấp). `allow` khi chỉ có `note`. `FA_MANY` một mình là `review`.
+Quy ước `preflightVerdict(report)`: hàm thuần, chỉ nhận báo cáo một account (DAO thì throw). `block` khi có cờ `FA_RECENT`. `review` khi có cờ `high` / `cleanup` khác, hoặc thành viên có `error` (rủi ro chưa rõ, không phải thấp). Khi quét account throw lỗi đọc (`RPC_ERROR`, `RATE_LIMITED`, `LIMIT_EXCEEDED`), tool `preflight` trả `preflightUnread(...)`: verdict `review`, `block_height: null`, không trả `kd.error.v1`. `allow` khi chỉ có `note`. `FA_MANY` một mình là `review`.
 
 ---
 

@@ -119,7 +119,7 @@ describe("S1-AC2: account rules at their thresholds", () => {
   });
 
   it("FA_OLD: age 730 days does not fire, 731 does (remainder fixture)", async (t) => {
-    const blocksPerDay = 72_000;
+    const blocksPerDay = 144_000;
     // elapsed 730 d + 1 block short of 731 d: floor(age) = 730
     const just = HEAD - (731 * blocksPerDay - 1);
     const old = HEAD - 731 * blocksPerDay;
@@ -173,10 +173,10 @@ describe("S1-AC3: key age from the nonce", () => {
     assert.equal(k.nonce, String(nonceAt(HEAD, 7)));
   });
 
-  it("created.at is floored to whole seconds (1 block = 1.2 s)", async (t) => {
-    const k = await key(t, nonceAt(HEAD - 1, 1));
-    // 1793671210 - 1.2 = ...208.8 -> floor 208 (a rounding mutant gives 209)
-    assert.equal(k.created.at, iso(HEAD_TS_SEC - 2));
+  it("created.at is floored to whole seconds (1 block = 0.6 s)", async (t) => {
+    const k = await key(t, nonceAt(HEAD - 4, 1));
+    // 1793671210 - 2.4 = ...207.6 -> floor 207 (a rounding mutant gives 208)
+    assert.equal(k.created.at, iso(HEAD_TS_SEC - 3));
   });
 
   it("one block above the head is unknown, and FA_OLD fires", async (t) => {

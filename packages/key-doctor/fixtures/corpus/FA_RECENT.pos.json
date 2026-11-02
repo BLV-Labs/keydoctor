@@ -4,7 +4,7 @@
   "network": "testnet",
   "rule": "FA_RECENT",
   "fires": true,
-  "note": "full-access key added at block 182196111: exactly 144000 blocks (48 h) before head 182340111",
+  "note": "full-access key added at block 182052111: exactly 288000 blocks (48 h) before head 182340111",
   "responses": {
     "block": {
       "jsonrpc": "2.0",
@@ -29,7 +29,7 @@
           {
             "public_key": "ed25519:M89ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqr",
             "access_key": {
-              "nonce": 182196111000005,
+              "nonce": 182052111000005,
               "permission": "FullAccess"
             }
           }

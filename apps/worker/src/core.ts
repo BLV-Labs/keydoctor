@@ -2,6 +2,8 @@
 import {
   KdErrorException,
   diffReports,
+  isKdError,
+  preflightUnread,
   preflightVerdict,
   listProposals as listDaoProposals,
   resolveTarget,
@@ -56,9 +58,19 @@ export async function diagnose(
   return args.detail === "full" ? report : toSummary(report);
 }
 
+/** Scan failures that leave the risk unknown: preflight answers review, not an error the agent may skip past. */
+const UNREAD_CODES = new Set<string>(["RPC_ERROR", "RATE_LIMITED", "LIMIT_EXCEEDED"]);
+
 /** Agent pre-flight: kd.preflight.v1 for one account. Never reads or writes D1. A DAO is refused: an agent pays from an account. */
 export async function preflight(args: TargetArgs, env: Env): Promise<KdPreflight> {
-  const report = await scan(args, env);
+  const t = resolve(args, env);
+  let report: KdReport;
+  try {
+    report = await scanTarget(t.id, { network: t.network, ...(t.rpcUrl && { rpcUrl: t.rpcUrl }) });
+  } catch (e) {
+    if (isKdError(e) && UNREAD_CODES.has(e.kd.code)) return preflightUnread(t.id, t.network, e.kd.code);
+    throw e;
+  }
   if (report.target.type === "dao") {
     throw new KdErrorException(
       kdErrorBody("INVALID_TARGET", {

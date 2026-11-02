@@ -8,14 +8,14 @@
       {
         "public_key": "ed25519:2YJJG7qYp6ZBLtyvtekiAVbkRj3xBfvcg5yMPujCMHVV",
         "access_key": {
-          "nonce": 130000000000120,
+          "nonce": 77659889000120,
           "permission": "FullAccess"
         }
       },
       {
         "public_key": "ed25519:Gz2h4LKSDxX7hqMiCcJriGzjuYBM3AxG5V75D3MLsXD3",
         "access_key": {
-          "nonce": 160000000000015,
+          "nonce": 137659889000015,
           "permission": {
             "FunctionCall": {
               "allowance": null,

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { preflightVerdict, scanAccount, type Flag, type KdReport } from "../src/index.ts";
+import { RULESET_VERSION, preflightUnread, preflightVerdict, scanAccount, type Flag, type KdReport } from "../src/index.ts";
 import { MEMBER_ERROR_TEXT } from "../src/messages.ts";
 import { FIXTURES, installStub, type Answer } from "./stub-rpc.ts";
 
@@ -71,6 +71,16 @@ describe("preflightVerdict: one verdict an agent can gate a payment on", () => {
     assert.equal(g.verdict, "review");
     assert.deepEqual(g.reasons, [{ code: "RATE_LIMITED", severity: "high", messages: MEMBER_ERROR_TEXT.RATE_LIMITED }]);
     assert.equal(g.account.error, "RATE_LIMITED");
+  });
+
+  it("a scan that threw before any key was read is review with the error, never allow or a skippable error", () => {
+    const g = preflightUnread("x.kd-demo.testnet", "testnet", "RPC_ERROR");
+    assert.equal(g.verdict, "review");
+    assert.equal(g.block_height, null);
+    assert.equal(g.ruleset_version, RULESET_VERSION);
+    assert.deepEqual(g.account, { id: "x.kd-demo.testnet", status: "note", flags: [], error: "RPC_ERROR" });
+    assert.deepEqual(g.reasons, [{ code: "RPC_ERROR", severity: "high", messages: MEMBER_ERROR_TEXT.RPC_ERROR }]);
+    assert.deepEqual(preflightUnread("x.kd-demo.testnet", "testnet", "LIMIT_EXCEEDED").reasons[0]!.messages, MEMBER_ERROR_TEXT.LIMIT_EXCEEDED);
   });
 
   it("is pure and refuses a DAO report", () => {

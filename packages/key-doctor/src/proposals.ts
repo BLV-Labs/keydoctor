@@ -12,7 +12,7 @@ import type {
   Vote,
 } from "./types.ts";
 import type { HeadBlock } from "./age.ts";
-import { toIsoSeconds } from "./age.ts";
+import { blocksToHours, hoursToBlocks, toIsoSeconds } from "./age.ts";
 import { fail, isKdError } from "./errors.ts";
 import { ACTION_TEXT, formatNear, proposalAlertText, roleLabel, voterAlertText, type AlertText } from "./messages.ts";
 import { accountKind, isDigits, isRecord, parsePolicy, resolveTarget, type Policy } from "./parse.ts";
@@ -219,7 +219,7 @@ async function newFullAccessKey(
     blockHeight: head.height,
     skipReceiverCheck: true,
   });
-  const windowBlocks = (opts.windowHours * 3_600_000) / BLOCK_TIME_MS;
+  const windowBlocks = hoursToBlocks(opts.windowHours);
   let newest: Evidence | null = null;
   for (const k of report.members[0]?.keys ?? []) {
     const block = k.created.block_height;
@@ -230,7 +230,7 @@ async function newFullAccessKey(
       public_key: k.public_key,
       key_added_block: block,
       key_added_at_est: k.created.at ?? toIsoSeconds(head.timestampMs - (head.height - block) * BLOCK_TIME_MS),
-      hours_before_vote_seen: Math.floor(((head.height - block) * BLOCK_TIME_MS) / 3_600_000),
+      hours_before_vote_seen: blocksToHours(head.height - block),
     };
   }
   return newest;

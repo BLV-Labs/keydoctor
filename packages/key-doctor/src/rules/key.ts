@@ -1,6 +1,7 @@
 import type { KeyInfo } from "../types.ts";
 import type { MessageRuleId } from "../messages.ts";
-import { BLOCK_TIME_MS, FA_BOT_LIKE_USES, FA_OLD_DAYS, NEW_KEY_WINDOW_BLOCKS } from "./thresholds.ts";
+import { blocksToHours } from "../age.ts";
+import { FA_BOT_LIKE_USES, FA_OLD_DAYS, NEW_KEY_WINDOW_BLOCKS } from "./thresholds.ts";
 
 export interface RuleHit {
   rule_id: MessageRuleId;
@@ -41,7 +42,7 @@ export function keyRules(keys: KeyInfo[], scanHeight: number): RuleHit[] {
         rule_id: "FA_RECENT",
         scope: "key",
         public_key: key.public_key,
-        evidence: { key_added_block: added, hours_ago: Math.floor(((scanHeight - added) * BLOCK_TIME_MS) / 3_600_000) },
+        evidence: { key_added_block: added, hours_ago: blocksToHours(scanHeight - added) },
       });
     }
     if (key.use_count === 0) {

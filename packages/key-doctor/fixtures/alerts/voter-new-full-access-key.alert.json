@@ -33,7 +33,7 @@
   "evidence": {
     "account_id": "a.kd-demo.testnet",
     "public_key": "ed25519:zsNxJRqtpFdNtZhWDw2v1nNT419ozWMtpKi24cxgFW3",
-    "key_added_block": 182330555,
+    "key_added_block": 182320999,
     "key_added_at_est": "2026-11-02T22:49:02Z",
     "hours_before_vote_seen": 3
   },

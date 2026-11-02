@@ -130,6 +130,34 @@ describe("GĐ2 diffReports: keys", () => {
     assert.ok(member(dao(), A).flags.some((f) => f.rule_id === "FA_RECENT"), "kd-demo member a holds a FA_RECENT flag");
   });
 
+  it("FA_RECENT ageing out does not move status_before/status_after: a quiet diff must not read as high -> ok", () => {
+    // Only FA_RECENT is high: the report is high, then ok 48 h later with nothing changed on chain.
+    const only = (r: KdReport): KdReport => {
+      for (const m of r.members) {
+        m.flags = [];
+        m.status = "ok";
+      }
+      r.dao_flags = [];
+      member(r, A).flags = [flag("FA_RECENT", "high", A, member(r, A).keys[0]!.public_key)];
+      member(r, A).status = "high";
+      r.summary.status = "high";
+      return r;
+    };
+    const prev = only(dao());
+    const curr = later(structuredClone(prev), 144_000);
+    member(curr, A).flags = [];
+    member(curr, A).status = "ok";
+    curr.summary.status = "ok";
+    const d = diffReports(prev, curr);
+    assert.equal(d.summary.has_changes, false);
+    assert.equal(d.summary.status_before, "ok");
+    assert.equal(d.summary.status_after, "ok");
+    // A tracked flag still moves the status.
+    member(curr, B).flags = [flag("FA_MULTIPLE", "cleanup", B)];
+    member(curr, B).status = "cleanup";
+    assert.equal(diffReports(prev, curr).summary.status_after, "cleanup");
+  });
+
   it("a new app key is note, unless it matches FC_DAO_VOTE (high)", () => {
     const prev = dao();
     const curr = later(dao());
@@ -261,7 +289,7 @@ describe("GĐ2 diffReports: skips", () => {
     member(curr, A).flags = [];
     const d = diffReports(prev, curr);
     assert.deepEqual(d.changes.map((c) => c.type), ["key_added"]);
-    assert.ok(d.limitations.includes("The ruleset changed from 2026-11-02 to 2026-12-01; flag changes are not compared."));
+    assert.ok(d.limitations.includes("The ruleset changed from 2026-11-03 to 2026-12-01; flag changes are not compared."));
   });
 
   it("DAO-level flags are compared under the DAO id", () => {

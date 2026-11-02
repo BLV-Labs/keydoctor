@@ -91,8 +91,8 @@ describe("S4-AC1 negatives sit just under the threshold", () => {
     assert.equal((await scan("FA_OLD.neg.json")).members[0]!.keys[0]!.age_days, 730);
     assert.equal((await scan("FA_OLD.pos.json")).members[0]!.keys[0]!.age_days, 731);
   });
-  it("FA_RECENT pos was added exactly 48 h (144000 blocks) before the scan block, neg one block earlier", async () => {
-    for (const [f, blocks] of [["FA_RECENT.pos.json", 144_000], ["FA_RECENT.neg.json", 144_001]] as const) {
+  it("FA_RECENT pos was added exactly 48 h (288000 blocks) before the scan block, neg one block earlier", async () => {
+    for (const [f, blocks] of [["FA_RECENT.pos.json", 288_000], ["FA_RECENT.neg.json", 288_001]] as const) {
       const r = await scan(f);
       assert.equal(r.chain.block_height - r.members[0]!.keys[0]!.created.block_height!, blocks, f);
     }

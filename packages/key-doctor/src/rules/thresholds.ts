@@ -1,7 +1,7 @@
 import type { Network, Severity } from "../types.ts";
 
 // Changing any number in this file means bumping RULESET_VERSION.
-export const RULESET_VERSION = "2026-11-02";
+export const RULESET_VERSION = "2026-11-03";
 
 export const RULE_ORDER = [
   "FA_MANY",
@@ -58,8 +58,8 @@ export const ADMIN_LABELS = [
 ] as const;
 export const ADMIN_APPROVALS = 1;
 
-// Key age from the nonce.
-export const BLOCK_TIME_MS = 1200;
+// Key age from the nonce. Measured on mainnet and testnet in Nov 2026: about 0.58 s per block.
+export const BLOCK_TIME_MS = 600;
 export const MS_PER_DAY = 86_400_000;
 export const NONCE_BLOCK_DIVISOR = 1_000_000;
 export const GENESIS_HEIGHT: Record<Network, number> = { mainnet: 9_820_210, testnet: 42_376_888 };

@@ -4,7 +4,7 @@
   "network": "testnet",
   "rule": "FA_OLD",
   "fires": true,
-  "note": "full-access key added at block 129708111: age 731 days, 1 block over the 730-day limit (head 182340111)",
+  "note": "full-access key added at block 77076111: age 731 days, 1 block over the 730-day limit (head 182340111)",
   "responses": {
     "block": {
       "jsonrpc": "2.0",
@@ -29,7 +29,7 @@
           {
             "public_key": "ed25519:K89ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqr",
             "access_key": {
-              "nonce": 129708111000005,
+              "nonce": 77076111000005,
               "permission": "FullAccess"
             }
           }
