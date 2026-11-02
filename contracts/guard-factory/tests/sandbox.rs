@@ -217,3 +217,20 @@ async fn a_failed_guard_creation_refunds_the_dao_and_frees_the_name() -> anyhow:
     assert_eq!(e.guards_of(e.dao.id().as_str()).await?.as_array().unwrap().len(), 1);
     Ok(())
 }
+
+#[tokio::test]
+async fn only_the_factory_account_can_init_it() -> anyhow::Result<()> {
+    // Between the deploy and `new`, a watcher could otherwise init the factory with Guard code of their own.
+    let worker = near_workspaces::sandbox().await?;
+    let root = worker.root_account()?;
+    let factory = root.create_subaccount("factory").initial_balance(NearToken::from_near(40)).transact().await?.into_result()?;
+    let stranger = root.create_subaccount("stranger").initial_balance(NearToken::from_near(5)).transact().await?.into_result()?;
+    let factory = factory.deploy(&std::fs::read(FACTORY_WASM)?).await?.into_result()?;
+    let code = b"not the guard".to_vec();
+    let mut args = (code.len() as u32).to_le_bytes().to_vec();
+    args.extend(code);
+    let outcome = stranger.call(factory.id(), "new").args(args).max_gas().transact().await?;
+    assert!(outcome.is_failure(), "a stranger must not init the factory");
+    assert!(factory.view("get_code_hash").await.is_err(), "the factory must still be uninitialised");
+    Ok(())
+}

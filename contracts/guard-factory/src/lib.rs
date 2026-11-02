@@ -55,8 +55,10 @@ pub struct Factory {
 #[near]
 impl Factory {
     /// Publishes `guard_code` as a global contract by hash from this account and keeps the hash. The account
-    /// must hold enough NEAR for the global code storage (0.0001 NEAR per byte, burned).
+    /// must hold enough NEAR for the global code storage (0.0001 NEAR per byte, burned). Private: between the
+    /// deploy and this call, anyone else could otherwise init the factory with their own Guard code.
     #[init]
+    #[private]
     pub fn new(#[serializer(borsh)] guard_code: Vec<u8>) -> Self {
         let guard_code_hash: CryptoHash = env::sha256_array(&guard_code);
         Promise::new(env::current_account_id()).deploy_global_contract(guard_code).detach();
