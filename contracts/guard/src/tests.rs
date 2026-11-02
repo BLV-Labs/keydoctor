@@ -267,6 +267,20 @@ fn guard_keeps_bond_plus_reserve() {
     let _ = g.request_transfer("req-0001".into(), id(VENDOR), U128(NEAR), None);
 }
 
+#[test]
+#[should_panic(expected = "INSUFFICIENT_GUARD_BALANCE")]
+fn guard_keeps_bond_plus_storage_when_storage_outgrows_the_reserve() {
+    // Request records are stored at the Guard's cost: once they outgrow min_reserve, the storage cost is the floor.
+    let mut g = setup();
+    testing_env!(VMContextBuilder::new()
+        .current_account_id(id(GUARD))
+        .predecessor_account_id(id(AGENT))
+        .account_balance(NearToken::from_yoctonear(BOND + 3 * NEAR - 1))
+        .storage_usage(300_000) // 3 NEAR of storage > 1 NEAR reserve
+        .build());
+    let _ = g.request_transfer("req-0001".into(), id(VENDOR), U128(NEAR), None);
+}
+
 // ---- decision paths
 
 #[test]

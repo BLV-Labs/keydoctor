@@ -2,7 +2,7 @@
 # GĐ15 Guard spike (docs/final-idea.md §13.6, docs/stories/epics/guard/plan.md).
 # Proves that a contract member of a Sputnik v2 DAO can create a transfer proposal and approve it itself,
 # with the NEAR leaving the DAO in the same transaction. Answers G-Q1 (role JSON) and G-Q2 (gas).
-# G-Q1 (sandbox, tests/spike.rs): factory DAOs reject `ChangePolicyAddOrUpdateRole`, so add-role uses ChangePolicy.
+# G-Q1 (sandbox, tests/spike.rs, now tests/sandbox.rs): factory DAOs reject `ChangePolicyAddOrUpdateRole`, so add-role uses ChangePolicy.
 # Since GĐ16 `deploy` installs the full contract (new init args, `request_id` on transfer). The testnet run in
 # docs/guard-spike-2026-11-02.md used the GĐ15 spike contract (commit 56da33c).
 # Developer tool, not part of the product: it signs with YOUR testnet keys through near-cli-rs (`near`),

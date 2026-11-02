@@ -2,7 +2,7 @@
 
 Question: can a contract member of a Sputnik v2 DAO create a NEAR transfer proposal and approve it alone, with the money leaving the DAO in the same transaction? (`docs/final-idea.md` §11.3, §13.6; plan: `docs/stories/epics/guard/plan.md`)
 
-Code: `contracts/guard/src/lib.rs` (spike contract), `contracts/guard/tests/spike.rs` (sandbox run), `scripts/guard-setup/spike.sh` (testnet run).
+Code: `contracts/guard/src/lib.rs` (spike contract), `contracts/guard/tests/spike.rs` (sandbox run; now `tests/sandbox.rs`), `scripts/guard-setup/spike.sh` (testnet run).
 
 ## Status
 

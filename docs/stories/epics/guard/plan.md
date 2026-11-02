@@ -1,6 +1,6 @@
 # Guard implementation plan: GĐ15 to GĐ24
 
-Status: 2026-11-02. Owner accepted D1–D8 as recommended. GĐ15 done: spike passed in the sandbox and on testnet (tx `AgkVkFuJhs9GijiPQ4xZGbPVmQcN3qq41tRzSU1cZAza`). Results: `docs/guard-spike-2026-11-02.md`. GĐ16 done: full contract, 64 unit tests, sandbox run against the real Sputnik wasm (Auto, Pending, sync) passes.
+Status: 2026-11-02. Owner accepted D1–D8 as recommended. GĐ15 done: spike passed in the sandbox and on testnet (tx `AgkVkFuJhs9GijiPQ4xZGbPVmQcN3qq41tRzSU1cZAza`). Results: `docs/guard-spike-2026-11-02.md`. GĐ16 done: full contract with unit tests. GĐ17 done (11/11 go/no-go passed): 9 sandbox tests against the real Sputnik wasm cover every §13.6 case; gas and key allowance are in README "Agent Guard".
 
 Governing spec: `docs/final-idea.md` §4.8, §4.9, §5.3, §5.4, §11, §12, §13.6, §13.7, §16 (G-Q1 to G-Q5), and `docs/usecase.md` UC9 to UC14 plus appendices E, F, G. This plan does not change the spec. Where the spec conflicts with `CLAUDE.md`, §1 names the conflict and asks the owner.
 
@@ -11,7 +11,7 @@ Not in scope: `preflight` / `FA_RECENT` (PR 43, unrelated to the Guard contract)
 | Item | State |
 |---|---|
 | Guard spec | Merged into `feat/agent-guard` (commit `d2d6eab`, tusoict). `origin/guard_agent_update` has no newer commits |
-| Guard code | GĐ16: `contracts/guard` full contract (§11.5) + unit tests + sandbox test, `scripts/guard-setup/spike.sh`. No `apps/guard-mcp`, no `demo/invoices` |
+| Guard code | GĐ17: `contracts/guard` full contract (§11.5), 65 unit tests, 9 sandbox tests (`tests/sandbox.rs`), `scripts/guard-setup/spike.sh`. No `apps/guard-mcp`, no `demo/invoices` |
 | Entry gate (§13.4) | GĐ15 starts only when GĐ0 to GĐ10 meet "done when". Backlog: GĐ0, 1, 2 done; GĐ3, 4, 6, 7, 9 live; GĐ5, 8, 10 built with owner checks still open |
 | Cut dates (§13.7) | 11/11: GĐ17 not passing → Guard leaves the submission (experimental, Roadmap). 12/11: GĐ19 + GĐ20 not done → Guard leaves the video |
 | Tooling on the dev machine | rustc 1.95, `wasm32-unknown-unknown`, near-cli-rs 0.30.1, cargo-near 0.22. `cargo near build` output loads in the sandbox VM, no toolchain pin needed |
@@ -114,7 +114,7 @@ Gaps in §11.5 settled in code (the spec is silent or ambiguous; change here if 
 | Refund | Any final status except `Executed` gives the amount back, only while the request's `created_at` is still in the current window |
 | Late `on_voted` | If `sync_request` already saw the final status, `on_voted` changes nothing |
 | `request_id` | 8–64 chars of `[A-Za-z0-9_-]` (it goes into the one-line description) |
-| Hard checks | 8 codes: §11.5.4's 7 plus `INSUFFICIENT_GUARD_BALANCE` (balance < bond + `min_reserve`) |
+| Hard checks | 8 codes: §11.5.4's 7 plus `INSUFFICIENT_GUARD_BALANCE` (balance < bond + max(storage cost, `min_reserve`); GĐ17 added the storage term because request records are stored at the Guard's cost) |
 | Storage | DAO methods that add data are `#[payable]`, charge the bytes they add (`INSUFFICIENT_STORAGE_DEPOSIT`) and refund the rest; `withdraw_excess` keeps max(storage cost, `min_reserve`) |
 | JSON times | `U64` nanosecond strings, so JS readers keep precision |
 
@@ -125,6 +125,17 @@ Gaps in §11.5 settled in code (the spec is silent or ambiguous; change here if 
 **Why.** Callbacks and same-tx execution only show up against the real DAO wasm. This phase is the 11/11 go/no-go for Guard.
 
 Record gas per `request_transfer` (Auto and Pending) and the agent key allowance needed; put both in README "Guard".
+
+**Result (2026-11-02).** `tests/sandbox.rs` (replaces `tests/spike.rs`): 9 tests, one sandbox each, all pass. Each §13.6 case is one test, plus Reject refunds the bond, guardian cannot unpause, and a function-call key test. Numbers (gas price 1e8 yoctoNEAR/gas):
+
+| | Auto | Pending |
+|---|---|---|
+| Gas burnt | 14.6 Tgas | 7.9 Tgas |
+| Key allowance used after refund | 1.33 mNEAR | 0.74 mNEAR |
+
+- Lowest attached gas that works: 145 Tgas (140 fails in the first receipt, state unchanged). GĐ19 `guard-mcp` attaches **200 Tgas**.
+- NEAR checks the allowance against attached gas at a pessimistic price (about 1 mNEAR per Tgas) and refunds a few blocks later: at 200 Tgas the key needs > 0.2 NEAR left. GĐ18 keeps the 1 NEAR allowance (about 600 Auto requests).
+- Security review follow-up: the balance check now also covers the Guard's storage (records are never deleted). The fixed 24 h window (up to 2× `max_per_day` across a reset) is the spec's §11.5.7 rule; listed in README Limitations, not changed.
 
 ### GĐ18: testnet setup script (0.5 day)
 

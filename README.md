@@ -117,6 +117,15 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 
    The script prints p50/p95 latency per call, the time of a full scan through each RPC, and, with `--burst N`, when each source starts answering 429. Method, published rate limits and why NearBlocks cannot replace RPC: [`docs/data-sources-benchmark.md`](docs/data-sources-benchmark.md).
 
+8. **Test the Agent Guard contract** (needs Rust with the `wasm32-unknown-unknown` target and `cargo-near`)
+
+   ```bash
+   pnpm test:guard
+   cd contracts/guard && cargo test --test sandbox -- --nocapture
+   ```
+
+   The first command builds the wasm and runs 65 unit tests and 9 sandbox tests against the real Sputnik v2 contract in a local `near-workspaces` sandbox. The second prints the gas and allowance lines (`GAS ...`) quoted in [Agent Guard](#agent-guard-contract).
+
 ## Status
 
 | Phase | What | State |
@@ -135,6 +144,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 | GĐ10 | Network stats script | Built; numbers pending a live run |
 | GĐ12 | One-tap watch links: `POST /api/watch-link`, MCP `watch`, `/start <code>`, dashboard "Create links" | Deployed with the Worker; MCP `watch` is in `tools/list`, a link has not been opened live yet |
 | GĐ11, GĐ13 | History backtest, NearBlocks key dates | Not built (Roadmap) |
+| GĐ15–GĐ17 | Agent Guard contract (`contracts/guard`) | Built; 65 unit tests and 9 sandbox tests against the real Sputnik v2 wasm. A spike version paid a transfer on testnet (2026-11-02); the full contract is not deployed yet and agents have no MCP for it (Roadmap) |
 
 ## Agents
 
@@ -191,6 +201,20 @@ Proposal watch (`checkProposals`): a voter with a full-access key added in the l
 
 On post-quantum keys: no quantum computer breaks these keys today. The reason to start now is that moving keys takes years, and every public key on NEAR is already public.
 
+## Agent Guard (contract)
+
+`contracts/guard` is a NEAR contract that a DAO adds as a member with the `agent-guard` role (`transfer:AddProposal`, `transfer:VoteApprove`). An AI agent calls `request_transfer`. The Guard always creates a Sputnik transfer proposal. It approves the proposal itself only when the receiver is whitelisted and the amount is within the per-tx, per-recipient and rolling 24-hour limits; otherwise the proposal waits for the council. Only the DAO (by proposal) changes the limits, agents and whitelist. A guardian can pause it; only the DAO unpauses.
+
+Measured in the sandbox (`cargo test --test sandbox -- --nocapture`, gas price 100 million yoctoNEAR per gas, so 1 Tgas costs 0.1 mNEAR; this is the testnet and mainnet minimum):
+
+| `request_transfer` | Gas burnt | Allowance used, net |
+|---|---|---|
+| Auto (Guard approves, NEAR moves in the same tx) | 14.6 Tgas | 1.33 mNEAR |
+| Pending (proposal waits for the council) | 7.9 Tgas | 0.74 mNEAR |
+
+- **Attach 200 Tgas.** The Guard reserves gas for the DAO calls and callbacks up front, so a call with 140 Tgas or less fails before it changes anything; 145 Tgas was the lowest that worked.
+- **Agent key allowance.** The agent signs with a function-call key limited to the Guard and to `request_transfer` and `sync_request`. NEAR checks the allowance against the attached gas at a pessimistic price, about 1 mNEAR per Tgas, so at 200 Tgas the key needs more than 0.2 NEAR left even though each call uses about 1 mNEAR after the refund. A key with 0.2 NEAR is refused; 0.25 NEAR (the wallet default) works, but only for about 35 Auto requests. 1 NEAR lasts about 600.
+
 ## Limitations
 
 - ML-DSA keys can be added only in Meteor Wallet (its PQ screen). Key Doctor reads any ML-DSA key on chain but does not add one, and Here and HOT are not claimed to support it.
@@ -203,13 +227,14 @@ On post-quantum keys: no quantum computer breaks these keys today. The reason to
 - Four Sputnik v2 facts that `checkProposals` relies on (proposal-id semantics, proposal JSON, status values, kind labels) were taken from the contract source. A live check on a testnet DAO (2026-10-29) confirmed the first two; the other two are only partly confirmed (`packages/key-doctor/fixtures/README.md`).
 - Revoke and Delete work one key at a time. The wallet does not say which key it signs with, so the dashboard keeps two full-access keys. There is no bulk delete.
 - Cron messages are bilingual by default (`ALERT_LANG`), because subscriptions do not store a language.
+- Agent Guard: the 24-hour window restarts at the first request after it ends (`docs/final-idea.md` §11.5.7), so an agent can spend up to twice `max_per_day` without the council across a reset. Each request record is stored at the Guard's cost and never deleted; requests stop with `INSUFFICIENT_GUARD_BALANCE` once the balance no longer covers the bond plus that storage (or `min_reserve`, if higher).
 
 ## Roadmap
 
 - Show the exact time each key was added, from the NearBlocks indexer (`/v1/account/{id}/keys` returns `created` / `deleted`), next to the nonce-based estimate. See `docs/data-sources-benchmark.md`.
 - Backtest the proposal rules on 12 months of history (`kd.backtest.v1`), using NearBlocks for keys added and later removed.
 - Exact key creation dates from NearBlocks, and more rules.
-- **Agent Guard:** a Sputnik role that approves only in-policy transfers, moving from "detect and warn" to "block".
+- **Agent Guard on testnet:** deploy the full contract with a setup script, an MCP server the agent runs on its own machine, Telegram alerts for Guard proposals, and a Guard card on the dashboard.
 - Link a Telegram user to a NEAR account by signature to mention voters by name. Discord and email alerts. Near-real-time watching through an indexer.
 - Add ML-DSA keys in the dashboard when wallet-selector supports them. Integration with wallets and treasury tools.
 
@@ -242,8 +267,9 @@ After the first setup (steps 1 to 5), every later release is one command: `pnpm 
   - wrangler (Worker dev and deploy, with `undici` pinned to 7.30.1 for a security fix)
   - `@types/node`
 - **Tests:** Node's built-in `node:test`, and `node:sqlite` as a stand-in for D1.
+- **Agent Guard contract (Rust):** `near-sdk` 5.30, built with `cargo-near`; tests use `near-workspaces` 0.24, `tokio`, `serde_json` and `anyhow`.
 - **AI-written code:** all code, tests and English docs in this repo were written by Claude Code (Anthropic) from the team's Vietnamese specs (`docs/final-idea.md`, `docs/usecase.md`). The team wrote the specs, approved the design mockup (`docs/design/dashboard/`) and ran the live testnet checks recorded in `packages/key-doctor/fixtures/README.md`.
-- **Prepared data:** the fixtures in `packages/key-doctor/fixtures/` are hand-built with testnet names only. Their public keys are random. The dashboard design handoff was made before the build.
+- **Prepared data:** the fixtures in `packages/key-doctor/fixtures/` are hand-built with testnet names only. Their public keys are random. The dashboard design handoff was made before the build. `contracts/guard/tests/res/sputnik_dao_v2.wasm` is the Sputnik v2 contract downloaded from a testnet DAO (source and sha256 in that folder's README).
 
 ## License
 

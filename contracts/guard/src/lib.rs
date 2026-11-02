@@ -135,7 +135,7 @@ impl Guard {
         require!(amount.0 > 0, "INVALID_AMOUNT");
         require!(pending < self.policy.max_pending_per_agent, "TOO_MANY_PENDING");
         require!(
-            env::account_balance().as_yoctonear() >= self.proposal_bond.saturating_add(self.policy.min_reserve.0),
+            env::account_balance().as_yoctonear() >= self.proposal_bond.saturating_add(self.reserve()),
             "INSUFFICIENT_GUARD_BALANCE"
         );
 
@@ -386,9 +386,7 @@ impl Guard {
     #[payable]
     pub fn withdraw_excess(&mut self) -> Promise {
         self.assert_dao();
-        let storage = env::storage_byte_cost().as_yoctonear() * env::storage_usage() as u128;
-        let keep = storage.max(self.policy.min_reserve.0);
-        let excess = env::account_balance().as_yoctonear().saturating_sub(keep);
+        let excess = env::account_balance().as_yoctonear().saturating_sub(self.reserve());
         require!(excess > 0, "NOTHING_TO_WITHDRAW");
         Promise::new(self.dao_id.clone()).transfer(NearToken::from_yoctonear(excess))
     }
@@ -506,6 +504,13 @@ impl Guard {
         }
         r.status = status;
         r.updated_at = U64(now);
+    }
+
+    /// What the Guard must keep: its storage cost, or `min_reserve` when higher. Each request record adds storage
+    /// the Guard pays for, so once records outgrow `min_reserve` requests stop instead of failing mid-flow.
+    fn reserve(&self) -> u128 {
+        let storage = env::storage_byte_cost().as_yoctonear() * env::storage_usage() as u128;
+        storage.max(self.policy.min_reserve.0)
     }
 
     fn push_recent(&mut self, request_id: String) {
