@@ -9,7 +9,11 @@ import { PAGE_SIZE, pageOf, parsePaging, type Paging } from "./paging.ts";
 import { renderKeyDetail } from "./key-detail.ts";
 import { PROPOSALS_ID, PROPOSALS_LIST, renderProposals } from "./proposals-view.ts";
 import { renderAccount, renderCouncil } from "./report.ts";
-import { homeHref, parseRoute, resolveInput, routeHref, type Page, type Route } from "./route.ts";
+import { guardHref, homeHref, parseRoute, resolveInput, routeHref, suffixNetwork, type Page, type Route } from "./route.ts";
+import { formToInput, validateGuardForm } from "./guard-form.ts";
+import { addGuardRoleProposal, createGuardProposal, guardChangeProposal, isGuardMethod, missingProposePermissions } from "./guard-proposals.ts";
+import { readGuardDao, type GuardDao } from "./guard-read.ts";
+import { renderGuardCreate, renderGuardDao, renderGuardLoading, renderGuardPreview, renderGuardStart, renderGuardSubmitted, type GuardPreview } from "./guard-view.ts";
 import { renderWatchDialog, renderWatchLinks } from "./watch.ts";
 import { isWalletId, walletLabel, type WalletId } from "./wallets.ts";
 import { connectedAccount, forgetConnected, lockedNotice, rememberConnected, viewerRole, walletBar, type Role } from "./session.ts";
@@ -17,6 +21,12 @@ import { connectedAccount, forgetConnected, lockedNotice, rememberConnected, vie
 declare const __KD_WORKER_URL__: string;
 /** Set at build time (KD_WORKER_URL); empty means the MVP dialog with no Worker call. */
 const WORKER_URL = typeof __KD_WORKER_URL__ === "string" ? __KD_WORKER_URL__.replace(/\/+$/, "") : "";
+declare const __KD_GUARD_FACTORY__: string;
+/** Set at build time (KD_GUARD_FACTORY); empty means the Agent Guard page only explains how to configure it. */
+const GUARD_FACTORY = typeof __KD_GUARD_FACTORY__ === "string" ? __KD_GUARD_FACTORY__ : "";
+/** The Agent Guard page's last read, and the proposals its preview would sign. */
+let guardState: GuardDao | null = null;
+let guardPreview: (GuardPreview & { labels: string[] }) | null = null;
 
 const root = document.getElementById("app") as HTMLElement;
 let scanSeq = 0;
@@ -186,6 +196,10 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
     if (focusMain) document.getElementById("main")?.focus({ preventScroll: true });
     return;
   }
+  if (route.target === null && route.page === "guard") {
+    await renderGuard(route.dao, focusMain, seq);
+    return;
+  }
   if (route.target === null && route.page !== "check") {
     const network = route.network ?? storedNetwork();
     if (route.page === "oncall") paint(renderOnCall(), "On Call · Key Doctor", focusMain, network, "oncall");
@@ -212,6 +226,128 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
     if (!isKdError(e)) console.error("scan failed", { target, error: e });
     paint(renderError(target, route.from, isKdError(e) ? e.kd : UNKNOWN_ERROR, network), `${target} · Key Doctor`, false, network);
   }
+}
+
+/** The Agent Guard page: the DAO form, or the DAO's Guards read live. Guards exist only on the factory's network. */
+async function renderGuard(dao: string | null, focusMain: boolean, seq: number): Promise<void> {
+  const network = suffixNetwork(GUARD_FACTORY) ?? "testnet";
+  guardState = null;
+  guardPreview = null;
+  const title = "Agent Guard · Key Doctor";
+  if (dao === null || GUARD_FACTORY === "") {
+    paint(renderGuardStart("", null, GUARD_FACTORY), title, focusMain, network, "guard");
+    return;
+  }
+  if (suffixNetwork(dao) !== network) {
+    paint(renderGuardStart(dao, `The Guard factory is on ${network}: enter a ${network} DAO.`, GUARD_FACTORY), title, focusMain, network, "guard");
+    return;
+  }
+  paint(renderGuardLoading(dao), title, focusMain, network, "guard");
+  try {
+    const state = await readGuardDao(dao, GUARD_FACTORY, network);
+    if (seq !== scanSeq) return;
+    guardState = state;
+    paint(renderGuardDao(state, network), `${dao} · Agent Guard`, false, network, "guard");
+  } catch (e) {
+    if (seq !== scanSeq) return;
+    if (!isKdError(e)) console.error("guard read failed", { dao, error: e });
+    const why = isKdError(e) && e.kd.code !== "NOT_A_DAO" ? e.kd.message.en : `${dao} is not a Sputnik DAO, or the factory could not be read.`;
+    paint(renderGuardStart(dao, why, GUARD_FACTORY), title, false, network, "guard");
+  }
+}
+
+function showGuardPreview(preview: GuardPreview & { labels: string[] }): void {
+  guardPreview = preview;
+  const box = document.getElementById("guard-preview");
+  if (box === null) return;
+  box.innerHTML = renderGuardPreview(preview).value;
+  box.scrollIntoView({ block: "start" });
+  box.querySelector<HTMLElement>("h2")?.setAttribute("tabindex", "-1");
+  box.querySelector<HTMLElement>("h2")?.focus({ preventScroll: true });
+}
+
+/** The create form: valid input previews P1 (factory.create) and P2 (the agent-guard role); invalid input re-renders the form with its errors. */
+function submitGuardCreate(form: HTMLFormElement): void {
+  if (guardState === null) return;
+  const data = new FormData(form);
+  const get = (name: string) => String(data.get(name) ?? "");
+  const result = validateGuardForm(formToInput(get), guardState.factory);
+  if (!result.ok) {
+    const values = Object.fromEntries([...data.entries()].map(([k, v]) => [k, String(v)]));
+    form.outerHTML = renderGuardCreate(guardState.factory, values, result.errors).value;
+    document.querySelector<HTMLElement>('#guard-create-form [aria-invalid="true"]')?.focus();
+    return;
+  }
+  const role = addGuardRoleProposal(guardState.policy, result.guardId);
+  showGuardPreview({
+    dao: guardState.dao,
+    bond: guardState.policy.proposal_bond,
+    proposals: role === null ? [createGuardProposal(guardState.factory, result.args, result.depositYocto)] : [createGuardProposal(guardState.factory, result.args, result.depositYocto), role],
+    labels: role === null ? ["call"] : ["call", "policy"],
+    notes: [
+      `Both proposals need the council's votes. The Guard can propose transfers only after both pass: P1 creates ${result.guardId}, P2 lets it into the agent-guard role.`,
+      "If P1 fails on chain, the factory refunds the funding to the DAO.",
+    ],
+  });
+}
+
+function submitGuardChange(form: HTMLFormElement): void {
+  if (guardState === null) return;
+  const data = new FormData(form);
+  const method = String(data.get("method") ?? "");
+  const guardId = form.dataset.guard ?? "";
+  const error = form.querySelector<HTMLElement>("[data-change-error]") ?? form.appendChild(Object.assign(document.createElement("p"), { className: "field-error" }));
+  error.dataset.changeError = "";
+  let args: unknown;
+  try {
+    args = JSON.parse(String(data.get("args") ?? ""));
+  } catch {
+    args = null;
+  }
+  if (!isGuardMethod(method) || typeof args !== "object" || args === null || Array.isArray(args)) {
+    error.textContent = "Arguments must be one JSON object, e.g. {}.";
+    return;
+  }
+  error.textContent = "";
+  showGuardPreview({ dao: guardState.dao, bond: guardState.policy.proposal_bond, proposals: [guardChangeProposal(guardId, method, args)], labels: ["call"], notes: [] });
+}
+
+/** Signs the previewed proposals with the connected wallet, after checking the account may propose them. */
+function signGuardProposals(button: HTMLButtonElement): void {
+  const status = document.getElementById("guard-sign-status");
+  const preview = guardPreview;
+  const state = guardState;
+  if (status === null || preview === null || state === null) return;
+  if (connected === null) {
+    const fix = document.createElement("button");
+    fix.type = "button";
+    fix.className = "btn btn-tint";
+    fix.dataset.action = "open-wallet";
+    fix.textContent = "Connect Wallet";
+    status.replaceChildren("Connect the wallet of a council member first. ", fix);
+    return;
+  }
+  // A proposal the DAO refuses still costs a failed transaction: say so before the wallet opens.
+  const account = connected.accounts.find((a) => missingProposePermissions(state.policy, a, preview.labels).length === 0);
+  if (account === undefined) {
+    const shown = connected.accounts[0] ?? "no account";
+    const missing = missingProposePermissions(state.policy, shown, preview.labels);
+    status.textContent = `${shown} may not add ${missing.join(" and ")} proposals in ${state.dao}. Switch to a council account.`;
+    return;
+  }
+  const { walletId } = connected;
+  const network = suffixNetwork(state.dao) ?? "testnet";
+  button.disabled = true;
+  status.textContent = `Waiting for ${walletLabel(walletId)}. Check the transaction there before you approve.`;
+  import("./wallet.ts")
+    .then((w) => w.signAddProposals(account, network, state.dao, state.policy.proposal_bond, preview.proposals, walletId, (t) => (status.textContent = t)))
+    .then(() => {
+      status.innerHTML = renderGuardSubmitted(state.dao).value;
+    })
+    .catch((e: unknown) => {
+      button.disabled = false;
+      status.textContent = `Not done: ${e instanceof Error ? e.message : "the wallet did not sign."}`;
+    });
 }
 
 /**
@@ -478,6 +614,9 @@ root.addEventListener("click", (event) => {
     case "rescan":
       void render(false);
       break;
+    case "guard-sign":
+      signGuardProposals(el as HTMLButtonElement);
+      break;
     case "theme":
       setTheme(currentTheme() === "dark" ? "light" : "dark", true);
       break;
@@ -553,6 +692,22 @@ root.addEventListener(
 
 root.addEventListener("submit", (event) => {
   const form = event.target as HTMLFormElement;
+  if (form.id === "guard-dao-form") {
+    event.preventDefault();
+    const raw = String(new FormData(form).get("dao") ?? "").trim();
+    navigate(guardHref(raw));
+    return;
+  }
+  if (form.id === "guard-create-form") {
+    event.preventDefault();
+    submitGuardCreate(form);
+    return;
+  }
+  if (form.classList.contains("guard-change-form")) {
+    event.preventDefault();
+    submitGuardChange(form);
+    return;
+  }
   if (form.id !== "check-form") return;
   event.preventDefault();
   const raw = String(new FormData(form).get("target") ?? "");

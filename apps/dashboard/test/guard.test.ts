@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { nearToYocto } from "../src/format.ts";
-import { MAX_AGENTS, validateGuardForm, type GuardFormInput } from "../src/guard-form.ts";
+import { formToInput, MAX_AGENTS, validateGuardForm, type GuardFormInput } from "../src/guard-form.ts";
 import {
   addGuardRoleProposal,
   createGuardProposal,
   GUARD_PERMISSIONS,
+  GUARD_STORAGE_DEPOSIT,
   guardChangeProposal,
   missingProposePermissions,
   type RawPolicy,
@@ -157,13 +158,21 @@ describe("addGuardRoleProposal", () => {
 });
 
 describe("guardChangeProposal", () => {
+  type Call = { receiver_id: string; actions: { method_name: string; args: string; deposit: string }[] };
   it("calls the DAO-only method on the Guard with the args encoded", () => {
     const p = guardChangeProposal(`payroll.${FACTORY}`, "add_agent", { account_id: "bot2.kdoncall.testnet", label: "b2" });
-    const call = p.proposal.kind.FunctionCall as { receiver_id: string; actions: { method_name: string; args: string; deposit: string }[] };
+    const call = p.proposal.kind.FunctionCall as Call;
     assert.equal(call.receiver_id, `payroll.${FACTORY}`);
     assert.equal(call.actions[0]!.method_name, "add_agent");
-    assert.equal(call.actions[0]!.deposit, "0");
     assert.deepEqual(decodeArgs(call.actions[0]!.args), { account_id: "bot2.kdoncall.testnet", label: "b2" });
+  });
+  // The Guard charges storage from the attached deposit (INSUFFICIENT_STORAGE_DEPOSIT): a zero deposit would pass the
+  // vote and then fail on execution.
+  it("attaches a storage deposit only to the methods that add an entry", () => {
+    const deposit = (m: "add_agent" | "add_whitelist" | "add_guardian" | "remove_agent" | "unpause") =>
+      (guardChangeProposal(`payroll.${FACTORY}`, m, {}).proposal.kind.FunctionCall as Call).actions[0]!.deposit;
+    for (const m of ["add_agent", "add_whitelist", "add_guardian"] as const) assert.equal(deposit(m), GUARD_STORAGE_DEPOSIT, m);
+    for (const m of ["remove_agent", "unpause"] as const) assert.equal(deposit(m), "0", m);
   });
 });
 
@@ -178,5 +187,28 @@ describe("missingProposePermissions", () => {
     assert.deepEqual(missingProposePermissions(p, "alice.testnet", ["call", "policy"]), []);
     assert.deepEqual(missingProposePermissions(p, "bob.testnet", ["call", "policy"]), ["policy"]);
     assert.deepEqual(missingProposePermissions(p, "eve.testnet", ["call", "policy"]), ["call", "policy"]);
+  });
+});
+
+describe("formToInput", () => {
+  it("reads one entry per line and keeps commas inside labels", () => {
+    const fields: Record<string, string> = {
+      name: " payroll ",
+      agents: "bot.kdoncall.testnet, payroll bot\n\n  bot2.kdoncall.testnet  ",
+      whitelist: "vendor.kdoncall.testnet, vendor\nrent.kdoncall.testnet, rent, office, 0.5",
+      guardians: "alice.testnet\n",
+    };
+    const input = formToInput((n) => fields[n] ?? "");
+    assert.equal(input.name, "payroll");
+    assert.deepEqual(input.agents, [
+      { account_id: "bot.kdoncall.testnet", label: "payroll bot" },
+      { account_id: "bot2.kdoncall.testnet", label: "" },
+    ]);
+    // Two fields means no cap: the receiver falls back to the global per-tx limit.
+    assert.deepEqual(input.whitelist, [
+      { account_id: "vendor.kdoncall.testnet", label: "vendor", max_per_tx: "" },
+      { account_id: "rent.kdoncall.testnet", label: "rent, office", max_per_tx: "0.5" },
+    ]);
+    assert.deepEqual(input.guardians, ["alice.testnet"]);
   });
 });

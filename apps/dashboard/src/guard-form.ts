@@ -149,3 +149,36 @@ export function validateGuardForm(input: GuardFormInput, factory: string): Guard
     },
   };
 }
+
+const lines = (raw: string): string[] =>
+  raw
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l !== "");
+
+/** One entry per line, fields split on commas: the label is everything between the account id and the cap. */
+function splitLine(line: string): string[] {
+  return line.split(",").map((p) => p.trim());
+}
+
+/** The form's raw fields to `GuardFormInput`. Agents: `account, label`. Whitelist: `account, label, cap` (cap may be empty). */
+export function formToInput(get: (name: string) => string): GuardFormInput {
+  return {
+    name: get("name").trim(),
+    maxPerTx: get("maxPerTx").trim(),
+    maxPerDay: get("maxPerDay").trim(),
+    maxPendingPerAgent: get("maxPendingPerAgent").trim(),
+    minReserve: get("minReserve").trim(),
+    funding: get("funding").trim(),
+    agents: lines(get("agents")).map((l) => {
+      const [account_id = "", ...label] = splitLine(l);
+      return { account_id, label: label.join(", ") };
+    }),
+    whitelist: lines(get("whitelist")).map((l) => {
+      const [account_id = "", ...rest] = splitLine(l);
+      const max_per_tx = rest.length >= 2 ? rest.pop()! : "";
+      return { account_id, label: rest.join(", "), max_per_tx };
+    }),
+    guardians: lines(get("guardians")),
+  };
+}

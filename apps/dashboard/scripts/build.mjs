@@ -15,6 +15,12 @@ if (workerUrl && !/^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(workerUrl) && !/^http:\
   throw new Error("KD_WORKER_URL must be an https origin, e.g. https://key-doctor.example.workers.dev");
 }
 
+// Optional Guard factory account for the Agent Guard page. Empty keeps the page as setup instructions only.
+const guardFactory = process.env.KD_GUARD_FACTORY ?? "";
+if (guardFactory && !/^[a-z0-9_-]+(\.[a-z0-9_-]+)*\.(testnet|near)$/.test(guardFactory)) {
+  throw new Error("KD_GUARD_FACTORY must be a .testnet or .near account, e.g. guards.kdfactory.testnet");
+}
+
 rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist, { recursive: true });
 cpSync(join(app, "public"), dist, { recursive: true });
@@ -38,7 +44,7 @@ const options = {
   logLevel: "info",
   alias: { buffer: "buffer/", util: "util/", crypto: join(here, "crypto-shim.mjs") },
   inject: [join(here, "buffer-shim.mjs")],
-  define: { global: "globalThis", "process.env.NODE_ENV": JSON.stringify("production"), "process.env": "{}", "process.browser": "true", "process.version": JSON.stringify(""), "process.platform": JSON.stringify("browser"), __KD_WORKER_URL__: JSON.stringify(workerUrl) },
+  define: { global: "globalThis", "process.env.NODE_ENV": JSON.stringify("production"), "process.env": "{}", "process.browser": "true", "process.version": JSON.stringify(""), "process.platform": JSON.stringify("browser"), __KD_WORKER_URL__: JSON.stringify(workerUrl), __KD_GUARD_FACTORY__: JSON.stringify(guardFactory) },
 };
 
 if (serve) {

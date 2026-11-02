@@ -74,26 +74,35 @@ export function addGuardRoleProposal(policy: RawPolicy, guardId: string): AddPro
 }
 
 /** The DAO-only Guard methods the "Propose change" form offers. */
-export type GuardMethod =
-  | "set_policy"
-  | "add_agent"
-  | "remove_agent"
-  | "set_agent_enabled"
-  | "add_whitelist"
-  | "remove_whitelist"
-  | "add_guardian"
-  | "unpause"
-  | "withdraw_excess";
+export const GUARD_METHODS = [
+  "set_policy",
+  "add_agent",
+  "remove_agent",
+  "set_agent_enabled",
+  "add_whitelist",
+  "remove_whitelist",
+  "add_guardian",
+  "unpause",
+  "withdraw_excess",
+] as const;
+export type GuardMethod = (typeof GUARD_METHODS)[number];
+
+export const isGuardMethod = (m: unknown): m is GuardMethod => (GUARD_METHODS as readonly unknown[]).includes(m);
+
+/** Methods that add an entry: the Guard refuses them without a deposit for the storage and refunds the rest to the DAO. */
+const STORAGE_METHODS: readonly GuardMethod[] = ["add_agent", "add_whitelist", "add_guardian"];
+export const GUARD_STORAGE_DEPOSIT = "10000000000000000000000";
 
 /** A FunctionCall proposal DAO → Guard, the only way to change a locked Guard. */
-export function guardChangeProposal(guardId: string, method: GuardMethod, args: object, depositYocto = "0"): AddProposalArgs {
+export function guardChangeProposal(guardId: string, method: GuardMethod, args: object): AddProposalArgs {
+  const deposit = STORAGE_METHODS.includes(method) ? GUARD_STORAGE_DEPOSIT : "0";
   return {
     proposal: {
       description: `Agent Guard ${guardId}: ${method}`,
       kind: {
         FunctionCall: {
           receiver_id: guardId,
-          actions: [{ method_name: method, args: base64Json(args), deposit: depositYocto, gas: GUARD_CALL_GAS }],
+          actions: [{ method_name: method, args: base64Json(args), deposit, gas: GUARD_CALL_GAS }],
         },
       },
     },

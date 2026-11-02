@@ -9,7 +9,7 @@ import { alertLines } from "./watch.ts";
 export const EXAMPLE_DAO = "kdoncall.sputnik-v2.testnet";
 export const EXAMPLE_ACCOUNT = "kdoncall-p.testnet";
 
-const NAV: ReadonlyArray<readonly [Page, string]> = [["check", "Check"], ["oncall", "On Call"], ["agents", "Agents"]];
+const NAV: ReadonlyArray<readonly [Page, string]> = [["check", "Check"], ["oncall", "On Call"], ["agents", "Agents"], ["guard", "Agent Guard"]];
 
 export function renderLayout(content: Html, network: Network = "testnet", page: Page = "check"): Html {
   const nav = NAV.map(
@@ -177,7 +177,7 @@ const AGENT_PROMPTS = [
   `What changed on ${EXAMPLE_DAO} since the last baseline?`,
 ];
 
-function copyRow(command: string): Html {
+export function copyRow(command: string): Html {
   return html`<div class="command-row"><code class="command mono wrap">${command}</code>
     <button type="button" class="btn btn-secondary" data-action="copy-command" data-command="${command}">${icon.copy()}<span data-copy-label>Copy</span></button></div>`;
 }
