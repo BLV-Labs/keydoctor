@@ -145,6 +145,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 | GĐ12 | One-tap watch links: `POST /api/watch-link`, MCP `watch`, `/start <code>`, dashboard "Create links" | Deployed with the Worker; MCP `watch` is in `tools/list`, a link has not been opened live yet |
 | GĐ11, GĐ13 | History backtest, NearBlocks key dates | Not built (Roadmap) |
 | GĐ15–GĐ17 | Agent Guard contract (`contracts/guard`) | Built; 65 unit tests and 9 sandbox tests against the real Sputnik v2 wasm. A spike version paid a transfer on testnet (2026-11-02); the full contract is not deployed yet and agents have no MCP for it (Roadmap) |
+| GĐ18 | Guard testnet setup script (`scripts/guard-setup/setup.sh`) | Written; read-only steps checked against testnet, the signing steps not yet run |
 
 ## Agents
 
@@ -215,6 +216,14 @@ Measured in the sandbox (`cargo test --test sandbox -- --nocapture`, gas price 1
 - **Attach 200 Tgas.** The Guard reserves gas for the DAO calls and callbacks up front, so a call with 140 Tgas or less fails before it changes anything; 145 Tgas was the lowest that worked.
 - **Agent key allowance.** The agent signs with a function-call key limited to the Guard and to `request_transfer` and `sync_request`. NEAR checks the allowance against the attached gas at a pessimistic price, about 1 mNEAR per Tgas, so at 200 Tgas the key needs more than 0.2 NEAR left even though each call uses about 1 mNEAR after the refund. A key with 0.2 NEAR is refused; 0.25 NEAR (the wallet default) works, but only for about 35 Auto requests. 1 NEAR lasts about 600.
 
+Set up on testnet (not yet run end to end; it signs with your own testnet keys through near-cli-rs, and needs `cargo-near`, Node 22 and `jq`):
+
+```bash
+KD_GUARD_PREFIX=kdg$(date +%s) scripts/guard-setup/setup.sh all
+```
+
+The script creates the council and demo accounts with the testnet faucet, a 3-member DAO that needs 2 votes, deploys and initialises the Guard (5 NEAR per request, 10 NEAR per 24 hours, 3 whitelisted receivers), adds the `agent-guard` role and funds the Guard by DAO proposals, gives the agent account a function-call key limited to the Guard (allowance 1 NEAR), and finally deletes the Guard's full-access keys after a `y/N` prompt. The agent's private key goes to a file (`~/.config/key-doctor/<agent>.json`, mode 600, or `KD_GUARD_AGENT_KEY`), never to the terminal. Done steps are skipped on a re-run; `setup.sh verify` checks the result and `setup.sh info` prints the accounts.
+
 ## Limitations
 
 - ML-DSA keys can be added only in Meteor Wallet (its PQ screen). Key Doctor reads any ML-DSA key on chain but does not add one, and Here and HOT are not claimed to support it.
@@ -234,7 +243,7 @@ Measured in the sandbox (`cargo test --test sandbox -- --nocapture`, gas price 1
 - Show the exact time each key was added, from the NearBlocks indexer (`/v1/account/{id}/keys` returns `created` / `deleted`), next to the nonce-based estimate. See `docs/data-sources-benchmark.md`.
 - Backtest the proposal rules on 12 months of history (`kd.backtest.v1`), using NearBlocks for keys added and later removed.
 - Exact key creation dates from NearBlocks, and more rules.
-- **Agent Guard on testnet:** deploy the full contract with a setup script, an MCP server the agent runs on its own machine, Telegram alerts for Guard proposals, and a Guard card on the dashboard.
+- **Agent Guard on testnet:** the full contract deployed by the setup script, an MCP server the agent runs on its own machine, Telegram alerts for Guard proposals, and a Guard card on the dashboard.
 - Link a Telegram user to a NEAR account by signature to mention voters by name. Discord and email alerts. Near-real-time watching through an indexer.
 - Add ML-DSA keys in the dashboard when wallet-selector supports them. Integration with wallets and treasury tools.
 

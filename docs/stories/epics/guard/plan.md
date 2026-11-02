@@ -11,7 +11,7 @@ Not in scope: `preflight` / `FA_RECENT` (PR 43, unrelated to the Guard contract)
 | Item | State |
 |---|---|
 | Guard spec | Merged into `feat/agent-guard` (commit `d2d6eab`, tusoict). `origin/guard_agent_update` has no newer commits |
-| Guard code | GĐ17: `contracts/guard` full contract (§11.5), 65 unit tests, 9 sandbox tests (`tests/sandbox.rs`), `scripts/guard-setup/spike.sh`. No `apps/guard-mcp`, no `demo/invoices` |
+| Guard code | GĐ18: `contracts/guard` full contract (§11.5), 65 unit tests, 9 sandbox tests (`tests/sandbox.rs`), `scripts/guard-setup/spike.sh`, `scripts/guard-setup/setup.sh` (owner testnet run pending). No `apps/guard-mcp`, no `demo/invoices` |
 | Entry gate (§13.4) | GĐ15 starts only when GĐ0 to GĐ10 meet "done when". Backlog: GĐ0, 1, 2 done; GĐ3, 4, 6, 7, 9 live; GĐ5, 8, 10 built with owner checks still open |
 | Cut dates (§13.7) | 11/11: GĐ17 not passing → Guard leaves the submission (experimental, Roadmap). 12/11: GĐ19 + GĐ20 not done → Guard leaves the video |
 | Tooling on the dev machine | rustc 1.95, `wasm32-unknown-unknown`, near-cli-rs 0.30.1, cargo-near 0.22. `cargo near build` output loads in the sandbox VM, no toolchain pin needed |
@@ -142,6 +142,16 @@ Record gas per `request_transfer` (Auto and Pending) and the agent key allowance
 **What.** `scripts/guard-setup/setup.sh` (near-cli-rs, idempotent where it can be, `set -euo pipefail`): create DAO (3 members, 2 votes), deploy + `new(...)` the Guard, add-role proposal + 2 approvals, fund-Guard proposal + approvals, create `agent1` account + function-call key (`receiver_id = guard`, methods `request_transfer`, `sync_request`, allowance 1 NEAR), register the agent, whitelist the 3 demo receivers, then **lock** the Guard (delete its full-access key) behind an explicit `y/N` prompt. Writes the agent key to a file path the owner chooses, never to stdout. Answers G-Q4 (near-cli for `AddKey`).
 
 **Why.** UC9/UC10 must be one command so the demo and the judges can rebuild it.
+
+**Result (2026-11-02, owner testnet run pending).** `setup.sh` (steps `accounts dao guard role fund agent verify lock info`, `all` runs them in order) plus `near.mjs` (read-only RPC, yoctoNEAR math, agent keygen; no dependencies).
+- G-Q4: near-cli-rs does the `AddKey` (`account add-key ... grant-function-call-access ... use-manually-provided-public-key`). The key pair is generated locally by `near.mjs keygen` (node crypto, near-cli JSON, mode 600, never overwrites); only the public key is printed.
+- Idempotent: every step checks chain state first. Proposals are found by a fixed `[kd-guard-setup]` description; an InProgress one is resumed, votes already cast are skipped. A re-run of `fund` does not top up again once the fund proposal is Approved.
+- Role: `ChangePolicy` with the full current policy (G-Q1), `diff -u` printed before proposing. Role equality is checked on sorted permissions and members, because `get_policy` returns hash-set order.
+- Guard account with code is accepted only if `kd_guard_info` reports version 1.x and the same `dao_id` (the spike guard is refused).
+- Balances: Guard wasm ≈ 2.4 NEAR storage; a factory DAO created with 6 NEAR has ≈ 1.2 NEAR spendable, so `fund` has b and c top up the DAO to `KD_GUARD_FUND` + `KD_DAO_TREASURY` (default 1 + 8 NEAR) first.
+- `lock` runs `verify` (role, no other role names the Guard, Guard config, agent enabled, 3 receivers, balances, agent key = FunctionCall on the Guard with exactly the two methods), lists the full-access keys, reads `y/N` from the terminal, then checks that none remain.
+- Agent key file must be outside the repo (the script refuses a path inside it).
+- Not run yet: every signing step (D7: the owner runs it with a new prefix). The security review of `contracts/guard` before deploy (§3) ran in GĐ17.
 
 ### GĐ19: Guard MCP + demo invoices (0.5–1 day)
 
