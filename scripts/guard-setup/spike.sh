@@ -3,12 +3,14 @@
 # Proves that a contract member of a Sputnik v2 DAO can create a transfer proposal and approve it itself,
 # with the NEAR leaving the DAO in the same transaction. Answers G-Q1 (role JSON) and G-Q2 (gas).
 # G-Q1 (sandbox, tests/spike.rs): factory DAOs reject `ChangePolicyAddOrUpdateRole`, so add-role uses ChangePolicy.
+# Since GĐ16 `deploy` installs the full contract (new init args, `request_id` on transfer). The testnet run in
+# docs/guard-spike-2026-11-02.md used the GĐ15 spike contract (commit 56da33c).
 # Developer tool, not part of the product: it signs with YOUR testnet keys through near-cli-rs (`near`),
 # stored in your local keychain. Testnet only. Run one step at a time:
 #
 #   scripts/guard-setup/spike.sh accounts      # create a, b, c and the guard account with the testnet faucet
 #   scripts/guard-setup/spike.sh dao           # a creates <prefix>.sputnik-v2.testnet (council a, b, c; 2 of 3)
-#   scripts/guard-setup/spike.sh deploy        # build the spike wasm and deploy it to the guard account
+#   scripts/guard-setup/spike.sh deploy        # build the Guard wasm and deploy it to the guard account
 #   scripts/guard-setup/spike.sh add-role      # a proposes ChangePolicy: current policy plus role "agent-guard"
 #   scripts/guard-setup/spike.sh approve-role  # a and b approve the role proposal
 #   scripts/guard-setup/spike.sh transfer      # a (the agent) calls guard.request_transfer: 0.1 NEAR to c
@@ -85,12 +87,16 @@ case "${1:-}" in
     echo "DAO: $DAO  proposal_bond: $(view "$DAO" get_policy '{}' | jq -r .proposal_bond)"
     ;;
   deploy)
-    bond=$(view "$DAO" get_policy '{}' | jq -r .proposal_bond)
     path=$(wasm)
     echo "wasm: $path ($(wc -c <"$path") bytes, sha256 $(shasum -a 256 "$path" | cut -d' ' -f1))"
-    near contract deploy "$GUARD" use-file "$path" with-init-call new \
-      json-args "{\"dao_id\":\"$DAO\",\"agent_id\":\"$A\",\"proposal_bond\":\"$bond\"}" \
-      prepaid-gas '30.0 Tgas' attached-deposit '0 NEAR' "${NET[@]}" "$SIGN" send
+    # Since GĐ16 the Guard reads the bond from the DAO itself. Limits: 1 NEAR per tx, 2 NEAR a day; agent a; receiver c.
+    init=$(jq -nc --arg dao "$DAO" --arg a "$A" --arg c "$C" '{ dao_id: $dao,
+      policy: { max_per_tx: "1000000000000000000000000", max_per_day: "2000000000000000000000000",
+                max_pending_per_agent: 3, min_reserve: "1000000000000000000000000" },
+      agents: [{ account_id: $a, label: "spike agent" }],
+      whitelist: [{ account_id: $c, label: "spike receiver", max_per_tx: null }], guardians: [] }')
+    near contract deploy "$GUARD" use-file "$path" with-init-call new json-args "$init" \
+      prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' "${NET[@]}" "$SIGN" send
     view "$GUARD" get_config '{}'
     ;;
   add-role)
@@ -111,7 +117,8 @@ case "${1:-}" in
     ;;
   transfer)
     # 300 Tgas: add_proposal 20 + on_added 120 (act_proposal 80 + on_voted 10 inside it) + the outer call.
-    call "$A" "$GUARD" request_transfer "{\"receiver_id\":\"$C\",\"amount\":\"$AMOUNT\"}" '0 NEAR' '300.0 Tgas'
+    call "$A" "$GUARD" request_transfer \
+      "{\"request_id\":\"spike-$(date +%s)\",\"receiver_id\":\"$C\",\"amount\":\"$AMOUNT\"}" '0 NEAR' '300.0 Tgas'
     id=$(last_id)
     view "$DAO" get_proposal "{\"id\":$id}" | jq '{ id, proposer, status, kind }'
     echo "Done when: status is \"Approved\" and $C received the NEAR in the same transaction (check the tx above on testnet.nearblocks.io)."

@@ -1,128 +1,560 @@
-// GĐ15 spike (docs/final-idea.md §13.6): the smallest Guard that proves a contract member of a Sputnik v2 DAO
-// can create a transfer proposal and approve it itself, with the money leaving in the same transaction.
-// GĐ16 replaces this with the full contract in §11.5 (limits, whitelist, request records, sync, events).
-use near_sdk::json_types::U128;
+// Key Doctor Guard (docs/final-idea.md §11.5): a Sputnik v2 DAO member with role `agent-guard`. A registered
+// agent asks for a NEAR transfer; the Guard always creates the proposal and approves it itself only when the
+// request is within its limits. Everything else waits for the council. Only the DAO changes the configuration.
+use near_sdk::json_types::{U128, U64};
 use near_sdk::serde_json::{json, Value};
-use near_sdk::{env, ext_contract, near, require, AccountId, Gas, NearToken, PanicOnDefault, Promise, PromiseError};
+use near_sdk::store::{IterableMap, IterableSet, LookupMap, Vector};
+use near_sdk::{
+    env, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault, Promise, PromiseError,
+    PromiseOrValue,
+};
 
+mod dao;
+mod events;
+mod policy;
+mod types;
+
+use dao::{ext_dao, transfer_kind, DaoPolicyView, ProposalView};
+use events::emit;
+pub use types::*;
+
+// Static gas per hop. Measured on testnet in GĐ15: the whole Auto chain burns about 13 Tgas.
 const GAS_ADD_PROPOSAL: Gas = Gas::from_tgas(20);
 const GAS_ON_ADDED: Gas = Gas::from_tgas(120);
 const GAS_ACT_PROPOSAL: Gas = Gas::from_tgas(80);
 const GAS_ON_VOTED: Gas = Gas::from_tgas(10);
+const GAS_VIEW: Gas = Gas::from_tgas(10);
+const GAS_ON_VIEW: Gas = Gas::from_tgas(15);
 
-#[ext_contract(ext_dao)]
-#[allow(dead_code)]
-trait SputnikDao {
-    fn add_proposal(&mut self, proposal: Value) -> u64;
-    // Recent Sputnik v2 builds require `proposal` (ERR_WRONG_KIND); older builds ignore the extra field.
-    fn act_proposal(&mut self, id: u64, action: String, proposal: Value, memo: Option<String>);
+// §11.5.10
+const MAX_WHITELIST: u32 = 50;
+const MAX_AGENTS: u32 = 10;
+const MAX_GUARDIANS: u32 = 5;
+const MAX_RECENT: u32 = 200;
+const MAX_LABEL_CHARS: usize = 64;
+
+#[near(serializers = [borsh])]
+#[derive(BorshStorageKey)]
+enum StorageKey {
+    Agents,
+    Whitelist,
+    Guardians,
+    Requests,
+    ByProposal,
+    Recent,
 }
 
 #[near(contract_state)]
 #[derive(PanicOnDefault)]
 pub struct Guard {
     dao_id: AccountId,
-    /// The only account allowed to call `request_transfer` in the spike.
-    agent_id: AccountId,
-    /// yoctoNEAR, copied from the DAO's `get_policy().proposal_bond` at init.
-    proposal_bond: U128,
+    policy: GuardPolicy,
+    agents: IterableMap<AccountId, AgentInfo>,
+    whitelist: IterableMap<AccountId, WhitelistEntry>,
+    /// May pause; only the DAO unpauses.
+    guardians: IterableSet<AccountId>,
+    paused: bool,
+    /// ns, start of the rolling 24 h window.
+    window_start: u64,
+    /// yoctoNEAR self-approved in the window.
+    spent_in_window: u128,
+    /// Cached from `dao.get_policy` at init and by `refresh_bond`.
+    proposal_bond: u128,
+    /// ns, cached with the bond; `sync_request` uses it to see that an ignored proposal expired.
+    proposal_period: u64,
+    requests: LookupMap<String, RequestRecord>,
+    by_proposal: LookupMap<u64, String>,
+    /// Ring of the last `MAX_RECENT` request ids; slot `recent_total % MAX_RECENT` is the next to overwrite.
+    recent: Vector<String>,
+    recent_total: u64,
 }
 
 #[near]
 impl Guard {
+    /// One Guard per DAO. Reads the DAO's bond and proposal period right after init (`on_policy_refreshed`).
     #[init]
-    pub fn new(dao_id: AccountId, agent_id: AccountId, proposal_bond: U128) -> Self {
-        Self { dao_id, agent_id, proposal_bond }
+    pub fn new(
+        dao_id: AccountId,
+        policy: GuardPolicy,
+        agents: Vec<AgentInput>,
+        whitelist: Vec<WhitelistInput>,
+        guardians: Vec<AccountId>,
+    ) -> Self {
+        require!(agents.len() <= MAX_AGENTS as usize, "TOO_MANY_AGENTS");
+        require!(whitelist.len() <= MAX_WHITELIST as usize, "TOO_MANY_WHITELIST");
+        require!(guardians.len() <= MAX_GUARDIANS as usize, "TOO_MANY_GUARDIANS");
+        let mut guard = Self {
+            dao_id,
+            policy,
+            agents: IterableMap::new(StorageKey::Agents),
+            whitelist: IterableMap::new(StorageKey::Whitelist),
+            guardians: IterableSet::new(StorageKey::Guardians),
+            paused: false,
+            window_start: env::block_timestamp(),
+            spent_in_window: 0,
+            proposal_bond: 0,
+            proposal_period: 0,
+            requests: LookupMap::new(StorageKey::Requests),
+            by_proposal: LookupMap::new(StorageKey::ByProposal),
+            recent: Vector::new(StorageKey::Recent),
+            recent_total: 0,
+        };
+        for a in agents {
+            assert_label(&a.label);
+            guard.agents.insert(a.account_id, AgentInfo { label: a.label, enabled: true, pending: 0 });
+        }
+        for w in whitelist {
+            assert_label(&w.label);
+            guard.whitelist.insert(w.account_id, WhitelistEntry { label: w.label, max_per_tx: w.max_per_tx });
+        }
+        for g in guardians {
+            guard.guardians.insert(g);
+        }
+        guard.read_dao_policy().detach();
+        guard
     }
 
-    /// Creates a NEAR transfer proposal on the DAO (the Guard pays the bond), then votes to approve it.
-    /// Returns the proposal id once the vote went through.
-    pub fn request_transfer(&mut self, receiver_id: AccountId, amount: U128) -> Promise {
-        require!(env::predecessor_account_id() == self.agent_id, "UNKNOWN_AGENT");
+    /// Called by a registered agent with 0 deposit. Checks 1–7 fail the transaction (§11.5.4); past them the
+    /// Guard always creates a proposal, and votes for it only when the decision is Auto.
+    pub fn request_transfer(
+        &mut self,
+        request_id: String,
+        receiver_id: AccountId,
+        amount: U128,
+        memo: Option<String>,
+    ) -> Promise {
+        require!(!self.paused, "PAUSED");
+        let agent = env::predecessor_account_id();
+        let (enabled, pending) = match self.agents.get(&agent) {
+            Some(a) => (a.enabled, a.pending),
+            None => env::panic_str("UNKNOWN_AGENT"),
+        };
+        require!(enabled, "AGENT_DISABLED");
+        require!(policy::valid_request_id(&request_id), "INVALID_REQUEST_ID");
+        require!(!self.requests.contains_key(&request_id), "DUPLICATE_REQUEST");
         require!(amount.0 > 0, "INVALID_AMOUNT");
-        let kind = transfer_kind(&receiver_id, amount);
-        let description = format!(
-            "[KD-GUARD] request=spike agent={} decision=auto reasons=- memo=GD15 spike",
-            self.agent_id
+        require!(pending < self.policy.max_pending_per_agent, "TOO_MANY_PENDING");
+        require!(
+            env::account_balance().as_yoctonear() >= self.proposal_bond.saturating_add(self.policy.min_reserve.0),
+            "INSUFFICIENT_GUARD_BALANCE"
         );
-        log_gas("request_transfer");
+
+        let now = env::block_timestamp();
+        self.roll_window(now);
+        let (decision, reasons) =
+            policy::decide(&self.policy, self.whitelist.get(&receiver_id), self.spent_in_window, amount.0);
+        let counted = decision == Decision::Auto;
+        if counted {
+            self.spent_in_window = self.spent_in_window.saturating_add(amount.0);
+        }
+        self.agents.get_mut(&agent).unwrap().pending += 1;
+
+        let memo = policy::clean_memo(memo.as_deref().unwrap_or(""));
+        let description = policy::description(&request_id, agent.as_str(), decision, &reasons, &memo);
+        let record = RequestRecord {
+            request_id: request_id.clone(),
+            agent,
+            receiver_id,
+            amount,
+            memo,
+            decision,
+            reasons,
+            proposal_id: None,
+            status: RequestStatus::Submitted,
+            created_at: U64(now),
+            updated_at: U64(now),
+            counted_in_window: counted,
+        };
+        let kind = transfer_kind(&record.receiver_id, amount);
+        emit("request_submitted", record_event(&record));
+        self.requests.insert(request_id.clone(), record);
+        self.push_recent(request_id.clone());
+
         ext_dao::ext(self.dao_id.clone())
-            .with_attached_deposit(NearToken::from_yoctonear(self.proposal_bond.0))
+            .with_attached_deposit(NearToken::from_yoctonear(self.proposal_bond))
             .with_static_gas(GAS_ADD_PROPOSAL)
             .add_proposal(json!({ "description": description, "kind": kind }))
-            .then(Self::ext(env::current_account_id()).with_static_gas(GAS_ON_ADDED).on_added(kind))
+            .then(Self::ext(env::current_account_id()).with_static_gas(GAS_ON_ADDED).on_proposal_added(request_id))
     }
 
     #[private]
-    pub fn on_added(&mut self, kind: Value, #[callback_result] added: Result<u64, PromiseError>) -> Promise {
-        let id = added.unwrap_or_else(|_| env::panic_str("ADD_PROPOSAL_FAILED"));
-        log_gas("on_added");
-        env::log_str(&format!("proposal_id={id}"));
-        ext_dao::ext(self.dao_id.clone())
-            .with_static_gas(GAS_ACT_PROPOSAL)
-            .act_proposal(id, "VoteApprove".to_string(), kind, None)
-            .then(Self::ext(env::current_account_id()).with_static_gas(GAS_ON_VOTED).on_voted(id))
-    }
-
-    #[private]
-    pub fn on_voted(&mut self, id: u64, #[callback_result] voted: Result<(), PromiseError>) -> u64 {
-        if voted.is_err() {
-            env::panic_str("ACT_PROPOSAL_FAILED");
+    pub fn on_proposal_added(
+        &mut self,
+        request_id: String,
+        #[callback_result] added: Result<u64, PromiseError>,
+    ) -> PromiseOrValue<RequestRecord> {
+        let mut r = self.record(&request_id);
+        let now = env::block_timestamp();
+        let Ok(id) = added else {
+            self.finish(&mut r, RequestStatus::Failed, now);
+            emit("request_failed", with_note(&r, "add_proposal failed"));
+            return PromiseOrValue::Value(self.save(r));
+        };
+        r.proposal_id = Some(id);
+        r.updated_at = U64(now);
+        self.by_proposal.insert(id, request_id.clone());
+        if r.decision == Decision::Pending {
+            self.finish(&mut r, RequestStatus::Pending, now);
+            emit("request_pending", record_event(&r));
+            return PromiseOrValue::Value(self.save(r));
         }
-        log_gas("on_voted");
-        id
+        let kind = transfer_kind(&r.receiver_id, r.amount);
+        self.save(r);
+        PromiseOrValue::Promise(
+            ext_dao::ext(self.dao_id.clone())
+                .with_static_gas(GAS_ACT_PROPOSAL)
+                .act_proposal(id, "VoteApprove".to_string(), kind, None)
+                .then(Self::ext(env::current_account_id()).with_static_gas(GAS_ON_VOTED).on_voted(request_id)),
+        )
     }
+
+    #[private]
+    pub fn on_voted(&mut self, request_id: String, #[callback_result] voted: Result<(), PromiseError>) -> RequestRecord {
+        let mut r = self.record(&request_id);
+        let now = env::block_timestamp();
+        if r.status.is_final() {
+            // A sync_request between act_proposal and this callback already saw the final DAO status.
+            return r;
+        }
+        if voted.is_err() {
+            self.finish(&mut r, RequestStatus::Failed, now);
+            emit("request_failed", with_note(&r, "act_proposal failed; the proposal stays InProgress for the council"));
+        } else {
+            // The final Executed / Failed comes from sync_request.
+            self.finish(&mut r, RequestStatus::AutoApproved, now);
+            emit("request_auto_approved", record_event(&r));
+        }
+        self.save(r)
+    }
+
+    /// Anyone may call. Reads the proposal from the DAO and records the final status.
+    pub fn sync_request(&mut self, request_id: String) -> PromiseOrValue<RequestRecord> {
+        let r = self.record(&request_id);
+        match r.proposal_id {
+            Some(id) if !r.status.is_final() => PromiseOrValue::Promise(
+                ext_dao::ext(self.dao_id.clone())
+                    .with_static_gas(GAS_VIEW)
+                    .get_proposal(id)
+                    .then(Self::ext(env::current_account_id()).with_static_gas(GAS_ON_VIEW).on_synced(request_id)),
+            ),
+            _ => PromiseOrValue::Value(r),
+        }
+    }
+
+    #[private]
+    pub fn on_synced(
+        &mut self,
+        request_id: String,
+        #[callback_result] proposal: Result<ProposalView, PromiseError>,
+    ) -> RequestRecord {
+        let mut r = self.record(&request_id);
+        let now = env::block_timestamp();
+        let (next, dao_status) = match proposal {
+            Ok(p) => (policy::final_status(&p.status, p.submission_time.0, self.proposal_period, now), p.status),
+            // Sputnik deletes a Removed proposal, so get_proposal fails. Only a Pending request may read that as
+            // Rejected: for an Auto request a failed read must never refund the daily limit.
+            Err(_) if r.status == RequestStatus::Pending => (Some(RequestStatus::Rejected), "Removed".to_string()),
+            Err(_) => (None, "Unreadable".to_string()),
+        };
+        if let Some(status) = next {
+            self.finish(&mut r, status, now);
+        }
+        let mut data = record_event(&r);
+        data["dao_status"] = json!(dao_status);
+        emit("request_synced", data);
+        self.save(r)
+    }
+
+    // ---- configuration: DAO only (a FunctionCall proposal). Methods that add data take a storage deposit.
+
+    #[payable]
+    pub fn set_policy(&mut self, policy: GuardPolicy) {
+        self.assert_dao();
+        emit("policy_updated", json!({ "policy": policy }));
+        self.policy = policy;
+        refund_deposit(0);
+    }
+
+    #[payable]
+    pub fn add_agent(&mut self, account_id: AccountId, label: String) {
+        self.assert_dao();
+        assert_label(&label);
+        let before = env::storage_usage();
+        match self.agents.get_mut(&account_id) {
+            Some(a) => a.label = label,
+            None => {
+                require!(self.agents.len() < MAX_AGENTS, "TOO_MANY_AGENTS");
+                self.agents.insert(account_id.clone(), AgentInfo { label, enabled: true, pending: 0 });
+            }
+        }
+        self.agents.flush();
+        charge_storage(before);
+        emit("agent_updated", json!({ "account_id": account_id, "action": "added" }));
+    }
+
+    #[payable]
+    pub fn remove_agent(&mut self, account_id: AccountId) {
+        self.assert_dao();
+        self.agents.remove(&account_id);
+        emit("agent_updated", json!({ "account_id": account_id, "action": "removed" }));
+        refund_deposit(0);
+    }
+
+    #[payable]
+    pub fn set_agent_enabled(&mut self, account_id: AccountId, enabled: bool) {
+        self.assert_dao();
+        let a = self.agents.get_mut(&account_id).unwrap_or_else(|| env::panic_str("UNKNOWN_AGENT"));
+        a.enabled = enabled;
+        emit("agent_updated", json!({ "account_id": account_id, "action": "enabled", "enabled": enabled }));
+        refund_deposit(0);
+    }
+
+    #[payable]
+    pub fn add_whitelist(&mut self, account_id: AccountId, label: String, max_per_tx: Option<U128>) {
+        self.assert_dao();
+        assert_label(&label);
+        let before = env::storage_usage();
+        if !self.whitelist.contains_key(&account_id) {
+            require!(self.whitelist.len() < MAX_WHITELIST, "TOO_MANY_WHITELIST");
+        }
+        self.whitelist.insert(account_id.clone(), WhitelistEntry { label, max_per_tx });
+        self.whitelist.flush();
+        charge_storage(before);
+        emit("whitelist_updated", json!({ "account_id": account_id, "action": "added", "max_per_tx": max_per_tx }));
+    }
+
+    #[payable]
+    pub fn remove_whitelist(&mut self, account_id: AccountId) {
+        self.assert_dao();
+        self.whitelist.remove(&account_id);
+        emit("whitelist_updated", json!({ "account_id": account_id, "action": "removed" }));
+        refund_deposit(0);
+    }
+
+    #[payable]
+    pub fn add_guardian(&mut self, account_id: AccountId) {
+        self.assert_dao();
+        let before = env::storage_usage();
+        if !self.guardians.contains(&account_id) {
+            require!(self.guardians.len() < MAX_GUARDIANS, "TOO_MANY_GUARDIANS");
+            self.guardians.insert(account_id);
+        }
+        self.guardians.flush();
+        charge_storage(before);
+    }
+
+    #[payable]
+    pub fn remove_guardian(&mut self, account_id: AccountId) {
+        self.assert_dao();
+        self.guardians.remove(&account_id);
+        refund_deposit(0);
+    }
+
+    /// Guardian or DAO. Takes effect at once.
+    pub fn pause(&mut self) {
+        let caller = env::predecessor_account_id();
+        require!(caller == self.dao_id || self.guardians.contains(&caller), "NOT_GUARDIAN");
+        self.paused = true;
+        emit("paused", json!({ "by": caller }));
+    }
+
+    #[payable]
+    pub fn unpause(&mut self) {
+        self.assert_dao();
+        self.paused = false;
+        emit("unpaused", json!({ "by": self.dao_id }));
+        refund_deposit(0);
+    }
+
+    /// Re-reads `proposal_bond` (and `proposal_period`) from `dao.get_policy`.
+    #[payable]
+    pub fn refresh_bond(&mut self) -> Promise {
+        self.assert_dao();
+        refund_deposit(0);
+        self.read_dao_policy()
+    }
+
+    #[private]
+    pub fn on_policy_refreshed(&mut self, #[callback_result] p: Result<DaoPolicyView, PromiseError>) {
+        let p = p.unwrap_or_else(|_| env::panic_str("GET_POLICY_FAILED"));
+        self.proposal_bond = p.proposal_bond.0;
+        self.proposal_period = p.proposal_period.0;
+        emit("policy_updated", json!({ "proposal_bond": p.proposal_bond, "proposal_period": p.proposal_period }));
+    }
+
+    /// Sends everything above what the Guard must keep (its storage, or `min_reserve` if higher) back to the DAO.
+    #[payable]
+    pub fn withdraw_excess(&mut self) -> Promise {
+        self.assert_dao();
+        let storage = env::storage_byte_cost().as_yoctonear() * env::storage_usage() as u128;
+        let keep = storage.max(self.policy.min_reserve.0);
+        let excess = env::account_balance().as_yoctonear().saturating_sub(keep);
+        require!(excess > 0, "NOTHING_TO_WITHDRAW");
+        Promise::new(self.dao_id.clone()).transfer(NearToken::from_yoctonear(excess))
+    }
+
+    // ---- views
 
     pub fn get_config(&self) -> Value {
-        json!({ "dao_id": self.dao_id, "agent_id": self.agent_id, "proposal_bond": self.proposal_bond })
+        json!({
+            "dao_id": self.dao_id,
+            "paused": self.paused,
+            "proposal_bond": U128(self.proposal_bond),
+            "proposal_period": U64(self.proposal_period),
+            "agents": self.agents.len(),
+            "whitelist": self.whitelist.len(),
+            "guardians": self.guardians.iter().collect::<Vec<_>>(),
+        })
     }
 
+    pub fn get_policy(&self) -> GuardPolicy {
+        self.policy.clone()
+    }
+
+    pub fn get_whitelist(&self) -> Vec<Value> {
+        self.whitelist
+            .iter()
+            .map(|(id, w)| json!({ "account_id": id, "label": w.label, "max_per_tx": w.max_per_tx }))
+            .collect()
+    }
+
+    pub fn get_agents(&self) -> Vec<Value> {
+        self.agents
+            .iter()
+            .map(|(id, a)| json!({ "account_id": id, "label": a.label, "enabled": a.enabled, "pending": a.pending }))
+            .collect()
+    }
+
+    /// The window as the next request would see it (a window past 24 h reads as already reset).
+    pub fn get_window(&self) -> Value {
+        let now = env::block_timestamp();
+        let (start, spent) = policy::roll_window(self.window_start, self.spent_in_window, now);
+        json!({
+            "window_start": U64(start),
+            "resets_at": U64(start.saturating_add(policy::DAY_NS)),
+            "spent_in_window": U128(spent),
+            "remaining": U128(self.policy.max_per_day.0.saturating_sub(spent)),
+        })
+    }
+
+    pub fn get_request(&self, request_id: String) -> Option<RequestRecord> {
+        self.requests.get(&request_id).cloned()
+    }
+
+    pub fn get_request_by_proposal(&self, proposal_id: u64) -> Option<RequestRecord> {
+        self.by_proposal.get(&proposal_id).and_then(|id| self.requests.get(id)).cloned()
+    }
+
+    /// Newest first, from the last `MAX_RECENT` requests. `from` skips that many; `limit` is at most 50.
+    pub fn list_requests(&self, from: Option<u32>, limit: Option<u32>) -> Vec<RequestRecord> {
+        let from = from.unwrap_or(0) as u64;
+        let limit = limit.unwrap_or(20).min(50) as u64;
+        let len = self.recent.len() as u64;
+        (from..len.min(from.saturating_add(limit)))
+            .filter_map(|k| {
+                let slot = ((self.recent_total - 1 - k) % MAX_RECENT as u64) as u32;
+                self.recent.get(slot).and_then(|id| self.requests.get(id)).cloned()
+            })
+            .collect()
+    }
+
+    /// Key Doctor reads this to recognise a DAO member as a Guard (§5.3).
     pub fn kd_guard_info(&self) -> Value {
-        json!({ "standard": "kd_guard", "version": "0.1.0-spike", "dao_id": self.dao_id })
+        json!({ "standard": "kd_guard", "version": "1.0.0", "dao_id": self.dao_id })
     }
 }
 
-/// `ProposalKind::Transfer` as Sputnik v2 expects it; `token_id = ""` means NEAR (§11.3 #8).
-fn transfer_kind(receiver_id: &AccountId, amount: U128) -> Value {
-    json!({ "Transfer": { "token_id": "", "receiver_id": receiver_id, "amount": amount, "msg": null } })
+impl Guard {
+    fn assert_dao(&self) {
+        require!(env::predecessor_account_id() == self.dao_id, "ONLY_DAO");
+    }
+
+    fn read_dao_policy(&self) -> Promise {
+        ext_dao::ext(self.dao_id.clone())
+            .with_static_gas(GAS_VIEW)
+            .get_policy()
+            .then(Self::ext(env::current_account_id()).with_static_gas(GAS_ON_VIEW).on_policy_refreshed())
+    }
+
+    fn record(&self, request_id: &String) -> RequestRecord {
+        self.requests.get(request_id).cloned().unwrap_or_else(|| env::panic_str("UNKNOWN_REQUEST"))
+    }
+
+    fn save(&mut self, r: RequestRecord) -> RequestRecord {
+        self.requests.insert(r.request_id.clone(), r.clone());
+        r
+    }
+
+    fn roll_window(&mut self, now: u64) {
+        (self.window_start, self.spent_in_window) = policy::roll_window(self.window_start, self.spent_in_window, now);
+    }
+
+    /// Moves a request to `status`: frees the agent's pending slot when the request stops waiting on the DAO, and
+    /// gives the daily limit back when counted money did not leave, if the request is still in the same window.
+    fn finish(&mut self, r: &mut RequestRecord, status: RequestStatus, now: u64) {
+        if r.status.holds_pending() && !status.holds_pending() {
+            if let Some(a) = self.agents.get_mut(&r.agent) {
+                a.pending = a.pending.saturating_sub(1);
+            }
+        }
+        if status.is_final() && status != RequestStatus::Executed && r.counted_in_window {
+            self.roll_window(now);
+            if r.created_at.0 >= self.window_start {
+                self.spent_in_window = self.spent_in_window.saturating_sub(r.amount.0);
+                r.counted_in_window = false;
+            }
+        }
+        r.status = status;
+        r.updated_at = U64(now);
+    }
+
+    fn push_recent(&mut self, request_id: String) {
+        if self.recent.len() < MAX_RECENT {
+            self.recent.push(request_id);
+        } else {
+            self.recent.set((self.recent_total % MAX_RECENT as u64) as u32, request_id);
+        }
+        self.recent_total += 1;
+    }
 }
 
-fn log_gas(step: &str) {
-    env::log_str(&format!("gas step={step} used_ggas={}", env::used_gas().as_ggas()));
+fn assert_label(label: &str) {
+    require!(label.chars().count() <= MAX_LABEL_CHARS, "LABEL_TOO_LONG");
+}
+
+/// Requires the attached deposit to cover the storage added since `before`, and returns the rest.
+fn charge_storage(before: u64) {
+    let added = env::storage_usage().saturating_sub(before) as u128;
+    let cost = env::storage_byte_cost().as_yoctonear() * added;
+    require!(env::attached_deposit().as_yoctonear() >= cost, "INSUFFICIENT_STORAGE_DEPOSIT");
+    refund_deposit(cost);
+}
+
+fn refund_deposit(cost: u128) {
+    let rest = env::attached_deposit().as_yoctonear().saturating_sub(cost);
+    if rest > 0 {
+        Promise::new(env::predecessor_account_id()).transfer(NearToken::from_yoctonear(rest)).detach();
+    }
+}
+
+fn record_event(r: &RequestRecord) -> Value {
+    json!({
+        "request_id": r.request_id,
+        "proposal_id": r.proposal_id,
+        "agent": r.agent,
+        "receiver_id": r.receiver_id,
+        "amount": r.amount,
+        "decision": r.decision,
+        "reasons": r.reasons,
+        "status": r.status,
+    })
+}
+
+fn with_note(r: &RequestRecord, note: &str) -> Value {
+    let mut data = record_event(r);
+    data["note"] = json!(note);
+    data
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use near_sdk::test_utils::{accounts, VMContextBuilder};
-    use near_sdk::testing_env;
-
-    fn guard() -> Guard {
-        Guard::new(accounts(0), accounts(1), U128(1_000_000_000_000_000_000_000_000))
-    }
-
-    #[test]
-    fn transfer_kind_matches_sputnik_shape() {
-        // The DAO rejects any other shape, so the spike would fail on chain, not here.
-        let kind = transfer_kind(&accounts(2), U128(5));
-        assert_eq!(
-            kind,
-            json!({ "Transfer": { "token_id": "", "receiver_id": "charlie", "amount": "5", "msg": null } })
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "UNKNOWN_AGENT")]
-    fn stranger_cannot_request() {
-        // Only the registered agent may spend the Guard's bond.
-        testing_env!(VMContextBuilder::new().predecessor_account_id(accounts(3)).build());
-        let _ = guard().request_transfer(accounts(2), U128(5));
-    }
-
-    #[test]
-    #[should_panic(expected = "INVALID_AMOUNT")]
-    fn zero_amount_is_refused() {
-        testing_env!(VMContextBuilder::new().predecessor_account_id(accounts(1)).build());
-        let _ = guard().request_transfer(accounts(2), U128(0));
-    }
-}
+mod tests;

@@ -1,6 +1,6 @@
 # Guard implementation plan: GĐ15 to GĐ24
 
-Status: 2026-11-02. Owner accepted D1–D8 as recommended. GĐ15 done: spike passed in the sandbox and on testnet (tx `AgkVkFuJhs9GijiPQ4xZGbPVmQcN3qq41tRzSU1cZAza`). Results: `docs/guard-spike-2026-11-02.md`.
+Status: 2026-11-02. Owner accepted D1–D8 as recommended. GĐ15 done: spike passed in the sandbox and on testnet (tx `AgkVkFuJhs9GijiPQ4xZGbPVmQcN3qq41tRzSU1cZAza`). Results: `docs/guard-spike-2026-11-02.md`. GĐ16 done: full contract, 64 unit tests, sandbox run against the real Sputnik wasm (Auto, Pending, sync) passes.
 
 Governing spec: `docs/final-idea.md` §4.8, §4.9, §5.3, §5.4, §11, §12, §13.6, §13.7, §16 (G-Q1 to G-Q5), and `docs/usecase.md` UC9 to UC14 plus appendices E, F, G. This plan does not change the spec. Where the spec conflicts with `CLAUDE.md`, §1 names the conflict and asks the owner.
 
@@ -11,7 +11,7 @@ Not in scope: `preflight` / `FA_RECENT` (PR 43, unrelated to the Guard contract)
 | Item | State |
 |---|---|
 | Guard spec | Merged into `feat/agent-guard` (commit `d2d6eab`, tusoict). `origin/guard_agent_update` has no newer commits |
-| Guard code | GĐ15 spike only: `contracts/guard` (spike contract + sandbox test), `scripts/guard-setup/spike.sh`. No `apps/guard-mcp`, no `demo/invoices` |
+| Guard code | GĐ16: `contracts/guard` full contract (§11.5) + unit tests + sandbox test, `scripts/guard-setup/spike.sh`. No `apps/guard-mcp`, no `demo/invoices` |
 | Entry gate (§13.4) | GĐ15 starts only when GĐ0 to GĐ10 meet "done when". Backlog: GĐ0, 1, 2 done; GĐ3, 4, 6, 7, 9 live; GĐ5, 8, 10 built with owner checks still open |
 | Cut dates (§13.7) | 11/11: GĐ17 not passing → Guard leaves the submission (experimental, Roadmap). 12/11: GĐ19 + GĐ20 not done → Guard leaves the video |
 | Tooling on the dev machine | rustc 1.95, `wasm32-unknown-unknown`, near-cli-rs 0.30.1, cargo-near 0.22. `cargo near build` output loads in the sandbox VM, no toolchain pin needed |
@@ -100,6 +100,23 @@ pub fn decide(p: &GuardPolicy, wl: Option<&WhitelistEntry>, spent: u128, amount:
 ```
 
 Unit tests (each must fail if its rule is removed): each of the 7 error codes, each of the 4 reasons alone and combined, window reset at exactly 24 h, refund on `add_proposal` failure / `act_proposal` failure / sync `Failed` within the same window and **no** refund after the window rolled, `pending` counter up/down, DAO-only config (stranger panics), guardian `pause` but not `unpause`, size limits, `request_id` length 8 and 64 pass, 7 and 65 fail.
+
+**Result (2026-11-02).** `pnpm test:guard`: 64 unit tests (10 in `policy.rs`, 54 in `src/tests.rs`) and the sandbox test pass; `pnpm test` passes. Spot mutations (drop the refund, drop the pending decrement, refund across windows) each fail tests. wasm 242 KB. Sandbox Auto `request_transfer`: 14 Tgas burnt. The sandbox test already runs Auto pays, Pending does not pay, council approves, `sync_request` → `Executed`; GĐ17 adds the remaining §13.6 cases.
+
+Gaps in §11.5 settled in code (the spec is silent or ambiguous; change here if the owner disagrees):
+
+| Gap | Decision |
+|---|---|
+| Where the bond comes from | `new` schedules `dao.get_policy` itself and caches `proposal_bond` + `proposal_period`; `refresh_bond` (DAO only) re-reads. A failed read panics `GET_POLICY_FAILED` |
+| `Expired` | Sputnik writes `Expired` only when someone acts on the proposal, so `sync_request` also maps `InProgress` past `submission_time + proposal_period` to `Expired` |
+| `get_proposal` fails | Sputnik deletes `Removed` proposals. A `Pending` request reads that as `Rejected`; any other request stays as is (a failed read must never refund an Auto amount) |
+| `pending` counter | Counts `Submitted` and `Pending`. Freed on `AutoApproved` or any final status, once |
+| Refund | Any final status except `Executed` gives the amount back, only while the request's `created_at` is still in the current window |
+| Late `on_voted` | If `sync_request` already saw the final status, `on_voted` changes nothing |
+| `request_id` | 8–64 chars of `[A-Za-z0-9_-]` (it goes into the one-line description) |
+| Hard checks | 8 codes: §11.5.4's 7 plus `INSUFFICIENT_GUARD_BALANCE` (balance < bond + `min_reserve`) |
+| Storage | DAO methods that add data are `#[payable]`, charge the bytes they add (`INSUFFICIENT_STORAGE_DEPOSIT`) and refund the rest; `withdraw_excess` keeps max(storage cost, `min_reserve`) |
+| JSON times | `U64` nanosecond strings, so JS readers keep precision |
 
 ### GĐ17: sandbox integration (1 day)
 

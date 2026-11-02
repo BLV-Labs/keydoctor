@@ -1,6 +1,6 @@
-// GĐ15 spike in a local sandbox, against the Sputnik v2 wasm that testnet DAOs run (tests/res, plan.md D6).
-// It answers the spike's question before anyone spends testnet NEAR: can a contract member holding the
-// `agent-guard` role create a transfer proposal and approve it alone, with the NEAR moving in the same tx?
+// The Guard in a local sandbox, against the Sputnik v2 wasm that testnet DAOs run (tests/res, plan.md D6).
+// GĐ15 asked: can a contract member holding the `agent-guard` role create a transfer proposal and approve it
+// alone, with the NEAR moving in the same tx? Since GĐ16 it also runs the full contract: Auto, Pending, sync.
 // Needs the Guard wasm: `cargo near build non-reproducible-wasm --no-abi` first (`pnpm test:guard` does it).
 use near_workspaces::types::NearToken;
 use serde_json::{json, Value};
@@ -33,10 +33,24 @@ async fn guard_member_self_approves_a_transfer() -> anyhow::Result<()> {
     let guard = guard.deploy(&guard_wasm).await?.into_result()?;
     guard
         .call("new")
-        .args_json(json!({ "dao_id": dao.id(), "agent_id": council.id(), "proposal_bond": bond.to_string() }))
+        .args_json(json!({
+            "dao_id": dao.id(),
+            "policy": {
+                "max_per_tx": NearToken::from_near(1).as_yoctonear().to_string(),
+                "max_per_day": NearToken::from_near(2).as_yoctonear().to_string(),
+                "max_pending_per_agent": 3,
+                "min_reserve": NearToken::from_near(1).as_yoctonear().to_string(),
+            },
+            "agents": [{ "account_id": council.id(), "label": "spike agent" }],
+            "whitelist": [{ "account_id": receiver.id(), "label": "spike receiver", "max_per_tx": null }],
+            "guardians": [],
+        }))
+        .max_gas()
         .transact()
         .await?
         .into_result()?;
+    let config: Value = guard.view("get_config").await?.json()?;
+    assert_eq!(config["proposal_bond"], bond.to_string(), "init must cache the DAO bond: {config}");
 
     // G-Q1: factory DAOs on testnet (code hash ZGdM2...) reject `ChangePolicyAddOrUpdateRole` ("unknown variant"),
     // so the role goes in through `ChangePolicy` with the whole current policy. Same JSON as scripts/guard-setup/spike.sh.
@@ -67,11 +81,12 @@ async fn guard_member_self_approves_a_transfer() -> anyhow::Result<()> {
     let proposal: Value = dao.view("get_proposal").args_json(json!({ "id": role_id })).await?.json()?;
     assert_eq!(proposal["status"], "Approved", "the council must accept the role proposal: {proposal}");
 
+    // Auto: whitelisted receiver, within every limit. The Guard proposes and approves in one transaction.
     let amount = NearToken::from_millinear(100);
     let before = receiver.view_account().await?.balance;
     let outcome = council
         .call(guard.id(), "request_transfer")
-        .args_json(json!({ "receiver_id": receiver.id(), "amount": amount.as_yoctonear().to_string() }))
+        .args_json(json!({ "request_id": "spike-auto-1", "receiver_id": receiver.id(), "amount": amount.as_yoctonear().to_string(), "memo": "spike" }))
         .gas(near_workspaces::types::Gas::from_tgas(300))
         .transact()
         .await?;
@@ -80,12 +95,57 @@ async fn guard_member_self_approves_a_transfer() -> anyhow::Result<()> {
     for log in outcome.logs() {
         println!("log: {log}");
     }
-    let id: u64 = outcome.into_result()?.json()?;
+    let record: Value = outcome.into_result()?.json()?;
+    assert_eq!(record["status"], "AutoApproved", "{record}");
+    let id = record["proposal_id"].as_u64().unwrap();
 
     let proposal: Value = dao.view("get_proposal").args_json(json!({ "id": id })).await?.json()?;
     assert_eq!(proposal["status"], "Approved", "the Guard's own vote must pass the transfer: {proposal}");
     assert_eq!(proposal["proposer"], guard.id().as_str());
+    assert!(proposal["description"].as_str().unwrap().starts_with("[KD-GUARD] request=spike-auto-1 "));
     let after = receiver.view_account().await?.balance;
     assert_eq!(after.as_yoctonear() - before.as_yoctonear(), amount.as_yoctonear(), "the NEAR must arrive in the same tx");
+
+    let synced: Value = council
+        .call(guard.id(), "sync_request")
+        .args_json(json!({ "request_id": "spike-auto-1" }))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?
+        .json()?;
+    assert_eq!(synced["status"], "Executed", "{synced}");
+
+    // Pending: an unlisted receiver. The proposal waits for the council and no NEAR moves until it votes.
+    let record: Value = council
+        .call(guard.id(), "request_transfer")
+        .args_json(json!({ "request_id": "spike-pending-1", "receiver_id": council.id(), "amount": amount.as_yoctonear().to_string() }))
+        .gas(near_workspaces::types::Gas::from_tgas(300))
+        .transact()
+        .await?
+        .into_result()?
+        .json()?;
+    assert_eq!((record["status"].as_str(), record["reasons"][0].as_str()), (Some("Pending"), Some("NOT_WHITELISTED")));
+    let id = record["proposal_id"].as_u64().unwrap();
+    let proposal: Value = dao.view("get_proposal").args_json(json!({ "id": id })).await?.json()?;
+    assert_eq!(proposal["status"], "InProgress", "the Guard must not vote on a Pending request: {proposal}");
+    council
+        .call(dao.id(), "act_proposal")
+        .args_json(json!({ "id": id, "action": "VoteApprove", "proposal": proposal["kind"] }))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?;
+    let synced: Value = council
+        .call(guard.id(), "sync_request")
+        .args_json(json!({ "request_id": "spike-pending-1" }))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?
+        .json()?;
+    assert_eq!(synced["status"], "Executed", "{synced}");
+    let agents: Value = guard.view("get_agents").await?.json()?;
+    assert_eq!(agents[0]["pending"], 0, "every request is closed: {agents}");
     Ok(())
 }
