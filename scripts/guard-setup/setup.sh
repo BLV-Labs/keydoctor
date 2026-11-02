@@ -27,6 +27,7 @@
 # Existing accounts: set KD_GUARD_A, KD_GUARD_B, KD_GUARD_C, KD_GUARD_ACCOUNT, KD_GUARD_AGENT and
 # KD_GUARD_RECEIVERS (3 comma-separated ids). Only top-level *.testnet names are created with the faucet; create
 # sub-accounts (e.g. kd-guard.<you>.testnet) yourself first. Keys in ~/.near-credentials: KD_GUARD_SIGN=sign-with-legacy-keychain.
+# KD_GUARD_FUNDER=<rich account> creates missing accounts with 10 NEAR each from that account instead of the faucet.
 # Needs: near (near-cli-rs), cargo-near, node >= 22, jq.
 # Env: KD_GUARD_PREFIX (unique, e.g. kdg$(date +%s)); optional KD_GUARD_AGENT_KEY (default
 # ~/.config/key-doctor/<agent>.json), KD_GUARD_FUND (DAO -> Guard, NEAR, default 1, 0 skips), KD_DAO_TREASURY
@@ -49,6 +50,7 @@ KEY_FILE="${KD_GUARD_AGENT_KEY:-$HOME/.config/key-doctor/${AGENT}.json}"
 FUND="${KD_GUARD_FUND:-1}"
 TREASURY="${KD_DAO_TREASURY:-8}"
 SIGN="${KD_GUARD_SIGN:-sign-with-keychain}"
+FUNDER="${KD_GUARD_FUNDER:-}"
 # New faucet accounts keep their keys where SIGN looks for them.
 if [[ "$SIGN" == sign-with-legacy-keychain ]]; then SAVE=save-to-legacy-keychain; else SAVE=save-to-keychain; fi
 NET=(network-config testnet)
@@ -127,6 +129,8 @@ step_accounts() {
   for acc in "$A" "$B" "$C" "$GUARD" "$AGENT" "${RECEIVERS[@]}"; do
     if [[ $(acct "$acc" exists) == true ]]; then
       echo "$acc exists."
+    elif [[ -n "$FUNDER" ]]; then
+      near account create-account fund-myself "$acc" '10 NEAR' autogenerate-new-keypair "$SAVE" sign-as "$FUNDER" "${NET[@]}" "$SIGN" send
     elif [[ "$acc" =~ ^[a-z0-9_-]+\.testnet$ ]]; then
       near account create-account sponsor-by-faucet-service "$acc" autogenerate-new-keypair "$SAVE" "${NET[@]}" create
     else
