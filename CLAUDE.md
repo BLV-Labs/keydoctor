@@ -31,7 +31,7 @@ The data contracts in `docs/final-idea.md` §4 (`kd.report.v1`, `kd.report_summa
 
 ## Invariants (easy to break)
 
-- Never sign transactions or hold keys. Never commit private keys, seed phrases or tokens. **No LLM in the product.** Code makes every conclusion, including non-command bot messages, which use a regex for `*.near` / `*.testnet` names.
+- Never sign transactions or hold keys. One exception (owner decision 2026-11-02, `docs/stories/epics/guard/plan.md` D3): `apps/guard-mcp` runs on the agent owner's machine and signs only `request_transfer` / `sync_request` with a function-call key read from `AGENT_KEY_PATH`. The Worker never holds a key, so the Guard emergency brake (GĐ24) is cut. Never commit private keys, seed phrases or tokens. **No LLM in the product.** Code makes every conclusion, including non-command bot messages, which use a regex for `*.near` / `*.testnet` names.
 - **Baseline (`snapshots`) writes** happen in only two places: the daily job (UC7) and the first subscription to a target that has no baseline yet. `/check` and `diagnose` never touch D1. `/changes` and `compare` do not move the baseline unless `update_baseline: true` is passed explicitly.
 - **Only the Worker writes `subscriptions`**: bot, MCP `watch` and dashboard all funnel through it.
 - `checkProposals` only reads RPC. It never stores or sends anything. `prev = null` records the current last proposal and returns no alerts. A failure on `get_last_proposal_id` throws, while per-proposal errors go into `errors`.

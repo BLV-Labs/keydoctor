@@ -9,6 +9,7 @@
   },
   "scripts": {
     "test": "pnpm -r --if-present run test",
+    "test:guard": "cd contracts/guard && cargo near build non-reproducible-wasm --no-abi && cargo test",
     "typecheck": "pnpm -r --if-present run typecheck",
     "build": "pnpm -r --if-present run build",
     "stats": "pnpm --filter key-doctor stats",
