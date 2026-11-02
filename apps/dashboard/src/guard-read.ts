@@ -45,13 +45,16 @@ async function readGuard(rpc: Rpc, height: number, g: { guard_id: string; name: 
   return { guard_id: g.guard_id, name: g.name, ready: g.ready, in_role: members.includes(g.guard_id), config, policy, window, agents };
 }
 
-/** Throws (a KdError) when the DAO has no Sputnik `get_policy` or the factory cannot be read. */
+/** Throws a KdError from the DAO read, `NOT_A_DAO`, or `FACTORY_UNREADABLE` when the factory view fails. */
 export async function readGuardDao(dao: string, factory: string, network: Network): Promise<GuardDao> {
   const rpc = createRpc({ url: DEFAULT_RPC_URLS[network] });
   const { height } = await rpc.block();
   const [policy, listed] = await Promise.all([
     rpc.callFunction(dao, height, "get_policy", {}),
-    rpc.callFunction(factory, height, "get_guards_for_dao", { dao_id: dao }),
+    rpc.callFunction(factory, height, "get_guards_for_dao", { dao_id: dao }).catch((e: unknown) => {
+      console.error("guard factory read failed", { factory, error: e });
+      throw new Error("FACTORY_UNREADABLE");
+    }),
   ]);
   if (!isPolicy(policy)) throw new Error("NOT_A_DAO");
   const rows = Array.isArray(listed) ? (listed as { guard_id: string; name: string; ready: boolean }[]) : [];

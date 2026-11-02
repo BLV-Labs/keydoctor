@@ -251,7 +251,12 @@ async function renderGuard(dao: string | null, focusMain: boolean, seq: number):
   } catch (e) {
     if (seq !== scanSeq) return;
     if (!isKdError(e)) console.error("guard read failed", { dao, error: e });
-    const why = isKdError(e) && e.kd.code !== "NOT_A_DAO" ? e.kd.message.en : `${dao} is not a Sputnik DAO, or the factory could not be read.`;
+    const why =
+      e instanceof Error && e.message === "FACTORY_UNREADABLE"
+        ? `Could not read the Guard factory ${GUARD_FACTORY}. Try again later.`
+        : isKdError(e)
+          ? `${dao}: ${e.kd.message.en}`
+          : `${dao} is not a Sputnik DAO.`;
     paint(renderGuardStart(dao, why, GUARD_FACTORY), title, false, network, "guard");
   }
 }

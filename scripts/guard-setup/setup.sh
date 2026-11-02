@@ -16,6 +16,7 @@
 #   scripts/guard-setup/setup.sh verify     # role, Guard config, balances, agent key, lock state
 #   scripts/guard-setup/setup.sh lock       # verify, then delete the Guard's full-access keys (asks y/N)
 #   scripts/guard-setup/setup.sh info       # accounts and the env lines for apps/guard-mcp (GĐ19)
+#   scripts/guard-setup/setup.sh factory    # Guard factory for the dashboard's Agent Guard page (not in `all`)
 #
 # Demo policy: 5 NEAR per request, 10 NEAR per 24 h, 3 pending per agent, 1 NEAR reserve; the 3 invoice
 # receivers of docs/usecase.md appendix G are whitelisted. The agent key's allowance is 1 NEAR (about 600 Auto
@@ -32,6 +33,9 @@
 # Env: KD_GUARD_PREFIX (unique, e.g. kdg$(date +%s)); optional KD_GUARD_AGENT_KEY (default
 # ~/.config/key-doctor/<agent>.json), KD_GUARD_FUND (DAO -> Guard, NEAR, default 1, 0 skips), KD_DAO_TREASURY
 # (NEAR the DAO keeps for the invoices after funding the Guard, default 8).
+# Factory: KD_GUARD_FACTORY (default <prefix>-guards.testnet). Publishing the Guard code as a global contract
+# burns about 25 NEAR (0.0001 NEAR per byte) and the factory code locks about 2 NEAR, so the account needs 30 NEAR:
+# KD_GUARD_FUNDER creates it with that, or create and fund it yourself. Build the dashboard with KD_GUARD_FACTORY.
 set -euo pipefail
 
 PREFIX="${KD_GUARD_PREFIX:?set KD_GUARD_PREFIX to a unique lowercase name, e.g. kdg$(date +%s)}"
@@ -62,6 +66,7 @@ NJS=(node "$ROOT/scripts/guard-setup/near.mjs")
 ROLE_DESC="[kd-guard-setup] Add role agent-guard for $GUARD"
 FUND_DESC="[kd-guard-setup] Fund the Guard $GUARD"
 METHODS='["request_transfer","sync_request"]'
+GUARD_FACTORY="${KD_GUARD_FACTORY:-${PREFIX}-guards.testnet}"
 
 call() { # call <signer> <contract> <method> <json> <deposit> [gas]
   near contract call-function as-transaction "$2" "$3" json-args "$4" \
@@ -315,6 +320,31 @@ step_lock() {
   echo "Guard locked."
 }
 
+# The factory publishes the Guard code once; DAOs then create locked Guards through proposals (docs/guard-flow.md
+# Path B). `new` is private and takes the code as borsh Vec<u8> (u32 length, then the bytes), so deploy and init
+# go in one transaction: nobody can init the factory with other code in between.
+step_factory() {
+  say "factory"
+  if [[ $(acct "$GUARD_FACTORY" code) == true ]]; then
+    echo "$GUARD_FACTORY already has code: guard code hash $(view "$GUARD_FACTORY" get_code_hash '{}')"
+  else
+    if [[ $(acct "$GUARD_FACTORY" exists) != true ]]; then
+      [[ -n "$FUNDER" ]] || { echo "$GUARD_FACTORY does not exist: set KD_GUARD_FUNDER (30 NEAR) or create it yourself." >&2; exit 1; }
+      near account create-account fund-myself "$GUARD_FACTORY" '30 NEAR' autogenerate-new-keypair "$SAVE" sign-as "$FUNDER" "${NET[@]}" "$SIGN" send
+    fi
+    ge "$(acct "$GUARD_FACTORY" spendable)" "$(y 29)" || { echo "$GUARD_FACTORY needs about 30 NEAR before init." >&2; exit 1; }
+    (cd "$CRATE" && cargo near build non-reproducible-wasm --no-abi)
+    (cd "$ROOT/contracts/guard-factory" && cargo near build non-reproducible-wasm --no-abi)
+    local guard="$CRATE/target/near/kd_guard.wasm" factory="$ROOT/contracts/guard-factory/target/near/kd_guard_factory.wasm"
+    echo "guard wasm sha256 $(shasum -a 256 "$guard" | cut -d' ' -f1)"
+    near contract deploy "$GUARD_FACTORY" use-file "$factory" with-init-call new base64-args \
+      "$(node -e 'const c=require("fs").readFileSync(process.argv[1]);const n=Buffer.alloc(4);n.writeUInt32LE(c.length);process.stdout.write(Buffer.concat([n,c]).toString("base64"))' "$guard")" \
+      prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' "${NET[@]}" "$SIGN" send
+  fi
+  view "$GUARD_FACTORY" kd_factory_metadata '{}' | jq .
+  echo "Build the dashboard with: KD_GUARD_FACTORY=$GUARD_FACTORY pnpm --filter dashboard build"
+}
+
 step_info() {
   say "info"
   echo "dao=$DAO council=$A,$B,$C (2 of 3) guardian=$C"
@@ -328,6 +358,6 @@ step_info() {
 
 case "${1:-}" in
   all) step_accounts; step_dao; step_guard; step_role; step_fund; step_agent; step_lock; step_info ;;
-  accounts|dao|guard|role|fund|agent|verify|lock|info) "step_$1" ;;
-  *) sed -n '2,33p' "$0"; exit 2 ;;
+  accounts|dao|guard|role|fund|agent|verify|lock|info|factory) "step_$1" ;;
+  *) sed -n '2,38p' "$0"; exit 2 ;;
 esac

@@ -124,7 +124,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
    cd contracts/guard && cargo test --test sandbox -- --nocapture
    ```
 
-   The first command builds the wasm and runs 65 unit tests and 9 sandbox tests against the real Sputnik v2 contract in a local `near-workspaces` sandbox. The second prints the gas and allowance lines (`GAS ...`) quoted in [Agent Guard](#agent-guard-contract).
+   The first command builds both wasm files and runs the Guard's and the Guard factory's unit and sandbox tests against the real Sputnik v2 contract in a local `near-workspaces` sandbox. The second prints the gas and allowance lines (`GAS ...`) quoted in [Agent Guard](#agent-guard-contract).
 
 ## Status
 
@@ -244,6 +244,22 @@ claude mcp add guard -e NEAR_NETWORK=testnet -e GUARD_CONTRACT_ID=<prefix>-guard
 
 The tool descriptions and messages tell the agent not to send a pending payment again and not to split it into smaller ones: over the limit is the council's call. When the outcome of a transaction is not known (`UNKNOWN_OUTCOME`), the result carries the tx hash and the agent must check the status instead of retrying.
 
+### Agent Guard page (dashboard, not yet run on testnet)
+
+The dashboard's **Agent Guard** page (`?page=guard&dao=<dao>`) lets a council member set up a Guard without the CLI, through a Guard factory (`contracts/guard-factory`):
+
+- It reads the DAO policy and the DAO's Guards from the factory, and shows each Guard's limits, 24-hour window and the agent owner's two commands (the function-call key and the `claude mcp add guard` line).
+- The create form builds two `add_proposal` calls, signed in one transaction by the member's wallet: P1 calls `factory.create` (deposit = funding), P2 adds the Guard to role `agent-guard`. The page checks the member may add both kinds before the wallet opens.
+- "Propose a change" builds a DAO → Guard FunctionCall proposal (`set_policy`, `add_agent`, `add_whitelist`, `unpause`, ...).
+- The council votes in its usual DAO UI. Key Doctor signs nothing and stores nothing.
+
+The factory creates `<name>.<factory>` from Guard code it published once as a global contract, with `dao_id` = the calling DAO and no access key. Covered by unit tests, dashboard render tests and a sandbox test against the real Sputnik v2 wasm (`pnpm test:guard`). No factory is deployed on testnet yet, so the live dashboard shows only a setup notice. To try it yourself (needs about 30 NEAR, see Limitations):
+
+```bash
+KD_GUARD_PREFIX=<prefix> KD_GUARD_FUNDER=<rich>.testnet scripts/guard-setup/setup.sh factory
+KD_GUARD_FACTORY=<prefix>-guards.testnet pnpm --filter dashboard build
+```
+
 Invoice demo: put the four invoices in `demo/invoices/` (see its README for another prefix) and ask the agent "Submit every invoice in demo/invoices/ to the guard tool. The Guard and the DAO council decide what gets paid." Expected: the first three are paid at once, the fourth (500 NEAR to `attacker.testnet`, with a prompt injection) becomes a pending proposal for the council.
 
 ## Limitations
@@ -258,6 +274,8 @@ Invoice demo: put the four invoices in `demo/invoices/` (see its README for anot
 - Four Sputnik v2 facts that `checkProposals` relies on (proposal-id semantics, proposal JSON, status values, kind labels) were taken from the contract source. A live check on a testnet DAO (2026-10-29) confirmed the first two; the other two are only partly confirmed (`packages/key-doctor/fixtures/README.md`).
 - Revoke and Delete work one key at a time. The wallet does not say which key it signs with, so the dashboard keeps two full-access keys. There is no bulk delete.
 - Cron messages are bilingual by default (`ALERT_LANG`), because subscriptions do not store a language.
+- Guard factory: publishing the Guard code as a global contract burns about 25 NEAR once, so the factory account needs about 30 NEAR at init. When a `create` fails after the DAO check, the factory refunds the DAO from its own balance, which may run before NEAR returns the failed account's funding to it; keep spare NEAR on the factory, or a large refund can fail and stay on the factory. At most 10 Guards per DAO; that limit is unit-tested only.
+- Agent Guard page: it creates proposals only; voting happens in the DAO's own UI. It reads a Guard's views at one block and cannot show requests or pending proposals per agent beyond the counts the Guard returns.
 - Agent Guard: the 24-hour window restarts at the first request after it ends (`docs/final-idea.md` §11.5.7), so an agent can spend up to twice `max_per_day` without the council across a reset. Each request record is stored at the Guard's cost and never deleted; requests stop with `INSUFFICIENT_GUARD_BALANCE` once the balance no longer covers the bond plus that storage (or `min_reserve`, if higher).
 
 ## Roadmap
@@ -265,7 +283,7 @@ Invoice demo: put the four invoices in `demo/invoices/` (see its README for anot
 - Show the exact time each key was added, from the NearBlocks indexer (`/v1/account/{id}/keys` returns `created` / `deleted`), next to the nonce-based estimate. See `docs/data-sources-benchmark.md`.
 - Backtest the proposal rules on 12 months of history (`kd.backtest.v1`), using NearBlocks for keys added and later removed.
 - Exact key creation dates from NearBlocks, and more rules.
-- **Agent Guard on testnet:** Telegram alerts for Guard proposals, and a Guard card on the dashboard.
+- **Agent Guard on testnet:** deploy a Guard factory and run the dashboard Agent Guard page end to end; Telegram alerts for Guard proposals.
 - Link a Telegram user to a NEAR account by signature to mention voters by name. Discord and email alerts. Near-real-time watching through an indexer.
 - Add ML-DSA keys in the dashboard when wallet-selector supports them. Integration with wallets and treasury tools.
 

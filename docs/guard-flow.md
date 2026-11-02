@@ -34,9 +34,9 @@ sequenceDiagram
     Owner->>Guard: delete full-access keys (lock)
 ```
 
-### Path B: dashboard + Guard factory (in progress, branch `feat/guard-dashboard`)
+### Path B: dashboard + Guard factory (built, not yet run on testnet)
 
-Not live yet; listed under Roadmap in the README until it is deployed and tested.
+Code, unit, render and sandbox tests are done (`contracts/guard-factory`, dashboard `?page=guard`). No factory is deployed on testnet yet; `scripts/guard-setup/setup.sh factory` deploys one.
 
 ![Guard setup through the dashboard and factory](images/guard-setup-flow.svg)
 
@@ -44,7 +44,7 @@ Not live yet; listed under Roadmap in the README until it is deployed and tested
 sequenceDiagram
     autonumber
     actor Member as Council member (wallet)
-    participant Dash as Dashboard #/guard/<dao>
+    participant Dash as Dashboard ?page=guard&dao=<dao>
     participant DAO as Sputnik DAO
     actor Council
     participant Factory as guard-factory.testnet
