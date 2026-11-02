@@ -1,6 +1,6 @@
 # Guard implementation plan: GĐ15 to GĐ24
 
-Status: 2026-11-02. Owner accepted D1–D8 as recommended. GĐ15 done: spike passed in the sandbox and on testnet (tx `AgkVkFuJhs9GijiPQ4xZGbPVmQcN3qq41tRzSU1cZAza`). Results: `docs/guard-spike-2026-11-02.md`. GĐ16 done: full contract with unit tests. GĐ17 done (11/11 go/no-go passed): 9 sandbox tests against the real Sputnik wasm cover every §13.6 case; gas and key allowance are in README "Agent Guard".
+Status: 2026-11-02. Owner accepted D1–D8 as recommended. GĐ15 done: spike passed in the sandbox and on testnet (tx `AgkVkFuJhs9GijiPQ4xZGbPVmQcN3qq41tRzSU1cZAza`). Results: `docs/guard-spike-2026-11-02.md`. GĐ16 done: full contract with unit tests. GĐ17 done (11/11 go/no-go passed): 9 sandbox tests against the real Sputnik wasm cover every §13.6 case; gas and key allowance are in README "Agent Guard". GĐ18 done: owner ran `setup.sh all` on testnet. GĐ19 built: `apps/guard-mcp` and `demo/invoices`; the live invoice run waits for 2026-11-04.
 
 Governing spec: `docs/final-idea.md` §4.8, §4.9, §5.3, §5.4, §11, §12, §13.6, §13.7, §16 (G-Q1 to G-Q5), and `docs/usecase.md` UC9 to UC14 plus appendices E, F, G. This plan does not change the spec. Where the spec conflicts with `CLAUDE.md`, §1 names the conflict and asks the owner.
 
@@ -11,7 +11,7 @@ Not in scope: `preflight` / `FA_RECENT` (PR 43, unrelated to the Guard contract)
 | Item | State |
 |---|---|
 | Guard spec | Merged into `feat/agent-guard` (commit `d2d6eab`, tusoict). `origin/guard_agent_update` has no newer commits |
-| Guard code | GĐ18: `contracts/guard` full contract (§11.5), 65 unit tests, 9 sandbox tests (`tests/sandbox.rs`), `scripts/guard-setup/spike.sh`, `scripts/guard-setup/setup.sh` (ran on testnet, Guard `kdg1793603660-guard.testnet`). No `apps/guard-mcp`, no `demo/invoices` |
+| Guard code | GĐ18: `contracts/guard` full contract (§11.5), 65 unit tests, 9 sandbox tests (`tests/sandbox.rs`), `scripts/guard-setup/spike.sh`, `scripts/guard-setup/setup.sh` (ran on testnet, Guard `kdg1793603660-guard.testnet`). GĐ19: `apps/guard-mcp` (42 tests), `demo/invoices/inv-001..004.md` |
 | Entry gate (§13.4) | GĐ15 starts only when GĐ0 to GĐ10 meet "done when". Backlog: GĐ0, 1, 2 done; GĐ3, 4, 6, 7, 9 live; GĐ5, 8, 10 built with owner checks still open |
 | Cut dates (§13.7) | 11/11: GĐ17 not passing → Guard leaves the submission (experimental, Roadmap). 12/11: GĐ19 + GĐ20 not done → Guard leaves the video |
 | Tooling on the dev machine | rustc 1.95, `wasm32-unknown-unknown`, near-cli-rs 0.30.1, cargo-near 0.22. `cargo near build` output loads in the sandbox VM, no toolchain pin needed |
@@ -171,6 +171,14 @@ export function nearToYocto(s: string): string {
 ```
 
 Tests (vitest, mocked RPC): amount parsing edge cases, mapping of each contract error code to `status: "rejected"` + `error_code`, Pending mapping with reasons, `remaining_today` from `get_window`.
+
+**Result (2026-11-02).** Built; done-when ("3 invoices auto, invoice 4 Pending") still needs the live run.
+- Layout: `src/amount.ts` (the code above), `src/near.ts` (RPC, key file, borsh, signing), `src/tools.ts` (the three tools), `src/server.ts` (JSON-RPC dispatch), `src/index.ts` (stdio loop). Started with `pnpm --silent --filter guard-mcp start`; Node runs the `.ts` files directly.
+- No near-api-js and no MCP SDK: zero runtime dependencies. Borsh for one FunctionCall tx and ed25519 signing (`node:crypto`) are hand-written; a test compares the bytes and signature with `@near-js/transactions` 2.5.1 output.
+- Tests use `node:test` like the rest of the repo, not vitest. 42 tests: amounts, the tx bytes, key file checks, all 8 Guard panic codes → `rejected`, Pending with reasons, Auto with `remaining_today` from `get_window`, `UNKNOWN_OUTCOME` (tx hash kept, "do not resend"), `NOT_ENOUGH_ALLOWANCE`, full-access key refused, input validation, two concurrent requests get nonces 43 and 44 (signing is serialized), status sync and its fallback, the MCP handshake. Spot mutations (drop the signing lock, take `remaining_today` from `max_per_day`) each fail a test.
+- Gas: 200 Tgas for `request_transfer` (GĐ17), 50 Tgas for `sync_request` (one `get_proposal` plus a callback).
+- `send_tx` waits for `EXECUTED_OPTIMISTIC`, so the result is the Guard's final `RequestRecord`. An RPC error other than `INVALID_TRANSACTION` / `NotEnoughAllowance` returns `UNKNOWN_OUTCOME` with the tx hash, never a retry.
+- Live on testnet, read-only (2026-11-02): `guard_get_policy` against `kdg1793603660-guard.testnet` (5 / 10 NEAR, 3 receivers), status lookup of an unknown id → `NOT_FOUND`, the agent key is a FunctionCall key on the Guard. No `guard_request_transfer` was sent: it spends DAO funds and the daily window, so it waits for the recorded demo after 2026-11-04.
 
 ### GĐ20: Key Doctor integration (1 day)
 

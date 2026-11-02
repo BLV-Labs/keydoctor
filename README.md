@@ -19,7 +19,7 @@ Network-wide numbers come from one reproducible command (`pnpm stats`, see below
 | Clean up | A step-by-step plan in a safe order, ticked from chain data when you rescan. Revoke or Delete one key at a time | Dashboard (`view=cleanup`), each change signed by you in Meteor, Here or HOT Wallet (your pick) |
 | Compare | What changed since the last baseline | Telegram `/changes`, MCP `compare` |
 
-Fixed rules make every conclusion. **No AI is used in the product**, and Key Doctor **never signs transactions or holds keys**.
+Fixed rules make every conclusion. **No AI is used in the product**, and Key Doctor **never signs transactions or holds keys**. The one exception is the optional Guard MCP (`apps/guard-mcp`), which runs on the agent owner's machine and signs only Guard requests with the agent's limited function-call key.
 
 ## Live demo (testnet)
 
@@ -144,8 +144,9 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 | GĐ10 | Network stats script | Built; numbers pending a live run |
 | GĐ12 | One-tap watch links: `POST /api/watch-link`, MCP `watch`, `/start <code>`, dashboard "Create links" | Deployed with the Worker; MCP `watch` is in `tools/list`, a link has not been opened live yet |
 | GĐ11, GĐ13 | History backtest, NearBlocks key dates | Not built (Roadmap) |
-| GĐ15–GĐ17 | Agent Guard contract (`contracts/guard`) | Built; 65 unit tests and 9 sandbox tests against the real Sputnik v2 wasm. A spike version paid a transfer on testnet (2026-11-02). Agents have no MCP for it yet (Roadmap) |
+| GĐ15–GĐ17 | Agent Guard contract (`contracts/guard`) | Built; 65 unit tests and 9 sandbox tests against the real Sputnik v2 wasm. A spike version paid a transfer on testnet (2026-11-02) |
 | GĐ18 | Guard testnet setup script (`scripts/guard-setup/setup.sh`) | Ran end to end on testnet (2026-11-02): full Guard 1.0.0 deployed, role added, funded and locked; `setup.sh verify` passes |
+| GĐ19 | Guard MCP (`apps/guard-mcp`) and demo invoices (`demo/invoices/`) | Built; 42 tests with a mocked chain. Checked live on testnet, read-only (`guard_get_policy`, status lookup, the agent key). No live `guard_request_transfer` yet: the invoice demo runs after 2026-11-04 |
 
 ## Agents
 
@@ -164,6 +165,7 @@ packages/key-doctor   pure TypeScript library, fetch only (browser, Node, Worker
   toSummary(report)                  → kd.report_summary.v1
   checkProposals(dao, state)         → kd.alert.v1[] + new state (reads RPC only)
 apps/dashboard        static site (Cloudflare Pages), scans in the browser
+apps/guard-mcp        stdio MCP server for an agent, runs on the agent owner's machine
 apps/worker           one Cloudflare Worker + D1
   POST /mcp           MCP Streamable HTTP, no auth for now
   POST /telegram      bot webhook, secret-token header, 200 at once + waitUntil
@@ -224,6 +226,26 @@ KD_GUARD_PREFIX=kdg$(date +%s) scripts/guard-setup/setup.sh all
 
 The script creates the council and demo accounts with the testnet faucet, a 3-member DAO that needs 2 votes, deploys and initialises the Guard (5 NEAR per request, 10 NEAR per 24 hours, 3 whitelisted receivers), adds the `agent-guard` role and funds the Guard by DAO proposals, gives the agent account a function-call key limited to the Guard (allowance 1 NEAR), and finally deletes the Guard's full-access keys after a `y/N` prompt. The agent's private key goes to a file (`~/.config/key-doctor/<agent>.json`, mode 600, or `KD_GUARD_AGENT_KEY`), never to the terminal. Done steps are skipped on a re-run; `setup.sh verify` checks the result and `setup.sh info` prints the accounts.
 
+### Guard MCP (agent side)
+
+`apps/guard-mcp` is a stdio MCP server that the agent owner runs next to the agent. It reads its config from the environment and signs with the agent's function-call key file (it refuses a full-access key). Add it to Claude Code with the values `setup.sh info` prints:
+
+```bash
+claude mcp add guard -e NEAR_NETWORK=testnet -e GUARD_CONTRACT_ID=<prefix>-guard.testnet -e AGENT_ACCOUNT_ID=<prefix>-agent1.testnet -e AGENT_KEY_PATH=$HOME/.config/key-doctor/<prefix>-agent1.testnet.json -- pnpm --silent --filter guard-mcp start
+```
+
+`NEAR_RPC_URL` overrides the default RPC (`rpc.<network>.fastnear.com`). Tools, each returning `kd.guard_result.v1`:
+
+| Tool | Does |
+|---|---|
+| `guard_get_policy` | Read-only: limits, spent and remaining in the current 24-hour window, reset time, whitelisted receivers |
+| `guard_request_transfer` | `receiver_id`, `amount_near` (decimal string, converted to yoctoNEAR exactly), optional `memo`. Signs `request_transfer` with a new `request_id` and 200 Tgas. Returns `auto_approved` (paid), `pending` (a DAO proposal for the council, with reasons) or `rejected` (a Guard error code such as `PAUSED` or `TOO_MANY_PENDING`) |
+| `guard_get_request_status` | `request_id`; refreshes a non-final request with `sync_request` |
+
+The tool descriptions and messages tell the agent not to send a pending payment again and not to split it into smaller ones: over the limit is the council's call. When the outcome of a transaction is not known (`UNKNOWN_OUTCOME`), the result carries the tx hash and the agent must check the status instead of retrying.
+
+Invoice demo: put the four invoices in `demo/invoices/` (see its README for another prefix) and ask the agent "Pay the invoices in demo/invoices/ with the guard tool." Expected: the first three are paid at once, the fourth (500 NEAR to `attacker.testnet`, with a prompt injection) becomes a pending proposal for the council.
+
 ## Limitations
 
 - ML-DSA keys can be added only in Meteor Wallet (its PQ screen). Key Doctor reads any ML-DSA key on chain but does not add one, and Here and HOT are not claimed to support it.
@@ -243,7 +265,7 @@ The script creates the council and demo accounts with the testnet faucet, a 3-me
 - Show the exact time each key was added, from the NearBlocks indexer (`/v1/account/{id}/keys` returns `created` / `deleted`), next to the nonce-based estimate. See `docs/data-sources-benchmark.md`.
 - Backtest the proposal rules on 12 months of history (`kd.backtest.v1`), using NearBlocks for keys added and later removed.
 - Exact key creation dates from NearBlocks, and more rules.
-- **Agent Guard on testnet:** an MCP server the agent runs on its own machine, Telegram alerts for Guard proposals, and a Guard card on the dashboard.
+- **Agent Guard on testnet:** Telegram alerts for Guard proposals, and a Guard card on the dashboard.
 - Link a Telegram user to a NEAR account by signature to mention voters by name. Discord and email alerts. Near-real-time watching through an indexer.
 - Add ML-DSA keys in the dashboard when wallet-selector supports them. Integration with wallets and treasury tools.
 
@@ -268,7 +290,7 @@ After the first setup (steps 1 to 5), every later release is one command: `pnpm 
 
 ## Libraries, AI-written code and prepared data
 
-- **Runtime:** none. The library and the Worker use only web platform APIs (`fetch`, `crypto.subtle`).
+- **Runtime:** none. The library and the Worker use only web platform APIs (`fetch`, `crypto.subtle`). The Guard MCP uses only Node built-ins: its borsh encoding and ed25519 signing (`node:crypto`) are written in the repo, checked against bytes from `@near-js/transactions` 2.5.1 in its tests.
 - **Fonts:** Fira Sans and Fira Code from Google Fonts.
 - **Build and dev tools:**
   - TypeScript
