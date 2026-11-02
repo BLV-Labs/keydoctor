@@ -49,6 +49,8 @@ KEY_FILE="${KD_GUARD_AGENT_KEY:-$HOME/.config/key-doctor/${AGENT}.json}"
 FUND="${KD_GUARD_FUND:-1}"
 TREASURY="${KD_DAO_TREASURY:-8}"
 SIGN="${KD_GUARD_SIGN:-sign-with-keychain}"
+# New faucet accounts keep their keys where SIGN looks for them.
+if [[ "$SIGN" == sign-with-legacy-keychain ]]; then SAVE=save-to-legacy-keychain; else SAVE=save-to-keychain; fi
 NET=(network-config testnet)
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 CRATE="$ROOT/contracts/guard"
@@ -126,7 +128,7 @@ step_accounts() {
     if [[ $(acct "$acc" exists) == true ]]; then
       echo "$acc exists."
     elif [[ "$acc" =~ ^[a-z0-9_-]+\.testnet$ ]]; then
-      near account create-account sponsor-by-faucet-service "$acc" autogenerate-new-keypair save-to-keychain "${NET[@]}" create
+      near account create-account sponsor-by-faucet-service "$acc" autogenerate-new-keypair "$SAVE" "${NET[@]}" create
     else
       echo "$acc does not exist and is not a top-level .testnet name: create and fund it yourself." >&2; exit 1
     fi
