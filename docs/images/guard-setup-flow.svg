@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="520" viewBox="0 0 680 520" role="img"><title>Agent Guard setup flow</title><desc>Council member creates two proposals from the dashboard, council votes, factory creates a locked Guard, agent owner adds a function-call key and MCP.</desc>
+<style>
+  svg { background: #ffffff; font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .th { font-size: 14px; font-weight: 600; fill: #1f2328; }
+  .ts { font-size: 12px; fill: #57606a; }
+  .arr { stroke: #57606a; stroke-width: 1.5; fill: none; }
+  .mk { stroke: #57606a; }
+  .c-purple, .c-purple rect { fill: #ede9fe; stroke: #7c3aed; }
+  .c-teal, .c-teal rect { fill: #ccfbf1; stroke: #0d9488; }
+  .c-gray, .c-gray rect { fill: #f3f4f6; stroke: #6b7280; }
+  .c-coral, .c-coral rect { fill: #ffe4e1; stroke: #e5533d; }
+  @media (prefers-color-scheme: dark) {
+    svg { background: #0d1117; }
+    .th { fill: #e6edf3; } .ts { fill: #9da7b3; }
+    .arr, .mk { stroke: #9da7b3; }
+    .c-purple, .c-purple rect { fill: #2e1f5e; stroke: #a78bfa; }
+    .c-teal, .c-teal rect { fill: #0f3b37; stroke: #2dd4bf; }
+    .c-gray, .c-gray rect { fill: #21262d; stroke: #9da7b3; }
+    .c-coral, .c-coral rect { fill: #4a1d17; stroke: #f87171; }
+  }
+</style>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" class="mk" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<g class="node c-purple">
+<rect x="150" y="40" width="380" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="58" text-anchor="middle" dominant-baseline="central">1. Council member opens #/guard/&lt;dao&gt;</text>
+<text class="ts" x="340" y="78" text-anchor="middle" dominant-baseline="central">Fills limits, agents, whitelist, funding</text></g>
+<line x1="340" y1="96" x2="340" y2="124" class="arr" marker-end="url(#arrow)"/>
+<g class="node c-purple">
+<rect x="150" y="126" width="380" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="144" text-anchor="middle" dominant-baseline="central">2. Wallet signs once: 2 add_proposal</text>
+<text class="ts" x="340" y="164" text-anchor="middle" dominant-baseline="central">P1 factory.create, P2 role agent-guard</text></g>
+<line x1="340" y1="182" x2="340" y2="210" class="arr" marker-end="url(#arrow)"/>
+<g class="node c-purple">
+<rect x="150" y="212" width="380" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="230" text-anchor="middle" dominant-baseline="central">3. Council votes P1 and P2</text>
+<text class="ts" x="340" y="250" text-anchor="middle" dominant-baseline="central">In usual DAO UI, any order</text></g>
+<line x1="340" y1="268" x2="340" y2="296" class="arr" marker-end="url(#arrow)"/>
+<g class="node c-teal">
+<rect x="150" y="298" width="380" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="316" text-anchor="middle" dominant-baseline="central">4. Factory creates &lt;name&gt;.guard-factory</text>
+<text class="ts" x="340" y="336" text-anchor="middle" dominant-baseline="central">No keys: locked, dao_id = DAO</text></g>
+<line x1="340" y1="354" x2="340" y2="382" class="arr" marker-end="url(#arrow)"/>
+<g class="node c-gray">
+<rect x="150" y="384" width="380" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="402" text-anchor="middle" dominant-baseline="central">5. Agent owner: FC key + Guard MCP</text>
+<text class="ts" x="340" y="422" text-anchor="middle" dominant-baseline="central">Key only request_transfer, sync_request</text></g>
+<rect class="c-purple" x="150" y="470" width="14" height="14" rx="3" stroke-width="0.5"/>
+<text class="ts" x="172" y="477" dominant-baseline="central">DAO side</text>
+<rect class="c-teal" x="260" y="470" width="14" height="14" rx="3" stroke-width="0.5"/>
+<text class="ts" x="282" y="477" dominant-baseline="central">Contract</text>
+<rect class="c-gray" x="370" y="470" width="14" height="14" rx="3" stroke-width="0.5"/>
+<text class="ts" x="392" y="477" dominant-baseline="central">Agent owner</text>
+</svg>

@@ -38,6 +38,8 @@ sequenceDiagram
 
 Not live yet; listed under Roadmap in the README until it is deployed and tested.
 
+![Guard setup through the dashboard and factory](images/guard-setup-flow.svg)
+
 ```mermaid
 sequenceDiagram
     autonumber
@@ -65,6 +67,8 @@ What makes it safe:
 - P2 gives the Guard only `transfer:AddProposal` and `transfer:VoteApprove`. The council sees the policy diff before signing.
 
 ## Phase 2: use the Guard
+
+![Agent payment request: Auto or Pending](images/guard-request-flow.svg)
 
 ```mermaid
 sequenceDiagram
