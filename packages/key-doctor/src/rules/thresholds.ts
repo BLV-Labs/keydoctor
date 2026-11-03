@@ -92,6 +92,8 @@ export const PROPOSAL_LIST_MAX = 40;
 export const MAX_VOTER_SCANS_PER_CHECK = 8;
 // Proposal descriptions are chain text: cut before they go into ProposalInfo.
 export const DESCRIPTION_MAX_LEN = 280;
+// The Guard caps its memo at this many characters (contracts/guard MEMO_MAX_CHARS); Key Doctor cuts there too.
+export const GUARD_MEMO_MAX_LEN = 200;
 
 // NEAR account id length bounds.
 export const ACCOUNT_ID_MIN_LEN = 2;

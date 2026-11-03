@@ -105,7 +105,7 @@ sequenceDiagram
 | Change limits, agents, whitelist, guardians | DAO | `FunctionCall` proposal DAO → Guard (`set_policy`, `add_whitelist`, …) |
 | Emergency stop | guardian or DAO | `pause`; only the DAO can `unpause` |
 | Get money back | DAO | `withdraw_excess` by proposal |
-| Watch | council | Key Doctor `/watch`: proposals and new full-access keys of voters |
+| Watch | council | Key Doctor `/watch`: proposals, new full-access keys of voters, and every Guard transfer (pending: high alert with the Guard's reasons; auto-paid: note) |
 
 ### Guardians
 

@@ -14,13 +14,23 @@ import type {
 import type { HeadBlock } from "./age.ts";
 import { blocksToHours, hoursToBlocks, toIsoSeconds } from "./age.ts";
 import { fail, isKdError } from "./errors.ts";
-import { ACTION_TEXT, formatNear, proposalAlertText, roleLabel, voterAlertText, type AlertText } from "./messages.ts";
+import {
+  ACTION_TEXT,
+  formatNear,
+  guardAutoText,
+  guardPendingText,
+  proposalAlertText,
+  roleLabel,
+  voterAlertText,
+  type AlertText,
+} from "./messages.ts";
 import { accountKind, isDigits, isRecord, parsePolicy, resolveTarget, type Policy } from "./parse.ts";
 import { createRpc, DEFAULT_RPC_URLS, type Rpc } from "./rpc.ts";
 import { approvalsNeeded, permits } from "./rules/dao.ts";
 import {
   BLOCK_TIME_MS,
   DESCRIPTION_MAX_LEN,
+  GUARD_MEMO_MAX_LEN,
   MAX_PROPOSALS_PER_CHECK,
   MAX_VOTER_SCANS_PER_CHECK,
   NEW_KEY_WINDOW_HOURS,
@@ -73,6 +83,26 @@ interface Proposal {
   proposer: string;
   status: string;
   votes: Record<string, Vote>;
+  /** The Guard's fields when the description has the `[KD-GUARD]` form, whoever the proposer is. */
+  guard: GuardTag | null;
+}
+
+type GuardTag = Omit<NonNullable<KdAlert["guard"]>, "guard_id">;
+
+// §11.5.6. The memo is last and may hold spaces, so every other field is read from before " memo=".
+const KD_GUARD = /^\[KD-GUARD\] request=([A-Za-z0-9_-]{8,64}) agent=(\S+) decision=(auto|pending) reasons=(\S+) memo=(.*)$/s;
+const GUARD_REASON = /^[A-Z_]{1,32}$/;
+
+/** Null unless the whole description has the Guard form. Control characters in the memo become spaces. */
+export function parseGuardDescription(description: string): GuardTag | null {
+  const m = KD_GUARD.exec(description);
+  if (m === null) return null;
+  const [, requestId = "", agentRaw, decision, reasonsRaw = "", memoRaw = ""] = m;
+  const agent = safeId(agentRaw);
+  const reasons = reasonsRaw === "-" ? [] : reasonsRaw.split(",");
+  if (agent === "?" || !reasons.every((r) => GUARD_REASON.test(r))) return null;
+  const memo = [...memoRaw].slice(0, GUARD_MEMO_MAX_LEN).map((c) => (/\p{Cc}/u.test(c) ? " " : c)).join("").trim();
+  return { request_id: requestId, agent, decision: decision as "auto" | "pending", reasons, memo };
 }
 
 /** Null for anything that is not a Sputnik v2 proposal. */
@@ -89,6 +119,8 @@ export function parseProposal(raw: unknown): Proposal | null {
   } else return null;
   const label = KIND_LABEL[variant];
   if (label === undefined) return null;
+  // Sputnik UIs append "$$$$<link>" to the description.
+  const description = raw.description.split("$$$$")[0] ?? "";
   const votes: Record<string, Vote> = {};
   for (const [who, v] of Object.entries(raw.votes)) {
     if (typeof v !== "string" || !VOTES.has(v)) return null;
@@ -99,17 +131,19 @@ export function parseProposal(raw: unknown): Proposal | null {
     label,
     variant,
     body,
-    // Sputnik UIs append "$$$$<link>" to the description.
-    description: (raw.description.split("$$$$")[0] ?? "").slice(0, DESCRIPTION_MAX_LEN),
+    description: description.slice(0, DESCRIPTION_MAX_LEN),
     proposer: raw.proposer,
     status: raw.status,
     votes,
+    guard: parseGuardDescription(description),
   };
 }
 
 /** Chain ids go into message text only when they pass the account-id check. */
 const safeId = (id: unknown): string => (typeof id === "string" && accountKind(id) !== null ? id : "?");
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
+/** Sputnik statuses are single words; anything else is not put in message text. */
+const statusText = (s: string): string => (/^[A-Za-z]{1,20}$/.test(s) ? s : "?");
 
 export function actionText(p: Proposal): { vi: string; en: string } {
   const b = p.body;
@@ -143,7 +177,12 @@ export function actionText(p: Proposal): { vi: string; en: string } {
 }
 
 /** The group role that can approve this label and is closest to passing it; ties go to policy order. */
-export function tally(policy: Policy, p: Proposal): Pick<ProposalInfo, "approvals_needed" | "approvals_have" | "pending_voters"> {
+/** `guards`: a role made only of known Guards that did not approve is skipped, so a council is never told to wait for a Guard. */
+export function tally(
+  policy: Policy,
+  p: Proposal,
+  guards: ReadonlySet<string> = new Set(),
+): Pick<ProposalInfo, "approvals_needed" | "approvals_have" | "pending_voters"> {
   const approves = Object.entries(p.votes).filter(([, v]) => v === "Approve").map(([who]) => who);
   let best: { needed: number; have: number; pending: string[] } | null = null;
   for (const role of policy.roles) {
@@ -152,6 +191,7 @@ export function tally(policy: Policy, p: Proposal): Pick<ProposalInfo, "approval
     if (needed === null) continue;
     const members = [...new Set(role.members)];
     const have = members.filter((m) => approves.includes(m)).length;
+    if (have === 0 && members.length > 0 && members.every((m) => guards.has(m))) continue;
     const pending = members.filter((m) => !(m in p.votes));
     if (best === null || needed - have < best.needed - best.have) best = { needed, have, pending };
   }
@@ -159,7 +199,13 @@ export function tally(policy: Policy, p: Proposal): Pick<ProposalInfo, "approval
   return { approvals_needed: best.needed, approvals_have: best.have, pending_voters: best.pending };
 }
 
-function proposalInfo(p: Proposal, policy: Policy, dao: string, template: string | undefined): ProposalInfo {
+function proposalInfo(
+  p: Proposal,
+  policy: Policy,
+  dao: string,
+  template: string | undefined,
+  guards: ReadonlySet<string> = new Set(),
+): ProposalInfo {
   const b = p.body;
   return {
     id: p.id,
@@ -171,7 +217,7 @@ function proposalInfo(p: Proposal, policy: Policy, dao: string, template: string
     }),
     status: p.status,
     votes: { ...p.votes },
-    ...tally(policy, p),
+    ...tally(policy, p, guards),
     executed: p.status === "Approved",
     ui_url: template ? template.replaceAll("{dao}", dao).replaceAll("{id}", String(p.id)) : null,
   };
@@ -186,7 +232,7 @@ function alert(
   info: ProposalInfo,
   account: string,
   messages: AlertText,
-  evidence?: Evidence,
+  extra: Partial<Pick<KdAlert, "severity" | "evidence" | "guard">> = {},
 ): KdAlert {
   return {
     schema_version: "kd.alert.v1",
@@ -198,7 +244,7 @@ function alert(
     kind,
     after_the_fact: info.status !== "InProgress",
     proposal: info,
-    ...(evidence && { evidence }),
+    ...extra,
     messages,
   };
 }
@@ -206,6 +252,21 @@ function alert(
 type Evidence = NonNullable<KdAlert["evidence"]>;
 
 const codeOf = (e: unknown): string => (isKdError(e) ? e.kd.code : "RPC_ERROR");
+
+/**
+ * True when `account` answers `kd_guard_info` as a Guard of `dao`. An account with no code, no such method or no
+ * account at all is not a Guard; a transport failure throws so the caller retries.
+ */
+async function isGuardOf(rpc: Rpc, account: string, dao: string, height: number): Promise<boolean> {
+  try {
+    const info = await rpc.callFunction(account, height, "kd_guard_info", {});
+    return isRecord(info) && info.standard === "kd_guard" && info.dao_id === dao;
+  } catch (e) {
+    const code = codeOf(e);
+    if (code === "NOT_A_DAO" || code === "NOT_FOUND") return false;
+    throw e;
+  }
+}
 
 /** Newest full-access key added within the window before `head`, or null. */
 async function newFullAccessKey(
@@ -295,6 +356,9 @@ export async function checkProposals(
   let nextLast = newRead.length < newIds.length ? (newIds[newRead.length] as number) : last;
   let scans = 0;
   const scanned = new Map<string, Evidence | null>();
+  // Proposer → is a Guard of this DAO; filled only for proposals that carry the Guard description.
+  const guards = new Map<string, boolean>();
+  const knownGuards = new Set<string>();
 
   const fresh = new Set(newRead);
   for (const id of [...pendingRead, ...newRead]) {
@@ -317,9 +381,44 @@ export async function checkProposals(
 
     const group = groupOf(p.label);
     if (group === null) continue;
-    const info = proposalInfo(p, policy, dao, opts.proposalUiUrlTemplate);
     const action = actionText(p);
     const afterTheFact = p.status !== "InProgress";
+
+    // A Guard's transfer (§5.4): the description alone proves nothing, so the proposer must sit in a DAO role and
+    // answer kd_guard_info for this DAO. Pending is high; auto is a note so the council sees every outflow (D9).
+    if (isNew && p.label === "transfer" && p.guard !== null && policy.roles.some((r) => r.kind === "group" && r.members.includes(p.proposer))) {
+      let isGuard = guards.get(p.proposer);
+      if (isGuard === undefined) {
+        try {
+          isGuard = await isGuardOf(rpc, p.proposer, dao, head.height);
+        } catch (e) {
+          errors.push(`proposal ${id}: guard check ${codeOf(e)}`);
+          nextLast = Math.min(nextLast, id);
+          continue;
+        }
+        guards.set(p.proposer, isGuard);
+        if (isGuard) knownGuards.add(p.proposer);
+      }
+    }
+    const info = proposalInfo(p, policy, dao, opts.proposalUiUrlTemplate, knownGuards);
+
+    if (isNew && p.label === "transfer" && p.guard !== null && knownGuards.has(p.proposer)) {
+      const g = p.guard;
+      const guardId = safeId(p.proposer);
+      const pendingKind = g.decision === "pending";
+      alerts.push(
+        alert(
+          base,
+          pendingKind ? "guard_request_pending" : "guard_transfer_auto",
+          info,
+          "-",
+          pendingKind
+            ? guardPendingText(dao, id, action, g.agent, g.reasons, g.memo, statusText(p.status))
+            : guardAutoText(dao, id, action, guardId, g.agent, g.memo, statusText(p.status)),
+          { severity: pendingKind ? "high" : "note", guard: { guard_id: guardId, ...g } },
+        ),
+      );
+    }
 
     if (isNew && group !== "money") {
       const kind: AlertKind = group === "governance" ? "governance_change_proposal" : "code_upgrade_proposal";
@@ -333,6 +432,11 @@ export async function checkProposals(
     let unseen = 0;
     for (const [voter, vote] of Object.entries(p.votes)) {
       if (seen?.votes_seen[voter] === vote) continue;
+      // A Guard votes only on its own transfers and holds no keys (§5.4): nothing to scan.
+      if (knownGuards.has(voter)) {
+        votesSeen[voter] = vote;
+        continue;
+      }
       if (accountKind(voter) === null) {
         errors.push(`proposal ${id}: invalid voter id`);
         votesSeen[voter] = vote;
@@ -363,7 +467,7 @@ export async function checkProposals(
             info,
             voter,
             voterAlertText(dao, id, action, voter, evidence.hours_before_vote_seen, afterTheFact),
-            evidence,
+            { evidence },
           ),
         );
       }

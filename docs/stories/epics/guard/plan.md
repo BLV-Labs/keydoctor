@@ -28,6 +28,7 @@ Not in scope: `preflight` / `FA_RECENT` (PR 43, unrelated to the Guard contract)
 | D5 | `Member.special` and `KdReport.dao.guards` are new optional fields. Bump `kd.report.v1`? | No bump: additive optional fields, old readers ignore them. Bump `RULESET_VERSION` (new rules). Say so in the commit |
 | D6 | Sputnik v2 wasm for sandbox tests (GĐ17) | Download the wasm that testnet DAOs actually run (`near contract download-wasm` from an existing `*.sputnik-v2.testnet` DAO), commit it under `contracts/guard/tests/res/` with its sha256. No download from a third-party mirror |
 | D7 | Testnet accounts: `kd-guard.blvlabs.testnet`, `agent1.blvlabs.testnet`, 3 council accounts | Owner creates and funds them. Claude writes the scripts; the owner runs every command that signs with an owner key |
+| D9 | (2026-11-03) Spec §5.4 says `decision=auto` never alerts. Should the council see auto-paid Guard transfers on Telegram? | Owner: yes. New `guard_transfer_auto` alert at `note` level next to `guard_request_pending` (high). Guard data goes in a new optional `KdAlert.guard` field, not in `evidence` (that stays the key shape). Additive optional field and kinds: no `kd.alert.v1` bump (as D5) |
 | D8 | Root `pnpm test` and Rust | Keep `pnpm test` JS-only (fast pre-commit). Add `pnpm test:guard` (`cargo test` in `contracts/guard`). README lists both |
 
 ## 2. Phases
@@ -194,6 +195,10 @@ Tests (vitest, mocked RPC): amount parsing edge cases, mapping of each contract 
 - Worker: Telegram template for the new alert; Guard block in `/check`. `diagnose` picks it up with no change.
 
 **Why.** UC12/UC14: the council gets the risk reason on Telegram, and Key Doctor audits the Guard itself.
+
+**Status (2026-11-03): alerts built, scanner and rules not.**
+- Built: `guard_request_pending` (high) and, per D9, `guard_transfer_auto` (note; "payment not done" text when the proposal did not pass). A proposal counts as a Guard's only when the description parses, the proposer sits in a DAO group role and `kd_guard_info` answers `standard = "kd_guard"` with `dao_id` = this DAO (one call per Guard per check; a transport failure retries the proposal next run). A fake Guard's vote is still scanned like any voter's. The vote tally skips a role made only of Guards that did not approve, so a pending alert names the council, not the Guard. Telegram needs no new template (`renderAlert` is generic). Live read on `kdoncall.sputnik-v2.testnet`: #13 auto, #14 pending, #12 auto that did not pay.
+- Not built: `dao.guards` / `Member.special` in the scanner, `GUARD_*` rules, the Guard block in `/check`.
 
 ```ts
 // proposals.ts: parse the fixed description (§11.5.6); null when it is not a Guard proposal

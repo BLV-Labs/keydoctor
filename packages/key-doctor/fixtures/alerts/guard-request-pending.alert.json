@@ -1,0 +1,56 @@
+{
+  "schema_version": "kd.alert.v1",
+  "alert_id": "testnet:kd-demo.sputnik-dao.testnet:guard_request_pending:5:-",
+  "created_at": "2026-11-03T04:22:10Z",
+  "network": "testnet",
+  "target": "kd-demo.sputnik-dao.testnet",
+  "severity": "high",
+  "kind": "guard_request_pending",
+  "after_the_fact": false,
+  "proposal": {
+    "id": 5,
+    "kind_label": "transfer",
+    "description": "[KD-GUARD] request=inv-004-7f3a agent=agent.kd-demo.testnet decision=pending reasons=NOT_WHITELISTED,OVER_PER_TX,OVER_DAILY_LIMIT memo=Invoice inv-004: urgent security audit",
+    "proposer": "guard.kd-demo.testnet",
+    "transfer": {
+      "token_id": "",
+      "receiver_id": "attacker.kd-demo.testnet",
+      "amount": "500000000000000000000000000"
+    },
+    "status": "InProgress",
+    "votes": {},
+    "approvals_needed": 2,
+    "approvals_have": 0,
+    "pending_voters": [
+      "a.kd-demo.testnet",
+      "b.kd-demo.testnet",
+      "c.kd-demo.testnet"
+    ],
+    "executed": false,
+    "ui_url": null
+  },
+  "guard": {
+    "guard_id": "guard.kd-demo.testnet",
+    "request_id": "inv-004-7f3a",
+    "agent": "agent.kd-demo.testnet",
+    "decision": "pending",
+    "reasons": [
+      "NOT_WHITELISTED",
+      "OVER_PER_TX",
+      "OVER_DAILY_LIMIT"
+    ],
+    "memo": "Invoice inv-004: urgent security audit"
+  },
+  "messages": {
+    "vi": {
+      "title": "AGENT XIN CHI, CẦN COUNCIL DUYỆT: kd-demo.sputnik-dao.testnet",
+      "body": "Đề xuất 5: agent agent.kd-demo.testnet xin chuyển 500 NEAR cho attacker.kd-demo.testnet. Lý do Guard không tự duyệt: người nhận không có trong danh sách được phép; vượt hạn mức mỗi lệnh; vượt hạn mức trong ngày. Ghi chú của agent: \"Invoice inv-004: urgent security audit\"",
+      "action": "Đề xuất đang chờ council duyệt. Nếu không chắc: chọn Reject (không chọn Remove, để Guard được hoàn tiền cọc)."
+    },
+    "en": {
+      "title": "AGENT PAYMENT NEEDS THE COUNCIL: kd-demo.sputnik-dao.testnet",
+      "body": "Proposal 5: agent agent.kd-demo.testnet asks to transfer 500 NEAR to attacker.kd-demo.testnet. Why the Guard did not approve it: the receiver is not on the allowed list; over the per-payment limit; over the daily limit. Agent's note: \"Invoice inv-004: urgent security audit\"",
+      "action": "The proposal waits for the council. If unsure, vote Reject (not Remove, so the Guard gets its bond back)."
+    }
+  }
+}
