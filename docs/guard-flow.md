@@ -36,7 +36,7 @@ sequenceDiagram
 
 ### Path B: dashboard + Guard factory (factory on testnet)
 
-Code, unit, render and sandbox tests are done (`contracts/guard-factory`, dashboard `?page=guard`). Factory deployed on testnet as `keydoctor-guards.testnet` (2026-11-03); no Guard created through it yet. `scripts/guard-setup/setup.sh factory` deploys your own.
+Code, unit, render and sandbox tests are done (`contracts/guard-factory`, dashboard `?page=guard`). Factory deployed on testnet as `keydoctor-guards.testnet` (2026-11-03); first Guard `payroll.keydoctor-guards.testnet` created through it for `kdoncall.sputnik-v2.testnet` the same day (proposals #8 and #9). `scripts/guard-setup/setup.sh factory` deploys your own.
 
 ![Guard setup through the dashboard and factory](images/guard-setup-flow.svg)
 
