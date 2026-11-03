@@ -1,6 +1,6 @@
 # Per-DAO alerts on Telegram (plan)
 
-Status: 2026-11-03, plan only. Nothing is built. Owner answers of 2026-11-03 are recorded in §1.
+Status: 2026-11-03, plan only. Nothing is built. Owner answered P1–P6 on 2026-11-03 (§1); O-P1 (wallet `signMessage` check) is still open before PD3.
 
 Goal: each chat that watches a DAO decides which alerts it gets, so a council group and an ops group can watch the same DAO without both getting everything. A council member can link their Telegram user to their NEAR account, so a pending-vote alert notifies the people who still have to vote.
 
@@ -24,8 +24,8 @@ Goal: each chat that watches a DAO decides which alerts it gets, so a council gr
 | P2 | Per-DAO rule thresholds? | Owner: no. Filters only. Rules, `RULESET_VERSION` and reports stay the same for every DAO, so reports stay comparable and `diffReports` keeps its ruleset rule (§4.3) |
 | P3 | Who may change a chat's settings? | Owner: group admins (`creator` or `administrator` from `getChatMember`, or an anonymous admin). Anyone in a private chat |
 | P4 | Per-DAO bot or hosted Guard agent before 14 Nov? | Owner: no. Both stay Roadmap (`docs/stories/epics/guard/hosted-agent-plan.md`). No stored bot tokens, no LLM, no agent key |
-| P5 | `/unwatch` in a group is also a mute. Gate it to admins too? | Recommendation: yes, in groups only, from PD2 on. Otherwise any member undoes the admins' settings with `/unwatch` + `/watch`. **Needs the owner's yes** |
-| P6 | May a filter leave a high alert kind with no chat on the DAO? | Recommendation: allow it, but `/set` replies with a warning naming the kinds no chat on this DAO receives. Blocking would make a two-chat setup depend on the order of `/set` calls. **Needs the owner's yes** |
+| P5 | `/unwatch` in a group is also a mute. Gate it to admins too? | Owner 2026-11-03: yes, in groups only, from PD2 on. Otherwise any member undoes the admins' settings with `/unwatch` + `/watch` |
+| P6 | May a filter leave a high alert kind with no chat on the DAO? | Owner 2026-11-03: allow it, but `/set` replies with a warning naming the kinds no chat on this DAO receives. Blocking would make a two-chat setup depend on the order of `/set` calls |
 
 ## 2. Changes
 
@@ -110,7 +110,7 @@ Warning: no chat watching kdoncall.sputnik-v2.testnet gets keys alerts now.
 
 ### 2.4 Admin check (PD2)
 
-**What.** `Incoming` gains `fromId` and `senderChatId`. In a group or supergroup, `/set` (and `/unwatch` if P5 is accepted) first asks Telegram:
+**What.** `Incoming` gains `fromId` and `senderChatId`. In a group or supergroup, `/set` and `/unwatch` (P5) first ask Telegram:
 
 ```ts
 async function isChatAdmin(token: string, inc: Incoming): Promise<boolean> {
@@ -219,7 +219,7 @@ Today is 2026-11-03; the deadline is 23:59 UTC 14 Nov. This epic is after the cr
 | Phase | Work | Size | Done when |
 |---|---|---|---|
 | PD1 | Migration 0002, `alert-filter.ts`, `deliver` per chat | 0.5 day | Tests in §5 pass; an existing D1 with rows migrates and behaves as before |
-| PD2 | `/settings`, `/set`, admin check, P5/P6 if accepted, `/help`, README bot section | 1 day | Telegram tests pass; live: council group on `kdoncall.sputnik-v2.testnet` takes `keys,governance`, a second group takes `guard`; a Guard auto-transfer reaches only the second |
+| PD2 | `/settings`, `/set`, admin check (also on `/unwatch`, P5), P6 warning, `/help`, README bot section | 1 day | Telegram tests pass; live: council group on `kdoncall.sputnik-v2.testnet` takes `keys,governance`, a second group takes `guard`; a Guard auto-transfer reaches only the second |
 | PD3 | O-P1, migration 0003, `/link`, `/unlink`, dashboard link page, `POST /api/link`, mentions | 1.5–2 days | Tests pass; live: a council member links in the testnet group and is mentioned on a Guard `pending` alert |
 | PD4 | `held_alerts`, `quiet` key, digest in the 15-minute cron | 0.5–1 day | Tests pass; live: a `note` held in a quiet window arrives as one digest at its end |
 | PD5 | README Limitations, `docs/TEST_MATRIX.md` rows, backlog, owner deploy | 0.5 day | Every README claim about settings runs on the deployed Worker |
