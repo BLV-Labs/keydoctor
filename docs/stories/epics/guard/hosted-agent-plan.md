@@ -1,6 +1,6 @@
 # Hosted Guard agent: one Telegram bot per DAO (plan)
 
-Status: 2026-11-03, proposal only. Nothing is built. It breaks three invariants, so it waits for the owner decisions in §1. Recommended placement: Roadmap, after the hackathon.
+Status: 2026-11-03, proposal only. Nothing is built. Owner decision 2026-11-03: Roadmap, after the hackathon (README "Roadmap"). It breaks three invariants, so H1–H4 in §1 still need answers before any work starts.
 
 Goal: Key Doctor runs the agent as a service. A DAO brings its own Telegram bot, enters a few values on the dashboard, and its council can then say "pay 3 NEAR to vendor-a.testnet for hosting" in their group. The agent (model on NEAR AI Cloud) turns that into Guard `request_transfer` calls. The Guard limits and the council vote still decide what gets paid.
 
