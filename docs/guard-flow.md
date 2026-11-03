@@ -1,6 +1,18 @@
 # Agent Guard: end-to-end flow
 
-How a DAO gets an Agent Guard and how an AI agent then spends DAO money through it. Testnet names throughout. Contract: `contracts/guard`. Agent side: `apps/guard-mcp`. Step-by-step commands: [guard-integration.md](guard-integration.md).
+How a DAO gets an Agent Guard and how an AI agent then spends DAO money through it. Testnet names throughout. Contract: `contracts/guard`. Agent side: `apps/guard-mcp`. Step-by-step commands: [guard-integration.md](guard-integration.md). Manual test plan: [guard-test-guide.md](guard-test-guide.md).
+
+## What works today (2026-11-03)
+
+| Part | State |
+|---|---|
+| Guard contract (`contracts/guard`) | On testnet. Demo Guards locked (`kdg1793607117-guard.testnet`, `payroll.keydoctor-guards.testnet`) |
+| Guard factory (`contracts/guard-factory`) | On testnet as `keydoctor-guards.testnet` |
+| Dashboard Agent Guard page | <https://key-doctor-dashboard.pages.dev/?page=guard&dao=kdoncall.sputnik-v2.testnet> (deployed from main). Guard created through the factory on testnet (proposals #8, #9); Pause and Propose retire are render- and unit-tested only |
+| Guard MCP (`apps/guard-mcp`) | Works on testnet (invoice run 2026-11-02) |
+| Telegram Guard alerts | Live on `@KeyDoctorOnCallBot` once the Worker is deployed from main (Deploy workflow) |
+| Guard checks in the council report (`/check`, `GUARD_*` rules) | Not built (Roadmap) |
+
 
 ## Actors
 
@@ -98,6 +110,32 @@ sequenceDiagram
     end
 ```
 
+### Key Doctor watches every Guard transfer
+
+A chat that ran `/watch <dao>` gets these from the 15-minute proposal job:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant DAO as Sputnik DAO
+    participant KD as Key Doctor Worker (cron, every 15 min)
+    participant Guard
+    actor Chat as Council chat (Telegram)
+    KD->>DAO: get_last_proposal_id, get_proposal for each new id
+    Note over KD: [KD-GUARD] description + proposer in a group role?
+    KD->>Guard: kd_guard_info (standard kd_guard, dao_id = this DAO), once per Guard per run
+    alt decision=pending
+        KD->>Chat: high: AGENT PAYMENT NEEDS THE COUNCIL (amount, receiver, reasons, agent's note, who still has to vote)
+    else decision=auto
+        KD->>Chat: note: GUARD AUTO-PAID (or GUARD PAYMENT NOT DONE when the proposal did not pass)
+    end
+    KD->>KD: key-scan every voter, the Guard included: a new full-access key raises voter_new_full_access_key
+```
+
+- Each alert goes out once: the alert id is `{network}:{dao}:{kind}:{proposal}:{account}`.
+- A proposal that only looks like a Guard's (description copied, proposer not a Guard of this DAO) gets no Guard alert. The ordinary proposal rules still apply to it.
+- The first `/watch` of a DAO records its current last proposal and sends nothing for older ones.
+
 ## Phase 3: run it
 
 | Need | Who | How |
@@ -105,7 +143,7 @@ sequenceDiagram
 | Change limits, agents, whitelist, guardians | DAO | `FunctionCall` proposal DAO → Guard (`set_policy`, `add_whitelist`, …) |
 | Emergency stop | guardian or DAO | `pause`; only the DAO can `unpause` |
 | Get money back | DAO | `withdraw_excess` by proposal |
-| Watch | council | Key Doctor `/watch`: proposals, new full-access keys of voters, and every Guard transfer (pending: high alert with the Guard's reasons; auto-paid: note) |
+| Watch | council | Key Doctor `/watch`: proposals, new full-access keys of voters, and every Guard transfer (pending: high alert with the Guard's reasons; auto-paid: note). |
 
 ### Guardians
 
@@ -137,3 +175,5 @@ A Guard cannot be deleted: it has no keys and no delete method, and the factory 
 ## Demo (invoice scene)
 
 Four invoices in `demo/invoices/`, asked to the agent as "Submit every invoice in demo/invoices/ to the guard tool. The Guard and the DAO council decide what gets paid." Dry run on testnet (`kdg1793607117`, 2026-11-02): inv-001 to inv-003 `auto_approved`, inv-004 (500 NEAR to `attacker.testnet`, with a prompt injection) `pending`, then rejected by the council.
+
+Through the factory Guard `payroll.keydoctor-guards.testnet` on `kdoncall.sputnik-v2.testnet` (2026-11-03): proposal #13 auto-paid, #14 pending, #12 auto that did not pay. A read of these with the Guard alert code gives one alert each (note, high, note "payment not done").
