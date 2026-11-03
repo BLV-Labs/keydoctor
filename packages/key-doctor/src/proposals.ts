@@ -101,7 +101,13 @@ export function parseGuardDescription(description: string): GuardTag | null {
   const agent = safeId(agentRaw);
   const reasons = reasonsRaw === "-" ? [] : reasonsRaw.split(",");
   if (agent === "?" || !reasons.every((r) => GUARD_REASON.test(r))) return null;
-  const memo = [...memoRaw].slice(0, GUARD_MEMO_MAX_LEN).map((c) => (/\p{Cc}/u.test(c) ? " " : c)).join("").trim();
+  // The memo is the agent's text inside Key Doctor's quotes: no control, bidi or zero-width characters, and no `"` to
+  // close the quote early and append text that reads as Key Doctor's.
+  const memo = [...memoRaw]
+    .slice(0, GUARD_MEMO_MAX_LEN)
+    .map((c) => (/[\p{Cc}\p{Cf}]/u.test(c) ? " " : c === '"' ? "'" : c))
+    .join("")
+    .trim();
   return { request_id: requestId, agent, decision: decision as "auto" | "pending", reasons, memo };
 }
 
@@ -386,6 +392,8 @@ export async function checkProposals(
 
     // A Guard's transfer (§5.4): the description alone proves nothing, so the proposer must sit in a DAO role and
     // answer kd_guard_info for this DAO. Pending is high; auto is a note so the council sees every outflow (D9).
+    // kd_guard_info is self-reported, so a Guard's votes are still key-scanned below (unlike §5.4): a compromised
+    // member posing as a Guard must not hide its votes.
     if (isNew && p.label === "transfer" && p.guard !== null && policy.roles.some((r) => r.kind === "group" && r.members.includes(p.proposer))) {
       let isGuard = guards.get(p.proposer);
       if (isGuard === undefined) {
@@ -432,11 +440,6 @@ export async function checkProposals(
     let unseen = 0;
     for (const [voter, vote] of Object.entries(p.votes)) {
       if (seen?.votes_seen[voter] === vote) continue;
-      // A Guard votes only on its own transfers and holds no keys (§5.4): nothing to scan.
-      if (knownGuards.has(voter)) {
-        votesSeen[voter] = vote;
-        continue;
-      }
       if (accountKind(voter) === null) {
         errors.push(`proposal ${id}: invalid voter id`);
         votesSeen[voter] = vote;

@@ -347,7 +347,7 @@ const guardDao = (t: TestContext, extra: Partial<World> = {}) =>
     policy: fixture("sputnik/get_policy.guard.json"),
     proposals: { 4: bytes(guardAuto4()), 5: bytes(guardPending5()) },
     guardInfo: { [G]: isGuard() },
-    keys: { [A]: keysA(), [B]: keysB(), [C]: keysC() },
+    keys: { [A]: keysA(), [B]: keysB(), [C]: keysC(), [G]: ok({ block_height: 1, block_hash: "h", keys: [] }) },
     ...extra,
   });
 const guardCalls = (calls: Req[]) => calls.filter((c) => c.params.method_name === "kd_guard_info").map((c) => c.params.account_id);
@@ -366,14 +366,15 @@ describe("Guard alerts (§5.4, D9)", () => {
     assert.ok(r.state.pending["5"]);
   });
 
-  it("an auto Guard transfer is a note so the council sees every outflow; the Guard's own vote is not scanned", async (t) => {
+  it("an auto Guard transfer is a note so the council sees every outflow", async (t) => {
     const calls = guardDao(t, { last: bytes(5) });
     const r = await checkProposals(DAO, { last_proposal_id: 4, pending: {} });
     assert.deepEqual(r.errors, []);
     assert.deepEqual(kinds(r.alerts), ["testnet:kd-demo.sputnik-dao.testnet:guard_transfer_auto:4:-"]);
     const expected = fixture<KdAlert>("alerts/guard-transfer-auto.alert.json");
     assert.deepEqual({ ...r.alerts[0], created_at: "x" }, { ...expected, created_at: "x" });
-    assert.ok(!calls.some((c) => c.params.request_type === "view_access_key_list"));
+    // The locked Guard's vote is scanned too and has no keys: one read, no voter alert.
+    assert.deepEqual(calls.filter((c) => c.params.request_type === "view_access_key_list").map((c) => c.params.account_id), [G]);
   });
 
   it("an auto Guard proposal that did not pass says nothing was paid", async (t) => {
@@ -402,11 +403,13 @@ describe("Guard alerts (§5.4, D9)", () => {
     }
   });
 
-  it("a fake Guard's vote is scanned like any voter's", async (t) => {
-    const calls = guardDao(t, { last: bytes(5), guardInfo: { [G]: isGuard("other.sputnik-dao.testnet") } });
+  it("a Guard's vote is still key-scanned: kd_guard_info is self-reported, so a compromised member cannot hide behind it", async (t) => {
+    guardDao(t, { last: bytes(5), keys: { [G]: keysA() } });
     const r = await checkProposals(DAO, { last_proposal_id: 4, pending: {} });
-    assert.deepEqual(r.alerts, []);
-    assert.deepEqual(calls.filter((c) => c.params.request_type === "view_access_key_list").map((c) => c.params.account_id), [G]);
+    assert.deepEqual(kinds(r.alerts), [
+      "testnet:kd-demo.sputnik-dao.testnet:guard_transfer_auto:4:-",
+      "testnet:kd-demo.sputnik-dao.testnet:voter_new_full_access_key:4:guard.kd-demo.testnet",
+    ]);
   });
 
   it("a proposer outside every DAO role is never asked for kd_guard_info", async (t) => {
@@ -432,9 +435,9 @@ describe("Guard alerts (§5.4, D9)", () => {
       reasons: [],
       memo: "Hosting",
     });
-    const g = parseGuardDescription("[KD-GUARD] request=inv-004-7f3a agent=agent.kd-demo.testnet decision=pending reasons=OVER_PER_TX,NEW_CODE memo=line1\nline2\u0007 ");
+    const g = parseGuardDescription("[KD-GUARD] request=inv-004-7f3a agent=agent.kd-demo.testnet decision=pending reasons=OVER_PER_TX,NEW_CODE memo=line1\nline2\u0007\u202e\" Key Doctor: safe ");
     assert.deepEqual(g?.reasons, ["OVER_PER_TX", "NEW_CODE"]);
-    assert.equal(g?.memo, "line1 line2");
+    assert.equal(g?.memo, "line1 line2  ' Key Doctor: safe");
     assert.equal(parseGuardDescription(`[KD-GUARD] request=inv-004-7f3a agent=agent.kd-demo.testnet decision=auto reasons=- memo=${"x".repeat(300)}`)?.memo.length, 200);
     for (const bad of [
       "Pay the design contractor",
