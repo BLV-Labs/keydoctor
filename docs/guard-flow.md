@@ -107,6 +107,33 @@ sequenceDiagram
 | Get money back | DAO | `withdraw_excess` by proposal |
 | Watch | council | Key Doctor `/watch`: proposals and new full-access keys of voters |
 
+### Guardians
+
+A guardian is an account the DAO trusts to hit the emergency brake, usually a council member or a monitoring bot.
+
+- Only right: call `pause()` directly, no vote, effective in the same transaction. A guardian cannot unpause, move money or change the policy, agents or whitelist.
+- Set at create (`guardians` in `factory.create`, the "guardians" field of the dashboard form), later by DAO proposal `add_guardian` / `remove_guardian`. At most 5.
+- The demo (`setup.sh`) makes council member C the guardian.
+- Why: a DAO proposal takes hours or days to pass. If an agent key leaks or the agent misbehaves, a guardian stops the Guard at once. Restarting needs the whole council (`unpause`), so a bad guardian can only cause downtime, not take money.
+- The dashboard has no Pause button yet: a guardian calls `pause` with near-cli.
+
+### Enable / disable
+
+| Level | Turn off | Turn back on | Who |
+|---|---|---|---|
+| Whole Guard | `pause()`: every `request_transfer` fails with `PAUSED` | `unpause()` | off: guardian or DAO; on: DAO proposal only |
+| One agent | `set_agent_enabled(id, false)` (fails with `AGENT_DISABLED`) or `remove_agent` | `set_agent_enabled(id, true)` | DAO proposal only |
+
+Pausing does not touch proposals already in the DAO: the council still approves or rejects those.
+
+### Retire a Guard (no delete)
+
+A Guard cannot be deleted: it has no keys and no delete method, and the factory keeps its registry record. Its code storage (about 2.5 NEAR, paid by the DAO's create deposit) and state stay locked. To take one out of service, all by DAO proposal:
+
+1. `ChangePolicy` removing the Guard from role `agent-guard`. This is the real cut-off: without the role the Guard cannot add any transfer proposal. The dashboard has no form for this yet.
+2. `pause`.
+3. `withdraw_excess`: everything above the Guard's storage (or `min_reserve`) goes back to the DAO.
+
 ## Demo (invoice scene)
 
 Four invoices in `demo/invoices/`, asked to the agent as "Submit every invoice in demo/invoices/ to the guard tool. The Guard and the DAO council decide what gets paid." Dry run on testnet (`kdg1793607117`, 2026-11-02): inv-001 to inv-003 `auto_approved`, inv-004 (500 NEAR to `attacker.testnet`, with a prompt injection) `pending`, then rejected by the council.
