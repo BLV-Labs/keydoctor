@@ -244,7 +244,7 @@ claude mcp add guard -e NEAR_NETWORK=testnet -e GUARD_CONTRACT_ID=<prefix>-guard
 
 The tool descriptions and messages tell the agent not to send a pending payment again and not to split it into smaller ones: over the limit is the council's call. When the outcome of a transaction is not known (`UNKNOWN_OUTCOME`), the result carries the tx hash and the agent must check the status instead of retrying.
 
-### Agent Guard page (dashboard, not yet run on testnet)
+### Agent Guard page (dashboard, factory on testnet)
 
 The dashboard's **Agent Guard** page (`?page=guard&dao=<dao>`) lets a council member set up a Guard without the CLI, through a Guard factory (`contracts/guard-factory`):
 
@@ -254,7 +254,15 @@ The dashboard's **Agent Guard** page (`?page=guard&dao=<dao>`) lets a council me
 - "Pause now (guardian)" lets a guardian's wallet sign `pause` on the Guard directly, no vote; only a DAO `unpause` proposal restarts it. "Propose retire" builds the ChangePolicy that removes the Guard from role `agent-guard` (a Guard cannot be deleted). Both are render- and unit-tested only; neither has been signed on testnet yet.
 - The council votes in its usual DAO UI. Key Doctor signs nothing and stores nothing.
 
-The factory creates `<name>.<factory>` with its own copy of the Guard code, paid by the DAO's deposit, with `dao_id` = the calling DAO and no access key. Covered by unit tests, dashboard render tests and a sandbox test against the real Sputnik v2 wasm (`pnpm test:guard`). No factory is deployed on testnet yet, so the live dashboard shows only a setup notice. To try it yourself (the factory account needs about 6 NEAR, see Limitations):
+The factory creates `<name>.<factory>` with its own copy of the Guard code, paid by the DAO's deposit, with `dao_id` = the calling DAO and no access key. Covered by unit tests, dashboard render tests and a sandbox test against the real Sputnik v2 wasm (`pnpm test:guard`). The factory is deployed on testnet as `keydoctor-guards.testnet` (2026-11-03; `kd_factory_metadata` returns version 1.0.0, guard code hash `8RPE9aMz…`), and the deploy workflow builds the dashboard with it (repo variable `KD_GUARD_FACTORY` overrides). No Guard has been created through it yet: that needs a DAO council to pass P1 and P2. Do X → see Y:
+
+```bash
+KD_GUARD_FACTORY=keydoctor-guards.testnet pnpm --filter dashboard dev
+# open http://localhost:8788/?page=guard&dao=<your DAO>.sputnik-v2.testnet
+# → the create form; "Preview proposals" shows P1 (create + deposit) and P2 (role agent-guard)
+```
+
+To deploy your own factory (the factory account needs about 6 NEAR, see Limitations):
 
 ```bash
 KD_GUARD_PREFIX=<prefix> KD_GUARD_FUNDER=<rich>.testnet scripts/guard-setup/setup.sh factory

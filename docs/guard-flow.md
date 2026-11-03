@@ -34,9 +34,9 @@ sequenceDiagram
     Owner->>Guard: delete full-access keys (lock)
 ```
 
-### Path B: dashboard + Guard factory (built, not yet run on testnet)
+### Path B: dashboard + Guard factory (factory on testnet)
 
-Code, unit, render and sandbox tests are done (`contracts/guard-factory`, dashboard `?page=guard`). No factory is deployed on testnet yet; `scripts/guard-setup/setup.sh factory` deploys one.
+Code, unit, render and sandbox tests are done (`contracts/guard-factory`, dashboard `?page=guard`). Factory deployed on testnet as `keydoctor-guards.testnet` (2026-11-03); no Guard created through it yet. `scripts/guard-setup/setup.sh factory` deploys your own.
 
 ![Guard setup through the dashboard and factory](images/guard-setup-flow.svg)
 
@@ -47,8 +47,8 @@ sequenceDiagram
     participant Dash as Dashboard ?page=guard&dao=<dao>
     participant DAO as Sputnik DAO
     actor Council
-    participant Factory as guard-factory.testnet
-    participant Guard as <name>.guard-factory.testnet
+    participant Factory as keydoctor-guards.testnet
+    participant Guard as <name>.keydoctor-guards.testnet
     Member->>Dash: fill limits, agents, whitelist, guardians, funding
     Dash->>DAO: get_policy (bond, member permissions)
     Member->>DAO: one signature, 2 add_proposal calls
