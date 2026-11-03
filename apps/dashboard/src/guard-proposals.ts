@@ -73,6 +73,23 @@ export function addGuardRoleProposal(policy: RawPolicy, guardId: string): AddPro
   };
 }
 
+/**
+ * Retire: the whole current policy without `guardId` in the `agent-guard` role, the cut-off for a Guard that
+ * cannot be deleted. Other members stay; the role goes when `guardId` was its last member, so no empty role keeps
+ * transfer rights. Null when the role does not list `guardId`.
+ */
+export function removeGuardRoleProposal(policy: RawPolicy, guardId: string): AddProposalArgs | null {
+  const existing = policy.roles.find((r) => r.name === GUARD_ROLE);
+  const members = existing && isGroup(existing.kind) ? existing.kind.Group : [];
+  if (existing === undefined || !members.includes(guardId)) return null;
+  const rest = members.filter((m) => m !== guardId);
+  const roles =
+    rest.length === 0 ? policy.roles.filter((r) => r !== existing) : policy.roles.map((r) => (r === existing ? { ...r, kind: { Group: rest } } : r));
+  return {
+    proposal: { description: `Remove ${guardId} from role ${GUARD_ROLE}`, kind: { ChangePolicy: { policy: { ...policy, roles } } } },
+  };
+}
+
 /** The DAO-only Guard methods the "Propose change" form offers. */
 export const GUARD_METHODS = [
   "set_policy",

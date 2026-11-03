@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { addGuardRoleProposal, createGuardProposal, guardChangeProposal, type RawPolicy } from "../src/guard-proposals.ts";
+import { addGuardRoleProposal, createGuardProposal, guardChangeProposal, removeGuardRoleProposal, type RawPolicy } from "../src/guard-proposals.ts";
 import type { GuardDao, GuardLive } from "../src/guard-read.ts";
 import { renderGuardCard, renderGuardCreate, renderGuardDao, renderGuardPreview, renderGuardStart } from "../src/guard-view.ts";
 import { guardHref, parseRoute } from "../src/route.ts";
@@ -74,6 +74,34 @@ describe("renderGuardCard", () => {
     const out = renderGuardCard(guard({ ready: false, config: null, policy: null, window: null, agents: null }), "testnet").value;
     assert.match(out, /Creating/);
     assert.doesNotMatch(out, /guard-change-form/);
+    assert.doesNotMatch(out, /guard-pause|guard-retire/);
+  });
+
+  const withGuardian = (over: Partial<NonNullable<GuardLive["config"]>> = {}) =>
+    guard({ config: { paused: false, proposal_bond: policy.proposal_bond, agents: 1, whitelist: 2, guardians: ["carol.testnet"], ...over } });
+
+  it("offers a guardian the emergency Pause, and says only the DAO restarts it", () => {
+    const out = renderGuardCard(withGuardian(), "testnet").value;
+    assert.match(out, /data-action="guard-pause" data-guard="payroll\.guards\.kdfactory\.testnet"/);
+    assert.match(out, /Only a DAO <code class="mono">unpause<\/code> proposal restarts it/);
+  });
+
+  it("shows no Pause once paused, and points at unpause instead", () => {
+    const out = renderGuardCard(withGuardian({ paused: true }), "testnet").value;
+    assert.match(out, /Paused/);
+    assert.doesNotMatch(out, /guard-pause/);
+    assert.match(out, /unpause/);
+  });
+
+  it("shows no Pause button when the Guard has no guardian: nobody could sign it", () => {
+    const out = renderGuardCard(guard(), "testnet").value;
+    assert.doesNotMatch(out, /guard-pause/);
+    assert.match(out, /No guardian/);
+  });
+
+  it("offers retire only while the Guard is in the role: out of the role there is nothing to cut off", () => {
+    assert.match(renderGuardCard(guard(), "testnet").value, /data-action="guard-retire"/);
+    assert.doesNotMatch(renderGuardCard(guard({ in_role: false }), "testnet").value, /guard-retire/);
   });
 });
 
@@ -123,5 +151,15 @@ describe("renderGuardPreview", () => {
     }).value;
     assert.match(out, /add_guardian<\/code> with 0\.01 NEAR/);
     assert.match(out, /= <strong>0\.1 NEAR<\/strong>/);
+  });
+
+  it("tells the council a retire removes the whole role when it was the last Guard, not that it becomes null", () => {
+    const guardId = `payroll.${FACTORY}`;
+    const withRole: RawPolicy = { ...policy, roles: [...policy.roles, { name: "agent-guard", kind: { Group: [guardId] }, permissions: [], vote_policy: {} }] };
+    const p = removeGuardRoleProposal(withRole, guardId);
+    assert.ok(p);
+    const out = renderGuardPreview({ dao: DAO, bond: policy.proposal_bond, proposals: [p], notes: [] }).value;
+    assert.match(out, /role <code class="mono">agent-guard<\/code> is removed/);
+    assert.doesNotMatch(out, />null</);
   });
 });

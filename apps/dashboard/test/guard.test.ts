@@ -9,6 +9,7 @@ import {
   GUARD_STORAGE_DEPOSIT,
   guardChangeProposal,
   missingProposePermissions,
+  removeGuardRoleProposal,
   type RawPolicy,
 } from "../src/guard-proposals.ts";
 
@@ -157,6 +158,33 @@ describe("addGuardRoleProposal", () => {
   it("returns null when the Guard is already in the role, so the council is not asked twice", () => {
     const p = addGuardRoleProposal(policy([kept, { name: "agent-guard", kind: { Group: [guard] }, permissions: GUARD_PERMISSIONS, vote_policy: {} }]), guard);
     assert.equal(p, null);
+  });
+});
+
+describe("removeGuardRoleProposal", () => {
+  const guard = `payroll.${FACTORY}`;
+  const other = `ops.${FACTORY}`;
+  const kept = council(["alice.testnet"]);
+  const role = (members: string[]) => ({ name: "agent-guard", kind: { Group: members }, permissions: GUARD_PERMISSIONS, vote_policy: {} });
+  const rolesOf = (p: ReturnType<typeof removeGuardRoleProposal>) => (p!.proposal.kind.ChangePolicy as { policy: RawPolicy }).policy.roles;
+
+  it("takes only this Guard out: the DAO's other Guards keep paying and every other role is untouched", () => {
+    const p = removeGuardRoleProposal(policy([kept, role([other, guard])]), guard);
+    assert.ok(p);
+    const roles = rolesOf(p);
+    assert.deepEqual(roles[0], kept);
+    assert.deepEqual(roles[1], role([other]));
+    assert.equal((p.proposal.kind.ChangePolicy as { policy: RawPolicy }).policy.proposal_bond, "100000000000000000000000");
+  });
+
+  it("drops the role when this was its last Guard, so no empty role keeps transfer rights", () => {
+    const roles = rolesOf(removeGuardRoleProposal(policy([kept, role([guard])]), guard));
+    assert.deepEqual(roles, [kept]);
+  });
+
+  it("returns null when the role does not list the Guard, so the council never votes on a no-op", () => {
+    assert.equal(removeGuardRoleProposal(policy([kept]), guard), null);
+    assert.equal(removeGuardRoleProposal(policy([kept, role([other])]), guard), null);
   });
 });
 

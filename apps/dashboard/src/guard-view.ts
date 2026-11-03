@@ -1,5 +1,6 @@
-// The Agent Guard page, pure. The page only builds `add_proposal` calls for a council member's wallet: the council
-// votes in its usual DAO UI, and only a passed proposal creates or changes a Guard.
+// The Agent Guard page, pure. The page builds `add_proposal` calls for a council member's wallet: the council
+// votes in its usual DAO UI, and only a passed proposal creates or changes a Guard. The one direct call is a
+// guardian's `pause`, which can only stop a Guard.
 import type { Network } from "key-doctor";
 import { formatUtc, yoctoToNear } from "./format.ts";
 import { html, type Html } from "./html.ts";
@@ -88,6 +89,29 @@ function changeForm(g: GuardLive): Html {
     </form></details>`;
 }
 
+/** Emergency stop (a guardian signs `pause` directly) and retire (a proposal removing the Guard from the role). */
+function controls(g: GuardLive): Html {
+  const id = g.guard_id;
+  const pause = g.config?.paused
+    ? html`<p class="small muted">Paused: every request fails until the DAO passes an <code class="mono">unpause</code> proposal (Propose a change below).</p>`
+    : g.config !== null && g.config.guardians.length > 0
+      ? html`<div class="stack-xs">
+          <p class="small">A guardian stops this Guard at once, without a vote. Only a DAO <code class="mono">unpause</code> proposal restarts it.</p>
+          <button type="button" class="btn btn-danger self-start" data-action="guard-pause" data-guard="${id}">Pause now (guardian)</button>
+          <p class="small" role="status" data-pause-status="${id}"></p>
+        </div>`
+      : g.config !== null
+        ? html`<p class="small muted">No guardian: only a DAO proposal can pause this Guard. Add one with <code class="mono">add_guardian</code>.</p>`
+        : "";
+  const retire = g.in_role
+    ? html`<div class="stack-xs">
+        <p class="small">A Guard cannot be deleted. Removing it from role <code class="mono">${GUARD_ROLE}</code> stops it proposing transfers.</p>
+        <button type="button" class="btn btn-secondary self-start" data-action="guard-retire" data-guard="${id}">Propose retire</button>
+      </div>`
+    : "";
+  return html`<div class="stack-sm"><h3 class="h3">Stop</h3>${pause}${retire}</div>`;
+}
+
 export function renderGuardCard(g: GuardLive, network: Network): Html {
   const status = !g.ready
     ? html`<span class="pill pill-note">Creating</span>`
@@ -115,6 +139,7 @@ export function renderGuardCard(g: GuardLive, network: Network): Html {
       </tbody></table></div>`}
       ${g.agents === null || g.agents.length === 0 ? "" : html`<div class="stack"><h3 class="h3">Agent owner setup</h3>
         ${g.agents.map((a) => agentSteps(g, a.account_id, network))}</div>`}
+      ${g.ready ? controls(g) : ""}
       ${g.ready ? changeForm(g) : ""}
     </div></section>`;
 }
@@ -197,8 +222,11 @@ function proposalBody(p: AddProposalArgs): Html {
   }
   const policy = (kind.ChangePolicy as { policy: RawPolicy } | undefined)?.policy;
   const role = policy?.roles.find((r) => r.name === GUARD_ROLE);
+  if (role === undefined) {
+    return html`<p class="small">Replaces the DAO policy. Every other role stays as it is; role <code class="mono">${GUARD_ROLE}</code> is removed.</p>`;
+  }
   return html`<p class="small">Replaces the DAO policy. Every role stays as it is; role <code class="mono">${GUARD_ROLE}</code> becomes:</p>
-    <pre class="mono small wrap">${JSON.stringify(role ?? null, null, 2)}</pre>`;
+    <pre class="mono small wrap">${JSON.stringify(role, null, 2)}</pre>`;
 }
 
 export function renderGuardPreview(p: GuardPreview): Html {

@@ -12,7 +12,14 @@ import { renderAccount, renderCouncil } from "./report.ts";
 import { guardHref, homeHref, parseRoute, resolveInput, routeHref, suffixNetwork, type Page, type Route } from "./route.ts";
 import { yoctoToNear } from "./format.ts";
 import { formToInput, validateGuardForm } from "./guard-form.ts";
-import { addGuardRoleProposal, createGuardProposal, guardChangeProposal, isGuardMethod, missingProposePermissions } from "./guard-proposals.ts";
+import {
+  addGuardRoleProposal,
+  createGuardProposal,
+  guardChangeProposal,
+  isGuardMethod,
+  missingProposePermissions,
+  removeGuardRoleProposal,
+} from "./guard-proposals.ts";
 import { readGuardDao, type GuardDao } from "./guard-read.ts";
 import { renderGuardCreate, renderGuardDao, renderGuardLoading, renderGuardPreview, renderGuardStart, renderGuardSubmitted, type GuardPreview } from "./guard-view.ts";
 import { renderWatchDialog, renderWatchLinks } from "./watch.ts";
@@ -319,6 +326,59 @@ function submitGuardChange(form: HTMLFormElement): void {
   showGuardPreview({ dao: guardState.dao, bond: guardState.policy.proposal_bond, proposals: [guardChangeProposal(guardId, method, args)], labels: ["call"], notes: [] });
 }
 
+/** Previews the ChangePolicy that takes the Guard out of the agent-guard role: a Guard cannot be deleted. */
+function previewGuardRetire(guardId: string): void {
+  if (guardState === null) return;
+  const proposal = removeGuardRoleProposal(guardState.policy, guardId);
+  if (proposal === null) return;
+  showGuardPreview({
+    dao: guardState.dao,
+    bond: guardState.policy.proposal_bond,
+    proposals: [proposal],
+    labels: ["policy"],
+    notes: [
+      `Once it passes, ${guardId} can no longer propose or approve transfers. Proposals it already added stay for the council to decide.`,
+      "The Guard account and its code storage stay on chain. To get its other NEAR back, propose withdraw_excess (Propose a change).",
+    ],
+  });
+}
+
+/** A guardian's emergency stop: signs `pause` on the Guard directly with the connected wallet, no DAO vote. */
+function pauseGuard(button: HTMLButtonElement): void {
+  const guardId = button.dataset.guard ?? "";
+  const status = document.querySelector<HTMLElement>(`[data-pause-status="${CSS.escape(guardId)}"]`);
+  const guardians = guardState?.guards.find((g) => g.guard_id === guardId)?.config?.guardians ?? [];
+  if (status === null || guardState === null) return;
+  if (connected === null) {
+    const fix = document.createElement("button");
+    fix.type = "button";
+    fix.className = "btn btn-tint";
+    fix.dataset.action = "open-wallet";
+    fix.textContent = "Connect Wallet";
+    status.replaceChildren("Connect a guardian's wallet first. ", fix);
+    return;
+  }
+  // The Guard refuses anyone else with NOT_GUARDIAN: say so before the wallet opens a transaction that fails.
+  const account = connected.accounts.find((a) => guardians.includes(a));
+  if (account === undefined) {
+    status.textContent = `${connected.accounts[0] ?? "This account"} is not a guardian of ${guardId}. Guardians: ${guardians.join(", ")}.`;
+    return;
+  }
+  const { walletId } = connected;
+  const network = suffixNetwork(guardId) ?? "testnet";
+  button.disabled = true;
+  status.textContent = `Waiting for ${walletLabel(walletId)}. Check the transaction there before you approve.`;
+  import("./wallet.ts")
+    .then((w) => w.signGuardPause(account, network, guardId, walletId, (t) => (status.textContent = t)))
+    .then(() => {
+      status.textContent = "Paused. Every request now fails with PAUSED until the DAO passes unpause. Reload to see the status.";
+    })
+    .catch((e: unknown) => {
+      button.disabled = false;
+      status.textContent = `Not done: ${e instanceof Error ? e.message : "the wallet did not sign."}`;
+    });
+}
+
 /** Signs the previewed proposals with the connected wallet, after checking the account may propose them. */
 function signGuardProposals(button: HTMLButtonElement): void {
   const status = document.getElementById("guard-sign-status");
@@ -623,6 +683,12 @@ root.addEventListener("click", (event) => {
       break;
     case "guard-sign":
       signGuardProposals(el as HTMLButtonElement);
+      break;
+    case "guard-pause":
+      pauseGuard(el as HTMLButtonElement);
+      break;
+    case "guard-retire":
+      previewGuardRetire(el.dataset.guard ?? "");
       break;
     case "theme":
       setTheme(currentTheme() === "dark" ? "light" : "dark", true);

@@ -1,4 +1,4 @@
-// Browser-only: signs DeleteKey and DAO add_proposal transactions through Meteor, Here or HOT Wallet (wallet-selector). Key Doctor never holds keys;
+// Browser-only: signs DeleteKey, DAO add_proposal and guardian pause transactions through Meteor, Here or HOT Wallet (wallet-selector). Key Doctor never holds keys;
 // the wallet shows the transaction and signs it. Sign-in carries no contractId, so no function-call key is added.
 import { PublicKey } from "@near-js/crypto";
 import { actionCreators, setupWalletSelector } from "@near-wallet-selector/core";
@@ -90,6 +90,24 @@ export async function signAddProposals(
         actions: proposals.map((p) => actionCreators.functionCall("add_proposal", p, ADD_PROPOSAL_GAS, BigInt(bond))),
       },
     ],
+  });
+}
+
+/** `pause` only flips a flag; 30 Tgas leaves room to spare. */
+const PAUSE_GAS = 30_000_000_000_000n;
+
+/** A guardian's emergency stop: one direct `pause` call on the Guard, no deposit, no DAO vote. */
+export async function signGuardPause(
+  accountId: string,
+  network: Network,
+  guardId: string,
+  walletId: WalletId,
+  onStep: (text: string) => void = () => {},
+): Promise<void> {
+  const wallet = await walletFor(accountId, network, walletId, onStep);
+  onStep(`Step 3/3: approve the pause transaction in ${walletLabel(walletId)}.`);
+  await wallet.signAndSendTransactions({
+    transactions: [{ signerId: accountId, receiverId: guardId, actions: [actionCreators.functionCall("pause", {}, PAUSE_GAS, 0n)] }],
   });
 }
 

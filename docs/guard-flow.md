@@ -115,7 +115,7 @@ A guardian is an account the DAO trusts to hit the emergency brake, usually a co
 - Set at create (`guardians` in `factory.create`, the "guardians" field of the dashboard form), later by DAO proposal `add_guardian` / `remove_guardian`. At most 5.
 - The demo (`setup.sh`) makes council member C the guardian.
 - Why: a DAO proposal takes hours or days to pass. If an agent key leaks or the agent misbehaves, a guardian stops the Guard at once. Restarting needs the whole council (`unpause`), so a bad guardian can only cause downtime, not take money.
-- The dashboard has no Pause button yet: a guardian calls `pause` with near-cli.
+- Dashboard: the Guard card shows **Pause now (guardian)** when the Guard has guardians. The connected wallet must hold a guardian account (checked before the wallet opens) and signs `pause` on the Guard directly, no deposit. near-cli works too.
 
 ### Enable / disable
 
@@ -130,7 +130,7 @@ Pausing does not touch proposals already in the DAO: the council still approves 
 
 A Guard cannot be deleted: it has no keys and no delete method, and the factory keeps its registry record. Its code storage (about 2.5 NEAR, paid by the DAO's create deposit) and state stay locked. To take one out of service, all by DAO proposal:
 
-1. `ChangePolicy` removing the Guard from role `agent-guard`. This is the real cut-off: without the role the Guard cannot add any transfer proposal. The dashboard has no form for this yet.
+1. `ChangePolicy` removing the Guard from role `agent-guard`. This is the real cut-off: without the role the Guard cannot add any transfer proposal. Dashboard: **Propose retire** on the Guard card builds it (other Guards stay in the role; the role is dropped when this was its last Guard).
 2. `pause`.
 3. `withdraw_excess`: everything above the Guard's storage (or `min_reserve`) goes back to the DAO.
 
