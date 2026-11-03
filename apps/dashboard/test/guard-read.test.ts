@@ -92,6 +92,19 @@ describe("readGuardDao", () => {
     assert.equal(ops?.window, null);
   });
 
+  // The contract returns `resets_at` in nanoseconds; the card printed "resets 1793762439898342064" before this.
+  it("turns the window's nanosecond reset time into ISO UTC for the card", async () => {
+    stubRpc(baseViews({ [`${GUARD}.get_window`]: { window_start: "0", resets_at: "1793700000000000000", spent_in_window: "0", remaining: "1" } }));
+    const ops = (await readGuardDao(DAO, FACTORY, "testnet")).guards[0];
+    assert.equal(ops?.window?.resets_at, "2026-11-03T10:00:00.000Z");
+    assert.equal(ops?.window?.remaining, "1");
+  });
+
+  it("shows the window as unknown when resets_at is not a nanosecond count", async () => {
+    stubRpc(baseViews({ [`${GUARD}.get_window`]: { resets_at: "soon", spent_in_window: "0", remaining: "1" } }));
+    assert.equal((await readGuardDao(DAO, FACTORY, "testnet")).guards[0]?.window, null);
+  });
+
   // An old factory (global contract) has no guard_code_storage: a deposit built without it would fail on chain.
   it("refuses a factory whose metadata has no guard_code_storage", async () => {
     stubRpc(baseViews({ [`${FACTORY}.kd_factory_metadata`]: { guard_code_hash: "abc" } }));

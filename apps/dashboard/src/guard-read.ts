@@ -12,6 +12,7 @@ export interface GuardLive {
   in_role: boolean;
   config: { paused: boolean; proposal_bond: string; agents: number; whitelist: number; guardians: string[] } | null;
   policy: { max_per_tx: string; max_per_day: string; max_pending_per_agent: number; min_reserve: string } | null;
+  /** `resets_at` is ISO 8601 UTC; the contract's `get_window` returns nanoseconds. */
   window: { spent_in_window: string; remaining: string; resets_at: string } | null;
   agents: { account_id: string; label: string; enabled: boolean; pending: number }[] | null;
 }
@@ -34,6 +35,12 @@ function roleMembers(policy: RawPolicy): string[] {
   return Array.isArray(kind?.Group) ? (kind.Group as string[]) : [];
 }
 
+/** Nanoseconds from `get_window` to ISO; an unreadable `resets_at` shows the window as unknown. */
+function windowToIso(w: GuardLive["window"]): GuardLive["window"] {
+  if (w === null || !/^\d+$/.test(String(w.resets_at))) return null;
+  return { ...w, resets_at: new Date(Number(BigInt(w.resets_at) / 1_000_000n)).toISOString() };
+}
+
 /** One Guard's views; a failed view leaves its field null so one broken Guard never hides the others. */
 async function readGuard(rpc: Rpc, height: number, g: { guard_id: string; name: string; ready: boolean }, members: string[]): Promise<GuardLive> {
   const view = <T>(method: string): Promise<T | null> =>
@@ -41,7 +48,7 @@ async function readGuard(rpc: Rpc, height: number, g: { guard_id: string; name: 
   const [config, policy, window, agents] = await Promise.all([
     view<GuardLive["config"]>("get_config"),
     view<GuardLive["policy"]>("get_policy"),
-    view<GuardLive["window"]>("get_window"),
+    view<GuardLive["window"]>("get_window").then(windowToIso),
     view<GuardLive["agents"]>("get_agents"),
   ]);
   return { guard_id: g.guard_id, name: g.name, ready: g.ready, in_role: members.includes(g.guard_id), config, policy, window, agents };
