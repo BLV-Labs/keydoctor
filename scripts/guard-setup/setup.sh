@@ -33,9 +33,10 @@
 # Env: KD_GUARD_PREFIX (unique, e.g. kdg$(date +%s)); optional KD_GUARD_AGENT_KEY (default
 # ~/.config/key-doctor/<agent>.json), KD_GUARD_FUND (DAO -> Guard, NEAR, default 1, 0 skips), KD_DAO_TREASURY
 # (NEAR the DAO keeps for the invoices after funding the Guard, default 8).
-# Factory: KD_GUARD_FACTORY (default <prefix>-guards.testnet). Publishing the Guard code as a global contract
-# burns about 25 NEAR (0.0001 NEAR per byte) and the factory code locks about 2 NEAR, so the account needs 30 NEAR:
-# KD_GUARD_FUNDER creates it with that, or create and fund it yourself. Build the dashboard with KD_GUARD_FACTORY.
+# Factory: KD_GUARD_FACTORY (default <prefix>-guards.testnet). The factory code and the Guard code it keeps lock
+# about 4.3 NEAR of storage (0.00001 NEAR per byte, not burned), so the account needs 6 NEAR: KD_GUARD_FUNDER
+# creates it with that, or create and fund it yourself. Each DAO pays its own Guard's code storage (about 2.5 NEAR)
+# in its create deposit. Build the dashboard with KD_GUARD_FACTORY.
 set -euo pipefail
 
 PREFIX="${KD_GUARD_PREFIX:?set KD_GUARD_PREFIX to a unique lowercase name, e.g. kdg$(date +%s)}"
@@ -329,10 +330,10 @@ step_factory() {
     echo "$GUARD_FACTORY already has code: guard code hash $(view "$GUARD_FACTORY" get_code_hash '{}')"
   else
     if [[ $(acct "$GUARD_FACTORY" exists) != true ]]; then
-      [[ -n "$FUNDER" ]] || { echo "$GUARD_FACTORY does not exist: set KD_GUARD_FUNDER (30 NEAR) or create it yourself." >&2; exit 1; }
-      near account create-account fund-myself "$GUARD_FACTORY" '30 NEAR' autogenerate-new-keypair "$SAVE" sign-as "$FUNDER" "${NET[@]}" "$SIGN" send
+      [[ -n "$FUNDER" ]] || { echo "$GUARD_FACTORY does not exist: set KD_GUARD_FUNDER (6 NEAR) or create it yourself." >&2; exit 1; }
+      near account create-account fund-myself "$GUARD_FACTORY" '6 NEAR' autogenerate-new-keypair "$SAVE" sign-as "$FUNDER" "${NET[@]}" "$SIGN" send
     fi
-    ge "$(acct "$GUARD_FACTORY" spendable)" "$(y 29)" || { echo "$GUARD_FACTORY needs about 30 NEAR before init." >&2; exit 1; }
+    ge "$(acct "$GUARD_FACTORY" spendable)" "$(y 5)" || { echo "$GUARD_FACTORY needs about 6 NEAR before deploy." >&2; exit 1; }
     (cd "$CRATE" && cargo near build non-reproducible-wasm --no-abi)
     (cd "$ROOT/contracts/guard-factory" && cargo near build non-reproducible-wasm --no-abi)
     local guard="$CRATE/target/near/kd_guard.wasm" factory="$ROOT/contracts/guard-factory/target/near/kd_guard_factory.wasm"
@@ -359,5 +360,5 @@ step_info() {
 case "${1:-}" in
   all) step_accounts; step_dao; step_guard; step_role; step_fund; step_agent; step_lock; step_info ;;
   accounts|dao|guard|role|fund|agent|verify|lock|info|factory) "step_$1" ;;
-  *) sed -n '2,38p' "$0"; exit 2 ;;
+  *) sed -n '2,39p' "$0"; exit 2 ;;
 esac

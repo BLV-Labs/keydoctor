@@ -1,6 +1,6 @@
 // Key Doctor Guard factory (docs/guard-flow.md, Path B). A Sputnik v2 DAO calls `create` through a FunctionCall
-// proposal. The factory creates `<name>.<factory>` running the Guard code it published once as a global contract,
-// with `dao_id` = the calling DAO and no access key, so the Guard is locked from birth. The registry lists which
+// proposal. The factory creates `<name>.<factory>` with its own copy of the Guard code it stores, paid for by the
+// calling DAO's deposit, with `dao_id` = that DAO and no access key, so the Guard is locked from birth. The registry lists which
 // DAOs use a Guard. It is an index only: each Guard's own `dao_id` and `assert_dao` stay the authority.
 use near_sdk::json_types::{Base58CryptoHash, U128, U64};
 use near_sdk::serde_json::{json, Value};
@@ -24,9 +24,11 @@ const MIN_CREATE_GAS: Gas = Gas::from_tgas(120);
 
 const MAX_GUARDS_PER_DAO: u32 = 10;
 const MAX_NAME_LEN: usize = 32;
-/// Least the new Guard receives: its account and state storage plus room for a few proposal bonds is the
-/// caller's job; this floor only stops a Guard that could not even pay for its own state.
+/// Least the new Guard receives on top of its code storage: room for a few proposal bonds is the caller's job;
+/// this floor only stops a Guard that could not even pay for its own state.
 const MIN_GUARD_BALANCE: NearToken = NearToken::from_millinear(500);
+/// Raw storage key of the Guard code, kept out of the contract state so only `on_dao_checked` reads it.
+const GUARD_CODE_KEY: &[u8] = b"guard_code";
 
 #[near(serializers = [borsh])]
 #[derive(BorshStorageKey)]
@@ -45,8 +47,10 @@ trait SputnikDao {
 #[near(contract_state)]
 #[derive(PanicOnDefault)]
 pub struct Factory {
-    /// Global contract hash of the Guard code, fixed at init. A new Guard version means a new factory.
+    /// sha256 of the Guard code (the `code_hash` every Guard account shows), fixed at init. A new Guard version
+    /// means a new factory.
     guard_code_hash: CryptoHash,
+    guard_code_len: u64,
     /// Guard account -> record; a record exists from `create` until the Guard is made or the attempt fails.
     guards: IterableMap<AccountId, GuardRecord>,
     by_dao: LookupMap<AccountId, IterableSet<AccountId>>,
@@ -54,16 +58,17 @@ pub struct Factory {
 
 #[near]
 impl Factory {
-    /// Publishes `guard_code` as a global contract by hash from this account and keeps the hash. The account
-    /// must hold enough NEAR for the global code storage (0.0001 NEAR per byte, burned). Private: between the
-    /// deploy and this call, anyone else could otherwise init the factory with their own Guard code.
+    /// Stores `guard_code` and its hash. The factory account pays for that storage (0.00001 NEAR per byte, locked,
+    /// not burned); every Guard pays for its own copy. Private: between the deploy and this call, anyone else could
+    /// otherwise init the factory with their own Guard code.
     #[init]
     #[private]
     pub fn new(#[serializer(borsh)] guard_code: Vec<u8>) -> Self {
         let guard_code_hash: CryptoHash = env::sha256_array(&guard_code);
-        Promise::new(env::current_account_id()).deploy_global_contract(guard_code).detach();
+        env::storage_write(GUARD_CODE_KEY, &guard_code);
         Self {
             guard_code_hash,
+            guard_code_len: guard_code.len() as u64,
             guards: IterableMap::new(StorageKey::Guards),
             by_dao: LookupMap::new(StorageKey::ByDao),
         }
@@ -71,7 +76,8 @@ impl Factory {
 
     /// Called by a DAO through a FunctionCall proposal. The caller becomes the Guard's `dao_id`, so a DAO can
     /// only create Guards for itself. The deposit, minus the registry record's storage, becomes the Guard's
-    /// balance. Every failure after this call returns the whole deposit to the caller.
+    /// balance: it must cover the Guard's code storage plus MIN_GUARD_BALANCE, so the DAO pays for its own Guard.
+    /// Every failure after this call returns the whole deposit to the caller.
     #[payable]
     pub fn create(
         &mut self,
@@ -93,7 +99,7 @@ impl Factory {
         let record_cost = env::storage_byte_cost().saturating_mul((env::storage_usage() - before) as u128);
         let deposit = env::attached_deposit();
         let amount = deposit.saturating_sub(record_cost);
-        require!(amount >= MIN_GUARD_BALANCE, "DEPOSIT_TOO_LOW");
+        require!(amount >= self.code_storage().saturating_add(MIN_GUARD_BALANCE), "DEPOSIT_TOO_LOW");
 
         let init = json!({ "dao_id": dao_id, "policy": policy, "agents": agents, "whitelist": whitelist, "guardians": guardians });
         ext_dao::ext(dao_id.clone()).with_static_gas(GAS_VIEW).get_policy().then(
@@ -122,10 +128,11 @@ impl Factory {
             self.release(&dao_id, &guard_id);
             return Promise::new(dao_id).transfer(NearToken::from_yoctonear(deposit.0));
         }
+        let code = env::storage_read(GUARD_CODE_KEY).unwrap_or_else(|| env::panic_str("NO_GUARD_CODE"));
         Promise::new(guard_id.clone())
             .create_account()
             .transfer(NearToken::from_yoctonear(amount.0))
-            .use_global_contract(self.guard_code_hash)
+            .deploy_contract(code)
             .function_call("new", init.to_string().into_bytes(), NearToken::from_near(0), GAS_GUARD_NEW)
             .then(Self::ext(env::current_account_id()).with_static_gas(GAS_ON_CREATED).on_created(guard_id, dao_id, deposit))
     }
@@ -177,11 +184,17 @@ impl Factory {
             "guards": self.guards.len(),
             "max_guards_per_dao": MAX_GUARDS_PER_DAO,
             "min_guard_balance": U128(MIN_GUARD_BALANCE.as_yoctonear()),
+            "guard_code_storage": U128(self.code_storage().as_yoctonear()),
         })
     }
 }
 
 impl Factory {
+    /// What each Guard's copy of the code locks on its own account; part of the DAO's deposit.
+    fn code_storage(&self) -> NearToken {
+        env::storage_byte_cost().saturating_mul(self.guard_code_len as u128)
+    }
+
     fn count_for(&self, dao_id: &AccountId) -> u32 {
         self.by_dao.get(dao_id).map_or(0, |s| s.len())
     }

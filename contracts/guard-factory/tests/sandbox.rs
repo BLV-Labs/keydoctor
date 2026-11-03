@@ -15,6 +15,7 @@ const FACTORY_WASM: &str = "target/near/kd_guard_factory.wasm";
 // What the dashboard puts on the proposal's FunctionCall action.
 const CREATE_GAS: Gas = Gas::from_tgas(150);
 const REQUEST_GAS: Gas = Gas::from_tgas(200);
+const RECORD_ALLOWANCE: u128 = 10_000_000_000_000_000_000_000; // 0.01 NEAR, RECORD_STORAGE_YOCTO in the dashboard
 
 struct Env {
     worker: Worker<near_workspaces::network::Sandbox>,
@@ -32,7 +33,7 @@ fn yocto(t: NearToken) -> String {
 }
 
 /// A Sputnik DAO with one council member, and the factory initialised with the Guard code. The factory account
-/// pays the global publish (0.0001 NEAR per byte of Guard code, about 25 NEAR) from its own balance.
+/// only locks the storage for the code it keeps; each Guard's copy is paid by the DAO that creates it.
 async fn setup() -> anyhow::Result<Env> {
     let worker = near_workspaces::sandbox().await?;
     let root = worker.root_account()?;
@@ -42,7 +43,7 @@ async fn setup() -> anyhow::Result<Env> {
     let receiver = sub("receiver", 1).await?.into_result()?;
     let stranger = sub("stranger", 20).await?.into_result()?;
     let dao = sub("dao", 50).await?.into_result()?;
-    let factory = sub("factory", 40).await?.into_result()?;
+    let factory = sub("factory", 6).await?.into_result()?; // what setup.sh gives the testnet factory
 
     let dao = dao.deploy(&std::fs::read(SPUTNIK_WASM)?).await?.into_result()?;
     dao.call("new")
@@ -58,10 +59,7 @@ async fn setup() -> anyhow::Result<Env> {
     // `new` takes the code as borsh `Vec<u8>`: u32 length, then the bytes.
     let mut args = (code.len() as u32).to_le_bytes().to_vec();
     args.extend(code);
-    let before = factory.view_account().await?.balance;
     factory.call("new").args(args).max_gas().transact().await?.into_result()?;
-    let spent = before.as_yoctonear() - factory.view_account().await?.balance.as_yoctonear();
-    println!("COST factory new (global publish) spent={:.3} NEAR", spent as f64 / 1e24);
 
     Ok(Env { worker, dao, factory, council, agent, receiver, stranger, bond })
 }
@@ -105,8 +103,16 @@ impl Env {
         })
     }
 
-    /// P1 of the dashboard flow: the DAO calls `factory.create` with `deposit` as the Guard's funding.
-    async fn dao_creates(&self, name: &str, deposit: NearToken) -> anyhow::Result<String> {
+    /// What every Guard's code locks on its account; the dashboard adds it to the funding.
+    async fn code_storage(&self) -> anyhow::Result<u128> {
+        let meta: Value = self.factory.view("kd_factory_metadata").await?.json()?;
+        Ok(meta["guard_code_storage"].as_str().unwrap().parse()?)
+    }
+
+    /// P1 of the dashboard flow: the DAO calls `factory.create` with `funding` plus the code storage and the
+    /// registry record allowance, as the dashboard computes the deposit.
+    async fn dao_creates(&self, name: &str, funding: NearToken) -> anyhow::Result<String> {
+        let deposit = NearToken::from_yoctonear(funding.as_yoctonear() + self.code_storage().await? + RECORD_ALLOWANCE);
         let kind = json!({ "FunctionCall": { "receiver_id": self.factory.id(), "actions": [{
             "method_name": "create",
             "args": STANDARD.encode(self.create_args(name).to_string()),
@@ -159,8 +165,11 @@ async fn a_dao_creates_a_locked_guard_that_pays_auto_and_holds_pending() -> anyh
     let keys = e.worker.view_access_keys(&gid).await?;
     assert!(keys.is_empty(), "a key on the Guard would let its holder redeploy or drain it: {keys:?}");
     let balance = e.balance(&guard).await?;
-    println!("COST guard balance after create with {funding} deposit = {:.4} NEAR", balance as f64 / 1e24);
-    assert!(balance > funding.as_yoctonear() * 99 / 100, "the deposit, minus the registry record, funds the Guard");
+    let code_storage = e.code_storage().await?;
+    println!("COST guard code storage = {:.4} NEAR, guard balance after create with {funding} funding = {:.4} NEAR", code_storage as f64 / 1e24, balance as f64 / 1e24);
+    assert!(balance >= funding.as_yoctonear() + code_storage, "the DAO's deposit pays the Guard's code and its funding");
+    let factory_left = e.factory.view_account().await?.balance.as_yoctonear();
+    println!("COST factory balance after create = {:.4} NEAR", factory_left as f64 / 1e24);
 
     assert_eq!(e.dao_adds_role(&guard).await?, "Approved");
 

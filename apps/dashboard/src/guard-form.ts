@@ -9,9 +9,9 @@ export const MAX_WHITELIST = 50;
 export const MAX_GUARDIANS = 5;
 export const MAX_LABEL_CHARS = 64;
 export const MAX_NAME_LEN = 32;
-/** The factory's MIN_GUARD_BALANCE: a smaller deposit is refused. */
+/** The factory's MIN_GUARD_BALANCE: the least funding on top of the Guard's code storage. */
 export const MIN_FUNDING_YOCTO = 5n * 10n ** 23n;
-/** Added to the funding for the factory's registry record (about 0.003 NEAR measured); the rest reaches the Guard. */
+/** Added to the deposit for the factory's registry record (about 0.003 NEAR measured); the rest reaches the Guard. */
 export const RECORD_STORAGE_YOCTO = 10n ** 22n;
 
 export interface GuardFormInput {
@@ -87,7 +87,8 @@ export type GuardFormResult =
   | { ok: true; args: GuardCreateArgs; depositYocto: string; guardId: string }
   | { ok: false; errors: GuardFormError[] };
 
-export function validateGuardForm(input: GuardFormInput, factory: string): GuardFormResult {
+/** `codeStorageYocto`: what the Guard's copy of the code locks, read from the factory; the DAO's deposit pays it. */
+export function validateGuardForm(input: GuardFormInput, factory: string, codeStorageYocto: string): GuardFormResult {
   const errors: GuardFormError[] = [];
   const err = (field: string, code: GuardFormCode) => errors.push({ field, code });
 
@@ -139,7 +140,7 @@ export function validateGuardForm(input: GuardFormInput, factory: string): Guard
   return {
     ok: true,
     guardId: guardAccountId(input.name, factory),
-    depositYocto: (funding + RECORD_STORAGE_YOCTO).toString(),
+    depositYocto: (funding + BigInt(codeStorageYocto) + RECORD_STORAGE_YOCTO).toString(),
     args: {
       name: input.name,
       policy: { max_per_tx: perTx.toString(), max_per_day: perDay.toString(), max_pending_per_agent: pending, min_reserve: reserve.toString() },

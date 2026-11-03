@@ -10,6 +10,7 @@ import { renderKeyDetail } from "./key-detail.ts";
 import { PROPOSALS_ID, PROPOSALS_LIST, renderProposals } from "./proposals-view.ts";
 import { renderAccount, renderCouncil } from "./report.ts";
 import { guardHref, homeHref, parseRoute, resolveInput, routeHref, suffixNetwork, type Page, type Route } from "./route.ts";
+import { yoctoToNear } from "./format.ts";
 import { formToInput, validateGuardForm } from "./guard-form.ts";
 import { addGuardRoleProposal, createGuardProposal, guardChangeProposal, isGuardMethod, missingProposePermissions } from "./guard-proposals.ts";
 import { readGuardDao, type GuardDao } from "./guard-read.ts";
@@ -276,7 +277,7 @@ function submitGuardCreate(form: HTMLFormElement): void {
   if (guardState === null) return;
   const data = new FormData(form);
   const get = (name: string) => String(data.get(name) ?? "");
-  const result = validateGuardForm(formToInput(get), guardState.factory);
+  const result = validateGuardForm(formToInput(get), guardState.factory, guardState.code_storage);
   if (!result.ok) {
     const values = Object.fromEntries([...data.entries()].map(([k, v]) => [k, String(v)]));
     form.outerHTML = renderGuardCreate(guardState.factory, values, result.errors).value;
@@ -291,7 +292,8 @@ function submitGuardCreate(form: HTMLFormElement): void {
     labels: role === null ? ["call"] : ["call", "policy"],
     notes: [
       `Both proposals need the council's votes. The Guard can propose transfers only after both pass: P1 creates ${result.guardId}, P2 lets it into the agent-guard role.`,
-      "If P1 fails on chain, the factory refunds the funding to the DAO.",
+      `P1 attaches the funding plus ${yoctoToNear(guardState.code_storage)} NEAR for the Guard's own copy of the code and 0.01 NEAR for the factory's record: the DAO pays for its Guard.`,
+      "If P1 fails on chain, the factory refunds the whole deposit to the DAO.",
     ],
   });
 }

@@ -92,13 +92,30 @@ fn transfers_to(receiver: &str) -> Vec<u128> {
 }
 
 #[test]
-fn new_publishes_the_guard_code_as_a_global_contract_and_keeps_its_hash() {
+fn new_stores_the_guard_code_and_its_hash_without_publishing_anything() {
     let f = factory();
     assert_eq!(f.guard_code_hash, env::sha256_array(CODE));
-    let published = get_created_receipts().into_iter().any(|r| {
-        r.receiver_id == id(FACTORY) && r.actions.iter().any(|a| matches!(a, MockAction::DeployGlobalContract { .. }))
+    assert_eq!(env::storage_read(GUARD_CODE_KEY).as_deref(), Some(CODE), "every create deploys this copy");
+    // A global publish burns about 25 NEAR of the factory owner's money; each DAO pays for its own Guard instead.
+    assert!(get_created_receipts().is_empty());
+}
+
+#[test]
+fn the_deposit_must_also_pay_for_the_guards_copy_of_the_code() {
+    // 2 NEAR of code storage at 10^19 yocto per byte. A fresh factory per call: a panic on chain rolls the
+    // reservation back, the mocked env does not.
+    let big = || {
+        env_as(FACTORY, 0);
+        Factory::new(vec![0; 200_000])
+    };
+    let mut f = big();
+    let msg = panic_message(|| {
+        let _ = create(&mut f, DAO, "acme", 2 * NEAR);
     });
-    assert!(published, "Guards point at this hash; without the publish every create would fail");
+    assert!(msg.contains("DEPOSIT_TOO_LOW"), "the factory must not pay for a DAO's Guard: {msg}");
+    let mut f = big();
+    let _ = create(&mut f, DAO, "acme", 3 * NEAR);
+    assert!(f.get_guard(guard_id("acme")).is_some());
 }
 
 #[test]
@@ -207,7 +224,7 @@ fn a_caller_that_is_not_a_dao_gets_its_deposit_back_and_no_record() {
 }
 
 #[test]
-fn a_dao_gets_a_locked_guard_running_the_global_code_with_itself_as_dao_id() {
+fn a_dao_gets_a_locked_guard_running_its_own_copy_of_the_code_with_itself_as_dao_id() {
     let mut f = factory();
     let _ = create(&mut f, DAO, "acme", 3 * NEAR);
     env_callback(PromiseResult::Successful(b"{}".to_vec()));
@@ -217,7 +234,7 @@ fn a_dao_gets_a_locked_guard_running_the_global_code_with_itself_as_dao_id() {
         get_created_receipts().into_iter().filter(|r| r.receiver_id == guard_id("acme")).flat_map(|r| r.actions).collect();
     assert!(actions.iter().any(|a| matches!(a, MockAction::CreateAccount { .. })));
     assert!(actions.iter().any(|a| matches!(a, MockAction::Transfer { deposit, .. } if deposit.as_yoctonear() == 2 * NEAR)));
-    assert!(actions.iter().any(|a| matches!(a, MockAction::UseGlobalContract { .. })));
+    assert!(actions.iter().any(|a| matches!(a, MockAction::DeployContract { code, .. } if code == CODE)));
     assert!(actions.iter().any(|a| matches!(a, MockAction::FunctionCallWeight { method_name, args, .. }
         if method_name == b"new" && args == &init.to_string().into_bytes())));
     assert!(

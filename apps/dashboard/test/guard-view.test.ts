@@ -79,7 +79,7 @@ describe("renderGuardCard", () => {
 
 describe("renderGuardDao and renderGuardCreate", () => {
   it("shows the empty state and the create form for a DAO with no Guard", () => {
-    const state: GuardDao = { dao: DAO, factory: FACTORY, policy, guards: [] };
+    const state: GuardDao = { dao: DAO, factory: FACTORY, code_storage: "2483120000000000000000000", policy, guards: [] };
     const out = renderGuardDao(state, "testnet").value;
     assert.match(out, /has no Guard from/);
     assert.match(out, /id="guard-create-form"/);

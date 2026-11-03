@@ -14,6 +14,8 @@ import {
 
 const FACTORY = "guards.kdfactory.testnet";
 const NEAR = 10n ** 24n;
+/** The factory's `guard_code_storage` for a 242.5 KB Guard: the DAO pays it, not the factory owner. */
+const CODE_STORAGE = "2483120000000000000000000";
 
 const input = (over: Partial<GuardFormInput> = {}): GuardFormInput => ({
   name: "payroll",
@@ -29,7 +31,7 @@ const input = (over: Partial<GuardFormInput> = {}): GuardFormInput => ({
 });
 
 const codes = (over: Partial<GuardFormInput>) => {
-  const r = validateGuardForm(input(over), FACTORY);
+  const r = validateGuardForm(input(over), FACTORY, CODE_STORAGE);
   assert.equal(r.ok, false);
   return r.ok ? [] : r.errors.map((e) => `${e.field}:${e.code}`);
 };
@@ -57,8 +59,8 @@ describe("nearToYocto", () => {
 });
 
 describe("validateGuardForm", () => {
-  it("builds exactly the create args the factory takes, deposit = funding + record storage", () => {
-    const r = validateGuardForm(input({ whitelist: [{ account_id: "vendor.kdoncall.testnet", label: "vendor", max_per_tx: "0.5" }] }), FACTORY);
+  it("builds exactly the create args the factory takes, deposit = funding + the Guard's code storage + record storage", () => {
+    const r = validateGuardForm(input({ whitelist: [{ account_id: "vendor.kdoncall.testnet", label: "vendor", max_per_tx: "0.5" }] }), FACTORY, CODE_STORAGE);
     assert.ok(r.ok);
     assert.equal(r.guardId, `payroll.${FACTORY}`);
     assert.deepEqual(r.args.policy, {
@@ -68,11 +70,12 @@ describe("validateGuardForm", () => {
       min_reserve: NEAR.toString(),
     });
     assert.equal(r.args.whitelist[0]!.max_per_tx, (NEAR / 2n).toString());
-    assert.equal(r.depositYocto, (5n * NEAR + 10n ** 22n).toString());
+    // Short of the code storage, the factory refuses the create with DEPOSIT_TOO_LOW after the council voted.
+    assert.equal(r.depositYocto, (5n * NEAR + BigInt(CODE_STORAGE) + 10n ** 22n).toString());
   });
 
   it("an empty receiver cap means the global per-tx limit, sent as null", () => {
-    const r = validateGuardForm(input(), FACTORY);
+    const r = validateGuardForm(input(), FACTORY, CODE_STORAGE);
     assert.ok(r.ok);
     assert.equal(r.args.whitelist[0]!.max_per_tx, null);
   });
@@ -107,7 +110,7 @@ describe("validateGuardForm", () => {
 
 describe("createGuardProposal", () => {
   it("is a FunctionCall to the factory whose args decode back to the form's create args", () => {
-    const r = validateGuardForm(input({ agents: [{ account_id: "bot.kdoncall.testnet", label: "bot lương 💸" }] }), FACTORY);
+    const r = validateGuardForm(input({ agents: [{ account_id: "bot.kdoncall.testnet", label: "bot lương 💸" }] }), FACTORY, CODE_STORAGE);
     assert.ok(r.ok);
     const p = createGuardProposal(FACTORY, r.args, r.depositYocto);
     const call = p.proposal.kind.FunctionCall as { receiver_id: string; actions: { method_name: string; args: string; deposit: string; gas: string }[] };

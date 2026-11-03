@@ -19,6 +19,8 @@ export interface GuardLive {
 export interface GuardDao {
   dao: string;
   factory: string;
+  /** yoctoNEAR each Guard's copy of the code locks; the create deposit pays it (`kd_factory_metadata`). */
+  code_storage: string;
   policy: RawPolicy;
   guards: GuardLive[];
 }
@@ -45,20 +47,25 @@ async function readGuard(rpc: Rpc, height: number, g: { guard_id: string; name: 
   return { guard_id: g.guard_id, name: g.name, ready: g.ready, in_role: members.includes(g.guard_id), config, policy, window, agents };
 }
 
-/** Throws a KdError from the DAO read, `NOT_A_DAO`, or `FACTORY_UNREADABLE` when the factory view fails. */
+/** Throws a KdError from the DAO read, `NOT_A_DAO`, or `FACTORY_UNREADABLE` when a factory view fails. */
 export async function readGuardDao(dao: string, factory: string, network: Network): Promise<GuardDao> {
   const rpc = createRpc({ url: DEFAULT_RPC_URLS[network] });
   const { height } = await rpc.block();
-  const [policy, listed] = await Promise.all([
-    rpc.callFunction(dao, height, "get_policy", {}),
-    rpc.callFunction(factory, height, "get_guards_for_dao", { dao_id: dao }).catch((e: unknown) => {
-      console.error("guard factory read failed", { factory, error: e });
+  const factoryView = (method: string, args: object) =>
+    rpc.callFunction(factory, height, method, args).catch((e: unknown) => {
+      console.error("guard factory read failed", { factory, method, error: e });
       throw new Error("FACTORY_UNREADABLE");
-    }),
+    });
+  const [policy, listed, meta] = await Promise.all([
+    rpc.callFunction(dao, height, "get_policy", {}),
+    factoryView("get_guards_for_dao", { dao_id: dao }),
+    factoryView("kd_factory_metadata", {}),
   ]);
   if (!isPolicy(policy)) throw new Error("NOT_A_DAO");
+  const codeStorage = (meta as { guard_code_storage?: unknown } | null)?.guard_code_storage;
+  if (typeof codeStorage !== "string" || !/^\d+$/.test(codeStorage)) throw new Error("FACTORY_UNREADABLE");
   const rows = Array.isArray(listed) ? (listed as { guard_id: string; name: string; ready: boolean }[]) : [];
   const members = roleMembers(policy);
   const guards = await Promise.all(rows.map((g) => readGuard(rpc, height, g, members)));
-  return { dao, factory, policy, guards };
+  return { dao, factory, code_storage: codeStorage, policy, guards };
 }
