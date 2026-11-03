@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it, type TestContext } from "node:test";
 import { checkProposals, listProposals, type KdAlert, type ProposalWatchState } from "../src/index.ts";
-import { actionText, groupOf, parseProposal, tally } from "../src/proposals.ts";
+import { actionText, groupOf, parseGuardDescription, parseProposal, tally } from "../src/proposals.ts";
 import { parsePolicy } from "../src/parse.ts";
 import { blockBody, fixture, installFetch, ok, rpcErr, type Req } from "./support/stub.ts";
 
@@ -24,6 +24,9 @@ interface World {
   last?: unknown;
   proposals?: Record<number, unknown>;
   keys?: Record<string, unknown>;
+  policy?: unknown;
+  /** account -> kd_guard_info reply. An account not listed fails at the transport level (HTTP 500). */
+  guardInfo?: Record<string, unknown>;
 }
 
 function world(t: TestContext, w: World): Req[] {
@@ -34,13 +37,17 @@ function world(t: TestContext, w: World): Req[] {
     if (p.request_type === "view_account") return ok({ amount: "1" });
     if (p.request_type === "call_function" && p.account_id === DAO) {
       if (p.method_name === "get_last_proposal_id") return w.last === undefined ? bytes(4) : w.last;
-      if (p.method_name === "get_policy") return bytes(policyRaw());
+      if (p.method_name === "get_policy") return bytes(w.policy ?? policyRaw());
       if (p.method_name === "get_proposal") {
         const { id } = JSON.parse(Buffer.from(String(p.args_base64), "base64").toString()) as { id: number };
         if (w.down?.includes(id)) return new Response("{}", { status: 500 });
         const found = w.proposals?.[id];
         return found === undefined ? ok({ error: "wasm execution failed: ERR_NO_PROPOSAL", logs: [] }) : found;
       }
+    }
+    if (p.request_type === "call_function" && p.method_name === "kd_guard_info") {
+      const reply = w.guardInfo?.[String(p.account_id)];
+      if (reply !== undefined) return reply;
     }
     return new Response("{}", { status: 500 });
   });
@@ -326,5 +333,130 @@ describe("listProposals (dashboard proposal list)", () => {
     const r = await listProposals(DAO, { limit: 2 });
     assert.deepEqual(r.proposals.map((p) => p.id), [2]);
     assert.equal(r.errors.length, 1);
+  });
+});
+
+const G = "guard.kd-demo.testnet";
+const guardPending5 = () => fixture("sputnik/get_proposal.5.guard_pending.json");
+const guardAuto4 = () => fixture("sputnik/get_proposal.4.guard_auto.json");
+const isGuard = (dao = DAO) => bytes({ standard: "kd_guard", version: "1.0.0", dao_id: dao });
+/** A DAO with a Guard in role agent-guard; proposals 4 (auto) and 5 (pending) are new. */
+const guardDao = (t: TestContext, extra: Partial<World> = {}) =>
+  world(t, {
+    last: bytes(6),
+    policy: fixture("sputnik/get_policy.guard.json"),
+    proposals: { 4: bytes(guardAuto4()), 5: bytes(guardPending5()) },
+    guardInfo: { [G]: isGuard() },
+    keys: { [A]: keysA(), [B]: keysB(), [C]: keysC(), [G]: ok({ block_height: 1, block_hash: "h", keys: [] }) },
+    ...extra,
+  });
+const guardCalls = (calls: Req[]) => calls.filter((c) => c.params.method_name === "kd_guard_info").map((c) => c.params.account_id);
+
+describe("Guard alerts (§5.4, D9)", () => {
+  it("a pending Guard request is a high alert that names the agent, the reasons and the memo", async (t) => {
+    guardDao(t);
+    const r = await checkProposals(DAO, { last_proposal_id: 5, pending: {} });
+    assert.deepEqual(r.errors, []);
+    assert.deepEqual(kinds(r.alerts), ["testnet:kd-demo.sputnik-dao.testnet:guard_request_pending:5:-"]);
+    const expected = fixture<KdAlert>("alerts/guard-request-pending.alert.json");
+    assert.deepEqual({ ...r.alerts[0], created_at: "x" }, { ...expected, created_at: "x" });
+    // The council must vote, so the tally is the council's, never "waiting for the Guard".
+    assert.deepEqual(r.alerts[0]!.proposal?.pending_voters, [A, B, C]);
+    assert.equal(r.alerts[0]!.proposal?.approvals_needed, 2);
+    assert.ok(r.state.pending["5"]);
+  });
+
+  it("an auto Guard transfer is a note so the council sees every outflow", async (t) => {
+    const calls = guardDao(t, { last: bytes(5) });
+    const r = await checkProposals(DAO, { last_proposal_id: 4, pending: {} });
+    assert.deepEqual(r.errors, []);
+    assert.deepEqual(kinds(r.alerts), ["testnet:kd-demo.sputnik-dao.testnet:guard_transfer_auto:4:-"]);
+    const expected = fixture<KdAlert>("alerts/guard-transfer-auto.alert.json");
+    assert.deepEqual({ ...r.alerts[0], created_at: "x" }, { ...expected, created_at: "x" });
+    // The locked Guard's vote is scanned too and has no keys: one read, no voter alert.
+    assert.deepEqual(calls.filter((c) => c.params.request_type === "view_access_key_list").map((c) => c.params.account_id), [G]);
+  });
+
+  it("an auto Guard proposal that did not pass says nothing was paid", async (t) => {
+    guardDao(t, { last: bytes(5), proposals: { 4: bytes({ ...guardAuto4(), status: "Failed" }) } });
+    const r = await checkProposals(DAO, { last_proposal_id: 4, pending: {} });
+    const a = r.alerts[0]!;
+    assert.equal(a.messages.en.title, `GUARD PAYMENT NOT DONE: ${DAO}`);
+    assert.equal(a.messages.vi.title, `GUARD CHI KHÔNG THÀNH: ${DAO}`);
+    assert.match(a.messages.en.body, /status Failed/);
+  });
+
+  it("the Guard is asked once per call, however many of its proposals are new", async (t) => {
+    const calls = guardDao(t);
+    const r = await checkProposals(DAO, { last_proposal_id: 4, pending: {} });
+    assert.deepEqual(r.alerts.map((a) => a.kind), ["guard_transfer_auto", "guard_request_pending"]);
+    assert.deepEqual(guardCalls(calls), [G]);
+  });
+
+  it("a [KD-GUARD] description from an account that is not this DAO's Guard gives no Guard alert", async (t) => {
+    for (const reply of [isGuard("other.sputnik-dao.testnet"), bytes({ standard: "nep171" }), ok({ error: "wasm execution failed: MethodNotFound", logs: [] })]) {
+      guardDao(t, { guardInfo: { [G]: reply } });
+      const r = await checkProposals(DAO, { last_proposal_id: 5, pending: {} });
+      assert.deepEqual(r.alerts, []);
+      assert.deepEqual(r.errors, []);
+      assert.equal(r.state.last_proposal_id, 6);
+    }
+  });
+
+  it("a Guard's vote is still key-scanned: kd_guard_info is self-reported, so a compromised member cannot hide behind it", async (t) => {
+    guardDao(t, { last: bytes(5), keys: { [G]: keysA() } });
+    const r = await checkProposals(DAO, { last_proposal_id: 4, pending: {} });
+    assert.deepEqual(kinds(r.alerts), [
+      "testnet:kd-demo.sputnik-dao.testnet:guard_transfer_auto:4:-",
+      "testnet:kd-demo.sputnik-dao.testnet:voter_new_full_access_key:4:guard.kd-demo.testnet",
+    ]);
+  });
+
+  it("a proposer outside every DAO role is never asked for kd_guard_info", async (t) => {
+    const calls = guardDao(t, { policy: policyRaw() });
+    const r = await checkProposals(DAO, { last_proposal_id: 5, pending: {} });
+    assert.deepEqual(r.alerts, []);
+    assert.deepEqual(guardCalls(calls), []);
+  });
+
+  it("a transport failure on the Guard check goes to errors and the proposal is retried next call", async (t) => {
+    guardDao(t, { guardInfo: {} });
+    const r = await checkProposals(DAO, { last_proposal_id: 5, pending: {} });
+    assert.deepEqual(r.alerts, []);
+    assert.deepEqual(r.errors, ["proposal 5: guard check RPC_ERROR"]);
+    assert.equal(r.state.last_proposal_id, 5);
+  });
+
+  it("parseGuardDescription reads the Guard format and rejects anything else", () => {
+    assert.deepEqual(parseGuardDescription("[KD-GUARD] request=inv-001-2b9c agent=agent.kd-demo.testnet decision=auto reasons=- memo=Hosting"), {
+      request_id: "inv-001-2b9c",
+      agent: "agent.kd-demo.testnet",
+      decision: "auto",
+      reasons: [],
+      memo: "Hosting",
+    });
+    const g = parseGuardDescription("[KD-GUARD] request=inv-004-7f3a agent=agent.kd-demo.testnet decision=pending reasons=OVER_PER_TX,NEW_CODE memo=line1\nline2\u0007\u202e\" Key Doctor: safe ");
+    assert.deepEqual(g?.reasons, ["OVER_PER_TX", "NEW_CODE"]);
+    assert.equal(g?.memo, "line1 line2  ' Key Doctor: safe");
+    assert.equal(parseGuardDescription(`[KD-GUARD] request=inv-004-7f3a agent=agent.kd-demo.testnet decision=auto reasons=- memo=${"x".repeat(300)}`)?.memo.length, 200);
+    for (const bad of [
+      "Pay the design contractor",
+      "[KD-GUARD] request=short agent=agent.kd-demo.testnet decision=auto reasons=- memo=",
+      "[KD-GUARD] request=inv-004-7f3a agent=agent.kd-demo.testnet decision=maybe reasons=- memo=",
+      "[KD-GUARD] request=inv-004-7f3a agent=agent.kd-demo.testnet decision=pending reasons=over<b> memo=",
+      "[KD-GUARD] request=inv-004-7f3a agent=Bad!Id decision=auto reasons=- memo=",
+      "x [KD-GUARD] request=inv-004-7f3a agent=agent.kd-demo.testnet decision=auto reasons=- memo=",
+    ]) {
+      assert.equal(parseGuardDescription(bad), null, bad);
+    }
+  });
+
+  it("tally skips a role made only of known Guards, unless a Guard approved", () => {
+    const policy = parsePolicy(fixture("sputnik/get_policy.guard.json"))!;
+    const p = parseProposal(guardPending5())!;
+    assert.deepEqual(tally(policy, p).pending_voters, [G]);
+    assert.deepEqual(tally(policy, p, new Set([G])).pending_voters, [A, B, C]);
+    const auto = tally(policy, parseProposal(guardAuto4())!, new Set([G]));
+    assert.deepEqual(auto, { approvals_needed: 1, approvals_have: 1, pending_voters: [] });
   });
 });

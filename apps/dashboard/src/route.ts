@@ -3,7 +3,7 @@ import { resolveTarget, type Network } from "key-doctor";
 export const BOT_USERNAME = "KeyDoctorOnCallBot";
 export const BOT_URL = `https://t.me/${BOT_USERNAME}`;
 
-export type Page = "check" | "oncall" | "agents";
+export type Page = "check" | "oncall" | "agents" | "guard";
 
 export interface Route {
   /** The nav page: `?page=` without a target; any `?target=` is the Check page. */
@@ -14,6 +14,8 @@ export interface Route {
   invalid: string | null;
   /** The DAO whose council the account was opened from. */
   from: string | null;
+  /** The Agent Guard page's DAO (`?page=guard&dao=`), or null. */
+  dao: string | null;
   view: "report" | "cleanup";
   level: "safe" | "full";
   /**
@@ -49,10 +51,12 @@ export function parseRoute(search: string): Route {
   const level = params.get("level") === "full" ? "full" : "safe";
   const network = parseNetwork(params.get("network"));
   const p = params.get("page");
-  const page: Page = raw === null && (p === "oncall" || p === "agents") ? p : "check";
-  if (raw === null || raw.trim() === "") return { page, target: null, invalid: null, from: null, view: "report", level, network };
+  const page: Page = raw === null && (p === "oncall" || p === "agents" || p === "guard") ? p : "check";
+  const daoRaw = page === "guard" ? params.get("dao") : null;
+  const dao = daoRaw === null ? null : normalize(daoRaw);
+  if (raw === null || raw.trim() === "") return { page, target: null, invalid: null, from: null, dao, view: "report", level, network };
   const target = normalize(raw);
-  if (target === null) return { page: "check", target: null, invalid: raw, from: null, view: "report", level, network };
+  if (target === null) return { page: "check", target: null, invalid: raw, from: null, dao: null, view: "report", level, network };
   const fromRaw = params.get("from");
   const from = fromRaw === null ? null : normalize(fromRaw);
   return {
@@ -60,6 +64,7 @@ export function parseRoute(search: string): Route {
     target,
     invalid: null,
     from: from === target ? null : from,
+    dao: null,
     view,
     level,
     network: suffixNetwork(target) ?? network ?? "testnet",
@@ -98,4 +103,9 @@ export function homeHref(network: Network): string {
 /** In-app link to a nav page; Check is the home page. */
 export function pageHref(page: Page, network: Network = "testnet"): string {
   return page === "check" ? homeHref(network) : `?page=${page}`;
+}
+
+/** The Agent Guard page for one DAO. */
+export function guardHref(dao: string): string {
+  return `?${new URLSearchParams({ page: "guard", dao }).toString()}`;
 }

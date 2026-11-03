@@ -79,7 +79,9 @@ main:focus { outline: none; }
 
 .input-row { display: flex; flex-wrap: wrap; gap: 12px; }
 .input { flex: 1 1 320px; min-width: 0; min-height: 48px; padding: 0 14px; border: 1px solid var(--kd-border-input); border-radius: var(--kd-radius); font-size: var(--kd-fs-md); color: var(--kd-text); background: var(--kd-surface); }
+.stack-xs > .input { flex: none; } /* flex-basis 320px is for .input-row; in a column it would be the height */
 .input[aria-invalid="true"] { border-color: var(--kd-high); }
+.textarea { flex: none; width: 100%; min-height: 96px; padding: 10px 14px; line-height: 1.5; resize: vertical; }
 .field-error { color: var(--kd-high); font-size: var(--kd-fs-sm); font-weight: 500; }
 .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 6px; }
 .chip { display: inline-flex; align-items: center; gap: 8px; min-height: var(--kd-touch); padding: 0 14px; border-radius: 999px; background: var(--kd-primary-tint); color: var(--kd-primary); font-size: var(--kd-fs-sm); text-decoration: none; max-width: 100%; }

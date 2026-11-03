@@ -369,6 +369,76 @@ export function proposalAlertText(
   };
 }
 
+// Guard reason codes (§9.4). An unknown code is shown as is: the caller passes only [A-Z_] codes.
+const GUARD_REASON: Record<string, Text> = {
+  NOT_WHITELISTED: { vi: "người nhận không có trong danh sách được phép", en: "the receiver is not on the allowed list" },
+  OVER_PER_TX: { vi: "vượt hạn mức mỗi lệnh", en: "over the per-payment limit" },
+  OVER_RECIPIENT_LIMIT: { vi: "vượt hạn mức riêng của người nhận này", en: "over this receiver's own limit" },
+  OVER_DAILY_LIMIT: { vi: "vượt hạn mức trong ngày", en: "over the daily limit" },
+};
+
+const reasonsText = (codes: string[]): Text => {
+  const t = codes.map((c) => GUARD_REASON[c] ?? { vi: c, en: c });
+  return t.length === 0 ? { vi: "không rõ", en: "not given" } : { vi: t.map((r) => r.vi).join("; "), en: t.map((r) => r.en).join("; ") };
+};
+
+const memoText = (memo: string): Text =>
+  memo === "" ? { vi: "", en: "" } : { vi: ` Ghi chú của agent: "${memo}"`, en: ` Agent's note: "${memo}"` };
+
+/** §9.4. `status` is the proposal status when Key Doctor saw it. */
+export function guardPendingText(dao: string, id: number, action: Text, agent: string, reasons: string[], memo: string, status: string): AlertText {
+  const why = reasonsText(reasons);
+  const note = memoText(memo);
+  const open = status === "InProgress";
+  return {
+    vi: {
+      title: `AGENT XIN CHI, CẦN COUNCIL DUYỆT: ${dao}`,
+      body: `Đề xuất ${id}: agent ${agent} xin ${action.vi}. Lý do Guard không tự duyệt: ${why.vi}.${note.vi}`,
+      action: open
+        ? "Đề xuất đang chờ council duyệt. Nếu không chắc: chọn Reject (không chọn Remove, để Guard được hoàn tiền cọc)."
+        : `Đề xuất đã kết thúc trước khi Key Doctor thấy nó (trạng thái ${status}). Kiểm tra lại trên giao diện DAO.`,
+    },
+    en: {
+      title: `AGENT PAYMENT NEEDS THE COUNCIL: ${dao}`,
+      body: `Proposal ${id}: agent ${agent} asks to ${action.en}. Why the Guard did not approve it: ${why.en}.${note.en}`,
+      action: open
+        ? "The proposal waits for the council. If unsure, vote Reject (not Remove, so the Guard gets its bond back)."
+        : `The proposal was already closed when Key Doctor saw it (status ${status}). Check it in the DAO UI.`,
+    },
+  };
+}
+
+/** Owner decision 2026-11-03 (Guard plan D9): every Guard outflow reaches the council, as a note. */
+export function guardAutoText(dao: string, id: number, action: Text, guard: string, agent: string, memo: string, status: string): AlertText {
+  const note = memoText(memo);
+  if (status === "Approved") {
+    return {
+      vi: {
+        title: `GUARD ĐÃ TỰ CHI: ${dao}`,
+        body: `Đề xuất ${id}: Guard ${guard} tự duyệt ${action.vi} cho agent ${agent}, trong hạn mức.${note.vi}`,
+        action: "Không cần làm gì nếu khoản này đúng. Nếu không: guardian dừng Guard (pause), rồi council xem lại agent và hạn mức.",
+      },
+      en: {
+        title: `GUARD AUTO-PAID: ${dao}`,
+        body: `Proposal ${id}: Guard ${guard} approved, within its limits, for agent ${agent}: ${action.en}.${note.en}`,
+        action: "Nothing to do if this payment is expected. If not: a guardian pauses the Guard, then the council reviews the agent and the limits.",
+      },
+    };
+  }
+  return {
+    vi: {
+      title: `GUARD CHI KHÔNG THÀNH: ${dao}`,
+      body: `Đề xuất ${id}: Guard ${guard} tự duyệt ${action.vi} cho agent ${agent}, nhưng tiền chưa chuyển (trạng thái ${status}).${note.vi}`,
+      action: "Kiểm tra đề xuất trên giao diện DAO. Lý do hay gặp: số dư DAO không đủ cho khoản chi.",
+    },
+    en: {
+      title: `GUARD PAYMENT NOT DONE: ${dao}`,
+      body: `Proposal ${id}: Guard ${guard} approved, for agent ${agent}: ${action.en}, but nothing was paid (status ${status}).${note.en}`,
+      action: "Check the proposal in the DAO UI. The usual cause: the DAO balance does not cover the payment.",
+    },
+  };
+}
+
 export const ACTION_TEXT = {
   transferNear: (amount: string, to: string): Text => ({ vi: `chuyển ${amount} NEAR cho ${to}`, en: `transfer ${amount} NEAR to ${to}` }),
   transferToken: (amount: string, token: string, to: string): Text => ({

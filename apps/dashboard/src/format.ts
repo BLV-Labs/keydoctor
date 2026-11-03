@@ -32,6 +32,13 @@ export function yoctoToNear(yocto: string): string {
   return frac ? `${whole}.${frac}` : `${whole}`;
 }
 
+/** A NEAR amount typed by a user to yoctoNEAR without float rounding: "0.1" → "100000000000000000000000". Null if not a plain decimal. */
+export function nearToYocto(near: string): string | null {
+  const m = /^(\d+)(?:\.(\d{1,24}))?$/.exec(near.trim());
+  if (!m) return null;
+  return (BigInt(m[1]!) * YOCTO_PER_NEAR + BigInt((m[2] ?? "").padEnd(24, "0"))).toString();
+}
+
 /** Milliseconds between the key's estimated creation and the scanned block, or null when unknown. */
 export function keyAgeMs(key: KeyInfo, blockTimestamp: string): number | null {
   if (key.created.at === null) return null;

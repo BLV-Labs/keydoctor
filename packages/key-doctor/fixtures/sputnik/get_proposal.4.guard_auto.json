@@ -1,0 +1,25 @@
+{
+  "id": 4,
+  "proposer": "guard.kd-demo.testnet",
+  "description": "[KD-GUARD] request=inv-001-2b9c agent=agent.kd-demo.testnet decision=auto reasons=- memo=Hosting invoice inv-001$$$$",
+  "kind": {
+    "Transfer": {
+      "token_id": "",
+      "receiver_id": "vendor-a.kd-demo.testnet",
+      "amount": "3000000000000000000000000",
+      "msg": null
+    }
+  },
+  "status": "Approved",
+  "vote_counts": {
+    "agent-guard": [
+      "1",
+      "0",
+      "0"
+    ]
+  },
+  "votes": {
+    "guard.kd-demo.testnet": "Approve"
+  },
+  "submission_time": "1793669900000000000"
+}

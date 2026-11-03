@@ -1,0 +1,50 @@
+{
+  "schema_version": "kd.alert.v1",
+  "alert_id": "testnet:kd-demo.sputnik-dao.testnet:guard_transfer_auto:4:-",
+  "created_at": "2026-11-03T04:22:10Z",
+  "network": "testnet",
+  "target": "kd-demo.sputnik-dao.testnet",
+  "severity": "note",
+  "kind": "guard_transfer_auto",
+  "after_the_fact": true,
+  "proposal": {
+    "id": 4,
+    "kind_label": "transfer",
+    "description": "[KD-GUARD] request=inv-001-2b9c agent=agent.kd-demo.testnet decision=auto reasons=- memo=Hosting invoice inv-001",
+    "proposer": "guard.kd-demo.testnet",
+    "transfer": {
+      "token_id": "",
+      "receiver_id": "vendor-a.kd-demo.testnet",
+      "amount": "3000000000000000000000000"
+    },
+    "status": "Approved",
+    "votes": {
+      "guard.kd-demo.testnet": "Approve"
+    },
+    "approvals_needed": 1,
+    "approvals_have": 1,
+    "pending_voters": [],
+    "executed": true,
+    "ui_url": null
+  },
+  "guard": {
+    "guard_id": "guard.kd-demo.testnet",
+    "request_id": "inv-001-2b9c",
+    "agent": "agent.kd-demo.testnet",
+    "decision": "auto",
+    "reasons": [],
+    "memo": "Hosting invoice inv-001"
+  },
+  "messages": {
+    "vi": {
+      "title": "GUARD ĐÃ TỰ CHI: kd-demo.sputnik-dao.testnet",
+      "body": "Đề xuất 4: Guard guard.kd-demo.testnet tự duyệt chuyển 3 NEAR cho vendor-a.kd-demo.testnet cho agent agent.kd-demo.testnet, trong hạn mức. Ghi chú của agent: \"Hosting invoice inv-001\"",
+      "action": "Không cần làm gì nếu khoản này đúng. Nếu không: guardian dừng Guard (pause), rồi council xem lại agent và hạn mức."
+    },
+    "en": {
+      "title": "GUARD AUTO-PAID: kd-demo.sputnik-dao.testnet",
+      "body": "Proposal 4: Guard guard.kd-demo.testnet approved, within its limits, for agent agent.kd-demo.testnet: transfer 3 NEAR to vendor-a.kd-demo.testnet. Agent's note: \"Hosting invoice inv-001\"",
+      "action": "Nothing to do if this payment is expected. If not: a guardian pauses the Guard, then the council reviews the agent and the limits."
+    }
+  }
+}

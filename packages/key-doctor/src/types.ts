@@ -179,7 +179,11 @@ export type AlertKind =
   | "voter_new_full_access_key"
   | "governance_change_proposal"
   | "code_upgrade_proposal"
-  | "daily_changes";
+  | "daily_changes"
+  /** A Guard of the DAO added a transfer it did not approve itself (§5.4). */
+  | "guard_request_pending"
+  /** A Guard of the DAO approved a transfer within its limits (owner decision 2026-11-03, Guard plan D9). */
+  | "guard_transfer_auto";
 
 export type Vote = "Approve" | "Reject" | "Remove";
 
@@ -216,6 +220,16 @@ export interface KdAlert {
     key_added_block: number;
     key_added_at_est: string;
     hours_before_vote_seen: number;
+  };
+  /** Guard alerts only: read from the proposal description the Guard wrote (§11.5.6). */
+  guard?: {
+    guard_id: string;
+    request_id: string;
+    agent: string;
+    decision: "auto" | "pending";
+    /** Guard reason codes such as NOT_WHITELISTED; empty for auto. */
+    reasons: string[];
+    memo: string;
   };
   diff?: KdDiff;
   messages: {

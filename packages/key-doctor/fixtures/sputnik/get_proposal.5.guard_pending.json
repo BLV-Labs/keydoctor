@@ -1,0 +1,17 @@
+{
+  "id": 5,
+  "proposer": "guard.kd-demo.testnet",
+  "description": "[KD-GUARD] request=inv-004-7f3a agent=agent.kd-demo.testnet decision=pending reasons=NOT_WHITELISTED,OVER_PER_TX,OVER_DAILY_LIMIT memo=Invoice inv-004: urgent security audit$$$$",
+  "kind": {
+    "Transfer": {
+      "token_id": "",
+      "receiver_id": "attacker.kd-demo.testnet",
+      "amount": "500000000000000000000000000",
+      "msg": null
+    }
+  },
+  "status": "InProgress",
+  "vote_counts": {},
+  "votes": {},
+  "submission_time": "1793670000000000000"
+}

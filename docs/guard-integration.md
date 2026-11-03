@@ -1,6 +1,6 @@
 # Integrating the Agent Guard
 
-How to put an AI agent behind the Agent Guard (`contracts/guard`) on a Sputnik v2 DAO you already run, and connect the agent through the Guard MCP (`apps/guard-mcp`). For a throwaway demo DAO, `scripts/guard-setup/setup.sh all` does every step below (README, [Agent Guard](../README.md#agent-guard-contract)). Testnet names are used throughout.
+How to put an AI agent behind the Agent Guard (`contracts/guard`) on a Sputnik v2 DAO you already run, and connect the agent through the Guard MCP (`apps/guard-mcp`). With a Guard factory, a council member can instead propose the Guard from the dashboard's Agent Guard page: the council votes P1 (create) and P2 (role), and steps 1, 2 and 5 below are done by those two proposals; fund the Guard through P1's funding and continue at step 4 ([guard-flow.md](guard-flow.md), Path B). For a throwaway demo DAO, `scripts/guard-setup/setup.sh all` does every step below (README, [Agent Guard](../README.md#agent-guard-contract)). Testnet names are used throughout.
 
 ## What you get
 

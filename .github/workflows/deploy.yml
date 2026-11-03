@@ -1,6 +1,7 @@
 # Push to main: test, then publish the dashboard to Cloudflare Pages and the Worker (with D1 migrations).
 # Repo secrets: CLOUDFLARE_API_TOKEN (Workers, D1, Pages edit), CLOUDFLARE_ACCOUNT_ID.
-# Repo variables: KD_WORKER_URL (https origin of the Worker), KD_PAGES_PROJECT (optional, default key-doctor-dashboard).
+# Repo variables: KD_WORKER_URL (https origin of the Worker), KD_PAGES_PROJECT (optional, default key-doctor-dashboard),
+# KD_GUARD_FACTORY (optional, default keydoctor-guards.testnet).
 # Worker runtime secrets (MCP_TOKEN, TELEGRAM_BOT_TOKEN, ...) stay in Cloudflare; this workflow never touches them.
 name: Deploy
 
@@ -20,6 +21,7 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       KD_WORKER_URL: ${{ vars.KD_WORKER_URL }}
+      KD_GUARD_FACTORY: ${{ vars.KD_GUARD_FACTORY || 'keydoctor-guards.testnet' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

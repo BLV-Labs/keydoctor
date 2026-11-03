@@ -59,6 +59,7 @@ describe("route", () => {
       target: "a.kd-demo.testnet",
       invalid: null,
       from: "kd-demo.sputnik-dao.testnet",
+      dao: null,
       view: "report",
       level: "safe",
       network: "testnet",
@@ -68,6 +69,7 @@ describe("route", () => {
       target: null,
       invalid: "bad name",
       from: null,
+      dao: null,
       view: "report",
       level: "safe",
       network: null,
@@ -318,12 +320,12 @@ describe("proposal list (C7)", () => {
 });
 
 describe("nav and the On Call / Agents pages", () => {
-  const nav = (page: "check" | "oncall" | "agents") => renderLayout(html`<p>x</p>`, "testnet", page).value.match(/<nav[\s\S]*?<\/nav>/)![0];
+  const nav = (page: "check" | "oncall" | "agents" | "guard") => renderLayout(html`<p>x</p>`, "testnet", page).value.match(/<nav[\s\S]*?<\/nav>/)![0];
 
-  it("has Check, On Call and Agents, marks only the current page, and no longer links out to t.me", () => {
-    for (const [page, label] of [["check", "Check"], ["oncall", "On Call"], ["agents", "Agents"]] as const) {
+  it("has Check, On Call, Agents and Agent Guard, marks only the current page, and no longer links out to t.me", () => {
+    for (const [page, label] of [["check", "Check"], ["oncall", "On Call"], ["agents", "Agents"], ["guard", "Agent Guard"]] as const) {
       const n = nav(page);
-      assert.equal((n.match(/<a /g) ?? []).length, 3);
+      assert.equal((n.match(/<a /g) ?? []).length, 4);
       assert.equal((n.match(/aria-current="page"/g) ?? []).length, 1);
       assert.match(n, new RegExp(`aria-current="page">${label}<`));
       assert.ok(!n.includes("t.me"));

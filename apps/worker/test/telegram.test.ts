@@ -177,6 +177,32 @@ describe("GĐ4 message rendering", () => {
     assert.match(renderAlert("en", a).text, /Still to vote: b\.kd-demo\.testnet, c\.kd-demo\.testnet/);
   });
 
+  it("Guard alerts: pending names the council still to vote; auto shows the Guard's own approval", () => {
+    const pending = fixture<KdAlert>("alerts/guard-request-pending.alert.json");
+    pending.proposal!.ui_url = "https://ui.example/p/5";
+    const en = renderAlert("en", pending, "https://kd.example");
+    assert.equal(
+      en.text,
+      [
+        "Key Doctor On Call",
+        `AGENT PAYMENT NEEDS THE COUNCIL: ${DAO}`,
+        "",
+        pending.messages.en.body,
+        "Votes: 0/2 approved. Still to vote: a.kd-demo.testnet, b.kd-demo.testnet, c.kd-demo.testnet",
+        "",
+        pending.messages.en.action,
+      ].join("\n"),
+    );
+    assert.deepEqual(en.buttons?.map((b) => b.text), ["Open proposal", "View on dashboard"]);
+    assert.match(renderAlert("vi", pending).text, /Lý do Guard không tự duyệt: người nhận không có trong danh sách được phép/);
+
+    const auto = fixture<KdAlert>("alerts/guard-transfer-auto.alert.json");
+    const vi = renderAlert("vi", auto).text;
+    assert.match(vi, /^GUARD ĐÃ TỰ CHI: /m);
+    assert.match(vi, /Phiếu: 1\/1 đã duyệt\. Còn chờ: -/);
+    assert.match(renderAlert("en", auto).text, /Agent's note: "Hosting invoice inv-001"/);
+  });
+
   it("help exists in both languages", () => {
     assert.match(renderHelp("vi").text, /\/watch <account hoặc DAO>/);
     assert.match(renderHelp("en").text, /uses no AI/);
