@@ -42,7 +42,7 @@ Skeleton: no code exists yet. Fill the remaining `<...>` lines in GĐ0 from the 
 - Never log secrets, tokens, or PII.
 - Use parameterized queries — never string interpolation for SQL.
 - Principle of least privilege for all service accounts.
-- Never sign transactions or hold keys. Never commit private keys, seed phrases or tokens. No LLM in the product.
+- Never sign transactions or hold keys. Never commit private keys, seed phrases or tokens. No LLM in the product, except the yield agent (ADR 0004).
 - `POST /telegram`: check `X-Telegram-Bot-Api-Secret-Token`, return 200 at once, work in `ctx.waitUntil`.
 - `POST /mcp`, `POST /run-check`: `Authorization: Bearer` checked before any work.
 - `POST /api/watch-link`: CORS only for `DASHBOARD_ORIGIN`.
