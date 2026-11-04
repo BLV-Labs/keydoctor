@@ -1,7 +1,7 @@
 # 0004 — LLM in the yield agent only
 
 - **Date**: 2026-11-04
-- **Status**: Accepted 2026-11-04
+- **Status**: Deferred 2026-11-04 (accepted earlier the same day). The owner put the yield agent aside for the hackathon (`docs/final-idea.md` §16, B-Q9). Nothing in this ADR is built; the no-LLM rule applies everywhere until it is revived.
 - **Deciders**: owner, 2026-11-04 (will use an LLM for the yield agent)
 - **Story**: [yield agent plan](../stories/epics/yield/plan.md)
 
