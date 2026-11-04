@@ -56,8 +56,22 @@ No formatter or linter is configured. CI runs `pnpm typecheck` and `pnpm test`, 
 - Test runner: Node's built-in `node:test` + `node:assert/strict` (`pnpm test`). vitest 4.1 did not install under npm 10, and older vitest has a critical advisory. Required: every rule, `diffReports`, `checkProposals` (fixtures in `packages/key-doctor/fixtures/`), Telegram message rendering.
 - Tests verify intent, not just behavior.
 - A test that can't fail when business logic changes is wrong.
-- Test file location: `test/` per package (e.g. `packages/key-doctor/test/`), shared stubs in `test/support/`. Rust tests sit outside `pnpm test`: `src/tests.rs` per contract and `contracts/guard/tests/sandbox.rs`.
+- Test file location: `test/` per package (e.g. `packages/key-doctor/test/`), shared stubs in `test/support/`. Rust tests sit outside `pnpm test` (see Rust).
 - Tests run on fixtures or a stubbed `fetch`, never live RPC. Fixtures use testnet names only.
+
+## Rust
+
+Applies to `contracts/` (near-sdk 5.30). The sections above still apply where they are not TypeScript-specific.
+
+- **Layout**: per contract, `src/lib.rs` holds the state and methods, `src/types.rs` the public types, `src/tests.rs` the unit tests, `tests/sandbox.rs` the sandbox tests. Guard also has `policy.rs` (decision logic, no `env::`), `dao.rs` (Sputnik interface) and `events.rs`.
+- **Naming**: Rust defaults. Gas constants are `GAS_*`, limits `MAX_*` / `MIN_*`, callbacks `on_*`. Test names state the behavior (`paused_guard_rejects_requests`).
+- **Lint and format**: `cargo clippy --all-targets` is clean, keep it so. There is no rustfmt config and the files do not pass `cargo fmt --check`, so do not reformat a file in a logic change.
+- **Errors**: panic only with an UPPER_SNAKE_CASE code, through `require!(cond, "CODE")` or `env::panic_str("CODE")`: `panicCode` in `apps/guard-mcp` matches `[A-Z_]+`. `.unwrap()` only on a value just checked.
+- **Amounts**: `U128` in JSON, `u128` inside. Amount math uses `saturating_*` or `checked_*`. Release profiles keep `overflow-checks = true`.
+- **State**: `near_sdk::store` collections, keyed by a `BorshStorageKey` enum. Configuration lists have a `MAX_*` cap.
+- **Cross-contract calls**: declare the interface with `#[ext_contract]` and give each hop a fixed `GAS_*`. Callbacks are `#[private]` and handle a failed promise explicitly (`#[callback_result]` or `env::promise_result_checked`).
+- **Events**: NEP-297 through `emit`, standard `kd_guard` or `kd_guard_factory`.
+- **Tests**: `pnpm test:guard` builds the wasm and runs `cargo test` in both contracts. CI does not run it, so run it before committing a contract change. Unit tests mock cross-contract calls; sandbox tests run the real wasm with Sputnik from `contracts/guard/tests/res/`. Testnet names only.
 
 ## Git
 
