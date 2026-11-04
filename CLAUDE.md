@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-Key Doctor ("Key Doctor On Call") is a NEAR HACKATHON entry (build window 1–14 Nov 2026, deadline 23:59 UTC 14/11). All code is written by Claude Code from the Vietnamese spec documents. **Current state, owner tasks and the next Claude tasks live in `docs/stories/backlog.md` (section "Build Order"): read it first when you resume.** GĐ0–GĐ10 and GĐ12 are built; most need a deploy or a live testnet run to count as done.
+Key Doctor ("Key Doctor On Call") is a NEAR HACKATHON entry (code counts from 2026-10-19, Q-001; deadline 2026-11-14T23:59:00Z). All code is written by Claude Code from the Vietnamese spec documents. **Current state, owner tasks and the next Claude tasks live in `docs/stories/backlog.md` (section "Build Order"): read it first when you resume.** GĐ0–GĐ10 and GĐ12 are built; most need a deploy or a live testnet run to count as done.
 
-Spec documents and precedence when they conflict: **`docs/final-idea.md` > `docs/usecase.md` > `proposal-key-doctor.md`** (v2, not in the repo). `docs/near-hackathon.md` holds the contest rules and the submission checklist. Read `docs/final-idea.md` first. §17 is the Claude Code instruction list, §13.3 is the build-phase table.
+Spec documents and precedence when they conflict: **`docs/final-idea.md` > `docs/usecase.md` > `proposal-key-doctor.md`** (v2, not in the repo). `HACKATHON.md` is the organizers' brief (rules, submission API; the live copy at https://nearhackathon.com/HACKATHON.md wins, re-read it before submitting). `docs/near-hackathon.md` holds our notes and the submission checklist. Read `docs/final-idea.md` first. §17 is the Claude Code instruction list, §13.3 is the build-phase table.
 
 ## Language
 
@@ -24,7 +24,7 @@ Work through phases GĐ0–GĐ14 in `docs/final-idea.md` §13.3. Do not start a 
 
 pnpm workspaces monorepo (`pnpm-workspace.yaml`, version pinned in `packageManager`):
 - **`packages/key-doctor`**: pure library. It uses only `fetch` so it runs in the browser, Node and Workers. Exports `scanDao`, `scanAccount`, `checkProposals`, `diffReports`, `toSummary`. Rules live in `src/rules/`, thresholds in `src/rules/thresholds.ts` (changing a threshold means bumping `ruleset_version`). User-facing explanations (vi + en) live in `messages`, and the bot and dashboard reuse them verbatim. Per-member failures go into `members[].error` and never fail the whole scan. Pin every RPC query in a scan to one `block_height`. Key age comes from the nonce: `floor(nonce / 10^6)` is the block where the key was added.
-- **`apps/worker`**: one Cloudflare Worker (free plan) with D1. Its entry points are `POST /telegram` (webhook, checks the secret-token header, returns 200 at once and does the work in `ctx.waitUntil`), `POST /mcp` (Streamable HTTP, `Authorization: Bearer`), `POST /run-check`, `POST /api/watch-link` (P1), `GET /` health check, and `scheduled` crons (proposal watch every 15 minutes, daily key diff at `0 2 * * *` UTC). The bot commands and the MCP tools (`diagnose`, `compare`, `watch` (P1)) call the same shared functions. D1 schema: §8.7.
+- **`apps/worker`**: one Cloudflare Worker (free plan) with D1. Its entry points are `POST /telegram` (webhook, checks the secret-token header, returns 200 at once and does the work in `ctx.waitUntil`), `POST /mcp` (Streamable HTTP, no token, rate-limited, ADR 0003), `POST /run-check`, `POST /api/watch-link` (P1), `GET /` health check, and `scheduled` crons (proposal watch every 15 minutes, daily key diff at `0 2 * * *` UTC). The bot commands and the MCP tools (`diagnose`, `compare`, `watch` (P1)) call the same shared functions. D1 schema: §8.7.
 - **`apps/dashboard`**: static Cloudflare Pages site. Scans run in the browser through the library. It never writes subscriptions. Key cleanup is signed by the user in Meteor, Here or HOT Wallet (wallet-selector). The Agent Guard page only builds `add_proposal` calls that the user's wallet signs; it never writes D1.
 
 The data contracts in `docs/final-idea.md` §4 (`kd.report.v1`, `kd.report_summary.v1`, `kd.diff.v1`, `kd.alert.v1`, `ProposalWatchState`, `kd.watch_link.v1`, `kd.error.v1`) are canonical. They become code in `packages/key-doctor/src/types.ts`. Do not change them silently: bump `schema_version` and say so in the commit. Conventions: severities are `high` / `cleanup` / `note`, yoctoNEAR amounts are strings, times are ISO 8601 UTC.
@@ -32,13 +32,13 @@ The data contracts in `docs/final-idea.md` §4 (`kd.report.v1`, `kd.report_summa
 ## Invariants (easy to break)
 
 - Never sign transactions or hold keys. One exception (owner decision 2026-11-02, `docs/stories/epics/guard/plan.md` D3): `apps/guard-mcp` runs on the agent owner's machine and signs only `request_transfer` / `sync_request` with a function-call key read from `AGENT_KEY_PATH`. The Worker never holds a key, so the Guard emergency brake (GĐ24) is cut. Never commit private keys, seed phrases or tokens. **No LLM in the product, with one exception** (owner decision 2026-11-04, `docs/decisions/0004-llm-in-yield-agent.md`): the yield agent may call NEAR AI to choose among code-built candidates and write reasons. It never produces numbers or proposal args. Everywhere else, code makes every conclusion, including non-command bot messages, which use a regex for `*.near` / `*.testnet` names.
-- **Baseline (`snapshots`) writes** happen in only two places: the daily job (UC7) and the first subscription to a target that has no baseline yet. `/check` and `diagnose` never touch D1. `/changes` and `compare` do not move the baseline unless `update_baseline: true` is passed explicitly.
+- **Baseline (`snapshots`) writes** happen in only three places: the daily job (UC7), the first subscription to a target that has no baseline yet, and the first `/changes` or `compare` of such a target (ADR 0003). `/check` and `diagnose` never touch D1. `/changes` and `compare` do not move an existing baseline unless `update_baseline: true` is passed explicitly.
 - **Only the Worker writes `subscriptions`**: bot, MCP `watch` and dashboard all funnel through it.
 - `checkProposals` only reads RPC. It never stores or sends anything. `prev = null` records the current last proposal and returns no alerts. A failure on `get_last_proposal_id` throws, while per-proposal errors go into `errors`.
 - Proposal job: scan once per DAO (not once per subscription). **Send the alert first, write `alerts_sent` after**, so a crash causes a duplicate, not a missed alert. Delete subscriptions for chats that blocked or removed the bot. On a throw, do not save state.
 - `diffReports` is pure. Skip members with `error`, and skip flag changes when `ruleset_version` differs (see the rules in §4.3).
 - Use only testnet accounts and DAOs in examples, fixtures and the demo. Never use real mainnet DAO or account names. No account leaderboards.
-- Do not do any of these without human confirmation: push or make the repo public, deploy to mainnet, post to X, submit the hackathon form.
+- Do not do any of these without human confirmation: push or force-push, deploy to mainnet, sign transactions or spend tokens, post to X, submit the hackathon form. Do not commit the submission payload: it holds personal data.
 
 ## Testing
 

@@ -52,6 +52,6 @@ Status: **compatibility checked once, read-only. Not a shipped feature.** Spike 
 
 ## Sources
 
-- Trezu repo: https://github.com/olskik/trezu
-- Trezu site and docs: https://trezu.org, https://docs.trezu.org/
+- Trezu repo: https://github.com/NEAR-DevHub/trezu
+- Trezu site and docs: https://trezu.org, https://github.com/NEAR-DevHub/trezu-docs
 - Spec: `docs/final-idea.md` §14 (track hints), §15 (Roadmap)
