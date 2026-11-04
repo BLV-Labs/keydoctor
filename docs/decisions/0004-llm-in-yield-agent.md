@@ -18,6 +18,7 @@
 | 3 | The model chooses among code-built candidates and writes reasons. Code owns numbers, proposal args and validation. |
 | 4 | Any model failure falls back to the rule-ordered list. |
 | 5 | The README keeps "No AI" until the feature ships. YD5 updates it and adds the Limitations entry. |
+| 6 | Only TEE-tier models may be called. A failure falls back to the rule-ordered list, never to a non-TEE model. |
 
 `docs/final-idea.md` stays unchanged as a spec file. For this one point, this ADR overrides it.
 
@@ -30,4 +31,5 @@
 
 - A new secret, `NEAR_AI_API_KEY`, and a new outside dependency.
 - `/mcp` is open (ADR 0003), so public calls serve cached output and never spend the key.
+- The TEE claim is checked by a script on one real call, not on every request. Limitations must say so.
 - The AI classifier idea, if it goes ahead, needs its own ADR and takes the next number.
