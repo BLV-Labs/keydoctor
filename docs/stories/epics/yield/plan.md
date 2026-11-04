@@ -39,6 +39,7 @@ All answered by the owner on 2026-11-04.
 | Y13 | Mainnet execution? | The proposal builder opens for mainnet only after YD4 passes on testnet (see YD4b). Allowlist: `contract.main.burrow.near` and `usdt.tether-token.near`. The first mainnet proposal uses a tiny amount and is withdrawn before any larger move. Mainnet DAO names stay out of the repo and the demo |
 | Y14 | Priority? | Behind Guard GĐ20–22 and GĐ14. First to cut |
 | Y15 | Cross-chain? | Research only, in `docs/yield-crosschain-feasibility.md`. It runs in parallel and does not block YD0 |
+| Y16 | Can a relayer broadcast for cross-chain? | Yes. It only sends a tx the council already signed through `sign`, holds no key and cannot change the tx, so Y4 still holds. Applies only if cross-chain leaves Roadmap |
 
 ## 2. LLM boundary
 

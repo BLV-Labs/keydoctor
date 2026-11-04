@@ -38,7 +38,7 @@ Roadmap line for `docs/stories/epics/yield/plan.md` §6 and Y15: cross-chain exe
 | Example addresses | `kdoncall.sputnik-v2.testnet`, path `base-1`: `0x95036b8bad870706a0618e51d3a2bf7d94ac135d`. Path `aave`: `0x5d4435788cdcfd1d1ab34bc1ab83c027be1b7e92`. These come from the testnet signer; mainnet has a different root key | V (view calls) |
 | Stability | Same (DAO, path, domain) gives the same address as long as the MPC root key does not change. Resharing keeps the key. A new domain or a key rotation would change it | I |
 | Council visibility | The payload is an opaque 32-byte hash. A voter sees bytes, not "supply 100 USDC to Aave". The proposal `description` must carry the unsigned tx fields and the hash, and the dashboard must recompute the hash from fields. Whoever can `AddProposal` can write a description that disagrees with the hash | V source, I for the mitigation |
-| Who broadcasts | An off-chain relayer. It holds no key and can only send an already signed tx, but it is an extra component. Decision for the owner: does Y4 ("agent never executes") allow it | U (policy) |
+| Who broadcasts | An off-chain relayer. It holds no key and can only send an already signed tx, but it is an extra component. The owner allowed it on 2026-11-04 (plan Y16). Who runs it is still open | Decided |
 
 ## 3. Staleness and gas
 
@@ -173,7 +173,7 @@ Open questions:
 | 5 | Is a 1Click Earn deposit a real vault deposit? Why do 4 of 5 receipt tokens return no liquidity? | Ask 1Click, or one small real Earn deposit (owner decision on funds) |
 | 6 | Can a DAO call `intents.near` `mt_transfer` and `mt_withdraw` as predecessor with 1 yocto? | Small mainnet test, owner decision |
 | 7 | L1 data fee per Base tx | One Base Sepolia tx |
-| 8 | Who runs the relayer, and does it fit "the agent never executes" (Y4)? | Owner |
+| 8 | Who runs the relayer? (Allowed by plan Y16) | Owner |
 | 9 | Retention of the `sign` outcome on public RPC | Spike, read again after 2 days |
 
 ## 8. Sources
