@@ -2,7 +2,7 @@
 
 Key Doctor checks the access keys of a NEAR account, or of every council member of a Sputnik DAO, and scores the risk with fixed rules. It also stays on call: when a member who just voted on a pending DAO proposal has a freshly added full-access key, the council's Telegram group gets a warning **before the final vote**.
 
-Built at NEAR HACKATHON (1–14 Nov 2026). Tracks: `social` (Sputnik DAO and treasury councils) and `security` (access keys, function-call keys). The design documents are in `docs/` (in Vietnamese; `docs/final-idea.md` is the main one).
+Built at NEAR HACKATHON (first commit 2026-10-29, see [Hackathon disclosure](#hackathon-disclosure)). Tracks: `social` (Sputnik DAO and treasury councils) and `security` (access keys, function-call keys). The design documents are in `docs/` (in Vietnamese; `docs/final-idea.md` is the main one).
 
 ## The problem
 
@@ -40,7 +40,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
    pnpm test
    ```
 
-   You see `# fail 0` for `packages/key-doctor`, `apps/dashboard` and `apps/worker`. The tests run on fixtures and never call a live RPC. `pnpm typecheck` checks all three packages. The library source is checked without Node types, because it may only use `fetch`.
+   You see `fail 0` for `packages/key-doctor`, `apps/dashboard`, `apps/guard-mcp` and `apps/worker`. The tests run on fixtures and never call a live RPC. `pnpm typecheck` checks all four packages. The library source is checked without Node types, because it may only use `fetch`.
 
 2. **Scan a testnet DAO in the dashboard**
 
@@ -84,13 +84,13 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 
    For a local Worker use `http://localhost:8787/mcp` instead.
 
-   Then ask "check the keys of kdoncall.sputnik-v2.testnet". The agent calls `diagnose`. For the dashboard's detail it has two read-only tools: `list_keys` (one row per access key: member, what it is approved for, age, uses, flags; filter by `account_id`, `permission`, `flagged_only`) and `list_proposals` (the DAO's proposals newest first with votes and who still has to vote; page with `limit` and `offset`). `compare` returns `kd.diff.v1` against the stored baseline and moves the baseline only when you ask (`update_baseline: true`). `watch` returns two one-time Telegram links (`kd.watch_link.v1`): opening one subscribes that chat. `preflight` is a pre-flight for an agent's own account before it signs or pays: it returns `kd.preflight.v1` with `verdict` `allow`, `review` or `block`. The live Worker does not list `preflight` until it is redeployed from this commit (`pnpm --filter worker deploy`); the other tools are live.
+   Then ask "check the keys of kdoncall.sputnik-v2.testnet". The agent calls `diagnose`. For the dashboard's detail it has two read-only tools: `list_keys` (one row per access key: member, what it is approved for, age, uses, flags; filter by `account_id`, `permission`, `flagged_only`) and `list_proposals` (the DAO's proposals newest first with votes and who still has to vote; page with `limit` and `offset`). `compare` returns `kd.diff.v1` against the stored baseline and moves the baseline only when you ask (`update_baseline: true`). `watch` returns two one-time Telegram links (`kd.watch_link.v1`): opening one subscribes that chat. `preflight` is a pre-flight for an agent's own account before it signs or pays: it returns `kd.preflight.v1` with `verdict` `allow`, `review` or `block`.
 
-   `scripts/demo-testnet/demo.sh` (step 5) adds a new full-access key to member a. For the next 48 hours, ask "can I pay from a.kd-demo.testnet?": the agent calls `preflight` and gets `verdict: "block"` with reason `FA_RECENT`. After 48 hours the same account gets `review` or `allow`. With curl (needs a Worker deployed from this commit):
+   `scripts/demo-testnet/demo.sh` (step 5) adds a new full-access key to member a (`<prefix>-a.testnet`). For the next 48 hours, ask "can I pay from <prefix>-a.testnet?": the agent calls `preflight` and gets `verdict: "block"` with reason `FA_RECENT`. After 48 hours the same account gets `review` or `allow`. With curl, on a demo account that has no new key (it returned `allow` on 2026-11-04; put your member a in `target` to see `block`):
 
    ```bash
    curl -s https://key-doctor.duonghb53.workers.dev/mcp -H 'content-type: application/json' \
-     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"preflight","arguments":{"target":"a.kd-demo.testnet"}}}'
+     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"preflight","arguments":{"target":"kdoncall-a.testnet"}}}'
    ```
 
    `block` means a full-access key was added in the last 48 hours: do not sign. `review` means other high or cleanup flags, or keys that could not be read. `allow` means notes only. `preflight` takes one account; a DAO target returns `INVALID_TARGET`.
@@ -134,9 +134,9 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 | GĐ1 | Scan library: `scanAccount`, `scanDao`, `scanTarget`, 14 rules, vi/en messages | Done (checked against live testnet RPC) |
 | GĐ2 | `diffReports`, `toSummary` | Done |
 | GĐ3 | Worker: MCP `diagnose`, `compare`, `list_keys`, `list_proposals`, `watch`, D1 baselines, no auth for now | Deployed on Cloudflare; `tools/list` returns the five tools and Claude Code connects (2026-10-30) |
-| Agent pre-flight | `FA_RECENT` rule, `preflightVerdict` (`kd.preflight.v1`), MCP `preflight` | Built and tested; not yet deployed, so the live Worker does not list `preflight` |
+| Agent pre-flight | `FA_RECENT` rule, `preflightVerdict` (`kd.preflight.v1`), MCP `preflight` | Deployed; `tools/list` lists `preflight` and a live call returns `kd.preflight.v1` (2026-11-04). `block` not yet seen live |
 | GĐ4 | Telegram bot: `/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help` | Deployed; webhook live. `/list` and `/unwatch` not yet checked on the live bot |
-| GĐ5 | `checkProposals` | Built; four Sputnik proposal facts still to confirm live (`packages/key-doctor/fixtures/README.md`) |
+| GĐ5 | `checkProposals` | Built; of four Sputnik proposal facts, two confirmed live and two partly (`packages/key-doctor/fixtures/README.md`) |
 | GĐ6 | Proposal watch cron, `alerts_sent`, `/run-check`, demo script | Deployed; live testnet run 2026-10-30: voter-key and governance alerts reached the group, the second `run-check` repeated nothing ([`docs/demo-testnet-run-2026-10-30.md`](docs/demo-testnet-run-2026-10-30.md)) |
 | GĐ7 | Dashboard: check, council, proposal list, account, key detail (what a key is approved for, the dApp), alerts dialog | Deployed to Pages |
 | GĐ8 | Cleanup plan, per-key Revoke / Delete signed in Meteor Wallet | Built; Revoke and Delete verified on testnet with a real Meteor account (2026-10-30). No bulk delete |
@@ -150,7 +150,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 
 ## Agents
 
-The Worker serves MCP over Streamable HTTP at `https://key-doctor.duonghb53.workers.dev/mcp`. There is no auth for now, so anyone can call every tool. `diagnose`, `list_keys`, `list_proposals` and `preflight` (after the redeploy above) are read-only. `compare` and `watch` write to D1 (`compare` moves the baseline only with `update_baseline: true`). Each client IP is limited to 30 `tools/call` per minute (`429 RATE_LIMITED`); the counter lives in each Worker isolate's memory, so it is a soft limit. The dashboard shows the same commands on its **Agents** page.
+The Worker serves MCP over Streamable HTTP at `https://key-doctor.duonghb53.workers.dev/mcp`. There is no auth for now, so anyone can call every tool. `diagnose`, `list_keys`, `list_proposals` and `preflight` are read-only. `compare` and `watch` write to D1 (`compare` moves the baseline only with `update_baseline: true`). Each client IP is limited to 30 `tools/call` per minute (`429 RATE_LIMITED`); the counter lives in each Worker isolate's memory, so it is a soft limit. The dashboard shows the same commands on its **Agents** page.
 
 ```bash
 claude mcp add --transport http key-doctor https://key-doctor.duonghb53.workers.dev/mcp
@@ -285,6 +285,7 @@ Invoice demo: put the four invoices in `demo/invoices/` (see its README for anot
 - Cron messages are bilingual by default (`ALERT_LANG`), because subscriptions do not store a language.
 - Guard factory: the factory keeps the Guard code (about 4.3 NEAR of storage with its own code, locked, not burned), so its account needs about 6 NEAR. Each Guard deploys its own copy, so every DAO pays about 2.5 NEAR of code storage in its create deposit; that NEAR stays locked on the Guard, which has no key and cannot be deleted. When a `create` fails after the DAO check, the factory refunds the DAO from its own balance, which may run before NEAR returns the failed account's funding to it; keep spare NEAR on the factory, or a large refund can fail and stay on the factory. At most 10 Guards per DAO; that limit is unit-tested only.
 - Agent Guard page: it creates proposals only; voting happens in the DAO's own UI. It reads a Guard's views at one block and cannot show requests or pending proposals per agent beyond the counts the Guard returns.
+- Trezu treasuries are Sputnik DAOs. A one-off read-only scan of a public mainnet treasury parsed correctly. Trezu has no testnet, so this is not part of the demo and is not reproducible here ([`docs/trezu-integration.md`](docs/trezu-integration.md)).
 - Agent Guard: the 24-hour window restarts at the first request after it ends (`docs/final-idea.md` §11.5.7), so an agent can spend up to twice `max_per_day` without the council across a reset. Each request record is stored at the Guard's cost and never deleted; requests stop with `INSUFFICIENT_GUARD_BALANCE` once the balance no longer covers the bond plus that storage (or `min_reserve`, if higher).
 
 ## Roadmap
@@ -292,7 +293,7 @@ Invoice demo: put the four invoices in `demo/invoices/` (see its README for anot
 - Show the exact time each key was added, from the NearBlocks indexer (`/v1/account/{id}/keys` returns `created` / `deleted`), next to the nonce-based estimate. See `docs/data-sources-benchmark.md`.
 - Backtest the proposal rules on 12 months of history (`kd.backtest.v1`), using NearBlocks for keys added and later removed.
 - Exact key creation dates from NearBlocks, and more rules.
-- **Agent Guard on testnet:** deploy a Guard factory and run the dashboard Agent Guard page end to end; Guard checks in the council report (`/check`).
+- **Agent Guard:** Guard checks in the council report (`/check`).
 - **Hosted Guard agent (after the hackathon):** each DAO adds its own Telegram bot; a separate Worker turns allowed members' chat into Guard `request_transfer` calls through a model on NEAR AI Cloud. Secrets encrypted per DAO, council-signed registration, the Guard limits and the council vote still decide every payment. It would put an LLM and agent keys in a hosted service, which Key Doctor avoids today, so it is a plan only: `docs/stories/epics/guard/hosted-agent-plan.md`.
 - Link a Telegram user to a NEAR account by signature to mention voters by name. Discord and email alerts. Near-real-time watching through an indexer.
 - Add ML-DSA keys in the dashboard when wallet-selector supports them. Integration with wallets and treasury tools.
@@ -318,17 +319,40 @@ After the first setup (steps 1 to 5), every later release is one command: `pnpm 
 
 ## Libraries, AI-written code and prepared data
 
-- **Runtime:** none. The library and the Worker use only web platform APIs (`fetch`, `crypto.subtle`). The Guard MCP uses only Node built-ins: its borsh encoding and ed25519 signing (`node:crypto`) are written in the repo, checked against bytes from `@near-js/transactions` 2.5.1 in its tests.
+- **Runtime:** the library and the Worker have no dependencies and use only web platform APIs (`fetch`, `crypto.subtle`). The dashboard uses `@near-wallet-selector/core`, `meteor-wallet`, `here-wallet` and `hot-wallet` 10.1.4, `near-api-js` 6.5.1 and `@near-js/crypto` 2.5.1 for wallet signing. The Guard MCP uses only Node built-ins: its borsh encoding and ed25519 signing (`node:crypto`) are written in the repo, checked against bytes from `@near-js/transactions` 2.5.1 in its tests.
 - **Fonts:** Fira Sans and Fira Code from Google Fonts.
 - **Build and dev tools:**
   - TypeScript
-  - esbuild (dashboard bundle)
+  - esbuild (dashboard bundle), with the `buffer` and `util` browser polyfills
   - wrangler (Worker dev and deploy, with `undici` pinned to 7.30.1 for a security fix)
   - `@types/node`
 - **Tests:** Node's built-in `node:test`, and `node:sqlite` as a stand-in for D1.
 - **Agent Guard contract (Rust):** `near-sdk` 5.30, built with `cargo-near`; tests use `near-workspaces` 0.24, `tokio`, `serde_json` and `anyhow`.
 - **AI-written code:** all code, tests and English docs in this repo were written by Claude Code (Anthropic) from the team's Vietnamese specs (`docs/final-idea.md`, `docs/usecase.md`). The team wrote the specs, approved the design mockup (`docs/design/dashboard/`) and ran the live testnet checks recorded in `packages/key-doctor/fixtures/README.md`.
+- **Dev workflow files:** `.claude/` (agents, skills) and the harness docs in `docs/` steer Claude Code during the build. They are not part of the product.
 - **Prepared data:** the fixtures in `packages/key-doctor/fixtures/` are hand-built with testnet names only. Their public keys are random. The dashboard design handoff was made before the build. `contracts/guard/tests/res/sputnik_dao_v2.wasm` is the Sputnik v2 contract downloaded from a testnet DAO (source and sha256 in that folder's README).
+
+## Hackathon disclosure
+
+| Rule | This project |
+|---|---|
+| Build window (Q-001, Q-003, Q-004) | New project. The first commit is from 2026-10-29, after the 2026-10-19 announcement, so the whole history counts and there is no earlier baseline to separate |
+| Other chains (Q-002) | None. NEAR only |
+| Networks (Q-007, Q-010) | The demo, contracts and examples run on testnet. Scans can also read mainnet. NEAR Intents is not used |
+| Libraries and AI-written code (Q-005) | See the section above |
+| License (Q-014) | MIT, in `LICENSE` |
+
+Track hints used (Q-011 says they are optional):
+
+| Track | Hint | Where |
+|---|---|---|
+| `social` | Sputnik DAO | `scanDao`, `checkProposals`, the council report and the Telegram alerts read the DAO's policy, proposals and votes. Agent Guard is a DAO member and pays through DAO proposals |
+| `security` | Function-call keys | The `FC_*` rules. The Guard agent's key may call only `request_transfer` and `sync_request` |
+| `security` | Agent security | MCP `preflight`. Agent Guard's whitelist, per-tx, per-recipient and 24-hour limits |
+
+Not used: TEE attestation. Trezu is not a feature (see Limitations).
+
+Where NEAR fits: every account's access keys and their permissions are public on chain, and a key's nonce gives the block it was added. Sputnik DAO keeps policy, proposals and votes on chain too. So Key Doctor can connect a new key to a vote with no indexer and no access to anyone's wallet.
 
 ## License
 

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Nguồn | Trang chính thức https://nearhackathon.com và file luật https://nearhackathon.com/HACKATHON.md (đọc ngày 2026-10-29) |
+| Nguồn | Trang chính thức https://nearhackathon.com và file luật https://nearhackathon.com/HACKATHON.md (đọc lại ngày 2026-11-04, bản sao ở `HACKATHON.md` gốc repo) |
 | Lưu ý | Ban tổ chức ghi rõ ngày và luật có thể thay đổi. **Đọc lại bản HACKATHON.md trực tiếp trước khi nộp** |
 | Dự án của team | Key Doctor (xem `final-idea.md`, `usecase.md`) |
 
@@ -12,7 +12,7 @@
 
 - **Chủ đề:** "Programmable money". Khẩu hiệu: thanh toán tự động, agent thông minh, tiền có trí tuệ.
 - **Không cần đăng ký trước.** Chỉ có một form nộp bài cuối cùng.
-- **Nộp gì:** repo GitHub public + một bài demo công khai trên X (ghi rõ "built at NEAR HACKATHON", kèm video hoặc ảnh chụp) + điền form.
+- **Nộp gì:** repo GitHub public + một bài demo công khai trên X (ghi rõ "built at NEAR HACKATHON", tag @NEARProtocol và #NEARHackathon, kèm video hoặc ảnh chụp) + điền form.
 - **Một dự án nộp một lần. Không sửa được sau khi nộp.**
 - **Tổng giải:** 250.000 USD, trả bằng NEAR.
 - **Sàng lọc:** Claude Code và Codex kiểm tra trước mọi dự án; **giám khảo người quyết định**.
@@ -70,20 +70,21 @@ Số tiền cố định theo USD, trả bằng NEAR vào account ghi trong form
 | **Tracks** | **Một hoặc nhiều** id (mục 7), chọn mọi track dự án phù hợp. Vẫn là một bài |
 | Account NEAR nhận thưởng | Mainnet, account có tên (`team.near`) hoặc implicit 64 ký tự. Team tự tạo |
 | Link repo | Public; **mỗi repo chỉ nộp được một lần** |
-| Link bài demo trên X | Public, ghi "built at NEAR HACKATHON", kèm video hoặc ảnh chụp |
+| Link bài demo trên X | Public, ghi "built at NEAR HACKATHON", tag @NEARProtocol và #NEARHackathon, kèm video hoặc ảnh chụp |
 | Mô tả "What did you build?" | 20 đến 2.000 ký tự: vấn đề, sản phẩm, NEAR nằm ở đâu |
 | Đồng ý điều khoản liên hệ | Bắt buộc |
 
 **Ô "Website" trong form là bẫy chống spam: để trống.**
 
-Nộp qua form tại https://nearhackathon.com/#apply, hoặc qua API `POST https://nearhackathon.com/api/applications` (chi tiết trong HACKATHON.md). Nếu nhờ coding agent nộp, agent phải in toàn bộ payload để người duyệt trước khi gửi.
+Nộp qua form tại https://nearhackathon.com/#apply, hoặc qua API `POST https://nearhackathon.com/api/applications` (chi tiết trong HACKATHON.md). Nếu nhờ coding agent nộp, agent phải in toàn bộ payload để người duyệt trước khi gửi. Payload có `requestId` (UUID, giữ nguyên khi gửi lại) và không được commit vì chứa dữ liệu cá nhân.
 
 ---
 
-## 6. Luật (tóm tắt Q-001 đến Q-017)
+## 6. Luật (tóm tắt Q-000 đến Q-017)
 
 | Mã | Câu hỏi | Trả lời |
 |---|---|---|
+| Q-000 | Credit NEAR AI? | Mua trong dashboard https://cloud.near.ai, hoặc nhận 10 USD khi tham gia NEAR Builders. API key tạo trong dashboard |
 | Q-001 | Code viết trước 01/11 có được tính? | **Có, tính từ ngày công bố 19/10.** Commit trước đó là nền |
 | Q-002 | Sản phẩm đã có trên chain khác? | Được. Chỉ phần tích hợp NEAR làm trong khung thời gian được chấm. Ghi rõ trong README |
 | Q-003 | Bắt buộc repo mới? | Không. Dùng nhánh riêng, hoặc tag `pre-hackathon` và `hackathon-submission`, kèm mục README dẫn tới phần diff |
@@ -136,7 +137,7 @@ Repo `nearai/near-hackathon-prompt-examples` có sẵn prompt khởi động cho
 |---|---|---|
 | **SputnikDAO** | Hạ tầng DAO | **Trực tiếp**: đọc policy, đề xuất, phiếu |
 | **Trezu** | Multisig treasury cho team Web3 | **Trực tiếp**: khách hàng mục tiêu; nêu tương thích trong README |
-| NEAR.AI | Private AI | Đã cân nhắc, không dùng |
+| NEAR.AI | Private AI | Chưa dùng trong sản phẩm. Yield agent dự kiến dùng (ADR 0004, chưa build) |
 | OutLayer | Giao dịch an toàn cho AI agent | Có thể nhắc trong Roadmap (Agent Guard) |
 | NEAR Intents, Aurora, HOT, Rhea, meme.cooking, HEX, SVRN, GoMining | Các mảng khác | Không liên quan |
 
@@ -163,17 +164,19 @@ Lưu ý: luật không nói chọn nhiều track có làm tăng cơ hội giải
 
 ### 9.3 Danh sách việc bắt buộc trước khi nộp
 
-- [ ] Repo **public** trước 14/11 23:59 UTC; **file LICENSE** (MIT).
+- [x] Repo **public** trước 14/11 23:59 UTC; **file LICENSE** (MIT). Đã public, kiểm 2026-11-04.
 - [ ] README cho máy đọc: sản phẩm là gì, vấn đề gì, các bước "làm X, thấy Y", không quảng cáo.
-- [ ] README liệt kê thư viện, template, code do AI viết, dữ liệu chuẩn bị trước (Q-005).
-- [ ] README nêu các gợi ý track đã dùng: Sputnik DAO, Trezu, function-call key.
+- [x] README liệt kê thư viện, template, code do AI viết, dữ liệu chuẩn bị trước (Q-005).
+- [x] README nêu các gợi ý track đã dùng: Sputnik DAO, function-call key, agent security (mục Hackathon disclosure). Trezu chỉ nằm ở Limitations, không phải tính năng (`trezu-integration.md`).
+- [ ] Nếu một thành viên nộp dự án thứ hai: README mỗi dự án nêu tên dự án kia (Q-015).
 - [ ] **Video demo** (không chỉ ảnh chụp, Q-012).
 - [ ] **Demo có host** (dashboard trên Pages, Worker, bot) giữ chạy đến **18/11, tốt nhất đến 25/11**.
-- [ ] Bài X ghi "built at NEAR HACKATHON", kèm video.
+- [ ] Bài X ghi "built at NEAR HACKATHON", tag @NEARProtocol và #NEARHackathon, kèm video.
 - [ ] Account NEAR mainnet nhận thưởng, do team tự tạo.
 - [ ] Mô tả 20 đến 2.000 ký tự: vấn đề, sản phẩm, NEAR ở đâu.
 - [ ] Tracks: `social`, `security`.
 - [ ] Ô "Website" để trống.
+- [ ] Đồng ý điều khoản liên hệ (`consent: true`), do người xác nhận.
 - [ ] Nộp **một lần**, sau khi repo đã public và bài X đã đăng.
 
 ### 9.4 Lời khuyên rút từ luật

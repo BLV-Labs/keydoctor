@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-Key Doctor ("Key Doctor On Call") is a NEAR HACKATHON entry (build window 1–14 Nov 2026, deadline 23:59 UTC 14/11). All code is written by Claude Code from the Vietnamese spec documents. **Current state, owner tasks and the next Claude tasks live in `docs/stories/backlog.md` (section "Build Order"): read it first when you resume.** GĐ0–GĐ10 and GĐ12 are built; most need a deploy or a live testnet run to count as done.
+Key Doctor ("Key Doctor On Call") is a NEAR HACKATHON entry (code counts from 2026-10-19, Q-001; deadline 2026-11-14T23:59:00Z). All code is written by Claude Code from the Vietnamese spec documents. **Current state, owner tasks and the next Claude tasks live in `docs/stories/backlog.md` (section "Build Order"): read it first when you resume.** GĐ0–GĐ10 and GĐ12 are built; most need a deploy or a live testnet run to count as done.
 
-Spec documents and precedence when they conflict: **`docs/final-idea.md` > `docs/usecase.md` > `proposal-key-doctor.md`** (v2, not in the repo). `docs/near-hackathon.md` holds the contest rules and the submission checklist. Read `docs/final-idea.md` first. §17 is the Claude Code instruction list, §13.3 is the build-phase table.
+Spec documents and precedence when they conflict: **`docs/final-idea.md` > `docs/usecase.md` > `proposal-key-doctor.md`** (v2, not in the repo). `HACKATHON.md` is the organizers' brief (rules, submission API; the live copy at https://nearhackathon.com/HACKATHON.md wins, re-read it before submitting). `docs/near-hackathon.md` holds our notes and the submission checklist. Read `docs/final-idea.md` first. §17 is the Claude Code instruction list, §13.3 is the build-phase table.
 
 ## Language
 
@@ -38,7 +38,7 @@ The data contracts in `docs/final-idea.md` §4 (`kd.report.v1`, `kd.report_summa
 - Proposal job: scan once per DAO (not once per subscription). **Send the alert first, write `alerts_sent` after**, so a crash causes a duplicate, not a missed alert. Delete subscriptions for chats that blocked or removed the bot. On a throw, do not save state.
 - `diffReports` is pure. Skip members with `error`, and skip flag changes when `ruleset_version` differs (see the rules in §4.3).
 - Use only testnet accounts and DAOs in examples, fixtures and the demo. Never use real mainnet DAO or account names. No account leaderboards.
-- Do not do any of these without human confirmation: push or make the repo public, deploy to mainnet, post to X, submit the hackathon form.
+- Do not do any of these without human confirmation: push or force-push, deploy to mainnet, sign transactions or spend tokens, post to X, submit the hackathon form. Do not commit the submission payload: it holds personal data.
 
 ## Testing
 
