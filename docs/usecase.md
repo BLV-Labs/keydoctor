@@ -34,7 +34,7 @@ Tài liệu mô tả **19 use case**: ai kích hoạt, các thành phần gọi 
 | Agent của DAO | Claude Code (hoặc agent bất kỳ hỗ trợ MCP) | GĐ19 |
 | Script `guard-setup` | Dựng DAO demo, deploy Guard, role, agent, khóa contract | GĐ18 |
 | DAO của Agent Budget | DAO Sputnik một thành viên, tạo qua factory chính thức của NEAR | GĐ25, GĐ26 |
-| Guard factory | Tạo Guard không key và account agent; **chỉ DAO gọi được cho chính nó** (chốt `predecessor`) | GĐ25 |
+| Guard factory | Tạo Guard không key (Guard tạo account agent); **chỉ DAO gọi được cho chính nó** (chốt `predecessor`) | GĐ25 |
 | Keeper | Worker cron gọi `execute_plan_step`, `sync_request`. Worker giữ đúng một key: account keeper **không đặc quyền**, số dư nhỏ chỉ đủ gas (ADR mới, mục 11.11.5 của `final-idea.md`) | GĐ29 |
 | Danh mục chiến lược | Scheduled payouts, DCA NEAR, các chiến lược "Sắp có", Build your own | GĐ30 |
 
@@ -953,17 +953,18 @@ sequenceDiagram
   participant GF as Guard factory
   participant G as Guard
 
-  U->>D: Chọn mẫu luật, đặt tên Budget và tên agent đầu tiên
+  U->>D: Chọn mẫu luật, đặt tên Budget, tên agent đầu tiên, nhập người nhận được phép
   D->>W: Ký 1: SF.create(tên, policy CHỈ CÓ CHỦ, proposal_period 72h)
   W->>SF: Giao dịch kèm tiền cọc lưu trữ
   SF-->>DAO: DAO mới, code Sputnik chính thức
   D->>DAO: get_policy: chủ là thành viên duy nhất?
   D->>D: Sinh keypair agent trong trình duyệt; kiểm tên Guard đã chọn còn trống
   D->>W: Ký 2: một giao dịch 4 lời gọi tới DAO
-  Note over W,DAO: add_proposal(FunctionCall GF.create + public key agent) + act_proposal(N, proposal)<br/>add_proposal(ChangePolicy: policy cũ + role agent-guard) + act_proposal(N+1, proposal)
+  Note over W,DAO: add_proposal(FunctionCall GF.create + public key agent + whitelist) + act_proposal(N, proposal)<br/>add_proposal(ChangePolicy: policy cũ + role agent-guard) + act_proposal(N+1, proposal)
   W->>DAO: Giao dịch
   DAO->>GF: create (predecessor = DAO)
-  GF-->>G: Guard (dao_id = DAO, không key) + account agent có function-call key
+  GF-->>G: Guard (dao_id = DAO, không key)
+  G-->>G: new tạo account con a1.<guard> có function-call key
   D->>G: kd_guard_info, get_config; kiểm role trỏ đúng Guard
   D-->>U: Tải file key của agent; hiện lệnh cắm Guard MCP
   D->>DAO: Kiểm lại policy trước khi nạp
@@ -973,9 +974,9 @@ sequenceDiagram
 
 ### Các bước
 
-1. Thẻ khởi tạo: 3 bước (Create → Top up → Connect your agent), 3 mẫu luật, ô tên agent, cảnh báo "testnet, chưa kiểm toán".
+1. Thẻ khởi tạo: 3 bước (Create → Top up → Connect your agent), 3 mẫu luật, ô tên agent (là nhãn; account agent là `a1.<guard>`), ô người nhận được phép (không bắt buộc), cảnh báo "testnet, chưa kiểm toán".
 2. Ký 1: factory Sputnik chính thức tạo DAO với policy **chỉ có chủ**. Dashboard đọc `get_policy` xác nhận.
-3. Ký 2: một giao dịch gồm hai đề xuất tự duyệt: DAO gọi Guard factory tạo Guard (chốt `predecessor`: Guard chỉ gắn được với DAO đã gọi) và account agent; DAO thêm role `agent-guard`. Mọi `act_proposal` kèm tham số `proposal`.
+3. Ký 2: một giao dịch gồm hai đề xuất tự duyệt: DAO gọi Guard factory tạo Guard (chốt `predecessor`: Guard chỉ gắn được với DAO đã gọi), Guard tạo account con cho agent kèm function-call key và nhận danh sách người nhận; DAO thêm role `agent-guard`. Mọi `act_proposal` kèm tham số `proposal`.
 4. Dashboard kiểm Guard: `dao_id` đúng, không có full-access key, role trỏ đúng Guard, account agent có đúng function-call key. File key của agent tải về máy.
 5. Ký 3: Top up, sau khi kiểm lại policy.
 
@@ -985,6 +986,9 @@ sequenceDiagram
 - Ô tên hiện đuôi cố định, chỉ sửa phần đầu; tên sai luật hoặc đã có thì báo ngay cạnh ô, nút ký bị khóa. Tên Guard bị lấy giữa ký 1 và ký 2: dashboard kiểm lại ngay trước ký 2 và yêu cầu chọn tên khác.
 - Đã ký 1, chưa ký 2: dashboard cho tiếp tục ký 2, không tạo DAO mới.
 - Lời gọi Guard factory thất bại nhưng role vẫn được thêm: dashboard nhận ra (role có, Guard chưa có), cho chạy lại bước tạo Guard.
+- Guard có nhưng account agent chưa có: dashboard sinh key mới, cho chạy lại `add_agent` (một lần ký).
+- Không nhập người nhận: vẫn tạo được, nhưng trước khi ký hiện rõ "mọi khoản agent xin sẽ chờ bạn duyệt" (`NOT_WHITELISTED`). Thêm sau qua Edit rules.
+- Mất file key của agent: account agent không có full-access key nên không khôi phục được; gỡ agent, thêm agent mới.
 - Policy không đúng khi sắp Top up (thành viên lạ, role trỏ sai): chặn nạp, hiện cảnh báo.
 - Ví không đủ NEAR cho tiền cọc: báo số cần trước khi ký.
 
@@ -993,6 +997,8 @@ sequenceDiagram
 - Người mới tạo xong Budget bằng 3 lần ký, không đọc thấy chữ "DAO" trên giao diện chính.
 - Technical details hiện đúng account DAO, account Guard; Key Check trên DAO đó không có cờ `GUARD_*` đỏ.
 - Test: gọi Guard factory trực tiếp từ một ví (không phải DAO) không tạo được Guard cho DAO của người khác.
+- Account agent chỉ có đúng một function-call key (`receiver_id` = Guard, hai method), không có full-access key.
+- Budget có người nhận: khoản trong hạn mức tự chi ngay. Budget trống: cùng khoản đó thành khoản chờ.
 
 ---
 
@@ -1034,8 +1040,8 @@ sequenceDiagram
 | Withdraw | `add_proposal(Transfer)` + `act_proposal(N, VoteApprove, proposal)` một giao dịch | **Có** |
 | Approve / Reject khoản chờ | `act_proposal(id, ..., proposal)` với `proposal` lấy từ đề xuất đang hiển thị | Không (đã có tin khoản chờ) |
 | Pause agents / Resume | `guard.pause()` / đề xuất `unpause` | **Có** |
-| Edit rules | `add_proposal(FunctionCall guard.set_*)` + `act_proposal(N, VoteApprove, proposal)` | **Có** |
-| Add / tắt / gỡ agent | Như trên với `add_agent`, `set_agent_enabled`, `remove_agent` | **Có** |
+| Edit rules | `add_proposal(FunctionCall guard.set_policy / add_whitelist / remove_whitelist)` + `act_proposal(N, VoteApprove, proposal)` | **Có** |
+| Add / tắt / gỡ agent | Như trên với `add_agent` (kèm public key, Guard tạo account agent), `set_agent_enabled`, `remove_agent` | **Có** |
 | Enable USDC | Đề xuất `storage_deposit` + tự duyệt | Không |
 
 Mọi thay đổi luật có hiệu lực ngay (không có luật chờ 24 giờ; lý do ở mục 11.10.6 của `final-idea.md`).
