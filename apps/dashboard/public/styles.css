@@ -143,6 +143,7 @@ summary:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3
 .vote { font-weight: 600; } .vote-ok { color: var(--kd-ok); } .vote-high { color: var(--kd-high); }
 
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 12px; }
+@media (max-width: 1000px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .tile { padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; }
 .tile-label { font-size: var(--kd-fs-sm); font-weight: 500; color: var(--kd-text-muted); }
 .tile-note { font-size: var(--kd-fs-sm); color: var(--kd-text-muted); }
@@ -416,7 +417,6 @@ li:last-child > .member-row { border-bottom: 0; }
 .setup-steps { display: flex; flex-wrap: wrap; gap: 12px; max-width: 720px; }
 .setup-steps li { flex: 1 1 160px; display: flex; align-items: center; gap: 8px; }
 @media (max-width: 560px) {
-  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tiles { gap: 8px; }
   .tile { padding: 12px; }
   .tile-label { font-size: var(--kd-fs-xs); }
