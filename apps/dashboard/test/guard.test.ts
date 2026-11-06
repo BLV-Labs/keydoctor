@@ -119,7 +119,7 @@ describe("createGuardProposal", () => {
     assert.equal(call.actions.length, 1);
     assert.equal(call.actions[0]!.method_name, "create");
     assert.equal(call.actions[0]!.deposit, r.depositYocto);
-    assert.ok(BigInt(call.actions[0]!.gas) >= 120n * 10n ** 12n, "the factory refuses less than 120 Tgas");
+    assert.ok(BigInt(call.actions[0]!.gas) >= 190n * 10n ** 12n, "the factory refuses less than 190 Tgas");
     assert.deepEqual(decodeArgs(call.actions[0]!.args), r.args, "UTF-8 labels survive the base64 round trip");
   });
 });

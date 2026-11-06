@@ -71,6 +71,12 @@ export function groupOf(label: string): Group | null {
   return null;
 }
 
+/** A Guard's code changes through a `FunctionCall` to `upgrade`: `UpgradeRemote` cannot carry a Guard-sized wasm (ADR 0006). */
+function callsUpgrade(p: Proposal): boolean {
+  if (p.label !== "call" || !Array.isArray(p.body.actions)) return false;
+  return p.body.actions.some((a) => isRecord(a) && a.method_name === "upgrade");
+}
+
 const VOTES = new Set<string>(["Approve", "Reject", "Remove"]);
 const METHOD_NAME = /^[A-Za-z0-9_]{1,64}$/;
 
@@ -385,7 +391,7 @@ export async function checkProposals(
       continue;
     }
 
-    const group = groupOf(p.label);
+    const group = callsUpgrade(p) ? "upgrade" : groupOf(p.label);
     if (group === null) continue;
     const action = actionText(p);
     const afterTheFact = p.status !== "InProgress";

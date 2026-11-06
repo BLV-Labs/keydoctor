@@ -448,7 +448,7 @@ sequenceDiagram
 |---|---|
 | `transfer`, `call` | Chi tiền / hành động |
 | `add_member_to_role`, `remove_member_from_role`, `policy`, `policy_*`, `config` | Thay đổi quyền → cảnh báo `governance_change_proposal` ngay khi xuất hiện |
-| `upgrade_self`, `upgrade_remote` | Thay đổi code → cảnh báo `code_upgrade_proposal` |
+| `upgrade_self`, `upgrade_remote`, `FunctionCall` gọi `upgrade` | Thay đổi code → cảnh báo `code_upgrade_proposal` |
 | Còn lại | Bỏ qua |
 
 4. Tìm phiếu mới so với `votes_seen`. Sputnik không lưu thời điểm bỏ phiếu; sai số tối đa bằng chu kỳ cron.

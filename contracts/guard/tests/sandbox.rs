@@ -2,7 +2,7 @@
 // GĐ15 proved a contract member with the `agent-guard` role can propose and approve a transfer alone; GĐ17 runs
 // every §13.6 case against the full contract and prints the gas and key allowance the README quotes
 // (`cargo test --test sandbox -- --nocapture`, lines starting with `GAS`).
-// Needs the Guard wasm: `cargo near build non-reproducible-wasm --no-abi` first (`pnpm test:guard` does it).
+// Needs the Guard and factory wasm: `cargo near build non-reproducible-wasm --no-abi` in each first (`pnpm test:guard` does it).
 use near_sdk::base64::{engine::general_purpose::STANDARD, Engine};
 use near_workspaces::result::ExecutionFinalResult;
 use near_workspaces::types::{AccessKey, AccessKeyPermission, Gas, KeyType, NearToken, SecretKey};
@@ -11,6 +11,9 @@ use serde_json::{json, Value};
 
 const SPUTNIK_WASM: &str = "tests/res/sputnik_dao_v2.wasm";
 const GUARD_WASM: &str = "target/near/kd_guard.wasm";
+const FACTORY_WASM: &str = "../guard-factory/target/near/kd_guard_factory.wasm";
+// What the dashboard puts on the `upgrade` proposal's FunctionCall action.
+const UPGRADE_GAS: Gas = Gas::from_tgas(150);
 // The gas the README tells agents to attach to `request_transfer`; the tests prove it is enough for both paths.
 const REQUEST_GAS: Gas = Gas::from_tgas(200);
 
@@ -382,5 +385,294 @@ async fn installed_sputnik_ignores_the_proposal_argument_of_act_proposal() -> an
 
     assert!(outcome.is_success(), "this build started checking `proposal`: B-Q7 changes, one-signature batches may be safe");
     assert_eq!(env.proposal(id).await?["status"], "Approved");
+    Ok(())
+}
+
+// ---- agent accounts (§11.10.2): the Guard creates the account, so the key's scope is fixed by the contract
+
+impl Env {
+    fn guard_sub(&self, name: &str) -> near_workspaces::AccountId {
+        format!("{name}.{}", self.guard.id()).parse().unwrap()
+    }
+
+    /// The account and key the dashboard hands to the owner: created by a DAO proposal, signed with `SecretKey`.
+    async fn dao_adds_keyed_agent(&self, name: &str) -> anyhow::Result<(Account, String)> {
+        let sk = SecretKey::from_random(KeyType::ED25519);
+        let id = self.guard_sub(name);
+        let args = json!({ "account_id": id, "label": name, "public_key": sk.public_key().to_string() });
+        let status = self.dao_calls_guard("add_agent", args, NearToken::from_near(1)).await?;
+        Ok((Account::from_secret_key(id, sk, &self.worker), status))
+    }
+
+    async fn agent_ids(&self) -> anyhow::Result<Vec<String>> {
+        let agents: Value = self.guard.view("get_agents").await?.json()?;
+        Ok(agents.as_array().unwrap().iter().map(|a| a["account_id"].as_str().unwrap().to_string()).collect())
+    }
+
+    /// The chain's record of the deployed code, whatever that code claims about itself.
+    async fn code(&self) -> anyhow::Result<String> {
+        Ok(format!("{:?}", self.guard.view_account().await?.contract_state))
+    }
+
+    async fn version(&self) -> anyhow::Result<String> {
+        let info: Value = self.guard.view("kd_guard_info").await?.json()?;
+        Ok(info["version"].as_str().unwrap().to_string())
+    }
+
+    /// A factory holding `code`: what a new Guard release ships as, and the source `upgrade` reads from.
+    async fn code_source(&self, name: &str, code: &[u8]) -> anyhow::Result<(Contract, String)> {
+        let root = self.worker.root_account()?;
+        let account = root.create_subaccount(name).initial_balance(NearToken::from_near(6)).transact().await?.into_result()?;
+        let factory_wasm = std::fs::read(FACTORY_WASM).expect("build the factory wasm first (contracts/guard-factory)");
+        let factory = account.deploy(&factory_wasm).await?.into_result()?;
+        let mut args = (code.len() as u32).to_le_bytes().to_vec();
+        args.extend(code);
+        factory.call("new").args(args).max_gas().transact().await?.into_result()?;
+        let hash: String = factory.view("get_code_hash").await?.json()?;
+        Ok((factory, hash))
+    }
+
+    /// The DAO's `FunctionCall` proposal, approved at the gas the dashboard attaches; the proposal's status after.
+    async fn dao_upgrades_guard(&self, source: &str, hash: &str) -> anyhow::Result<(String, f64)> {
+        let kind = json!({ "FunctionCall": { "receiver_id": self.guard.id(), "actions": [{
+            "method_name": "upgrade",
+            "args": STANDARD.encode(json!({ "code_source": source, "code_hash": hash }).to_string()),
+            "deposit": "0",
+            "gas": UPGRADE_GAS.as_gas().to_string(),
+        }]}});
+        let id: u64 = self
+            .council
+            .call(self.dao.id(), "add_proposal")
+            .args_json(json!({ "proposal": { "description": "upgrade the Guard", "kind": kind.clone() } }))
+            .deposit(NearToken::from_yoctonear(self.bond))
+            .max_gas()
+            .transact()
+            .await?
+            .into_result()?
+            .json()?;
+        let outcome = self
+            .council
+            .call(self.dao.id(), "act_proposal")
+            .args_json(json!({ "id": id, "action": "VoteApprove", "proposal": kind }))
+            .max_gas()
+            .transact()
+            .await?;
+        let burnt = outcome.total_gas_burnt.as_gas() as f64 / 1e12;
+        Ok((self.proposal(id).await?["status"].as_str().unwrap().to_string(), burnt))
+    }
+}
+
+/// The Guard's own wasm with another version, so a test can see which code answers.
+fn guard_wasm_with_version(version: &[u8; 5]) -> Vec<u8> {
+    let mut code = std::fs::read(GUARD_WASM).unwrap();
+    let hits: Vec<usize> = code.windows(5).enumerate().filter(|(_, w)| w == b"1.1.0").map(|(i, _)| i).collect();
+    assert!(!hits.is_empty(), "the version string must be in the wasm");
+    for i in hits {
+        code[i..i + 5].copy_from_slice(version);
+    }
+    code
+}
+
+#[tokio::test]
+async fn a_dao_made_agent_key_reaches_only_the_two_guard_methods() -> anyhow::Result<()> {
+    let e = setup().await?;
+    let (agent, status) = e.dao_adds_keyed_agent("a1").await?;
+    assert_eq!(status, "Approved");
+
+    let keys = e.worker.view_access_keys(agent.id()).await?;
+    assert_eq!(keys.len(), 1, "no full-access key may exist on an agent account: {keys:?}");
+    match &keys[0].access_key.permission {
+        AccessKeyPermission::FunctionCall(p) => {
+            assert_eq!(p.receiver_id, e.guard.id().as_str());
+            assert_eq!(p.method_names, ["request_transfer", "sync_request"]);
+            assert!(p.allowance.is_none(), "the account balance is the cap");
+        }
+        AccessKeyPermission::FullAccess => panic!("the key must be a function-call key"),
+    }
+    let funded = e.balance(&agent).await?;
+    assert_eq!(funded, NearToken::from_millinear(500).as_yoctonear(), "the account starts with the gas fund only");
+
+    let outcome = e.request_as(&agent, "keyed-0001", &e.receiver, NearToken::from_millinear(10)).await?;
+    let record: Value = outcome.into_result()?.json()?;
+    assert_eq!(record["status"], "AutoApproved", "the new account must work as an agent at once: {record}");
+    e.worker.fast_forward(5).await?;
+    println!("COST agent account: one Auto request costs {:.2} mNEAR of the fund", (funded - e.balance(&agent).await?) as f64 / 1e21);
+
+    // A stolen key: the Guard's other methods and every other contract are refused before any code runs.
+    assert!(agent.call(e.guard.id(), "pause").transact().await.is_err(), "the key must not reach pause");
+    assert!(agent.call(e.dao.id(), "add_proposal").transact().await.is_err(), "the key must not reach the DAO");
+    assert!(agent.batch(e.stranger.id()).transfer(NearToken::from_near(1)).transact().await.is_err(), "the key must not move the fund");
+    Ok(())
+}
+
+#[tokio::test]
+async fn reusing_the_name_of_a_removed_agent_leaves_no_agent_and_returns_the_fund() -> anyhow::Result<()> {
+    // The old account and its key still exist, so an agent registered here would be run by whoever held that key.
+    let e = setup().await?;
+    let (agent, _) = e.dao_adds_keyed_agent("a1").await?;
+    assert_eq!(e.dao_calls_guard("remove_agent", json!({ "account_id": agent.id() }), NearToken::from_yoctonear(0)).await?, "Approved");
+
+    let dao_before = e.dao.view_account().await?.balance.as_yoctonear();
+    let guard_before = e.guard.view_account().await?.balance.as_yoctonear();
+    let (_, status) = e.dao_adds_keyed_agent("a1").await?;
+    assert_eq!(status, "Approved", "Sputnik does not see the failure, so the Guard has to clean up");
+    e.worker.fast_forward(5).await?; // the callback's refund is not part of the proposal's own result
+
+    assert!(!e.agent_ids().await?.contains(&agent.id().to_string()), "the agent must not stay registered");
+    let dao_after = e.dao.view_account().await?.balance.as_yoctonear();
+    // Only the agent record's storage stays with the Guard, a few mNEAR; the 0.5 NEAR fund must not.
+    let slack = NearToken::from_millinear(10).as_yoctonear();
+    assert!(dao_after + slack >= dao_before, "the DAO must get its deposit back: {dao_before} -> {dao_after}");
+    let guard_after = e.guard.view_account().await?.balance.as_yoctonear();
+    assert!(guard_after + slack >= guard_before, "the Guard must not pay for the failure: {guard_before} -> {guard_after}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn new_creates_ten_keyed_agent_accounts() -> anyhow::Result<()> {
+    let e = setup().await?;
+    let root = e.worker.root_account()?;
+    let account = root.create_subaccount("guard2").initial_balance(NearToken::from_near(10)).transact().await?.into_result()?;
+    let guard = account.deploy(&std::fs::read(GUARD_WASM)?).await?.into_result()?;
+    let ids: Vec<String> = (0..10).map(|i| format!("a{i}.{}", guard.id())).collect();
+    let agents: Vec<Value> = ids
+        .iter()
+        .map(|id| json!({ "account_id": id, "label": "bot", "public_key": SecretKey::from_random(KeyType::ED25519).public_key().to_string() }))
+        .collect();
+    let outcome = guard
+        .call("new")
+        .args_json(json!({
+            "dao_id": e.dao.id(),
+            "policy": { "max_per_tx": "1", "max_per_day": "2", "max_pending_per_agent": 3, "min_reserve": "1" },
+            "agents": agents, "whitelist": [], "guardians": [],
+        }))
+        .max_gas()
+        .transact()
+        .await?;
+    println!("GAS new with 10 keyed agents burnt={:.1} Tgas", outcome.total_gas_burnt.as_gas() as f64 / 1e12);
+    outcome.into_result()?;
+    for id in &ids {
+        let keys = e.worker.view_access_keys(&id.parse()?).await?;
+        assert_eq!(keys.len(), 1, "{id} must exist with its one key");
+    }
+    Ok(())
+}
+
+// ---- upgrade (§11.5.12, ADR 0006, B-Q10): the path only a real Sputnik can prove
+
+// Why `upgrade` is not reached through `UpgradeRemote`: the installed Sputnik keeps 10 Tgas after attaching the rest
+// to the remote call, and copying the wasm costs more than that past about 150 KB. If this ever passes, B-Q10 and
+// ADR 0006 can be reopened.
+#[tokio::test]
+async fn installed_sputnik_cannot_send_a_guard_sized_wasm_through_upgrade_remote() -> anyhow::Result<()> {
+    let e = setup().await?;
+    let code = std::fs::read(GUARD_WASM)?;
+    let deposit = NearToken::from_yoctonear((code.len() as u128 + 32) * 10_000_000_000_000_000_000);
+    let blob = e.council.call(e.dao.id(), "store_blob").args(code).deposit(deposit).max_gas().transact().await?;
+    let hash: String = blob.into_result()?.json()?;
+    let kind = json!({ "UpgradeRemote": { "receiver_id": e.guard.id(), "method_name": "upgrade", "hash": hash } });
+    let id: u64 = e
+        .council
+        .call(e.dao.id(), "add_proposal")
+        .args_json(json!({ "proposal": { "description": "upgrade", "kind": kind.clone() } }))
+        .deposit(NearToken::from_yoctonear(e.bond))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?
+        .json()?;
+    let vote = e.council.call(e.dao.id(), "act_proposal").args_json(json!({ "id": id, "action": "VoteApprove", "proposal": kind })).max_gas().transact().await?;
+    fails_with(vote, "Exceeded the prepaid gas");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_dao_upgrades_the_guard_and_every_record_survives() -> anyhow::Result<()> {
+    let e = setup().await?;
+    assert_eq!(e.version().await?, "1.1.0");
+    let held = e.request("up-pend-01", &e.stranger, NearToken::from_millinear(100)).await?;
+    assert_eq!(held["status"], "Pending");
+    let config: Value = e.guard.view("get_config").await?.json()?;
+    let code = e.code().await?;
+    let keys = e.guard.view_access_keys().await?.len();
+
+    let (source, hash) = e.code_source("release", &guard_wasm_with_version(b"9.9.9")).await?;
+    let (status, burnt) = e.dao_upgrades_guard(source.id().as_str(), &hash).await?;
+    println!("GAS upgrade through a DAO FunctionCall: burnt={burnt:.1} Tgas");
+    assert_eq!(status, "Approved");
+
+    assert_eq!(e.version().await?, "9.9.9", "the new code must answer");
+    assert_ne!(e.code().await?, code);
+    assert_eq!(e.guard.view("get_config").await?.json::<Value>()?, config, "policy and DAO must survive");
+    assert_eq!(e.pending().await?, 1, "the agent's pending count must survive");
+    assert_eq!(e.guard.view_access_keys().await?.len(), keys, "an upgrade adds no key to the Guard");
+
+    // The request made under the old code still finishes under the new one.
+    e.vote(held["proposal_id"].as_u64().unwrap(), "VoteApprove").await?;
+    assert_eq!(e.sync("up-pend-01").await?["status"], "Executed");
+    Ok(())
+}
+
+// The installed Sputnik attaches no callback to a `FunctionCall`, so `Approved` only says the call was sent. A failed
+// upgrade changes nothing on the Guard and nothing on the proposal: the dashboard has to read the Guard's code hash back.
+#[tokio::test]
+async fn a_failed_upgrade_leaves_the_old_guard_and_the_proposal_cannot_show_it() -> anyhow::Result<()> {
+    let e = setup().await?;
+    let code = e.code().await?;
+    let (source, hash) = e.code_source("release", &guard_wasm_with_version(b"9.9.9")).await?;
+    let (junk, junk_hash) = e.code_source("junk", b"this is not wasm").await?;
+    let wrong_hash = junk_hash.clone();
+
+    for (who, what, hash) in [
+        (source.id().as_str(), "code that is not the approved hash", wrong_hash.as_str()),
+        (junk.id().as_str(), "bytes that are not wasm", junk_hash.as_str()),
+        ("nobody.test.near", "a source that does not exist", hash.as_str()),
+    ] {
+        let (status, _) = e.dao_upgrades_guard(who, hash).await?;
+        assert_eq!(status, "Approved", "{what}: if this becomes Failed, the dashboard can trust the status");
+        assert_eq!(e.code().await?, code, "{what}: deploy and migrate are one receipt");
+    }
+    assert_eq!(e.request("after-bad-01", &e.receiver, NearToken::from_millinear(10)).await?["status"], "AutoApproved");
+    Ok(())
+}
+
+#[tokio::test]
+async fn nobody_outside_the_dao_reaches_upgrade_or_its_callbacks() -> anyhow::Result<()> {
+    let e = setup().await?;
+    let (source, hash) = e.code_source("release", &guard_wasm_with_version(b"6.6.6")).await?;
+    let args = json!({ "code_source": source.id(), "code_hash": hash });
+    for who in [&e.stranger, &e.agent, &e.guardian, &e.council] {
+        fails_with(who.call(e.guard.id(), "upgrade").args_json(&args).max_gas().transact().await?, "ONLY_DAO");
+    }
+    let on_code = e.stranger.call(e.guard.id(), "on_code").args_json(json!({ "code_hash": hash })).max_gas().transact().await?;
+    assert!(on_code.is_failure(), "on_code is private");
+    let migrate = e.stranger.call(e.guard.id(), "migrate").max_gas().transact().await?;
+    assert!(migrate.is_failure(), "migrate is private");
+    assert_eq!(e.version().await?, "1.1.0");
+    Ok(())
+}
+
+// §11.10.5: the reason an owner action takes two signatures. An agent's proposal can land between the owner's
+// add_proposal and their vote; the vote must reach only the id the owner read back.
+#[tokio::test]
+async fn an_agent_proposal_inserted_before_the_owner_votes_stays_open() -> anyhow::Result<()> {
+    let e = setup().await?;
+    let kind = json!({ "Transfer": { "token_id": "", "receiver_id": e.receiver.id(), "amount": "1", "msg": null } });
+    let owner: u64 = e
+        .council
+        .call(e.dao.id(), "add_proposal")
+        .args_json(json!({ "proposal": { "description": "owner action", "kind": kind } }))
+        .deposit(NearToken::from_yoctonear(e.bond))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?
+        .json()?;
+    let inserted = e.request("insert-001", &e.stranger, NearToken::from_near(1)).await?;
+    assert_eq!(inserted["proposal_id"].as_u64(), Some(owner + 1), "the agent's proposal takes the next id");
+
+    e.vote(owner, "VoteApprove").await?;
+    assert_eq!(e.proposal(owner).await?["status"], "Approved");
+    assert_eq!(e.proposal(owner + 1).await?["status"], "InProgress", "the owner's vote must not reach the agent's proposal");
     Ok(())
 }

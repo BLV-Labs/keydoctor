@@ -4,7 +4,7 @@
 use super::*;
 use near_sdk::mock::MockAction;
 use near_sdk::test_utils::{get_created_receipts, get_logs, VMContextBuilder};
-use near_sdk::testing_env;
+use near_sdk::{testing_env, PromiseResult};
 
 const NEAR: u128 = 1_000_000_000_000_000_000_000_000;
 const BOND: u128 = NEAR / 10;
@@ -47,7 +47,7 @@ fn limits() -> GuardPolicy {
 }
 
 fn agent_input(account: &str) -> AgentInput {
-    AgentInput { account_id: id(account), label: "payroll bot".into() }
+    AgentInput { account_id: id(account), label: "payroll bot".into(), public_key: None }
 }
 
 fn listed(account: &str, cap: Option<u128>) -> WhitelistInput {
@@ -182,7 +182,7 @@ fn init_caps_guardians_at_5() {
 #[should_panic(expected = "LABEL_TOO_LONG")]
 fn init_rejects_long_labels() {
     env_as(DAO, T0);
-    let agent = AgentInput { account_id: id(AGENT), label: "x".repeat(65) };
+    let agent = AgentInput { account_id: id(AGENT), label: "x".repeat(65), public_key: None };
     Guard::new(id(DAO), limits(), vec![agent], vec![], vec![]);
 }
 
@@ -570,7 +570,7 @@ fn agent_cannot_whitelist_itself_a_receiver() {
 fn stranger_cannot_add_an_agent() {
     let mut g = setup();
     env_full(STRANGER, T0, NEAR, 10 * NEAR);
-    g.add_agent(id(STRANGER), "me".into());
+    g.add_agent(id(STRANGER), "me".into(), None);
 }
 
 #[test]
@@ -649,7 +649,7 @@ fn agent_add_respects_the_cap() {
     let agents = (0..10).map(|i| agent_input(&format!("agent{i}.testnet"))).collect();
     let mut g = Guard::new(id(DAO), limits(), agents, vec![], vec![]);
     env_full(DAO, T0, NEAR, 10 * NEAR);
-    g.add_agent(id("agent10.testnet"), "one more".into());
+    g.add_agent(id("agent10.testnet"), "one more".into(), None);
 }
 
 #[test]
@@ -733,4 +733,174 @@ fn kd_guard_info_identifies_the_guard() {
     let g = setup();
     assert_eq!(g.kd_guard_info()["standard"], "kd_guard");
     assert_eq!(g.kd_guard_info()["dao_id"], DAO);
+}
+
+// ---- agent accounts (§11.10.2): the Guard makes the account, so the key's scope is not the caller's to choose
+
+const AGENT_SUB: &str = "a1.guard.testnet";
+const KEY: &str = "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp";
+
+fn key() -> PublicKey {
+    KEY.parse().unwrap()
+}
+
+fn keyed_input(account: &str) -> AgentInput {
+    AgentInput { public_key: Some(key()), ..agent_input(account) }
+}
+
+/// The actions of the one receipt that goes to `account`.
+fn actions_to(account: &str) -> Vec<MockAction> {
+    let receipts = get_created_receipts();
+    let found: Vec<_> = receipts.iter().filter(|r| r.receiver_id.as_str() == account).collect();
+    assert_eq!(found.len(), 1, "one receipt to {account}: {receipts:?}");
+    found[0].actions.clone()
+}
+
+/// What makes the key safe to hand to an agent: it reaches only the Guard, only the two agent methods, and the
+/// account starts with the gas fund and nothing else.
+fn assert_agent_account(actions: &[MockAction]) {
+    assert!(matches!(actions[0], MockAction::CreateAccount { .. }), "{actions:?}");
+    assert!(
+        matches!(&actions[1], MockAction::Transfer { deposit, .. } if *deposit == AGENT_GAS_FUND),
+        "{actions:?}"
+    );
+    match &actions[2] {
+        MockAction::AddKeyWithFunctionCall { public_key, allowance, receiver_id, method_names, .. } => {
+            assert_eq!(public_key.to_string(), KEY);
+            assert_eq!(*allowance, None, "the account balance is the cap, not a key allowance");
+            assert_eq!(receiver_id.as_str(), GUARD, "the key must not reach any other contract");
+            assert_eq!(method_names.join(","), "request_transfer,sync_request");
+        }
+        other => panic!("expected a function-call key, got {other:?}"),
+    }
+    assert_eq!(actions.len(), 3, "no full-access key and nothing else: {actions:?}");
+}
+
+#[test]
+fn add_agent_with_a_key_creates_a_narrow_account() {
+    let mut g = setup();
+    env_full(DAO, T0, NEAR, 10 * NEAR);
+    g.add_agent(id(AGENT_SUB), "payroll bot".into(), Some(key()));
+    assert_agent_account(&actions_to(AGENT_SUB));
+}
+
+#[test]
+fn new_with_a_key_creates_the_same_narrow_account() {
+    env_as(DAO, T0);
+    Guard::new(id(DAO), limits(), vec![keyed_input(AGENT_SUB)], vec![], vec![]);
+    assert_agent_account(&actions_to(AGENT_SUB));
+}
+
+#[test]
+#[should_panic(expected = "AGENT_NOT_SUBACCOUNT")]
+fn add_agent_with_a_key_needs_a_guard_subaccount() {
+    // A name outside the Guard could not be created by it; the agent must not get registered with no account.
+    let mut g = setup();
+    env_full(DAO, T0, NEAR, 10 * NEAR);
+    g.add_agent(id("elsewhere.testnet"), "x".into(), Some(key()));
+}
+
+#[test]
+#[should_panic(expected = "INSUFFICIENT_STORAGE_DEPOSIT")]
+fn add_agent_with_a_key_makes_the_dao_pay_the_gas_fund() {
+    // The fund must come from the proposal, not from the balance the limits protect.
+    let mut g = setup();
+    env_full(DAO, T0, AGENT_GAS_FUND.as_yoctonear() - 1, 10 * NEAR);
+    g.add_agent(id(AGENT_SUB), "x".into(), Some(key()));
+}
+
+#[test]
+#[should_panic(expected = "AGENT_EXISTS")]
+fn a_key_cannot_be_added_to_a_registered_agent() {
+    let mut g = setup();
+    env_full(DAO, T0, NEAR, 10 * NEAR);
+    g.add_agent(id(AGENT), "x".into(), Some(key()));
+}
+
+#[test]
+fn add_agent_without_a_key_only_registers() {
+    let mut g = setup();
+    env_full(DAO, T0, NEAR, 10 * NEAR);
+    g.add_agent(id("second.testnet"), "x".into(), None);
+    let receipts = get_created_receipts();
+    assert!(
+        receipts.iter().all(|r| r.actions.iter().all(|a| matches!(a, MockAction::Transfer { .. }))),
+        "only the deposit refund: {receipts:?}"
+    );
+}
+
+// ---- upgrade (§11.5.12): the Guard has no key, so whoever reaches `upgrade` owns the code and the DAO's budget
+
+fn code_hash(code: &[u8]) -> Base58CryptoHash {
+    env::sha256_array(code).into()
+}
+
+#[test]
+#[should_panic(expected = "ONLY_DAO")]
+fn only_the_dao_upgrades_the_guard() {
+    let g = setup();
+    env_as(AGENT, T0);
+    g.upgrade(id(STRANGER), code_hash(b"code")).detach();
+}
+
+#[test]
+#[should_panic(expected = "ONLY_DAO")]
+fn a_guardian_cannot_upgrade_the_guard() {
+    let g = setup();
+    env_as(GUARDIAN, T0);
+    g.upgrade(id(STRANGER), code_hash(b"code")).detach();
+}
+
+#[test]
+fn the_dao_upgrade_asks_the_named_source_for_the_code() {
+    let g = setup();
+    env_as(DAO, T0);
+    g.upgrade(id("factory.testnet"), code_hash(b"code")).detach();
+    let actions = actions_to("factory.testnet");
+    assert!(
+        matches!(&actions[0], MockAction::FunctionCallWeight { method_name, .. } if method_name == b"get_guard_code"),
+        "{actions:?}"
+    );
+}
+
+/// `on_code` as the runtime calls it: from the Guard itself, with the source's reply as promise result 0.
+fn on_code_gets(g: &Guard, reply: PromiseResult, hash: Base58CryptoHash) {
+    testing_env!(
+        VMContextBuilder::new()
+            .current_account_id(id(GUARD))
+            .predecessor_account_id(id(GUARD))
+            .build(),
+        near_sdk::test_vm_config(),
+        near_sdk::RuntimeFeesConfig::test(),
+        Default::default(),
+        vec![reply]
+    );
+    g.on_code(hash).detach();
+}
+
+#[test]
+#[should_panic(expected = "CODE_HASH_MISMATCH")]
+fn code_other_than_what_the_dao_approved_is_not_deployed() {
+    // The source is untrusted by design: it may be the factory, or anything else the proposal named.
+    let g = setup();
+    on_code_gets(&g, PromiseResult::Successful(b"evil".to_vec()), code_hash(b"approved"));
+}
+
+#[test]
+#[should_panic(expected = "CODE_UNAVAILABLE")]
+fn a_source_that_fails_deploys_nothing() {
+    let g = setup();
+    on_code_gets(&g, PromiseResult::Failed, code_hash(b"approved"));
+}
+
+#[test]
+fn the_approved_code_is_deployed_and_migrated_in_one_receipt() {
+    let g = setup();
+    on_code_gets(&g, PromiseResult::Successful(b"approved".to_vec()), code_hash(b"approved"));
+    let actions = actions_to(GUARD);
+    assert!(matches!(&actions[0], MockAction::DeployContract { code, .. } if code == b"approved"), "{actions:?}");
+    assert!(
+        matches!(&actions[1], MockAction::FunctionCallWeight { method_name, .. } if method_name == b"migrate"),
+        "{actions:?}"
+    );
 }

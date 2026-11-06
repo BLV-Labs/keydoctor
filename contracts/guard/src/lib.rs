@@ -1,12 +1,12 @@
 // Key Doctor Guard (docs/final-idea.md §11.5): a Sputnik v2 DAO member with role `agent-guard`. A registered
 // agent asks for a NEAR transfer; the Guard always creates the proposal and approves it itself only when the
 // request is within its limits. Everything else waits for the council. Only the DAO changes the configuration.
-use near_sdk::json_types::{U128, U64};
+use near_sdk::json_types::{Base58CryptoHash, U128, U64};
 use near_sdk::serde_json::{json, Value};
 use near_sdk::store::{IterableMap, IterableSet, LookupMap, Vector};
 use near_sdk::{
-    env, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault, Promise, PromiseError,
-    PromiseOrValue,
+    env, near, require, AccountId, Allowance, BorshStorageKey, CryptoHash, Gas, NearToken, PanicOnDefault, Promise,
+    PromiseError, PromiseOrValue, PublicKey,
 };
 
 mod dao;
@@ -25,6 +25,16 @@ const GAS_ACT_PROPOSAL: Gas = Gas::from_tgas(80);
 const GAS_ON_VOTED: Gas = Gas::from_tgas(10);
 const GAS_VIEW: Gas = Gas::from_tgas(10);
 const GAS_ON_VIEW: Gas = Gas::from_tgas(15);
+const GAS_ON_AGENT_CREATED: Gas = Gas::from_tgas(5);
+const GAS_GET_CODE: Gas = Gas::from_tgas(30);
+const GAS_ON_CODE: Gas = Gas::from_tgas(60);
+const GAS_MIGRATE: Gas = Gas::from_tgas(20);
+// NEAR's limit on one contract's code.
+const MAX_CODE_BYTES: usize = 4 * 1024 * 1024;
+
+// §11.10.2. What a Guard-made agent account starts with; its balance is the cap on the gas it can burn.
+const AGENT_GAS_FUND: NearToken = NearToken::from_millinear(500);
+const AGENT_KEY_METHODS: &str = "request_transfer,sync_request";
 
 // §11.5.10
 const MAX_WHITELIST: u32 = 50;
@@ -101,6 +111,9 @@ impl Guard {
         };
         for a in agents {
             assert_label(&a.label);
+            if let Some(key) = a.public_key {
+                create_agent_account(&a.account_id, key).detach();
+            }
             guard.agents.insert(a.account_id, AgentInfo { label: a.label, enabled: true, pending: 0 });
         }
         for w in whitelist {
@@ -275,21 +288,42 @@ impl Guard {
         refund_deposit(0);
     }
 
+    /// With `public_key` the Guard also creates the agent's account, so the deposit covers `AGENT_GAS_FUND` too.
     #[payable]
-    pub fn add_agent(&mut self, account_id: AccountId, label: String) {
+    pub fn add_agent(&mut self, account_id: AccountId, label: String, public_key: Option<PublicKey>) {
         self.assert_dao();
         assert_label(&label);
         let before = env::storage_usage();
         match self.agents.get_mut(&account_id) {
-            Some(a) => a.label = label,
+            Some(a) => {
+                require!(public_key.is_none(), "AGENT_EXISTS");
+                a.label = label;
+            }
             None => {
                 require!(self.agents.len() < MAX_AGENTS, "TOO_MANY_AGENTS");
                 self.agents.insert(account_id.clone(), AgentInfo { label, enabled: true, pending: 0 });
             }
         }
         self.agents.flush();
-        charge_storage(before);
+        let fund = if public_key.is_some() { AGENT_GAS_FUND.as_yoctonear() } else { 0 };
+        charge_storage_and(before, fund);
         emit("agent_updated", json!({ "account_id": account_id, "action": "added" }));
+        if let Some(key) = public_key {
+            create_agent_account(&account_id, key)
+                .then(Self::ext(env::current_account_id()).with_static_gas(GAS_ON_AGENT_CREATED).on_agent_created(account_id))
+                .detach();
+        }
+    }
+
+    /// The account of a removed agent stays, so reusing its name fails here: the agent must not stay registered
+    /// with a key its owner does not hold.
+    #[private]
+    pub fn on_agent_created(&mut self, account_id: AccountId, #[callback_result] created: Result<(), PromiseError>) {
+        if created.is_err() {
+            self.agents.remove(&account_id);
+            Promise::new(self.dao_id.clone()).transfer(AGENT_GAS_FUND).detach();
+            emit("agent_updated", json!({ "account_id": account_id, "action": "create_failed" }));
+        }
     }
 
     #[payable]
@@ -458,7 +492,39 @@ impl Guard {
 
     /// Key Doctor reads this to recognise a DAO member as a Guard (§5.3).
     pub fn kd_guard_info(&self) -> Value {
-        json!({ "standard": "kd_guard", "version": "1.0.0", "dao_id": self.dao_id })
+        json!({ "standard": "kd_guard", "version": "1.1.0", "dao_id": self.dao_id })
+    }
+
+    // ---- upgrade (§11.5.12, ADR 0006)
+
+    /// Fetches the code from `code_source` and deploys it only if it hashes to `code_hash`, so the source needs no
+    /// trust: the DAO votes on the hash. Not a DAO `UpgradeRemote`: the installed Sputnik runs out of gas on any
+    /// wasm over about 150 KB (B-Q10). The Guard has no key, so this is the only way its code changes.
+    pub fn upgrade(&self, code_source: AccountId, code_hash: Base58CryptoHash) -> Promise {
+        self.assert_dao();
+        Promise::new(code_source).function_call("get_guard_code", Vec::new(), NearToken::from_near(0), GAS_GET_CODE).then(
+            Self::ext(env::current_account_id()).with_static_gas(GAS_ON_CODE).on_code(code_hash),
+        )
+    }
+
+    /// Deploy and `migrate` share one receipt: if `migrate` fails, the old code stays.
+    #[private]
+    pub fn on_code(&self, code_hash: Base58CryptoHash) -> Promise {
+        let code = env::promise_result_checked(0, MAX_CODE_BYTES).unwrap_or_else(|_| env::panic_str("CODE_UNAVAILABLE"));
+        require!(env::sha256_array(&code) == CryptoHash::from(code_hash), "CODE_HASH_MISMATCH");
+        Promise::new(env::current_account_id()).deploy_contract(code).function_call(
+            "migrate",
+            Vec::new(),
+            NearToken::from_near(0),
+            GAS_MIGRATE,
+        )
+    }
+
+    /// Reads the state the previous code wrote. A release that changes `Guard` reads the old layout here.
+    #[private]
+    #[init(ignore_state)]
+    pub fn migrate() -> Self {
+        env::state_read().unwrap_or_else(|| env::panic_str("NO_STATE"))
     }
 }
 
@@ -528,9 +594,25 @@ fn assert_label(label: &str) {
 }
 
 /// Requires the attached deposit to cover the storage added since `before`, and returns the rest.
+/// The only place that gives an agent account a key, so the key's receiver and methods never come from outside.
+fn create_agent_account(account_id: &AccountId, public_key: PublicKey) -> Promise {
+    let guard = env::current_account_id();
+    require!(account_id.is_sub_account_of(&guard), "AGENT_NOT_SUBACCOUNT");
+    Promise::new(account_id.clone()).create_account().transfer(AGENT_GAS_FUND).add_access_key_allowance(
+        public_key,
+        Allowance::Unlimited,
+        guard,
+        AGENT_KEY_METHODS,
+    )
+}
+
 fn charge_storage(before: u64) {
+    charge_storage_and(before, 0);
+}
+
+fn charge_storage_and(before: u64, extra: u128) {
     let added = env::storage_usage().saturating_sub(before) as u128;
-    let cost = env::storage_byte_cost().as_yoctonear() * added;
+    let cost = env::storage_byte_cost().as_yoctonear() * added + extra;
     require!(env::attached_deposit().as_yoctonear() >= cost, "INSUFFICIENT_STORAGE_DEPOSIT");
     refund_deposit(cost);
 }

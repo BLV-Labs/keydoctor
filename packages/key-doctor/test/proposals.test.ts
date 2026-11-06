@@ -160,6 +160,21 @@ describe("GĐ5 checkProposals: kinds", () => {
     assert.equal(r.state.last_proposal_id, 7);
   });
 
+  // A Guard is upgraded by a plain FunctionCall, so a label check alone would let its code change without an alert.
+  it("a function call to upgrade alerts as code_upgrade_proposal; other calls stay quiet", async (t) => {
+    const base = { proposer: B, description: "x", status: "InProgress", votes: {}, vote_counts: {}, submission_time: "1" };
+    const call = (method_name: string) => ({
+      FunctionCall: { receiver_id: "budget.keydoctor-guards-v2.testnet", actions: [{ method_name, args: "e30=", deposit: "0", gas: "150000000000000" }] },
+    });
+    demo(t, {
+      last: bytes(6),
+      proposals: { 4: bytes({ ...base, id: 4, kind: call("upgrade") }), 5: bytes({ ...base, id: 5, kind: call("set_policy") }) },
+    });
+    const r = await checkProposals(DAO, { last_proposal_id: 4, pending: {} });
+    assert.deepEqual(kinds(r.alerts), ["testnet:kd-demo.sputnik-dao.testnet:code_upgrade_proposal:4:-"]);
+    assert.equal(r.alerts[0]?.messages.en.title, `CODE UPGRADE: ${DAO}`);
+  });
+
   it("label groups follow the Sputnik v2 labels", () => {
     for (const l of ["transfer", "call"]) assert.equal(groupOf(l), "money");
     for (const l of ["add_member_to_role", "remove_member_from_role", "config", "policy", "policy_add_or_update_role", "policy_remove_role", "policy_update_default_vote_policy", "policy_update_parameters"]) {

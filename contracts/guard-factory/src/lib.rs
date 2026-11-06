@@ -15,19 +15,20 @@ mod types;
 pub use types::*;
 
 const GAS_VIEW: Gas = Gas::from_tgas(10);
-const GAS_ON_DAO_CHECKED: Gas = Gas::from_tgas(90);
-// The Guard's `new` reads the DAO policy itself (10 + 15 Tgas static, contracts/guard/src/lib.rs).
-const GAS_GUARD_NEW: Gas = Gas::from_tgas(40);
+const GAS_ON_DAO_CHECKED: Gas = Gas::from_tgas(160);
+// The Guard's `new` reads the DAO policy itself (10 + 15 Tgas static, contracts/guard/src/lib.rs) and pays about 9 Tgas
+// per keyed agent account; 120 covers the ten a Guard accepts.
+const GAS_GUARD_NEW: Gas = Gas::from_tgas(120);
 const GAS_ON_CREATED: Gas = Gas::from_tgas(15);
-/// `create` checks this so a short-gassed call fails before any money moves. The dashboard attaches 150 Tgas.
-const MIN_CREATE_GAS: Gas = Gas::from_tgas(120);
+/// `create` checks this so a short-gassed call fails before any money moves. The dashboard attaches 220 Tgas.
+const MIN_CREATE_GAS: Gas = Gas::from_tgas(190);
 
 const MAX_GUARDS_PER_DAO: u32 = 10;
 const MAX_NAME_LEN: usize = 32;
 /// Least the new Guard receives on top of its code storage: room for a few proposal bonds is the caller's job;
 /// this floor only stops a Guard that could not even pay for its own state.
 const MIN_GUARD_BALANCE: NearToken = NearToken::from_millinear(500);
-/// Raw storage key of the Guard code, kept out of the contract state so only `on_dao_checked` reads it.
+/// Raw storage key of the Guard code, kept out of the contract state so that only the methods that use it load it.
 const GUARD_CODE_KEY: &[u8] = b"guard_code";
 
 #[near(serializers = [borsh])]
@@ -99,7 +100,9 @@ impl Factory {
         let record_cost = env::storage_byte_cost().saturating_mul((env::storage_usage() - before) as u128);
         let deposit = env::attached_deposit();
         let amount = deposit.saturating_sub(record_cost);
-        require!(amount >= self.code_storage().saturating_add(MIN_GUARD_BALANCE), "DEPOSIT_TOO_LOW");
+        let agent_accounts = agents.iter().filter(|a| a.public_key.is_some()).count() as u128;
+        let needed = self.code_storage().saturating_add(MIN_GUARD_BALANCE).saturating_add(AGENT_GAS_FUND.saturating_mul(agent_accounts));
+        require!(amount >= needed, "DEPOSIT_TOO_LOW");
 
         let init = json!({ "dao_id": dao_id, "policy": policy, "agents": agents, "whitelist": whitelist, "guardians": guardians });
         ext_dao::ext(dao_id.clone()).with_static_gas(GAS_VIEW).get_policy().then(
@@ -174,6 +177,12 @@ impl Factory {
 
     pub fn get_code_hash(&self) -> Base58CryptoHash {
         self.guard_code_hash.into()
+    }
+
+    /// The raw wasm, not JSON: a Guard's `upgrade` hashes exactly these bytes against what its DAO approved.
+    pub fn get_guard_code(&self) {
+        let code = env::storage_read(GUARD_CODE_KEY).unwrap_or_else(|| env::panic_str("NO_GUARD_CODE"));
+        env::value_return(&code);
     }
 
     pub fn kd_factory_metadata(&self) -> Value {

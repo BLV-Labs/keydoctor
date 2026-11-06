@@ -23,7 +23,7 @@ fn ctx(predecessor: &str, deposit: u128) -> VMContextBuilder {
         .predecessor_account_id(id(predecessor))
         .signer_account_id(id(predecessor))
         .attached_deposit(NearToken::from_yoctonear(deposit))
-        .prepaid_gas(Gas::from_tgas(150))
+        .prepaid_gas(Gas::from_tgas(220))
         .account_balance(NearToken::from_near(100));
     b
 }
@@ -53,7 +53,7 @@ fn policy() -> GuardPolicy {
 }
 
 fn agent(n: usize) -> AgentInput {
-    AgentInput { account_id: id(&format!("agent{n}.testnet")), label: format!("agent {n}") }
+    AgentInput { account_id: id(&format!("agent{n}.testnet")), label: format!("agent {n}"), public_key: None }
 }
 
 fn create(f: &mut Factory, dao: &str, name: &str, deposit: u128) -> Promise {
@@ -275,4 +275,22 @@ fn list_guards_pages_through_every_dao() {
     let page: Vec<_> = f.list_guards(Some(1), Some(1)).into_iter().map(|g| g.name).collect();
     assert_eq!(page, vec!["b1"]);
     assert_eq!(f.get_guards_for_dao(id(DAO)).len(), 2);
+}
+
+#[test]
+fn the_deposit_must_also_pay_each_agent_accounts_gas_fund() {
+    // Otherwise the new Guard pays the funds out of the floor that keeps it running. The same deposit passes
+    // with an unkeyed agent, so the fund is what refuses it.
+    let deposit = 3 * NEAR / 4;
+    let mut f = factory();
+    let _ = create(&mut f, DAO, "plain", deposit);
+
+    let mut f = factory();
+    let mut keyed = agent(1);
+    keyed.public_key = Some("ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp".parse().unwrap());
+    env_as(DAO, deposit);
+    let msg = panic_message(|| {
+        let _ = f.create("keyed".into(), policy(), vec![keyed], vec![], vec![]);
+    });
+    assert!(msg.contains("DEPOSIT_TOO_LOW"), "{msg}");
 }

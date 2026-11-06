@@ -200,7 +200,7 @@ apps/worker           one Cloudflare Worker + D1
 | `PQ_NONE` | note | No ML-DSA (post-quantum) key |
 | `COUNCIL_SMALL` | note | Council of 2 or fewer |
 
-Proposal watch (`checkProposals`): a voter with a full-access key added in the last 48 hours raises a high alert. So does a new `add_member_to_role`, `remove_member_from_role`, `policy*` or `config` proposal (governance), and a new `upgrade_self` or `upgrade_remote` proposal (code upgrade). A transfer proposal from the DAO's [Agent Guard](#agent-guard-contract) raises a high alert when the Guard left it to the council (with the agent, the Guard's reasons and the agent's memo) and a note when the Guard paid it within its limits, so the council sees every Guard payment. Key Doctor treats a proposer as a Guard only when it holds a DAO role and its `kd_guard_info` names this DAO.
+Proposal watch (`checkProposals`): a voter with a full-access key added in the last 48 hours raises a high alert. So does a new `add_member_to_role`, `remove_member_from_role`, `policy*` or `config` proposal (governance), and a new `upgrade_self`, `upgrade_remote` or function-call `upgrade` proposal (code upgrade). A transfer proposal from the DAO's [Agent Guard](#agent-guard-contract) raises a high alert when the Guard left it to the council (with the agent, the Guard's reasons and the agent's memo) and a note when the Guard paid it within its limits, so the council sees every Guard payment. Key Doctor treats a proposer as a Guard only when it holds a DAO role and its `kd_guard_info` names this DAO.
 
 On post-quantum keys: no quantum computer breaks these keys today. The reason to start now is that moving keys takes years, and every public key on NEAR is already public.
 

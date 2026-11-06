@@ -5,7 +5,7 @@
 // Needs both wasm files: `cargo near build non-reproducible-wasm --no-abi` in contracts/guard and here
 // (`pnpm test:guard` does it).
 use near_sdk::base64::{engine::general_purpose::STANDARD, Engine};
-use near_workspaces::types::{Gas, NearToken};
+use near_workspaces::types::{Gas, KeyType, NearToken, SecretKey};
 use near_workspaces::{Account, Contract, Worker};
 use serde_json::{json, Value};
 
@@ -13,7 +13,7 @@ const SPUTNIK_WASM: &str = "../guard/tests/res/sputnik_dao_v2.wasm";
 const GUARD_WASM: &str = "../guard/target/near/kd_guard.wasm";
 const FACTORY_WASM: &str = "target/near/kd_guard_factory.wasm";
 // What the dashboard puts on the proposal's FunctionCall action.
-const CREATE_GAS: Gas = Gas::from_tgas(150);
+const CREATE_GAS: Gas = Gas::from_tgas(220);
 const REQUEST_GAS: Gas = Gas::from_tgas(200);
 const RECORD_ALLOWANCE: u128 = 10_000_000_000_000_000_000_000; // 0.01 NEAR, RECORD_STORAGE_YOCTO in the dashboard
 
@@ -103,6 +103,18 @@ impl Env {
         })
     }
 
+    /// `create_args` with `n` agents whose accounts the new Guard creates.
+    fn keyed_args(&self, name: &str, n: usize) -> (Value, Vec<String>) {
+        let mut args = self.create_args(name);
+        let guard = format!("{name}.{}", self.factory.id());
+        let ids: Vec<String> = (0..n).map(|i| format!("a{i}.{guard}")).collect();
+        args["agents"] = ids
+            .iter()
+            .map(|id| json!({ "account_id": id, "label": "bot", "public_key": SecretKey::from_random(KeyType::ED25519).public_key().to_string() }))
+            .collect();
+        (args, ids)
+    }
+
     /// What every Guard's code locks on its account; the dashboard adds it to the funding.
     async fn code_storage(&self) -> anyhow::Result<u128> {
         let meta: Value = self.factory.view("kd_factory_metadata").await?.json()?;
@@ -112,10 +124,14 @@ impl Env {
     /// P1 of the dashboard flow: the DAO calls `factory.create` with `funding` plus the code storage and the
     /// registry record allowance, as the dashboard computes the deposit.
     async fn dao_creates(&self, name: &str, funding: NearToken) -> anyhow::Result<String> {
+        self.dao_creates_with(self.create_args(name), funding).await
+    }
+
+    async fn dao_creates_with(&self, args: Value, funding: NearToken) -> anyhow::Result<String> {
         let deposit = NearToken::from_yoctonear(funding.as_yoctonear() + self.code_storage().await? + RECORD_ALLOWANCE);
         let kind = json!({ "FunctionCall": { "receiver_id": self.factory.id(), "actions": [{
             "method_name": "create",
-            "args": STANDARD.encode(self.create_args(name).to_string()),
+            "args": STANDARD.encode(args.to_string()),
             "deposit": yocto(deposit),
             "gas": CREATE_GAS.as_gas().to_string(),
         }]}});
@@ -241,5 +257,60 @@ async fn only_the_factory_account_can_init_it() -> anyhow::Result<()> {
     let outcome = stranger.call(factory.id(), "new").args(args).max_gas().transact().await?;
     assert!(outcome.is_failure(), "a stranger must not init the factory");
     assert!(factory.view("get_code_hash").await.is_err(), "the factory must still be uninitialised");
+    Ok(())
+}
+
+// §11.10.2: sign 2 of Budget creation. The agent's account has to exist as soon as the Guard does, on the gas the
+// dashboard attaches, for the most agents a Guard accepts.
+#[tokio::test]
+async fn a_guard_creates_ten_agent_accounts_on_the_dashboards_gas() -> anyhow::Result<()> {
+    let e = setup().await?;
+    let (args, ids) = e.keyed_args("budget", 10);
+    assert_eq!(e.dao_creates_with(args, NearToken::from_near(6)).await?, "Approved");
+    let guard: near_workspaces::AccountId = format!("budget.{}", e.factory.id()).parse()?;
+    e.worker.view_account(&guard).await?; // an Approved proposal alone does not prove creation
+    assert!(e.worker.view_access_keys(&guard).await?.is_empty(), "the Guard stays locked");
+    for id in &ids {
+        let keys = e.worker.view_access_keys(&id.parse()?).await?;
+        assert_eq!(keys.len(), 1, "{id} must exist with its one key");
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn funding_that_cannot_pay_the_agent_accounts_is_refused_and_refunded() -> anyhow::Result<()> {
+    // 0.5 NEAR is enough for a Guard but not for a Guard and its agent's gas fund, which would leave it unable to run.
+    let e = setup().await?;
+    let before = e.dao.view_account().await?.balance.as_yoctonear();
+    let (args, _) = e.keyed_args("budget", 1);
+    e.dao_creates_with(args, NearToken::from_millinear(500)).await.ok();
+    let guard: near_workspaces::AccountId = format!("budget.{}", e.factory.id()).parse()?;
+    assert!(e.worker.view_account(&guard).await.is_err(), "no Guard may exist");
+    let after = e.dao.view_account().await?.balance.as_yoctonear();
+    assert!(after + NearToken::from_millinear(50).as_yoctonear() >= before, "the DAO keeps its money: {before} -> {after}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_agent_name_outside_the_guard_fails_the_creation_and_refunds_the_dao() -> anyhow::Result<()> {
+    let e = setup().await?;
+    let before = e.dao.view_account().await?.balance.as_yoctonear();
+    let mut args = e.create_args("budget");
+    args["agents"] = json!([{ "account_id": e.agent.id(), "label": "bot", "public_key": SecretKey::from_random(KeyType::ED25519).public_key().to_string() }]);
+    e.dao_creates_with(args, NearToken::from_near(2)).await.ok();
+    e.worker.fast_forward(5).await?;
+    let guard: near_workspaces::AccountId = format!("budget.{}", e.factory.id()).parse()?;
+    assert!(e.worker.view_account(&guard).await.is_err(), "the batch must revert the account");
+    let after = e.dao.view_account().await?.balance.as_yoctonear();
+    assert!(after + NearToken::from_millinear(50).as_yoctonear() >= before, "the DAO keeps its money: {before} -> {after}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn get_guard_code_returns_the_bytes_of_the_published_hash() -> anyhow::Result<()> {
+    // A Guard's `upgrade` hashes this reply, so any wrapping (JSON, base64) would fail every upgrade.
+    let e = setup().await?;
+    let code = e.factory.view("get_guard_code").await?.result;
+    assert_eq!(code, std::fs::read(GUARD_WASM)?);
     Ok(())
 }

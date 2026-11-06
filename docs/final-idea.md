@@ -812,7 +812,7 @@ Rule viết bằng code, ngưỡng ở `src/rules/thresholds.ts`. Đổi ngưỡ
 |---|---|---|
 | Người vừa bỏ phiếu có khóa **full-access** thêm trong 48 giờ | high | `voter_new_full_access_key` |
 | Đề xuất mới loại `add_member_to_role`, `remove_member_from_role`, `policy`, `policy_*`, `config` | high | `governance_change_proposal` |
-| Đề xuất mới loại `upgrade_self`, `upgrade_remote` | high | `code_upgrade_proposal` |
+| Đề xuất mới loại `upgrade_self`, `upgrade_remote`, hoặc `FunctionCall` gọi method `upgrade` (đường nâng cấp Guard, 11.5.12) | high | `code_upgrade_proposal` |
 
 Đề xuất "chi tiền": `transfer` và `call` (`FunctionCall` có thể chuyển token qua `ft_transfer`). Nhãn loại theo `vote_policy` của Sputnik v2, **đối chiếu với mã nguồn** khi code. DAO 1 phiếu: đề xuất thực thi ngay; vẫn cảnh báo với `after_the_fact: true`.
 
@@ -1361,7 +1361,7 @@ Quy tắc:
 - **Một Guard cho một DAO.** `dao_id` cố định lúc khởi tạo.
 - Deploy lên một account riêng do chủ DAO tạo, ví dụ `kd-guard.blvlabs.testnet`.
 - Khởi tạo kèm cấu hình ban đầu (agents, whitelist, hạn mức, guardians). **Sau khởi tạo, chỉ DAO được sửa cấu hình.** Không có "owner".
-- **Khóa contract:** sau khi deploy và kiểm xong, xóa full-access key của account Guard để không key nào deploy lại code khác được; đường đổi code duy nhất còn lại là đề xuất `UpgradeRemote` của chính DAO (11.5.12). Script cài đặt làm bước này (có xác nhận). Nếu chưa khóa, README và Key Doctor phải nói rõ (rule `GUARD_NOT_LOCKED`, mục 5.3).
+- **Khóa contract:** sau khi deploy và kiểm xong, xóa full-access key của account Guard để không key nào deploy lại code khác được; đường đổi code duy nhất còn lại là đề xuất `FunctionCall` gọi `upgrade` của chính DAO (11.5.12). Script cài đặt làm bước này (có xác nhận). Nếu chưa khóa, README và Key Doctor phải nói rõ (rule `GUARD_NOT_LOCKED`, mục 5.3).
 
 #### 11.5.2 State
 
@@ -1424,7 +1424,7 @@ pub struct RequestRecord {
 | `pause()` | Guardian hoặc DAO | Có hiệu lực ngay |
 | `get_config`, `get_policy`, `get_whitelist`, `get_agents`, `get_window` (đã chi, còn lại, thời điểm reset), `get_request(request_id)`, `get_request_by_proposal(proposal_id)`, `list_requests(from, limit)`, `kd_guard_info` | View | Cho Guard MCP, Key Doctor, dashboard |
 
-`kd_guard_info()` trả `{ "standard": "kd_guard", "version": "1.0.0", "dao_id": "..." }`. Key Doctor dùng hàm này để nhận diện một thành viên DAO là Guard.
+`kd_guard_info()` trả `{ "standard": "kd_guard", "version": "1.1.0", "dao_id": "..." }`. Key Doctor dùng hàm này để nhận diện một thành viên DAO là Guard.
 
 #### 11.5.4 Thứ tự kiểm trong `request_transfer`
 
@@ -1513,18 +1513,25 @@ Whitelist tối đa 50, agents tối đa 10, guardians tối đa 5, `recent` t�
 
 #### 11.5.12 Nâng cấp Guard (ADR 0006)
 
-Guard tạo từ factory không có key, nên code chỉ đổi được qua **đề xuất `UpgradeRemote` của chính DAO**. Code Sputnik trên testnet có `upgrade_remote`, `store_blob`, `remove_blob`.
+Guard tạo từ factory không có key, nên code chỉ đổi được qua **đề xuất `FunctionCall` của chính DAO**, gọi `upgrade`. Guard tự kéo code về và chỉ nhận đúng hash DAO đã duyệt.
+
+Không dùng `UpgradeRemote`: đo trong sandbox (B-Q10), Sputnik đã cài chỉ giữ khoảng 10 Tgas sau khi gắn gas cho lời gọi từ xa, và copy wasm trên khoảng 150 KB thì hết gas. Guard nặng 252 KB. Test `installed_sputnik_cannot_send_a_guard_sized_wasm_through_upgrade_remote` giữ kết quả này.
 
 | Hàm | Ai gọi | Làm gì |
 |---|---|---|
-| `upgrade` (nhận wasm thô làm input) | **Chỉ `dao_id`** | Deploy code lên chính Guard, rồi gọi `migrate` trong cùng batch |
+| `upgrade(code_source, code_hash)` | **Chỉ `dao_id`** | Gọi `code_source.get_guard_code()` để lấy wasm thô |
+| `on_code(code_hash)` | `#[private]` | Kiểm sha256 của wasm bằng `code_hash` (sai thì `CODE_HASH_MISMATCH`, không lấy được thì `CODE_UNAVAILABLE`), rồi deploy và gọi `migrate` trong cùng batch |
 | `migrate` | `#[private]` | Đọc state cũ, ghi state mới; lỗi thì batch hoàn lại, code cũ giữ nguyên |
 
-Các bước của chủ: `store_blob` wasm vào DAO (kèm tiền cọc lưu trữ, khoảng 2,5 NEAR), đề xuất `UpgradeRemote { receiver_id: guard, method_name: "upgrade", hash }`, duyệt, rồi `remove_blob` lấy lại tiền cọc.
+Các bước của chủ: đề xuất `FunctionCall { receiver_id: guard, method_name: "upgrade", args: { code_source, code_hash }, gas: 150 Tgas }`, rồi duyệt. Hai chữ ký, không tốn tiền lưu trữ, ví không phải ký giao dịch 250 KB.
 
-- Dashboard chỉ đề nghị bản có hash nằm trong danh sách phát hành của repo, hiện hash cho chủ xem trước khi ký, và đọc lại `code_hash` của Guard sau khi chạy.
+- `code_source` không cần được tin: Guard chỉ tin `code_hash` mà DAO bỏ phiếu. Mỗi bản phát hành là một factory mới giữ code đó (`get_guard_code` trả byte thô của code factory đang giữ).
+- Đo trong sandbox: một lần nâng cấp đốt 61,5 Tgas (nguồn 23, `on_code` 13, deploy và `migrate` 18,9).
+- **Sputnik không gắn callback cho `FunctionCall`, nên đề xuất vẫn là `Approved` dù nâng cấp thất bại.** Trạng thái đề xuất không nói được nâng cấp đã xong. Dashboard phải đọc lại `code_hash` của Guard.
+
+- Dashboard chỉ đề nghị bản có hash nằm trong danh sách phát hành của repo, hiện hash cho chủ xem trước khi ký, đọc lại `code_hash` của Guard sau khi chạy, và báo thất bại nếu hash chưa đổi.
 - `kd_guard_info` trả thêm `version`. Dashboard dựa vào đó để biết tính năng nào dùng được.
-- Key Doctor giữ nguyên cảnh báo `code_upgrade_proposal` (`high`) cho mọi đề xuất `upgrade_remote`, và gửi `budget_owner_action` với `upgrade_guard`.
+- Key Doctor cảnh báo `code_upgrade_proposal` (`high`) cho mọi đề xuất `upgrade_remote` và mọi `FunctionCall` gọi method `upgrade`, và gửi `budget_owner_action` với `upgrade_guard`.
 - Rule `GUARD_NOT_LOCKED` không đổi: nó kiểm full-access key, và Guard vẫn không có key.
 
 ### 11.6 Agent: account, key, Guard MCP
@@ -1627,7 +1634,7 @@ Cùng contract, thêm:
 | A7 | **Không có luật "nới luật chờ 24 giờ"** (xem 11.10.6) |
 | A8 | Cùng code phục vụ DAO nhiều thành viên |
 | A9 | Kế hoạch mô tả bằng `PlanAction` (`transfer`, `call`, `swap`). Chiến lược mới dùng được action có sẵn thì chỉ thêm mẫu ở dashboard, không sửa contract. Một contract singleton cho mọi Budget bị loại (ADR 0006) |
-| A10 | Guard có hàm `upgrade`, chỉ DAO gọi được, qua đề xuất `UpgradeRemote`. Guard vẫn không có key; Budget đã tạo nhận tính năng mới mà không phải tạo lại (ADR 0006, mục 11.5.12) |
+| A10 | Guard có hàm `upgrade`, chỉ DAO gọi được, qua đề xuất `FunctionCall`; Guard chỉ nhận code đúng hash DAO đã duyệt. Guard vẫn không có key; Budget đã tạo nhận tính năng mới mà không phải tạo lại (ADR 0006, mục 11.5.12) |
 
 #### 11.10.2 Thành phần trên chain
 
@@ -1646,7 +1653,8 @@ Guard factory tạo Guard **không có full-access key** (khóa từ đầu; rul
 
 - `AgentInput` thêm `public_key` (không bắt buộc). `Guard.new` và `add_agent` nhận trường này. Có `public_key` thì `account_id` phải là account con trực tiếp của Guard, và Guard tạo account đó trong một batch: `create_account`, chuyển `AGENT_GAS_FUND`, gắn function-call key. Không có `public_key` thì giữ cách cũ (account agent ngoài, script Guard demo vẫn chạy).
 - **Function-call key do contract cố định:** `receiver_id` = chính Guard, `method_names` = `request_transfer`, `sync_request`. Không ai truyền hai giá trị này từ ngoài. Allowance không giới hạn: số dư account đã là trần, và không có full-access key để đổi allowance về sau.
-- `AGENT_GAS_FUND`: đề xuất 0,5 NEAR, chốt khi đo gas ở GĐ25. Hết gas thì chuyển NEAR thường vào account agent.
+- `AGENT_GAS_FUND`: 0,5 NEAR, đã đo ở GĐ25. Một request Auto bằng key agent tốn 1,33 mNEAR, Pending 0,75 mNEAR. Gắn 200 Tgas cần số dư từ khoảng 0,25 NEAR, nên quỹ đủ khoảng 180 request. Hết gas thì chuyển NEAR thường vào account agent.
+- Gas: mỗi agent có key tốn khoảng 9 Tgas trong `new`. Factory dành 120 Tgas cho `new`, nên `create` cần ít nhất 190 Tgas và dashboard gắn 220 Tgas (đủ cho 10 agent, đã đo trong sandbox).
 - Account agent **không có full-access key**, nên không đổi hay khôi phục key được. Mất file key hoặc lộ key: gỡ agent, thêm agent mới.
 - **Tên agent người dùng nhập là `label`** trong Guard, không phải tên account. Lý do: `name` 32 ký tự + đuôi Guard 28 ký tự = 60, chỉ còn 4 ký tự cho phần đầu (`a10.`) dưới trần 64. Tối đa 10 agent (11.5.10) nên `a<n>` luôn vừa.
 - `GAS_GUARD_NEW` (40 Tgas) phải đo lại vì `new` có thêm batch này.
@@ -1721,7 +1729,7 @@ File key của agent tải về máy sau khi ký 2 thành công (không hiện t
 | Pause agents | `guard.pause()` (chủ là guardian) | 1 |
 | Sửa luật, thêm / tắt / gỡ agent, tạo / tạm dừng / hủy kế hoạch | DAO: `add_proposal(FunctionCall tới Guard)`, đọc số thật, rồi `act_proposal` | 2 |
 | Enable USDC | DAO: đề xuất `storage_deposit` trên contract USDC (và `wrap.near` nếu dùng DCA), đọc số thật, rồi duyệt | 2 |
-| Nâng cấp Guard | DAO: `store_blob`, `add_proposal(UpgradeRemote)`, duyệt, `remove_blob` (11.5.12) | 3 đến 4 |
+| Nâng cấp Guard | DAO: `add_proposal(FunctionCall upgrade)`, duyệt (11.5.12) | 2 |
 
 **Không gộp `add_proposal` và `act_proposal` với số đoán trước (chốt 2026-11-06, B-Q7).** Guard **liên tục** tạo đề xuất trên cùng DAO (agent xin chi, keeper chạy kế hoạch mỗi 15 phút). Nếu đúng lúc chủ bấm Withdraw, agent vừa tạo khoản chờ số N, thì `act_proposal(N, VoteApprove)` sẽ **duyệt nhầm khoản vượt luật của agent**. Spec trước đó dựa vào tham số `proposal` để chặn việc này, nhưng code Sputnik `sputnik-v2.testnet` đang cài (hash `ZGdM2TFdQpcXrxPxvq25514EViyi9xBSboetDiB3Uiq`) **không kiểm tham số đó**: test sandbox `installed_sputnik_ignores_the_proposal_argument_of_act_proposal` duyệt được đề xuất với `proposal` sai.
 
@@ -2287,7 +2295,7 @@ Không có Guard thì bỏ cảnh 4, trả thời lượng cho "Bằng chứng" 
 | B-Q7 | **Đã chốt 2026-11-06:** code Sputnik testnet **không** kiểm tham số `proposal` (test sandbox). Không gộp với số đoán trước, tách hai giao dịch (11.10.5). Kiểm lại trên `sputnik-dao.near` trước khi ra mainnet | GĐ25 |
 | B-Q8 | **Đã chốt 2026-11-04:** tên Guard tự do (giữ factory và Path B như hiện tại), đuôi hiển thị cố định, chỉ sửa phần đầu, kiểm khi nhập và ngay trước ký 2 (mục 11.10.4). Cập nhật 2026-11-05: luật tên giữ nguyên, nhưng đuôi đổi sang factory `-v2` vì sửa code Guard (B-Q3, mục 11.10.2) | Đã đóng |
 | B-Q9 | **Đã chốt 2026-11-04:** tạm bỏ qua yield agent (ADR 0004, `docs/stories/epics/yield/`): không build trong bài thi. Chiến lược (mục 11.11) giữ nguyên theo GĐ29 đến GĐ31 | Đã đóng |
-| B-Q10 | `upgrade_remote` chạy với Guard không, đủ gas không (đo trong sandbox); từng ví ký được `store_blob` wasm khoảng 250 KB không (không được thì chủ dùng near-cli) | GĐ25, GĐ29 |
+| B-Q10 | **Đã trả lời 2026-11-06 (sandbox):** `upgrade_remote` hết gas với wasm trên khoảng 150 KB, Guard 252 KB không qua được. Đổi sang Guard tự kéo code theo hash DAO duyệt (11.5.12), nên không còn cần ví ký `store_blob` | GĐ25 |
 
 (Đã đóng: Q6, được chọn nhiều track; Q7, xác thực MCP bằng header Bearer.)
 

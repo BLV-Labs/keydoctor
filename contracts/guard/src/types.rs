@@ -1,7 +1,7 @@
 // Guard data types (docs/final-idea.md §11.5.2). Times exposed in JSON are `U64` (nanoseconds as strings) so
 // JS readers such as Key Doctor and the Guard MCP do not lose precision.
 use near_sdk::json_types::{U128, U64};
-use near_sdk::{near, AccountId};
+use near_sdk::{near, AccountId, PublicKey};
 
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq)]
@@ -86,6 +86,9 @@ pub struct RequestRecord {
 pub struct AgentInput {
     pub account_id: AccountId,
     pub label: String,
+    /// Set: the Guard creates `account_id`, which must be its direct subaccount, with this function-call key.
+    /// Unset: an agent account that already exists elsewhere.
+    pub public_key: Option<PublicKey>,
 }
 
 /// `new` input: one whitelisted receiver.
