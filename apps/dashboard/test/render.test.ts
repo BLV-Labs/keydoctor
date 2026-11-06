@@ -230,7 +230,7 @@ describe("pages", () => {
     const main = renderHome("", null, "mainnet").value;
     assert.match(main, /data-network="mainnet" aria-pressed="true"/);
     // No example names on mainnet: testnet demo names only, and no real mainnet accounts.
-    assert.doesNotMatch(main, /class="chips"/);
+    assert.doesNotMatch(main, /kdoncall/);
     assert.match(main, /placeholder="your-dao\.sputnik-dao\.near"/);
     const err = text(
       renderError("x.kd-demo.testnet", null, {
@@ -322,14 +322,20 @@ describe("proposal list (C7)", () => {
 describe("nav and the On Call / Agents pages", () => {
   const nav = (page: "check" | "oncall" | "agents" | "guard" | "budget") => renderLayout(html`<p>x</p>`, "testnet", page).value.match(/<nav[\s\S]*?<\/nav>/)![0];
 
-  it("has Key Check, On Call, Agents, Agent Guard and Agent Budget, marks only the current page, and no longer links out to t.me", () => {
-    for (const [page, label] of [["check", "Key Check"], ["oncall", "On Call"], ["agents", "Agents"], ["guard", "Agent Guard"], ["budget", "Agent Budget"]] as const) {
+  it("has Key Check and Agent Budget, marks only the current page, and no longer links out to t.me", () => {
+    for (const [page, label] of [["check", "Key Check"], ["budget", "Agent Budget"]] as const) {
       const n = nav(page);
-      assert.equal((n.match(/<a /g) ?? []).length, 5);
+      assert.equal((n.match(/<a /g) ?? []).length, 2);
       assert.equal((n.match(/aria-current="page"/g) ?? []).length, 1);
       assert.match(n, new RegExp(`aria-current="page">${label}<`));
       assert.ok(!n.includes("t.me"));
     }
+  });
+
+  it("keeps On Call, Agents and Agent Guard reachable from the footer of every page, since they left the nav", () => {
+    const layout = renderLayout(html`<p>x</p>`, "testnet", "check").value;
+    const footer = layout.match(/<footer[\s\S]*?<\/footer>/)![0];
+    for (const page of ["oncall", "agents", "guard"]) assert.ok(footer.includes(`page=${page}`), page);
   });
 
   it("?page= picks the page without a target, and ?target= wins", () => {
@@ -358,10 +364,6 @@ describe("nav and the On Call / Agents pages", () => {
     assert.ok(!none.includes("claude mcp add"));
   });
 
-  it("the home page links to both pages", () => {
-    const v = renderHome("", null).value;
-    assert.ok(v.includes('href="?page=oncall"') && v.includes('href="?page=agents"'));
-  });
 });
 
 describe("labels and key table wording", () => {

@@ -10,6 +10,8 @@ export interface BudgetProposal {
   description: string;
   kind: Record<string, unknown>;
   status: string;
+  /** When the proposal was added, nanoseconds since the epoch; null when the chain did not give it. */
+  submission_time: string | null;
 }
 
 export interface BudgetRequest {
@@ -22,6 +24,8 @@ export interface BudgetRequest {
   reasons: string[];
   proposal_id: number | null;
   status: string;
+  /** When the agent asked, nanoseconds since the epoch; null when the chain did not give it. */
+  created_at: string | null;
 }
 
 export interface BudgetLive {
@@ -44,6 +48,8 @@ const REQUEST_LIMIT = 10;
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
+const nanos = (v: unknown): string | null => (typeof v === "string" && /^\d+$/.test(v) ? v : null);
+
 export function parseProposal(raw: unknown): BudgetProposal | null {
   if (!isRecord(raw) || typeof raw.id !== "number" || !isRecord(raw.kind)) return null;
   return {
@@ -52,6 +58,7 @@ export function parseProposal(raw: unknown): BudgetProposal | null {
     description: typeof raw.description === "string" ? raw.description : "",
     kind: raw.kind,
     status: typeof raw.status === "string" ? raw.status : "",
+    submission_time: nanos(raw.submission_time),
   };
 }
 
@@ -68,6 +75,7 @@ export function parseRequest(raw: unknown): BudgetRequest | null {
     reasons: Array.isArray(raw.reasons) ? raw.reasons.filter((r): r is string => typeof r === "string") : [],
     proposal_id: typeof raw.proposal_id === "number" ? raw.proposal_id : null,
     status: str(raw.status),
+    created_at: nanos(raw.created_at),
   };
 }
 

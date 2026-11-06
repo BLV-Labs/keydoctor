@@ -123,8 +123,8 @@ describe("GĐ8 cleanup page", () => {
     assert.match(out.value, /data-wallet-bar/);
     const layout = renderLayout(out).value;
     assert.equal((layout.match(/data-action="open-wallet"/g) ?? []).length, 2);
-    assert.match(layout, /data-action="open-wallet" data-wallet-off>Connect Wallet<\/button>/);
-    assert.match(layout, /class="btn btn-danger" data-action="disconnect-wallet" data-wallet-on hidden>Disconnect<\/button>/);
+    assert.match(layout, /data-action="open-wallet" data-wallet-off>.*Connect wallet<\/span><\/button>/);
+    assert.match(layout, /class="wallet-menu" data-wallet-on hidden>[\s\S]*data-action="disconnect-wallet">Disconnect<\/button>/);
     assert.doesNotMatch(out.value, /Open Meteor Wallet<\/button>/);
     // Every listed key gets a View button, and the page carries the dialog they fill.
     assert.equal((out.value.match(/data-action="view-key"/g) ?? []).length, (out.value.match(/<li class="key-/g) ?? []).length);

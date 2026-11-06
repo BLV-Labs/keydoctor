@@ -2,7 +2,7 @@
 import { isKdError, listProposals, scanAccount, scanTarget, type KdError, type KdReport, type ListProposalsResult, type Network, type Rpc } from "key-doctor";
 import { revealClampToggles, toggleClamp } from "./clamp.ts";
 import { html, type Html } from "./html.ts";
-import { renderAgents, renderError, renderHome, renderLayout, renderOnCall, renderScanning } from "./pages.ts";
+import { renderAgents, renderAlertsDrawer, renderError, renderHome, renderLayout, renderOnCall, renderScanning } from "./pages.ts";
 import { buildDeletePlan, GUARD_TEXT, METEOR_INSTALL_URL, type DeletePlan } from "./cleanup.ts";
 import { renderCleanup } from "./cleanup-view.ts";
 import { PAGE_SIZE, pageOf, parsePaging, type Paging } from "./paging.ts";
@@ -28,7 +28,25 @@ import {
   type VoteAction,
 } from "./budget-flow.ts";
 import { budgetRpc, proposalLabel, readBalance, readBudget, readProposal, topUpBlocks, TOP_UP_TEXT, type BudgetLive } from "./budget-read.ts";
-import { BUDGET_FACTORY_NAME, describeKind, renderBudget, renderBudgetKey, renderBudgetLoading, renderBudgetNext, renderBudgetPanel, renderBudgetSetup, renderBudgetStart, type BudgetPanel } from "./budget-view.ts";
+import {
+  BALANCED_RULES,
+  balanceAfter,
+  BUDGET_FACTORY_NAME,
+  describeKind,
+  renderBudget,
+  renderBudgetActivity,
+  renderBudgetAgent,
+  renderBudgetApprove,
+  renderBudgetCreate,
+  renderBudgetKey,
+  renderBudgetLoading,
+  renderBudgetNext,
+  renderBudgetPanel,
+  renderBudgetSetup,
+  renderBudgetStart,
+  renderRecipients,
+  type BudgetPanel,
+} from "./budget-view.ts";
 import {
   addGuardRoleProposal,
   createGuardProposal,
@@ -41,6 +59,7 @@ import {
 } from "./guard-proposals.ts";
 import { readGuardDao, type GuardDao } from "./guard-read.ts";
 import { renderGuardCreate, renderGuardDao, renderGuardLoading, renderGuardPreview, renderGuardStart, renderGuardSubmitted, type GuardPreview } from "./guard-view.ts";
+import { avatar } from "./ui.ts";
 import { renderWatchDialog, renderWatchLinks } from "./watch.ts";
 import { isWalletId, walletLabel, type WalletId } from "./wallets.ts";
 import { connectedAccount, forgetConnected, lockedNotice, rememberConnected, viewerRole, walletBar, type Role } from "./session.ts";
@@ -171,7 +190,7 @@ function paintReport(report: KdReport, route: Route, paging: Paging, seq: number
 const currentNetwork = (): Network => parseRoute(location.search).network ?? lastReport?.chain.network ?? storedNetwork();
 
 /** The wallet Connect Wallet last connected and the accounts it holds; Revoke and Delete sign with it. */
-let connected: { walletId: WalletId; accounts: string[]; iconUrl?: string } | null = null;
+let connected: { walletId: WalletId; accounts: string[] } | null = null;
 /** Display state restored from a past visit; the wallet is asked again whenever something is signed. */
 let restoredFor: Network | null = null;
 
@@ -208,17 +227,8 @@ function syncWallet(): void {
       continue;
     }
     el.title = walletLabel(connected.walletId);
-    const name = document.createElement("span");
-    name.textContent = connected.accounts.join(", ") || "no account";
-    if (connected.iconUrl === undefined) {
-      el.replaceChildren(name);
-      continue;
-    }
-    const img = document.createElement("img");
-    img.src = connected.iconUrl;
-    img.alt = "";
-    img.width = img.height = 16;
-    el.replaceChildren(img, name);
+    const account = connected.accounts[0] ?? "";
+    el.innerHTML = html`${account === "" ? "" : avatar(account)}<span class="wallet-name">${connected.accounts.join(", ") || "no account"}</span>`.value;
   }
 }
 
@@ -283,7 +293,9 @@ async function renderBudgetPage(dao: string | null, focusMain: boolean, seq: num
       BUDGET_READ_FACTORY === ""
         ? "Reading a Budget needs the Guard factory set when this site is built (KD_GUARD_FACTORY). It is not set here."
         : `Budgets are read from ${BUDGET_READ_FACTORY} on ${network}.`;
-    paint(html`${renderBudgetStart(value, error, note)}${renderBudgetSetup(BUDGET_FACTORY !== "")}`, title, focusMain, network, "budget");
+    const open = renderBudgetStart(value, error, note);
+    const create = renderBudgetCreate(renderBudgetSetup(BUDGET_FACTORY !== ""));
+    paint(error === null ? html`${create}${open}` : html`${open}${create}`, title, focusMain, network, "budget");
   };
   if (dao === null || BUDGET_READ_FACTORY === "") {
     start(dao ?? "", null);
@@ -492,13 +504,119 @@ function pauseBudget(button: HTMLButtonElement): void {
     });
 }
 
-function openBudgetPanel(panel: BudgetPanel): void {
-  const box = document.getElementById("budget-action");
-  if (box === null || budgetState === null) return;
-  box.innerHTML = renderBudgetPanel(panel, budgetState).value;
-  box.scrollIntoView({ block: "start" });
-  const first = box.querySelector<HTMLElement>("input");
-  first?.focus();
+function openBudgetPanel(panel: BudgetPanel, trigger: HTMLElement): void {
+  if (budgetState === null) return;
+  showBudgetDrawer(renderBudgetPanel(panel, budgetState, null, budgetPanelTo()), trigger);
+  document.querySelector<HTMLElement>("#budget-panel-form input")?.focus();
+}
+
+/** Opens the Budget drawer with `content`. */
+function showBudgetDrawer(content: Html, trigger: HTMLElement): void {
+  const box = document.getElementById("budget-action") as HTMLDialogElement | null;
+  if (box === null) return;
+  box.innerHTML = content.value;
+  dialogTrigger = trigger;
+  if (!box.open) box.showModal();
+}
+
+/** Status lines live on the page, so the drawer closes before signing starts. */
+const closeBudgetDrawer = (): void => (document.getElementById("budget-action") as HTMLDialogElement | null)?.close();
+
+const budgetPanelTo = (): Record<string, string> => (connected?.accounts[0] === undefined ? {} : { to: connected.accounts[0] });
+
+function openBudgetApprove(button: HTMLElement): void {
+  const state = budgetState;
+  const proposal = state?.proposals?.find((p) => p.id === Number(button.dataset.id));
+  if (state === null || proposal === undefined) return;
+  showBudgetDrawer(renderBudgetApprove(proposal, state), button);
+}
+
+function openBudgetAgent(button: HTMLElement): void {
+  const state = budgetState;
+  const agent = state?.guard?.agents?.find((a) => a.account_id === button.dataset.agent);
+  if (state === null || agent === undefined) return;
+  showBudgetDrawer(renderBudgetAgent(agent, state), button);
+}
+
+/** Repaints Activity with one chip pressed. A summary tile also brings it into view. */
+function filterBudgetActivity(el: HTMLElement): void {
+  const box = document.getElementById("budget-activity");
+  const filter = el.dataset.filter;
+  if (box === null || budgetState === null || !(filter === "all" || filter === "waiting" || filter === "auto" || filter === "rejected")) return;
+  const fromTile = el.classList.contains("tile");
+  box.outerHTML = renderBudgetActivity(budgetState, filter).value;
+  const next = document.getElementById("budget-activity");
+  if (fromTile) next?.scrollIntoView({ block: "nearest" });
+  else next?.querySelector<HTMLElement>(`[data-filter="${filter}"]`)?.focus();
+}
+
+function syncBudgetAfter(): void {
+  const input = document.getElementById("bp-amount") as HTMLInputElement | null;
+  const after = document.getElementById("bp-after");
+  const panel = input?.form?.dataset.panel;
+  if (input === null || after === null || budgetState === null || !(panel === "topup" || panel === "withdraw")) return;
+  after.textContent = balanceAfter(budgetState, panel, input.value);
+}
+
+/** Resume is `unpause`, which only the DAO may call: a Guard change proposal, two signatures. */
+function resumeBudget(): void {
+  const guardId = budgetState?.guard?.guard_id;
+  if (guardId !== undefined) startTwoSignatures(guardChangeProposal(guardId, "unpause", {}));
+}
+
+/** Balanced resets the rule fields to its numbers; Custom shows them. */
+function chooseBudgetPreset(button: HTMLElement): void {
+  const form = button.closest("form");
+  const custom = button.dataset.preset === "custom";
+  if (form === null) return;
+  const preset = form.elements.namedItem("preset") as HTMLInputElement | null;
+  if (preset !== null) preset.value = custom ? "custom" : "balanced";
+  for (const b of form.querySelectorAll<HTMLElement>('[data-action="budget-preset"]')) b.setAttribute("aria-pressed", String(b === button));
+  const fields = document.getElementById("bs-custom");
+  if (fields !== null) fields.hidden = !custom;
+  if (custom) return;
+  for (const [name, value] of Object.entries(BALANCED_RULES)) {
+    const input = form.elements.namedItem(name) as HTMLInputElement | null;
+    if (input !== null) input.value = value;
+  }
+}
+
+/** Applies `change` to the recipient lines held in the form's hidden whitelist field and repaints the list. */
+function changeBudgetRecipients(change: (lines: string[]) => string[]): void {
+  const field = document.querySelector<HTMLTextAreaElement>('#budget-setup-form textarea[name="whitelist"]');
+  const list = document.getElementById("bs-recipients");
+  if (field === null || list === null) return;
+  field.value = change(field.value.split("\n").filter((l) => l.trim() !== "")).join("\n");
+  list.innerHTML = renderRecipients(field.value).value;
+}
+
+function addBudgetRecipient(): void {
+  const input = document.getElementById("bs-recipient") as HTMLInputElement | null;
+  const account = input?.value.trim() ?? "";
+  if (input === null || account === "") return;
+  changeBudgetRecipients((lines) => [...lines, account]);
+  input.value = "";
+  input.focus();
+}
+
+/** Says whether the typed Budget name is free. Anything but a clear answer from the chain says nothing. */
+async function checkBudgetName(input: HTMLInputElement): Promise<void> {
+  const message = document.getElementById("b-name-msg");
+  const name = input.value.trim();
+  if (message === null) return;
+  message.textContent = "";
+  message.className = "small";
+  if (!/^[a-z0-9]+([-_][a-z0-9]+)*$/.test(name)) return;
+  const rpc = budgetRpc(budgetNetwork());
+  try {
+    const { height } = await rpc.block();
+    const taken = await accountExists(rpc, `${name}.${SPUTNIK_FACTORY}`, height);
+    if (input.value.trim() !== name) return;
+    message.textContent = taken ? "This name is taken" : "Name is free";
+    message.classList.add(taken ? "text-high" : "text-ok");
+  } catch {
+    // Unknown stays unsaid; the check before signature 1 still runs.
+  }
 }
 
 const isBudgetPanel = (v: unknown): v is BudgetPanel => v === "topup" || v === "withdraw" || v === "rules" || v === "add-agent";
@@ -511,18 +629,20 @@ function submitBudgetPanel(form: HTMLFormElement): void {
   if (state === null || state.guard === null || status === null || !isBudgetPanel(panel)) return;
   const values = Object.fromEntries([...new FormData(form).entries()].map(([k, v]) => [k, String(v)]));
   const reject = (error: string) => {
-    form.outerHTML = renderBudgetPanel(panel, state, error, values).value;
+    form.outerHTML = renderBudgetPanel(panel, state, error, { ...values, ...budgetPanelTo() }).value;
     document.querySelector<HTMLElement>("#budget-panel-form input")?.focus();
   };
   const guardId = state.guard.guard_id;
   if (panel === "rules" || panel === "add-agent") {
     const result = panel === "rules" ? rulesProposal(guardId, values) : addAgentProposal(guardId, values, (state.guard.agents ?? []).map((a) => a.account_id));
     if (!result.ok) return reject(result.error);
+    closeBudgetDrawer();
     startTwoSignatures(result.value);
     return;
   }
   const amount = amountFromForm(values.amount ?? "", panel === "withdraw" ? state.withdrawable : null);
   if (!amount.ok) return reject(amount.error);
+  closeBudgetDrawer();
   if (panel === "withdraw") {
     if (connected === null) return statusWithButton(status, "Connect the wallet of a DAO council member first.", "open-wallet", "Connect Wallet");
     const to = connected.accounts.find((a) => missingProposePermissions(state.dao.policy, a, ["transfer"]).length === 0);
@@ -695,7 +815,7 @@ async function signBudgetCreate(button: HTMLButtonElement): Promise<void> {
     }
     await sleep(1500);
   }
-  status.textContent = `Signature 1 was sent, but ${plan.dao} cannot be read yet. Press Check my rules to continue from where it stopped.`;
+  status.textContent = `Signature 1 was sent, but ${plan.dao} cannot be read yet. Press Create Agent Budget to continue from where it stopped.`;
 }
 
 /** Sign 2: the Guard, the agent and the role. Only the chain can say it worked, because Sputnik shows a failed call as Approved. */
@@ -993,6 +1113,12 @@ function navigate(href: string): void {
   void render(true);
 }
 
+/** What the bell's /watch line names: the report or Budget on screen, else null. */
+function alertsTarget(): string | null {
+  const route = parseRoute(location.search);
+  return route.target ?? route.dao;
+}
+
 function closeDialog(dialog: HTMLDialogElement): void {
   dialog.close();
 }
@@ -1106,15 +1232,6 @@ function connectWallet(status: HTMLElement, walletId: WalletId): void {
       status.textContent =
         target === undefined || accounts.includes(target) ? "" : `${walletLabel(walletId)} holds ${accounts.join(", ") || "no account"}, not ${target}. Revoke and Delete stay off.`;
       syncWallet();
-      // The icon the wallet's own SDK module declares; the chip shows the name alone if it cannot be read.
-      void import("./wallet.ts")
-        .then((w) => w.walletMetadata(currentNetwork()))
-        .then((meta) => {
-          if (connected?.walletId !== walletId) return;
-          connected.iconUrl = meta[walletId]?.iconUrl;
-          syncWallet();
-        })
-        .catch(() => {});
     })
     .catch((e: unknown) => {
       const msg = e instanceof Error ? e.message : "";
@@ -1218,15 +1335,41 @@ root.addEventListener("click", (event) => {
       previewGuardRetire(el.dataset.guard ?? "");
       break;
     case "budget-open":
-      if (isBudgetPanel(el.dataset.panel)) openBudgetPanel(el.dataset.panel);
+      if (isBudgetPanel(el.dataset.panel)) openBudgetPanel(el.dataset.panel, el);
       break;
-    case "budget-close":
-      document.getElementById("budget-action")?.replaceChildren();
+    case "budget-approve":
+      openBudgetApprove(el);
       break;
+    case "budget-agent-open":
+      openBudgetAgent(el);
+      break;
+    case "budget-filter":
+      filterBudgetActivity(el);
+      break;
+    case "budget-resume":
+      resumeBudget();
+      break;
+    case "budget-preset":
+      chooseBudgetPreset(el);
+      break;
+    case "budget-recipient-add":
+      addBudgetRecipient();
+      break;
+    case "budget-recipient-remove":
+      changeBudgetRecipients((lines) => lines.filter((_, i) => i !== Number(el.dataset.line)));
+      break;
+    case "budget-full": {
+      const input = document.getElementById("bp-amount") as HTMLInputElement | null;
+      if (input !== null) input.value = el.dataset.amount ?? "";
+      syncBudgetAfter();
+      break;
+    }
     case "budget-act":
+      closeBudgetDrawer();
       actOnPending(el as HTMLButtonElement);
       break;
     case "budget-agent":
+      closeBudgetDrawer();
       changeBudgetAgent(el as HTMLButtonElement);
       break;
     case "budget-sign2":
@@ -1244,6 +1387,14 @@ root.addEventListener("click", (event) => {
     case "budget-pause":
       pauseBudget(el as HTMLButtonElement);
       break;
+    case "alerts-open": {
+      const drawer = document.getElementById("alerts-drawer") as HTMLDialogElement | null;
+      if (drawer === null) break;
+      drawer.innerHTML = renderAlertsDrawer(alertsTarget()).value;
+      dialogTrigger = el;
+      drawer.showModal();
+      break;
+    }
     case "theme":
       setTheme(currentTheme() === "dark" ? "light" : "dark", true);
       break;
@@ -1307,6 +1458,9 @@ root.addEventListener("click", (event) => {
 root.addEventListener("click", (event) => {
   const t = event.target;
   if (t instanceof HTMLDialogElement && t.open) closeDialog(t);
+  // The account menu is a <details>: it closes on any click outside it.
+  const menu = root.querySelector<HTMLDetailsElement>(".wallet-menu[open]");
+  if (menu !== null && !(t instanceof Node && menu.contains(t))) menu.open = false;
 });
 root.addEventListener(
   "close",
@@ -1316,6 +1470,29 @@ root.addEventListener(
   },
   true,
 );
+
+root.addEventListener("input", (event) => {
+  const el = event.target as HTMLElement;
+  if (el.id === "bp-amount") syncBudgetAfter();
+  if (el.id === "approve-check") {
+    const input = el as HTMLInputElement;
+    const confirm = input.closest("dialog")?.querySelector<HTMLButtonElement>('[data-vote="VoteApprove"]');
+    if (confirm) confirm.disabled = input.value.trim() !== input.dataset.expect;
+  }
+});
+
+root.addEventListener("change", (event) => {
+  const el = event.target as HTMLElement;
+  if (el.id === "bs-name") void checkBudgetName(el as HTMLInputElement);
+});
+
+root.addEventListener("keydown", (event) => {
+  // Enter in the recipient box adds the line instead of submitting the whole form.
+  if (event.key === "Enter" && (event.target as HTMLElement).id === "bs-recipient") {
+    event.preventDefault();
+    addBudgetRecipient();
+  }
+});
 
 root.addEventListener("submit", (event) => {
   const form = event.target as HTMLFormElement;

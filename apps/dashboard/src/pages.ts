@@ -4,42 +4,71 @@ import { icon } from "./icons.ts";
 import { walletDialog } from "./cleanup-view.ts";
 import { breadcrumb, walletControls } from "./report.ts";
 import { BOT_URL, BOT_USERNAME, homeHref, pageHref, routeHref, type Page } from "./route.ts";
-import { alertLines } from "./watch.ts";
+import { alertLines, watchCommand } from "./watch.ts";
 
 export const EXAMPLE_DAO = "kdoncall.sputnik-v2.testnet";
 export const EXAMPLE_ACCOUNT = "kdoncall-p.testnet";
 
-const NAV: ReadonlyArray<readonly [Page, string]> = [["check", "Key Check"], ["oncall", "On Call"], ["agents", "Agents"], ["guard", "Agent Guard"], ["budget", "Agent Budget"]];
+const NAV: ReadonlyArray<readonly [Page, string]> = [["check", "Key Check"], ["budget", "Agent Budget"]];
+/** Pages the header does not list stay one click away in the footer. */
+const FOOTER_NAV: ReadonlyArray<readonly [Page, string]> = [["oncall", "On Call"], ["agents", "For AI agents (MCP)"], ["guard", "Agent Guard"]];
 
 export function renderLayout(content: Html, network: Network = "testnet", page: Page = "check"): Html {
-  const nav = NAV.map(
-    ([p, label]) => html`<a href="${pageHref(p, network)}" data-nav${p === page ? html` aria-current="page"` : ""}>${label}</a>`,
-  );
+  const link = ([p, label]: readonly [Page, string]) =>
+    html`<a href="${pageHref(p, network)}" data-nav${p === page ? html` aria-current="page"` : ""}>${label}</a>`;
   return html`<a class="skip" href="#main">Skip to content</a>
     <header class="site-header">
       <div class="container header-inner">
         <a href="${pageHref("check", network)}" data-nav class="brand">${icon.logo()}<span>Key Doctor</span></a>
         <nav aria-label="Main" class="main-nav">
-          ${nav}
+          ${NAV.map(link)}
         </nav>
-        <button type="button" class="icon-btn theme-toggle" data-action="theme" aria-label="Dark theme" aria-pressed="false">
-          <span class="theme-moon">${icon.moon()}</span><span class="theme-sun">${icon.sun()}</span>
-        </button>
-        ${walletControls()}
+        <div class="header-tools">
+          <button type="button" class="icon-btn" data-action="alerts-open" aria-label="Alerts">${icon.bellNav()}</button>
+          <button type="button" class="icon-btn theme-toggle" data-action="theme" aria-label="Dark theme" aria-pressed="false">
+            <span class="theme-moon">${icon.moon()}</span><span class="theme-sun">${icon.sun()}</span>
+          </button>
+          ${walletControls()}
+        </div>
       </div>
     </header>
     <main id="main" tabindex="-1" class="container page">${content}</main>
     <footer class="site-footer">
       <div class="container footer-inner">
-        <span>Reads only public data through NEAR RPC. Never signs transactions, never holds keys.</span>
+        <span>${network === "testnet" ? "Testnet. Contracts are unaudited." : "Mainnet. Your wallet signs, never Key Doctor."}</span>
+        <nav aria-label="More pages" class="footer-nav">${FOOTER_NAV.map(link)}</nav>
         <span>MIT licensed · built at NEAR HACKATHON</span>
       </div>
     </footer>
+    <dialog id="alerts-drawer" class="drawer" aria-labelledby="alerts-title"></dialog>
     ${walletDialog()}`;
 }
 
-function chip(kind: string, target: string): Html {
-  return html`<a class="chip" href="${routeHref(target)}" data-nav><strong>${kind}</strong><span class="mono">${target}</span></a>`;
+/** The bell's drawer. The dashboard never writes subscriptions, so it only shows how to subscribe in the bot. */
+export function renderAlertsDrawer(target: string | null): Html {
+  return html`<div class="drawer-head">
+      <div class="drawer-title"><h2 id="alerts-title" class="drawer-h">Alerts</h2><p class="small muted">Key Doctor stays on call in Telegram.</p></div>
+      <button type="button" class="icon-btn" data-action="close-dialog" aria-label="Close">${icon.close()}</button>
+    </div>
+    <div class="drawer-body">
+      <ol class="plain drawer-steps">
+        <li><span class="step-dot">1</span><div class="stack-xs"><strong>Open the bot</strong><p class="small muted"><span class="mono">@${BOT_USERNAME}</span> on Telegram.</p></div></li>
+        <li><span class="step-dot">2</span><div class="stack-xs grow-min"><strong>Send it what to watch</strong>${copyRow(watchCommand(target ?? "<name>"))}</div></li>
+        <li><span class="step-dot">3</span><div class="stack-xs"><strong>Council? Add the bot to your group</strong><p class="small muted">Everyone in the group sees the same alert.</p></div></li>
+      </ol>
+      <div class="stack-xs">
+        <h3 class="drawer-h3">What you will get</h3>
+        <ul class="list small">
+          <li>Risky proposals, checked every 15 minutes</li>
+          <li>Key changes, once a day</li>
+        </ul>
+      </div>
+    </div>
+    <div class="drawer-foot"><a class="btn btn-primary" href="${BOT_URL}" target="_blank" rel="noopener">${icon.send()}Open Telegram</a></div>`;
+}
+
+function tryLink(target: string): Html {
+  return html`<a class="btn btn-ghost mono" href="${routeHref(target)}" data-nav>${target}</a>`;
 }
 
 function networkSwitch(network: Network): Html {
@@ -48,22 +77,22 @@ function networkSwitch(network: Network): Html {
   return html`<div class="segmented" role="group" aria-label="Network">${seg("testnet", "Testnet")}${seg("mainnet", "Mainnet")}</div>`;
 }
 
-/** Example chips use testnet names only; on mainnet the user enters their own account (no real names in the UI). */
+/** Examples use testnet names only; on mainnet the user enters their own account (no real names in the UI). */
 function examples(network: Network): Html {
   return network === "testnet"
-    ? html`<div class="chips"><span class="small muted">Try:</span>${chip("Personal", EXAMPLE_ACCOUNT)}${chip("DAO council", EXAMPLE_DAO)}</div>`
+    ? html`<div class="home-try small muted"><span>Try</span>${tryLink(EXAMPLE_DAO)}${tryLink(EXAMPLE_ACCOUNT)}</div>`
     : html`<p class="small muted">Mainnet scans read live data. Enter your own account, or your DAO's <span class="mono">*.sputnik-dao.near</span> name.</p>`;
 }
 
 export function renderHome(value: string, error: string | null, network: Network = "testnet"): Html {
   const suffix = network === "mainnet" ? ".near" : ".testnet";
-  return html`<section class="hero stack-lg">
-      <div class="stack">
+  return html`<section class="hero stack">
+      <div class="stack-sm">
         <p class="eyebrow">Key health for NEAR accounts and DAO councils</p>
         <h1 class="display">Key Doctor checks your keys, and stays on call while you sleep.</h1>
         <p class="lead">Enter your own NEAR account, or a Sputnik DAO to check its whole council. Key Doctor reads the public keys on chain, scores the risk with fixed rules, and explains each key. No sign-in needed to check. Connecting a wallet is only for removing your own keys. Key Doctor never holds anyone's keys.</p>
       </div>
-      <form id="check-form" class="card pad stack-sm" novalidate>
+      <form id="check-form" class="stack-sm" novalidate>
         <div class="form-head">
           <label for="target" class="label">NEAR account or DAO</label>
           ${networkSwitch(network)}
@@ -73,7 +102,7 @@ export function renderHome(value: string, error: string | null, network: Network
             placeholder="${network === "mainnet" ? "your-dao.sputnik-dao.near" : EXAMPLE_DAO}"
             autocomplete="off" autocapitalize="none" spellcheck="false" required
             aria-describedby="target-hint${error ? " target-error" : ""}"${error ? html` aria-invalid="true"` : ""}>
-          <button type="submit" class="btn btn-primary btn-lg">${icon.search()}Check</button>
+          <button type="submit" class="btn btn-primary">${icon.search()}Check</button>
         </div>
         ${error ? html`<p id="target-error" class="field-error" role="alert">${error}</p>` : ""}
         <p id="target-hint" class="small muted">Checking on <strong>${network}</strong>. A name without a suffix gets <span class="mono">${suffix}</span>; a <span class="mono">.near</span> or <span class="mono">.testnet</span> suffix you type always wins.</p>
@@ -81,49 +110,13 @@ export function renderHome(value: string, error: string | null, network: Network
       </form>
     </section>
 
-    <section aria-labelledby="who" class="stack">
-      <div class="stack-xs">
-        <h2 id="who" class="h2">One account, or a whole council</h2>
-        <p class="muted">A council member is an ordinary NEAR account that sits in a DAO's council. Every account gets the same checks; a DAO scan simply checks all its council accounts at once.</p>
-      </div>
+    <section aria-labelledby="who" class="stack-sm">
+      <h2 id="who" class="h2">One account, or a whole council</h2>
       <div class="grid-2">
-        <div class="card pad stack-sm">
-          <div class="icon-title">${icon.user()}<h3 class="h3">Any NEAR account</h3></div>
-          <p class="small muted">Yours, or a council member's.</p>
-          <ul class="list">
-            <li>See every key on the account, with the reason each one matters.</li>
-            <li>Find unused, old or too-powerful keys before someone else does.</li>
-            <li>See whether the account is ready for post-quantum ML-DSA keys.</li>
-            <li>A red alert when a full-access key was added in the last 48 hours.</li>
-          </ul>
-          <a href="${routeHref(EXAMPLE_ACCOUNT)}" data-nav class="link-strong">Check an account →</a>
-        </div>
-        <div class="card pad stack-sm">
-          <div class="icon-title">${icon.users()}<h3 class="h3">A whole DAO council</h3></div>
-          <p class="small muted">Everything on the left for every council account, plus:</p>
-          <ul class="list">
-            <li>Check all council accounts in one scan, sorted by risk.</li>
-            <li>See the voting rules: who approves transfers and how many votes it takes.</li>
-            <li>Spot an admin role or a council so small that one account decides.</li>
-          </ul>
-          <a href="${routeHref(EXAMPLE_DAO)}" data-nav class="link-strong">Check a DAO →</a>
-        </div>
-      </div>
-    </section>
-
-    <section aria-labelledby="how" class="stack">
-      <h2 id="how" class="h2">What Key Doctor does</h2>
-      <div class="grid-3">
-        <div class="card pad stack-sm">${icon.key()}<h3 class="h3">Check keys</h3>
-          <p class="muted">Reads every access key of an account, or of each council member, at one block height, and scores the risk with fixed rules.</p></div>
-        <div class="card pad stack-sm">${icon.list()}<h3 class="h3">Explain each issue</h3>
-          <p class="muted">Each issue comes with what it means and how to fix it. The same text appears in the Telegram bot.</p></div>
-        <div class="card pad stack-sm">${icon.bellLarge()}<h3 class="h3">On Call</h3>
-          <p class="muted">Subscribe in Telegram with <span class="mono">/watch</span> to get key-change and DAO proposal warnings from the Key Doctor bot.</p>
-          <a href="${pageHref("oncall")}" data-nav class="link-strong">How On Call works →</a></div>
-        <div class="card pad stack-sm">${icon.send()}<h3 class="h3">Use from your AI agent</h3>
-          <p class="muted">Connect Claude Code or Codex to the Key Doctor MCP server. Fixed rules make every verdict, no AI.</p>
-          <a href="${pageHref("agents")}" data-nav class="link-strong">Connect an agent →</a></div>
+        <div class="card pad stack-xs"><h3 class="h3">Any NEAR account</h3>
+          <p class="small muted">See every access key, how old it is and what it can do. Connect your wallet to remove the ones you no longer need.</p></div>
+        <div class="card pad stack-xs"><h3 class="h3">A whole DAO council</h3>
+          <p class="small muted">One report for every member, plus alerts in Telegram when a risky proposal or a new key shows up.</p></div>
       </div>
     </section>`;
 }

@@ -209,12 +209,14 @@ function newKeyAlert(member: Member, report: KdReport, inCouncil: boolean): Html
   </section>`;
 }
 
-/** Connect Wallet until a wallet is connected; then its name and Disconnect. app.ts flips the `hidden` halves. */
+/** Connect wallet until a wallet is connected; then an account chip whose menu holds Disconnect. app.ts flips `hidden`. */
 export function walletControls(): Html {
-  return html`<div class="actions wallet-ctl" data-wallet-ctl>
-    <button type="button" class="btn btn-tint" data-action="open-wallet" data-wallet-off>Connect Wallet</button>
-    <span class="pill pill-sm pill-ok" data-wallet-on data-wallet-name hidden></span>
-    <button type="button" class="btn btn-danger" data-action="disconnect-wallet" data-wallet-on hidden>Disconnect</button>
+  return html`<div class="wallet-ctl" data-wallet-ctl>
+    <button type="button" class="btn btn-secondary" data-action="open-wallet" data-wallet-off>${icon.wallet()}<span class="wallet-text">Connect wallet</span></button>
+    <details class="wallet-menu" data-wallet-on hidden>
+      <summary class="btn btn-secondary wallet-chip" data-wallet-name></summary>
+      <div class="wallet-pop"><button type="button" class="btn btn-danger" data-action="disconnect-wallet">Disconnect</button></div>
+    </details>
     <span class="small muted" id="wallet-status" role="status"></span>
   </div>`;
 }

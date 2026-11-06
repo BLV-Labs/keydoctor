@@ -34,7 +34,7 @@ export function renderGuardStart(dao: string, error: string | null, factory: str
       <div class="input-row">
         <input id="guard-dao" name="dao" type="text" class="input mono" value="${dao}" placeholder="${EXAMPLE_GUARD_DAO}"
           autocomplete="off" autocapitalize="none" spellcheck="false" required${error ? html` aria-invalid="true" aria-describedby="guard-dao-error"` : ""}>
-        <button type="submit" class="btn btn-primary btn-lg">Open</button>
+        <button type="submit" class="btn btn-primary">Open</button>
       </div>
       ${error ? html`<p id="guard-dao-error" class="field-error" role="alert">${error}</p>` : ""}
       <p class="small muted">Factory <span class="mono">${factory}</span>. Guards are created on its network only.</p>
