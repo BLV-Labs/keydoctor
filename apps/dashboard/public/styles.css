@@ -293,3 +293,18 @@ li:last-child > .member-row { border-bottom: 0; }
 @media (pointer: coarse) {
   .key-table .btn, .key-list .btn { min-height: var(--kd-touch); padding: 0 14px; font-size: var(--kd-fs-base); }
 }
+
+/* Agent Budget page. Buttons carry their signature count; rows stack on phones. */
+.plain-list { list-style: none; margin: 0; padding: 0; }
+.budget-top { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
+.budget-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 0; border-top: 1px solid var(--kd-border); }
+.budget-row:first-child { border-top: 0; padding-top: 0; }
+.budget-row .actions { margin-left: auto; }
+.btn .sig { font-size: var(--kd-fs-sm); font-weight: 500; opacity: 0.85; margin-left: 6px; }
+.wallet-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; width: 100%; }
+.wallet-line [hidden] { display: none; }
+.card-head .btn, .budget-row .btn, .budget-top .btn { min-height: var(--kd-touch); }
+@media (max-width: 560px) {
+  .budget-row .actions { margin-left: 0; width: 100%; }
+  .budget-row .actions .btn, .budget-top .actions .btn { flex: 1 1 100%; }
+}
