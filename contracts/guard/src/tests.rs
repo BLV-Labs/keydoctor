@@ -997,3 +997,93 @@ fn the_approved_code_is_deployed_and_migrated_in_one_receipt() {
         "{actions:?}"
     );
 }
+
+// ---- spend per agent (§4.11 `BudgetInfo.agents[].spent_24h`): the owner must see which agent spent the daily limit.
+
+const AGENT_2: &str = "refund-bot.testnet";
+
+fn setup_two_agents() -> Guard {
+    env_as(DAO, T0);
+    let agents = vec![agent_input(AGENT), agent_input(AGENT_2)];
+    let mut g = Guard::new(id(DAO), limits(), agents, vec![listed(VENDOR, None)], vec![]);
+    env_as(GUARD, T0);
+    g.on_policy_refreshed(Ok(DaoPolicyView { proposal_bond: U128(BOND), proposal_period: U64(PERIOD) }));
+    g
+}
+
+fn agent_spent(g: &Guard, account: &str) -> u128 {
+    let agents = g.get_agents();
+    let a = agents.iter().find(|a| a["account_id"] == account).unwrap();
+    a["spent_24h"].as_str().unwrap().parse().unwrap()
+}
+
+#[test]
+fn each_agent_sees_only_its_own_auto_spend() {
+    // The daily limit is shared, so without this the owner cannot tell which agent used it up.
+    let mut g = setup_two_agents();
+    auto_approved(&mut g, T0 + 1, "req-0001", 3 * NEAR, 1);
+    auto_approved(&mut g, T0 + 2, "req-0002", NEAR, 2);
+    env_as(AGENT_2, T0 + 3);
+    let _ = g.request_transfer("req-0003".into(), id(VENDOR), U128(2 * NEAR), None);
+    assert_eq!((agent_spent(&g, AGENT), agent_spent(&g, AGENT_2)), (4 * NEAR, 2 * NEAR));
+    assert_eq!(spent(&g), 6 * NEAR, "the agents' parts add up to the Guard's total");
+}
+
+#[test]
+fn a_request_the_council_decides_is_not_agent_spend() {
+    // It does not count toward the Guard's total either: the agent's part must not exceed the whole.
+    let mut g = setup();
+    ask(&mut g, T0 + 1, "req-0001", STRANGER, NEAR);
+    added(&mut g, T0 + 1, "req-0001", Ok(1));
+    synced(&mut g, T0 + 2, "req-0001", "Approved", T0 + 1);
+    assert_eq!(agent_spent(&g, AGENT), 0);
+}
+
+#[test]
+fn a_payment_that_failed_leaves_the_agents_spend() {
+    // The refund that gives the limit back must also clear the agent, or the two totals drift apart.
+    let mut g = setup();
+    ask(&mut g, T0 + 1, "req-0001", VENDOR, NEAR);
+    added(&mut g, T0 + 1, "req-0001", Err(PromiseError::Failed));
+    assert_eq!(agent_spent(&g, AGENT), 0, "add_proposal failed");
+
+    auto_approved(&mut g, T0 + 2, "req-0002", 2 * NEAR, 2);
+    auto_approved(&mut g, T0 + 3, "req-0003", 3 * NEAR, 3);
+    synced(&mut g, T0 + 4, "req-0002", "Failed", T0 + 2);
+    assert_eq!(agent_spent(&g, AGENT), 3 * NEAR, "the transfer failed");
+    assert_eq!(spent(&g), 3 * NEAR);
+}
+
+#[test]
+fn agent_spend_resets_with_the_window() {
+    // No request runs at the reset, so the view must not show yesterday's spend as today's.
+    let mut g = setup();
+    auto_approved(&mut g, T0 + 1, "req-0001", 3 * NEAR, 1);
+    env_as(STRANGER, T0 + policy::DAY_NS);
+    assert_eq!(agent_spent(&g, AGENT), 0, "the view reads a past window as reset");
+
+    auto_approved(&mut g, T0 + policy::DAY_NS, "req-0002", NEAR, 2);
+    assert_eq!(agent_spent(&g, AGENT), NEAR, "the first request of a new window does not add to the old amount");
+}
+
+#[test]
+fn a_late_failure_does_not_touch_the_next_windows_agent_spend() {
+    // Same rule as `no_refund_into_a_later_window`: yesterday's payment is not part of today's amount.
+    let mut g = setup();
+    auto_approved(&mut g, T0 + 1, "req-0001", 3 * NEAR, 1);
+    auto_approved(&mut g, T0 + policy::DAY_NS, "req-0002", 2 * NEAR, 2);
+    synced(&mut g, T0 + policy::DAY_NS + 1, "req-0001", "Failed", T0 + 1);
+    assert_eq!(agent_spent(&g, AGENT), 2 * NEAR);
+}
+
+#[test]
+fn removing_an_agent_keeps_its_spend_in_the_guards_total() {
+    // Removing and re-adding an agent must not reset the limit, and its late failure must still refund the Guard.
+    let mut g = setup();
+    auto_approved(&mut g, T0 + 1, "req-0001", 3 * NEAR, 1);
+    env_as(DAO, T0 + 2);
+    g.remove_agent(id(AGENT));
+    assert_eq!(spent(&g), 3 * NEAR);
+    synced(&mut g, T0 + 3, "req-0001", "Failed", T0 + 1);
+    assert_eq!(spent(&g), 0);
+}

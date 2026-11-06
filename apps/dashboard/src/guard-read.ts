@@ -14,7 +14,8 @@ export interface GuardLive {
   policy: { max_per_tx: string; max_per_day: string; max_pending_per_agent: number; min_reserve: string } | null;
   /** `resets_at` is ISO 8601 UTC; the contract's `get_window` returns nanoseconds. */
   window: { spent_in_window: string; remaining: string; resets_at: string } | null;
-  agents: { account_id: string; label: string; enabled: boolean; pending: number }[] | null;
+  /** `spent_24h` is missing on a Guard from the first factory, whose code cannot change. */
+  agents: { account_id: string; label: string; enabled: boolean; pending: number; spent_24h?: string }[] | null;
 }
 
 export interface GuardDao {

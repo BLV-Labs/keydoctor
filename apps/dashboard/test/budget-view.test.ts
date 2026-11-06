@@ -82,6 +82,16 @@ describe("renderBudget", () => {
     assert.match(agent, /Turn off agent <span class="sig">2 signatures</);
     assert.doesNotMatch(page, /One signature/i);
   });
+  it("shows what each agent spent, and leaves it out for a Guard that cannot report it", () => {
+    const agent = { account_id: "bot.testnet", label: "ops", enabled: true, pending: 1 };
+    const b = live();
+    const withSpend = { ...agent, spent_24h: "1500000000000000000000000" };
+    assert.match(renderBudget({ ...b, guard: { ...b.guard!, agents: [withSpend] } }, "testnet").value, /1 waiting · 1\.5 NEAR in last 24h/);
+    assert.match(renderBudgetAgent(withSpend, b).value, /1 waiting · 1\.5 NEAR in last 24h/);
+    const old = renderBudgetAgent(agent, b).value;
+    assert.match(old, /1 waiting/);
+    assert.doesNotMatch(old, /in last 24h/, "an unknown amount must not read as spent");
+  });
   it("carries no mock names and labels the unbuilt features", () => {
     assert.doesNotMatch(page, /Research bot|Team payouts/);
     assert.match(page, /Not available yet/);

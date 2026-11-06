@@ -25,6 +25,9 @@ pub struct AgentInfo {
     pub creating: bool,
     /// Requests whose proposal still waits on the DAO (statuses `Submitted` and `Pending`).
     pub pending: u32,
+    /// This agent's share of `spent_in_window`, valid only while `spent_window` is the Guard's current window.
+    pub spent: U128,
+    pub spent_window: U64,
 }
 
 #[near(serializers = [borsh, json])]

@@ -115,7 +115,7 @@ impl Guard {
             if let Some(key) = a.public_key {
                 create_agent_account(&a.account_id, key).detach();
             }
-            guard.agents.insert(a.account_id, AgentInfo { label: a.label, enabled: true, creating: false, pending: 0 });
+            guard.agents.insert(a.account_id, AgentInfo { label: a.label, enabled: true, creating: false, pending: 0, spent: U128(0), spent_window: U64(0) });
         }
         for w in whitelist {
             assert_label(&w.label);
@@ -158,10 +158,15 @@ impl Guard {
         let (decision, reasons) =
             policy::decide(&self.policy, self.whitelist.get(&receiver_id), self.spent_in_window, amount.0);
         let counted = decision == Decision::Auto;
+        let window = self.window_start;
+        let a = self.agents.get_mut(&agent).unwrap();
+        a.pending += 1;
         if counted {
+            let so_far = if a.spent_window.0 == window { a.spent.0 } else { 0 };
+            a.spent = U128(so_far.saturating_add(amount.0));
+            a.spent_window = U64(window);
             self.spent_in_window = self.spent_in_window.saturating_add(amount.0);
         }
-        self.agents.get_mut(&agent).unwrap().pending += 1;
 
         let memo = policy::clean_memo(memo.as_deref().unwrap_or(""));
         let description = policy::description(&request_id, agent.as_str(), decision, &reasons, &memo);
@@ -305,7 +310,8 @@ impl Guard {
                 // The account of a removed agent stays with its key, so that key must never pass as this agent:
                 // a Guard subaccount needs a new key, and a keyed agent waits until its account is confirmed.
                 require!(public_key.is_some() || !account_id.is_sub_account_of(&env::current_account_id()), "AGENT_KEY_REQUIRED");
-                self.agents.insert(account_id.clone(), AgentInfo { label, enabled: true, creating: public_key.is_some(), pending: 0 });
+                let creating = public_key.is_some();
+                self.agents.insert(account_id.clone(), AgentInfo { label, enabled: true, creating, pending: 0, spent: U128(0), spent_window: U64(0) });
             }
         }
         self.agents.flush();
@@ -465,10 +471,15 @@ impl Guard {
             .collect()
     }
 
+    /// `spent_24h` is the agent's part of `get_window`'s `spent_in_window`, so it resets with that window.
     pub fn get_agents(&self) -> Vec<Value> {
+        let (window, _) = policy::roll_window(self.window_start, self.spent_in_window, env::block_timestamp());
         self.agents
             .iter()
-            .map(|(id, a)| json!({ "account_id": id, "label": a.label, "enabled": a.enabled && !a.creating, "pending": a.pending }))
+            .map(|(id, a)| {
+                let spent = if a.spent_window.0 == window { a.spent } else { U128(0) };
+                json!({ "account_id": id, "label": a.label, "enabled": a.enabled && !a.creating, "pending": a.pending, "spent_24h": spent })
+            })
             .collect()
     }
 
@@ -581,6 +592,10 @@ impl Guard {
             if r.created_at.0 >= self.window_start {
                 self.spent_in_window = self.spent_in_window.saturating_sub(r.amount.0);
                 r.counted_in_window = false;
+                // `created_at` is in this window, so the agent's amount is too; a re-added agent has none to lose.
+                if let Some(a) = self.agents.get_mut(&r.agent) {
+                    a.spent = U128(a.spent.0.saturating_sub(r.amount.0));
+                }
             }
         }
         r.status = status;

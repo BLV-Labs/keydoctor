@@ -204,6 +204,8 @@ async fn auto_pays_the_whitelisted_receiver_in_the_same_transaction() -> anyhow:
     assert_eq!(e.sync("auto-0001").await?["status"], "Executed");
     let window: Value = e.guard.view("get_window").await?.json()?;
     assert_eq!(window["spent_in_window"], yocto(amount), "an Auto payment counts toward the daily cap: {window}");
+    let agents: Value = e.guard.view("get_agents").await?.json()?;
+    assert_eq!(agents[0]["spent_24h"], yocto(amount), "the owner sees which agent spent it: {agents}");
     Ok(())
 }
 

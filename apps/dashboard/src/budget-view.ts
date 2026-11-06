@@ -248,6 +248,9 @@ function rulesCard(b: BudgetLive, g: GuardLive): Html {
         </dl>`}</section>`;
 }
 
+const agentUse = (a: NonNullable<GuardLive["agents"]>[number]): string =>
+  a.spent_24h === undefined ? `${a.pending} waiting` : `${a.pending} waiting · ${near(a.spent_24h)} in last 24h`;
+
 function agentsCard(g: GuardLive): Html {
   const agents = g.agents;
   const body =
@@ -257,7 +260,7 @@ function agentsCard(g: GuardLive): Html {
         ? html`<p class="muted pad-row">No agent yet.</p>`
         : html`<ul class="plain-list">${agents.map((a) => html`<li><button type="button" class="agent-row" data-action="budget-agent-open" data-agent="${a.account_id}">
             ${avatar(a.account_id)}
-            <span class="agent-text"><span class="agent-name wrap">${a.label === "" ? a.account_id : a.label}</span><span class="small muted wrap">${a.label === "" ? "" : `${a.account_id} · `}${a.pending} waiting</span></span>
+            <span class="agent-text"><span class="agent-name wrap">${a.label === "" ? a.account_id : a.label}</span><span class="small muted wrap">${a.label === "" ? "" : `${a.account_id} · `}${agentUse(a)}</span></span>
             <span class="pill ${a.enabled ? "pill-ok" : "pill-note"}">${a.enabled ? "On" : "Off"}</span>${icon.chevronRight()}</button></li>`)}</ul>`;
   return html`<section class="card" aria-labelledby="b-agents"><div class="b-head"><h2 id="b-agents" class="b-h">Agents</h2>
       <button type="button" class="btn btn-ghost" data-action="budget-open" data-panel="add-agent">Add an agent <span class="sig">${signatures(2)}</span></button></div>
@@ -413,7 +416,7 @@ export function renderBudgetApprove(p: BudgetProposal, b: BudgetLive, now: numbe
 /** What one agent can and cannot do, and the owner's controls over it. */
 export function renderBudgetAgent(a: NonNullable<GuardLive["agents"]>[number], b: BudgetLive): Html {
   const period = proposalPeriod(b);
-  return html`${drawerHead(a.label === "" ? a.account_id : a.label, `${a.enabled ? "On" : "Off"} · ${a.pending} waiting`)}
+  return html`${drawerHead(a.label === "" ? a.account_id : a.label, `${a.enabled ? "On" : "Off"} · ${agentUse(a)}`)}
     <div class="drawer-body">
       <div class="stack-xs"><h3 class="drawer-h3">What this agent can do</h3><ul class="list small">
         <li>See your spending rules, balance and what is left for today</li><li>Ask to pay one recipient</li><li>Pay at once if the payment is within your rules</li><li>See the status of its own requests</li></ul></div>
