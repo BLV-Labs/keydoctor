@@ -618,10 +618,31 @@ describe("GĐ28 owner actions on an Agent Budget (§9.5)", () => {
     assert.deepEqual((await checkProposals(DAO, prev, opts)).budget_alerts, []);
   });
 
+  it("money cannot leave unseen through a method nobody listed: stolen keys choose the method and the deposit", async (t) => {
+    const paid = (receiver_id: string, method_name: string, deposit: string) => ({ FunctionCall: { receiver_id, actions: [{ method_name, args: b64({}), deposit, gas: "1" }] } });
+    const told = async (kind: unknown) => {
+      one(t, kind);
+      const alert = (await checkProposals(DAO, prev, opts)).budget_alerts[0];
+      t.mock.restoreAll();
+      return alert;
+    };
+    const drained = await told(paid("drain.kd-demo.testnet", "buy", "9000000000000000000000000"));
+    assert.equal(drained?.owner_action?.action, "withdraw");
+    assert.equal(drained?.owner_action?.summary, "called buy on drain.kd-demo.testnet with 9 NEAR attached");
+    assert.equal(drained?.severity, "high");
+    assert.equal((await told(paid("art.kd-demo.testnet", "nft_transfer", "1")))?.owner_action?.summary, "called nft_transfer on art.kd-demo.testnet");
+    // The name of a harmless call must not buy silence for a large deposit.
+    assert.equal((await told(paid("drain.kd-demo.testnet", "storage_deposit", "9000000000000000000000000")))?.owner_action?.summary, "called storage_deposit on drain.kd-demo.testnet with 9 NEAR attached");
+    assert.equal((await told(paid(GUARD, "new_method", "0")))?.owner_action?.summary, `called new_method on ${GUARD}`);
+    assert.equal((await told(paid("drain.kd-demo.testnet", "<b>x</b>\nclick", "0")))?.owner_action?.summary, "called ? on drain.kd-demo.testnet", "chain text stays out of the message");
+  });
+
   it("stays quiet on housekeeping calls, and arguments that do not decode cannot break the check", async (t) => {
-    one(t, call(GUARD, ["refresh_bond", {}]));
-    assert.deepEqual((await checkProposals(DAO, prev, opts)).budget_alerts, []);
-    t.mock.restoreAll();
+    for (const kind of [call(GUARD, ["refresh_bond", {}]), call(GUARD, ["withdraw_excess", {}]), call("usdc.kd-demo.testnet", ["storage_deposit", {}])]) {
+      one(t, kind);
+      assert.deepEqual((await checkProposals(DAO, prev, opts)).budget_alerts, []);
+      t.mock.restoreAll();
+    }
     one(t, { FunctionCall: { receiver_id: GUARD, actions: [{ method_name: "add_agent", args: "%%%", deposit: "1", gas: "1" }] } });
     const r = await checkProposals(DAO, prev, opts);
     assert.equal(r.budget_alerts[0]?.owner_action?.summary, "added the agent ?");

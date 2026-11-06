@@ -95,6 +95,9 @@ export const DESCRIPTION_MAX_LEN = 280;
 // The Guard caps its memo at this many characters (contracts/guard MEMO_MAX_CHARS); Key Doctor cuts there too.
 export const GUARD_MEMO_MAX_LEN = 200;
 
+// An Agent Budget's `storage_deposit` on a token is housekeeping up to this much (0.1 NEAR, far above NEP-145 registration); more is told as money leaving.
+export const BUDGET_STORAGE_DEPOSIT_MAX_YOCTO = "100000000000000000000000";
+
 // NEAR account id length bounds.
 export const ACCOUNT_ID_MIN_LEN = 2;
 export const ACCOUNT_ID_MAX_LEN = 64;

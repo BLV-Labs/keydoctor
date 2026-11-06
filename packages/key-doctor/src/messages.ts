@@ -558,6 +558,10 @@ export const OWNER_TEXT = {
   pauseAgents: (): Text => ({ vi: "tạm dừng mọi agent", en: "paused every agent" }),
   resumeAgents: (): Text => ({ vi: "mở lại mọi agent", en: "resumed every agent" }),
   upgradeGuard: (): Text => ({ vi: "nâng cấp code của Guard", en: "upgraded the Guard's code" }),
+  call: (method: string, contract: string, near: string | null): Text => ({
+    vi: `gọi ${method} trên ${contract}${near === null ? "" : `, kèm ${near} NEAR`}`,
+    en: `called ${method} on ${contract}${near === null ? "" : ` with ${near} NEAR attached`}`,
+  }),
 };
 
 /**

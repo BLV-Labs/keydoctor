@@ -37,6 +37,7 @@ import {
   MAX_PROPOSALS_PER_CHECK,
   MAX_VOTER_SCANS_PER_CHECK,
   NEW_KEY_WINDOW_HOURS,
+  BUDGET_STORAGE_DEPOSIT_MAX_YOCTO,
   PROPOSAL_LIST_DEFAULT,
   PROPOSAL_LIST_MAX,
 } from "./rules/thresholds.ts";
@@ -201,7 +202,13 @@ function callArgs(action: Record<string, unknown>): Record<string, unknown> {
   }
 }
 
-function guardCallStep(method: string, args: Record<string, unknown>): OwnerStep | null {
+/** Any call this file cannot name. The schema has no value for it and the call may move money, so it goes out as `withdraw`; the text says exactly what ran. */
+function otherCallStep(method: string, contract: string, deposit: string): OwnerStep {
+  const near = isDigits(deposit) && BigInt(deposit) > 1n ? formatNear(deposit) : null;
+  return { action: "withdraw", text: OWNER_TEXT.call(/^\w{1,64}$/.test(method) ? method : "?", safeId(contract), near) };
+}
+
+function guardCallStep(method: string, args: Record<string, unknown>, guard: string, deposit: string): OwnerStep | null {
   const account = safeId(args.account_id);
   const plan = Number.isSafeInteger(args.plan_id) ? String(args.plan_id) : "?";
   switch (method) {
@@ -229,16 +236,22 @@ function guardCallStep(method: string, args: Record<string, unknown>): OwnerStep
       return { action: "resume_plan", text: OWNER_TEXT.resumePlan(plan) };
     case "cancel_plan":
       return { action: "cancel_plan", text: OWNER_TEXT.cancelPlan(plan) };
+    case "pause":
+      return { action: "pause_agents", text: OWNER_TEXT.pauseAgents() };
     case "unpause":
       return { action: "pause_agents", text: OWNER_TEXT.resumeAgents() };
     case "upgrade":
       return { action: "upgrade_guard", text: OWNER_TEXT.upgradeGuard() };
-    default:
+    // Both only move money back to the DAO, or nowhere.
+    case "refresh_bond":
+    case "withdraw_excess":
       return null;
+    default:
+      return otherCallStep(method, guard, deposit);
   }
 }
 
-/** What an approved proposal did to a Budget. Empty for what §9.5 does not tell, such as `storage_deposit`. */
+/** What an approved proposal did to a Budget. A call is told unless it is known to be harmless: stolen keys can move money through any method, with any deposit. */
 function ownerSteps(p: Proposal, guards: readonly string[]): OwnerStep[] {
   const b = p.body;
   const receiver = str(b.receiver_id);
@@ -254,12 +267,15 @@ function ownerSteps(p: Proposal, guards: readonly string[]): OwnerStep[] {
     if (!isRecord(a)) continue;
     const method = str(a.method_name);
     const args = callArgs(a);
+    const deposit = str(a.deposit);
     if (guards.includes(receiver)) {
-      const step = guardCallStep(method, args);
+      const step = guardCallStep(method, args, receiver, deposit);
       if (step) steps.push(step);
     } else if (method === "ft_transfer" || method === "ft_transfer_call") {
       // Tokens leave through a call, not a Transfer, when the proposal is written by hand.
       steps.push({ action: "withdraw", text: OWNER_TEXT.withdrawToken(isDigits(str(args.amount)) ? str(args.amount) : "?", safeId(receiver), safeId(args.receiver_id)) });
+    } else if (!(method === "storage_deposit" && isDigits(deposit) && BigInt(deposit) <= BigInt(BUDGET_STORAGE_DEPOSIT_MAX_YOCTO))) {
+      steps.push(otherCallStep(method, receiver, deposit));
     }
   }
   return steps;
