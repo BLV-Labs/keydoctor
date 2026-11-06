@@ -38,6 +38,12 @@ describe("renderBudget", () => {
     assert.match(page, /bot\.testnet/);
     assert.match(page, /#4/);
   });
+  it("an agent with no label shows no stray separator", () => {
+    const base = live();
+    const guard = { ...base.guard!, agents: [{ account_id: "bot.testnet", label: "", enabled: true, pending: 0 }] };
+    const bare = renderBudget({ ...base, guard }, "testnet").value;
+    assert.match(bare, />0 waiting</);
+  });
   it("states the true signature count on each owner action", () => {
     assert.match(page, /Top up <span class="sig">1 signature</);
     assert.match(page, /Pause agents <span class="sig">1 signature</);

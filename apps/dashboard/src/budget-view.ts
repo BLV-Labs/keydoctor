@@ -115,7 +115,7 @@ function agentsCard(g: GuardLive): Html {
       : agents.length === 0
         ? html`<p class="muted">No agent yet.</p>`
         : html`<ul class="stack-sm plain-list">${agents.map((a) => html`<li class="budget-row">
-            <div class="stack-xs grow"><p class="strong mono wrap">${a.account_id}</p><p class="small muted">${a.label} · ${a.pending} waiting</p></div>
+            <div class="stack-xs grow"><p class="strong mono wrap">${a.account_id}</p><p class="small muted">${a.label === "" ? "" : `${a.label} · `}${a.pending} waiting</p></div>
             <span class="pill ${a.enabled ? "pill-ok" : "pill-note"}">${a.enabled ? "Active" : "Disabled"}</span>
             <div class="actions">
               <button type="button" class="btn btn-secondary" data-action="budget-agent" data-op="${a.enabled ? "disable" : "enable"}" data-agent="${a.account_id}">${a.enabled ? "Disable" : "Enable"} <span class="sig">${signatures(2)}</span></button>
@@ -292,7 +292,11 @@ export function renderBudgetSetup(available: boolean, values: Record<string, str
   };
   return html`<form id="budget-setup-form" class="card pad stack" novalidate aria-labelledby="bs-title">
     <h2 id="bs-title" class="h2">Create an Agent Budget</h2>
-    <ol class="small muted steps"><li>Create the budget</li><li>Top up</li><li>Connect your agent</li></ol>
+    <ol class="steps">
+      <li><span class="step-num" aria-hidden="true">1</span><p class="small muted">Create the budget</p></li>
+      <li><span class="step-num" aria-hidden="true">2</span><p class="small muted">Top up</p></li>
+      <li><span class="step-num" aria-hidden="true">3</span><p class="small muted">Connect your agent</p></li>
+    </ol>
     <p class="check-line">${icon.info()}<span>${available
       ? "Creating a budget from this page is not available yet. You can fill in the form to check your rules."
       : html`Creating a budget is not available yet: the Agent Budget factory <span class="mono">${BUDGET_FACTORY_NAME}</span> is not deployed. You can fill in the form to check your rules.`}</span></p>
