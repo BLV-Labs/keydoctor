@@ -3,7 +3,9 @@
 // be an agent's request). The page reads the proposal back and compares it with what it built; only a match
 // unlocks sign 2, `act_proposal(id, action, proposal)`. The installed Sputnik ignores `proposal`, so this
 // read-back is the real protection against approving the wrong proposal.
-import type { AddProposalArgs } from "./guard-proposals.ts";
+import { nearToYocto } from "./format.ts";
+import { MAX_LABEL_CHARS } from "./guard-form.ts";
+import { guardChangeProposal, type AddProposalArgs } from "./guard-proposals.ts";
 
 export type BudgetFlowCode = "NO_PROPOSAL_ID" | "PROPOSAL_UNREADABLE" | "PROPOSAL_MISMATCH" | "PROPOSAL_NOT_OPEN";
 
@@ -96,4 +98,50 @@ export function withdrawProposal(receiver: string, yocto: string, nearText: stri
     description: `Withdraw ${nearText} NEAR to ${receiver}`,
     kind: { Transfer: { token_id: "", receiver_id: receiver, amount: yocto } },
   };
+}
+
+export type FormResult<T> = { ok: true; value: T } | { ok: false; error: string };
+
+const fail = (error: string): { ok: false; error: string } => ({ ok: false, error });
+
+/** A NEAR amount typed by the owner: a plain decimal above 0, and not above `maxYocto` when the balance is known. */
+export function amountFromForm(text: string, maxYocto: string | null): FormResult<{ yocto: string; near: string }> {
+  const yocto = nearToYocto(text);
+  if (yocto === null || BigInt(yocto) === 0n) return fail("Enter a NEAR amount above 0, e.g. 1.5.");
+  if (maxYocto !== null && BigInt(yocto) > BigInt(maxYocto)) return fail("That is more than the budget balance.");
+  return { ok: true, value: { yocto, near: text.trim() } };
+}
+
+/** Edit rules: the four limits to a `set_policy` proposal on the Guard. Same bounds as the create form. */
+export function rulesProposal(guardId: string, v: Record<string, string>): FormResult<AddProposalArgs> {
+  const perTx = nearToYocto(v.maxPerTx ?? "");
+  const perDay = nearToYocto(v.maxPerDay ?? "");
+  const reserve = nearToYocto(v.minReserve ?? "");
+  const pendingText = (v.maxPending ?? "").trim();
+  const pending = /^\d+$/.test(pendingText) ? Number(pendingText) : NaN;
+  if (perTx === null || perDay === null || BigInt(perTx) === 0n || BigInt(perDay) === 0n) return fail("Per payment and per 24 hours need a NEAR amount above 0.");
+  if (reserve === null) return fail("Reserve needs a NEAR amount, 0 or more.");
+  if (BigInt(perTx) > BigInt(perDay)) return fail("The per-payment limit cannot be above the 24-hour limit.");
+  if (!(pending >= 1 && pending <= 100)) return fail("Waiting requests per agent: a whole number from 1 to 100.");
+  const policy = { max_per_tx: perTx, max_per_day: perDay, max_pending_per_agent: pending, min_reserve: reserve };
+  return { ok: true, value: guardChangeProposal(guardId, "set_policy", { policy }) };
+}
+
+const ACCOUNT_ID = /^[a-z0-9_-]+(\.[a-z0-9_-]+)*\.(testnet|near)$/;
+
+/** Add an agent: an `add_agent` proposal. The account must be a .testnet / .near name and not already an agent. */
+export function addAgentProposal(guardId: string, v: Record<string, string>, existing: string[]): FormResult<AddProposalArgs> {
+  const account = (v.agent ?? "").trim();
+  const label = (v.label ?? "").trim();
+  if (!ACCOUNT_ID.test(account) || account.length > 64) return fail("Enter a valid .testnet or .near account name.");
+  if (existing.includes(account)) return fail("That account is already an agent.");
+  if (label === "" || [...label].length > MAX_LABEL_CHARS) return fail(`Label: 1 to ${MAX_LABEL_CHARS} characters.`);
+  return { ok: true, value: guardChangeProposal(guardId, "add_agent", { account_id: account, label }) };
+}
+
+/** Disable, enable or remove one agent; null for an unknown op. */
+export function agentProposal(guardId: string, op: string, account: string): AddProposalArgs | null {
+  if (op === "remove") return guardChangeProposal(guardId, "remove_agent", { account_id: account });
+  if (op === "disable" || op === "enable") return guardChangeProposal(guardId, "set_agent_enabled", { account_id: account, enabled: op === "enable" });
+  return null;
 }

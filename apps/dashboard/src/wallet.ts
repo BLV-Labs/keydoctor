@@ -93,6 +93,61 @@ export async function signAddProposals(
   });
 }
 
+/**
+ * Sign 1 of an Agent Budget owner action: one `add_proposal`. Returns what the wallet returned (the transaction
+ * outcome when it gives one) so the page can read the proposal id from it; a wallet that returns nothing gives none.
+ */
+export async function signAddProposalOutcome(
+  accountId: string,
+  network: Network,
+  dao: string,
+  bond: string,
+  proposal: AddProposalArgs,
+  walletId: WalletId,
+  onStep: (text: string) => void = () => {},
+): Promise<unknown> {
+  const wallet = await walletFor(accountId, network, walletId, onStep);
+  onStep(`Step 3/3: approve the add_proposal transaction in ${walletLabel(walletId)}.`);
+  return wallet.signAndSendTransactions({
+    transactions: [{ signerId: accountId, receiverId: dao, actions: [actionCreators.functionCall("add_proposal", proposal, ADD_PROPOSAL_GAS, BigInt(bond))] }],
+  });
+}
+
+/** `act_proposal` runs the proposal (a Guard call or a transfer) in the same transaction, so it gets a large gas share. */
+const ACT_PROPOSAL_GAS = 200_000_000_000_000n;
+
+/** Approve or reject one DAO proposal: `act_proposal(id, action, proposal)`, always with `proposal`. */
+export async function signActProposal(
+  accountId: string,
+  network: Network,
+  dao: string,
+  args: { id: number; action: "VoteApprove" | "VoteReject"; proposal: Record<string, unknown> },
+  walletId: WalletId,
+  onStep: (text: string) => void = () => {},
+): Promise<void> {
+  const wallet = await walletFor(accountId, network, walletId, onStep);
+  onStep(`Step 3/3: approve the ${args.action === "VoteApprove" ? "approval" : "rejection"} of proposal ${args.id} in ${walletLabel(walletId)}.`);
+  await wallet.signAndSendTransactions({
+    transactions: [{ signerId: accountId, receiverId: dao, actions: [actionCreators.functionCall("act_proposal", args, ACT_PROPOSAL_GAS, 0n)] }],
+  });
+}
+
+/** Top up: a plain NEAR transfer from the owner's account to the DAO. */
+export async function signTopUp(
+  accountId: string,
+  network: Network,
+  dao: string,
+  yocto: string,
+  walletId: WalletId,
+  onStep: (text: string) => void = () => {},
+): Promise<void> {
+  const wallet = await walletFor(accountId, network, walletId, onStep);
+  onStep(`Step 3/3: approve the transfer in ${walletLabel(walletId)}.`);
+  await wallet.signAndSendTransactions({
+    transactions: [{ signerId: accountId, receiverId: dao, actions: [actionCreators.transfer(BigInt(yocto))] }],
+  });
+}
+
 /** `pause` only flips a flag; 30 Tgas leaves room to spare. */
 const PAUSE_GAS = 30_000_000_000_000n;
 
