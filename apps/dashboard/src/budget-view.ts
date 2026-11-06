@@ -7,7 +7,7 @@ import { GUARD_FORM_TEXT, type GuardFormError } from "./guard-form.ts";
 import type { GuardLive } from "./guard-read.ts";
 import { html, type Html } from "./html.ts";
 import { icon } from "./icons.ts";
-import { routeHref } from "./route.ts";
+import { budgetHref, routeHref } from "./route.ts";
 
 /** Shown in the form's placeholder text only; creation needs this factory to be deployed and set at build time. */
 export const BUDGET_FACTORY_NAME = "keydoctor-guards-v2.testnet";
@@ -262,8 +262,19 @@ export function renderBudgetNext(id: number, description: string): Html {
     <div class="actions"><button type="button" class="btn btn-primary" data-action="budget-sign2">Approve proposal #${id} in wallet</button></div></section>`;
 }
 
+/** After sign 2. The private key exists only on this page, so saving it comes before anything else. */
+export function renderBudgetKey(agent: string, dao: string, problem: string | null): Html {
+  return html`<span class="stack-xs">
+    <span>${problem === null ? "Your budget is created and checked against the chain." : html`Signature 2 went through, but the chain does not show a finished budget: ${problem}.`}</span>
+    <span class="strong">Save the key of <span class="mono">${agent}</span> now. It exists only on this page, and leaving loses it.</span>
+    <span class="actions"><button type="button" class="btn btn-primary" data-action="budget-key">Download agent key</button>
+    <a class="btn btn-tint" href="${budgetHref(dao)}" data-nav>Open the budget to top up</a></span>
+  </span>`;
+}
+
 const SETUP_FIELDS: ReadonlyArray<readonly [string, string, string]> = [
   ["name", "Budget name", "payroll"],
+  ["agentLabel", "Agent name", "payroll bot"],
   ["maxPerTx", "Max per payment (NEAR)", "5"],
   ["maxPerDay", "Max per 24 hours (NEAR)", "10"],
   ["maxPendingPerAgent", "Waiting requests per agent", "3"],
@@ -272,7 +283,6 @@ const SETUP_FIELDS: ReadonlyArray<readonly [string, string, string]> = [
 ];
 
 const SETUP_LISTS: ReadonlyArray<readonly [string, string, string]> = [
-  ["agents", "Agents: account, label (one per line)", "bot.kdoncall.testnet, payroll bot"],
   ["whitelist", "Allowed receivers, optional: account, label, cap in NEAR or empty (one per line)", "vendor.kdoncall.testnet, vendor, 2"],
 ];
 
@@ -300,7 +310,7 @@ export function renderBudgetSetup(available: boolean, values: Record<string, str
       <li><span class="step-num" aria-hidden="true">3</span><p class="small muted">Connect your agent</p></li>
     </ol>
     <p class="check-line">${icon.info()}<span>${available
-      ? "Creating a budget from this page is not available yet. You can fill in the form to check your rules."
+      ? "This creates a new DAO that only your account controls, then its Guard and one agent. It takes 2 signatures."
       : html`Creating a budget is not available yet: the Agent Budget factory <span class="mono">${BUDGET_FACTORY_NAME}</span> is not deployed. You can fill in the form to check your rules.`}</span></p>
     <p class="check-line">${icon.alert()}<span>Testnet only, not audited.</span></p>
     ${errors.length > 0 ? html`<p class="field-error" role="alert">Fix the fields marked below.</p>` : ""}

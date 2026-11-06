@@ -80,7 +80,7 @@ export function withdrawableYocto(amount: string, storageBytes: number): string 
 }
 
 /** The account's NEAR balance at `height`; any failure is null (shown as unknown, never as zero). */
-async function readBalance(account: string, height: number, network: Network): Promise<{ balance: string; withdrawable: string } | null> {
+export async function readBalance(account: string, height: number, network: Network): Promise<{ balance: string; withdrawable: string } | null> {
   for (const url of DEFAULT_RPC_URLS[network]) {
     try {
       const res = await fetch(url, {

@@ -1657,7 +1657,7 @@ Guard factory tạo Guard **không có full-access key** (khóa từ đầu; rul
 - Gas: mỗi agent có key tốn khoảng 9 Tgas trong `new`. Factory dành 120 Tgas cho `new`, nên `create` cần ít nhất 215 Tgas và dashboard gắn 220 Tgas. Đo trong sandbox: đủ cho 1 agent với 50 whitelist, hoặc 10 agent với whitelist ngắn. 10 agent với 50 whitelist hết gas trong `new`, tiền được hoàn và tên được trả lại. Gas của `on_dao_checked` (190 Tgas) phải là gas tĩnh: hết gas ở bước này thì tiền cọc kẹt trong factory.
 - Account agent **không có full-access key**, nên không đổi hay khôi phục key được. Mất file key hoặc lộ key: gỡ agent, thêm agent mới.
 - **Tên agent người dùng nhập là `label`** trong Guard, không phải tên account. Lý do: `name` 32 ký tự + đuôi Guard 28 ký tự = 60, chỉ còn 4 ký tự cho phần đầu (`a10.`) dưới trần 64. Tối đa 10 agent (11.5.10) nên `a<n>` luôn vừa.
-- `GAS_GUARD_NEW` (40 Tgas) phải đo lại vì `new` có thêm batch này.
+- `GAS_GUARD_NEW` đã đo lại vì `new` có thêm batch này: 120 Tgas; `create` cần tối thiểu 215 Tgas, dashboard gắn 220 Tgas.
 
 **Budget mới cần factory mới.** Factory cố định `guard_code_hash` lúc init, nên Budget dùng factory mới `keydoctor-guards-v2.testnet` (đặt qua `KD_GUARD_FACTORY`). `keydoctor-guards.testnet` giữ nguyên cho Guard đã tạo. Guard không có key, nhưng DAO của nó đổi được code qua `upgrade` (11.5.12). Vì vậy thêm kế hoạch (GĐ29) hay hạn mức theo token (GĐ23) sau GĐ25 **không** bắt tạo lại Budget: Budget cũ nâng cấp bằng đề xuất của chủ; factory `-v3` (cùng độ dài tên) chỉ cần để Budget **mới** có sẵn code mới. Guard tạo từ `keydoctor-guards.testnet` không có `upgrade`, giữ nguyên code cũ.
 

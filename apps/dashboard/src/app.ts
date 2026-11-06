@@ -1,5 +1,5 @@
 // Browser entry: routing, scanning and DOM events. Rendering lives in pure modules that tests run in Node.
-import { isKdError, listProposals, scanAccount, scanTarget, type KdError, type KdReport, type ListProposalsResult, type Network } from "key-doctor";
+import { isKdError, listProposals, scanAccount, scanTarget, type KdError, type KdReport, type ListProposalsResult, type Network, type Rpc } from "key-doctor";
 import { revealClampToggles, toggleClamp } from "./clamp.ts";
 import { html, type Html } from "./html.ts";
 import { renderAgents, renderError, renderHome, renderLayout, renderOnCall, renderScanning } from "./pages.ts";
@@ -11,7 +11,8 @@ import { PROPOSALS_ID, PROPOSALS_LIST, renderProposals } from "./proposals-view.
 import { renderAccount, renderCouncil } from "./report.ts";
 import { budgetHref, guardHref, homeHref, parseRoute, resolveInput, routeHref, suffixNetwork, type Page, type Route } from "./route.ts";
 import { yoctoToNear } from "./format.ts";
-import { formToInput, validateGuardForm } from "./guard-form.ts";
+import { formToInput, validateGuardForm, type GuardFormError } from "./guard-form.ts";
+import { agentKeyFile, budgetCheckFailures, firstSignatureProblem, planBudget, secondSignatureCalls, sputnikCreateArgs, SPUTNIK_FACTORY, type BudgetChain, type BudgetPlan } from "./budget-create.ts";
 import {
   actProposalArgs,
   addAgentProposal,
@@ -26,8 +27,8 @@ import {
   type ConfirmedProposal,
   type VoteAction,
 } from "./budget-flow.ts";
-import { budgetRpc, proposalLabel, readBudget, readProposal, topUpBlocks, TOP_UP_TEXT, type BudgetLive } from "./budget-read.ts";
-import { BUDGET_FACTORY_NAME, describeKind, renderBudget, renderBudgetLoading, renderBudgetNext, renderBudgetPanel, renderBudgetSetup, renderBudgetStart, type BudgetPanel } from "./budget-view.ts";
+import { budgetRpc, proposalLabel, readBalance, readBudget, readProposal, topUpBlocks, TOP_UP_TEXT, type BudgetLive } from "./budget-read.ts";
+import { BUDGET_FACTORY_NAME, describeKind, renderBudget, renderBudgetKey, renderBudgetLoading, renderBudgetNext, renderBudgetPanel, renderBudgetSetup, renderBudgetStart, type BudgetPanel } from "./budget-view.ts";
 import {
   addGuardRoleProposal,
   createGuardProposal,
@@ -36,6 +37,7 @@ import {
   missingProposePermissions,
   removeGuardRoleProposal,
   type AddProposalArgs,
+  type RawPolicy,
 } from "./guard-proposals.ts";
 import { readGuardDao, type GuardDao } from "./guard-read.ts";
 import { renderGuardCreate, renderGuardDao, renderGuardLoading, renderGuardPreview, renderGuardStart, renderGuardSubmitted, type GuardPreview } from "./guard-view.ts";
@@ -60,6 +62,8 @@ const BUDGET_READ_FACTORY = BUDGET_FACTORY || GUARD_FACTORY;
 /** The Agent Budget page's last read, and the proposal that is between sign 1 and sign 2. */
 let budgetState: BudgetLive | null = null;
 let budgetSign2: { account: string; walletId: WalletId; confirmed: ConfirmedProposal; description: string } | null = null;
+/** A Budget being created. `key` exists from sign 2 on, and only here: leaving the page loses it. */
+let budgetCreation: { plan: BudgetPlan; account: string; walletId: WalletId; key: { publicKey: string; privateKey: string } | null } | null = null;
 
 const root = document.getElementById("app") as HTMLElement;
 let scanSeq = 0;
@@ -273,6 +277,7 @@ async function renderBudgetPage(dao: string | null, focusMain: boolean, seq: num
   const title = "Agent Budget · Key Doctor";
   budgetState = null;
   budgetSign2 = null;
+  budgetCreation = null;
   const start = (value: string, error: string | null) => {
     const note =
       BUDGET_READ_FACTORY === ""
@@ -552,26 +557,210 @@ function changeBudgetAgent(button: HTMLButtonElement): void {
   if (proposal !== null) startTwoSignatures(proposal);
 }
 
-/** The create form only checks the rules: creating a Budget needs the v2 factory, which is not deployed. */
-function submitBudgetSetup(form: HTMLFormElement): void {
+const budgetSetupStatus = (): HTMLElement | null => document.getElementById("budget-setup-status");
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** False only when the chain says the account does not exist; any other failure is not an answer. */
+async function accountExists(rpc: Rpc, id: string, height: number): Promise<boolean> {
+  try {
+    await rpc.viewAccount(id, height);
+    return true;
+  } catch (e) {
+    if (isKdError(e) && e.kd.code === "NOT_FOUND") return false;
+    throw e;
+  }
+}
+
+/** The DAO's policy and proposal count, for `firstSignatureProblem`. */
+async function readNewDao(dao: string, network: Network): Promise<{ policy: RawPolicy; last: number }> {
+  const rpc = budgetRpc(network);
+  const { height } = await rpc.block();
+  const [policy, last] = await Promise.all([rpc.callFunction(dao, height, "get_policy", {}), rpc.callFunction(dao, height, "get_last_proposal_id", {})]);
+  return { policy: policy as RawPolicy, last: Number(last) };
+}
+
+/** What sign 2 left on the chain. A read that fails stays null, which `budgetCheckFailures` counts as not passed. */
+async function readBudgetChain(plan: BudgetPlan, network: Network): Promise<BudgetChain> {
+  const rpc = budgetRpc(network);
+  const quiet = <T>(read: Promise<T>): Promise<T | null> => read.catch(() => null);
+  const head = await quiet(rpc.block());
+  if (head === null) return { guardDao: null, guardKeys: null, agentKeys: null, policy: null };
+  const agent = plan.args.agents[0]?.account_id ?? "";
+  const [info, guardKeys, agentKeys, policy] = await Promise.all([
+    quiet(rpc.callFunction(plan.guardId, head.height, "kd_guard_info", {})),
+    quiet(rpc.viewAccessKeyList(plan.guardId, head.height)),
+    quiet(rpc.viewAccessKeyList(agent, head.height)),
+    quiet(rpc.callFunction(plan.dao, head.height, "get_policy", {})),
+  ]);
+  return { guardDao: (info as { dao_id?: string } | null)?.dao_id ?? null, guardKeys, agentKeys, policy: policy as RawPolicy | null };
+}
+
+/** Checks the form, then what the chain already holds, and offers the signature that comes next. */
+async function submitBudgetSetup(form: HTMLFormElement): Promise<void> {
+  // After sign 2 the status line holds the only copy of the agent key: nothing may repaint it.
+  if (budgetCreation?.key) return;
+  budgetCreation = null;
   const data = new FormData(form);
   const get = (name: string) => String(data.get(name) ?? "");
   const values = Object.fromEntries([...data.entries()].map(([k, v]) => [k, String(v)]));
-  // Code storage is the factory's to report; before it exists the funding check covers the minimum only.
-  const result = validateGuardForm(formToInput(get), BUDGET_FACTORY || BUDGET_FACTORY_NAME, "0");
-  if (!result.ok) {
-    form.outerHTML = renderBudgetSetup(BUDGET_FACTORY !== "", values, result.errors).value;
+  const repaint = (errors: GuardFormError[], result: string | null): void => {
+    const current = document.getElementById("budget-setup-form");
+    if (current) current.outerHTML = renderBudgetSetup(BUDGET_FACTORY !== "", values, errors, result).value;
     document.querySelector<HTMLElement>('#budget-setup-form [aria-invalid="true"]')?.focus();
+  };
+  // Code storage is the factory's to report; before reading it the funding check covers the minimum only.
+  const rules = planBudget(get, null, BUDGET_FACTORY || BUDGET_FACTORY_NAME, "0");
+  if (!rules.ok) {
+    repaint(rules.errors, null);
     return;
   }
-  form.outerHTML = renderBudgetSetup(
-    BUDGET_FACTORY !== "",
-    values,
-    [],
-    BUDGET_FACTORY === ""
-      ? `Your rules are valid. Creating the budget is not available yet: ${BUDGET_FACTORY_NAME} is not deployed.`
-      : "Your rules are valid. Creating the budget from this page is not available yet.",
-  ).value;
+  if (BUDGET_FACTORY === "") {
+    repaint([], `Your rules are valid. Creating the budget is not available yet: ${BUDGET_FACTORY_NAME} is not deployed.`);
+    return;
+  }
+  repaint([], null);
+  const status = budgetSetupStatus();
+  if (status === null) return;
+  const wallet = connected;
+  const account = wallet?.accounts[0];
+  if (wallet === null || account === undefined) {
+    statusWithButton(status, "Your rules are valid. Connect the wallet that will own this budget.", "open-wallet", "Connect Wallet");
+    return;
+  }
+  status.textContent = "Reading the chain…";
+  try {
+    const network = budgetNetwork();
+    const rpc = budgetRpc(network);
+    const { height } = await rpc.block();
+    const factory = (await rpc.callFunction(BUDGET_FACTORY, height, "kd_factory_metadata", {})) as { guard_code_storage: string };
+    const planned = planBudget(get, account, BUDGET_FACTORY, factory.guard_code_storage);
+    if (!planned.ok) {
+      repaint(planned.errors, null);
+      return;
+    }
+    const { plan } = planned;
+    if (await accountExists(rpc, plan.guardId, height)) {
+      status.textContent = `The name ${plan.name} is taken: ${plan.guardId} already exists. Choose another name.`;
+      return;
+    }
+    const resume = await accountExists(rpc, plan.dao, height);
+    if (resume) {
+      const dao = await readNewDao(plan.dao, network);
+      const problem = firstSignatureProblem(dao.policy, dao.last, account);
+      if (problem !== null) {
+        status.textContent = `The name ${plan.name} is taken by ${plan.dao}. ${problem}`;
+        return;
+      }
+      const held = await readBalance(plan.dao, height, network);
+      if (held === null || BigInt(held.withdrawable) < BigInt(plan.guardDepositYocto)) {
+        status.textContent = `${plan.dao} needs ${yoctoToNear(plan.guardDepositYocto)} NEAR free for the Guard and ${held === null ? "its balance could not be read" : `has ${yoctoToNear(held.withdrawable)} NEAR`}. Lower the funding, or send it more.`;
+        return;
+      }
+    }
+    budgetCreation = { plan, account, walletId: wallet.walletId, key: null };
+    const waits = plan.args.whitelist.length === 0 ? " With no allowed receivers, every request waits for your approval." : "";
+    if (resume) statusWithButton(status, `${plan.dao} is already yours and has no Guard yet. Signature 2 attaches 0.2 NEAR of bonds, which come back.${waits}`, "budget-guard", "Sign signature 2 of 2");
+    else statusWithButton(status, `Your rules are valid. Signature 1 sends ${yoctoToNear(plan.firstDepositYocto)} NEAR to a new DAO, ${plan.dao}. Signature 2 attaches 0.2 NEAR of bonds, which come back.${waits}`, "budget-create", "Sign signature 1 of 2");
+  } catch (e) {
+    if (!isKdError(e)) console.error("budget setup read failed", { error: e });
+    status.textContent = `Not done: could not read the chain. ${isKdError(e) ? e.kd.message.en : "Try again later."}`;
+  }
+}
+
+/** Sign 1: the DAO. It holds the money from here on, so nothing is offered until the chain shows it is the owner's alone. */
+async function signBudgetCreate(button: HTMLButtonElement): Promise<void> {
+  const creation = budgetCreation;
+  const status = budgetSetupStatus();
+  if (creation === null || status === null) return;
+  const { plan, account, walletId } = creation;
+  const network = budgetNetwork();
+  button.disabled = true;
+  status.textContent = `Waiting for ${walletLabel(walletId)}. Signature 1 of 2: check the transaction there before you approve.`;
+  try {
+    const { signBudgetDao } = await import("./wallet.ts");
+    await signBudgetDao(account, network, SPUTNIK_FACTORY, sputnikCreateArgs(plan.name, account), plan.firstDepositYocto, walletId, (step) => (status.textContent = step));
+  } catch (e) {
+    notDone(status, e);
+    return;
+  }
+  status.textContent = "Checking the new DAO…";
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const dao = await readNewDao(plan.dao, network).catch(() => null);
+    if (budgetCreation !== creation) return;
+    if (dao !== null) {
+      const problem = firstSignatureProblem(dao.policy, dao.last, account);
+      if (problem !== null) status.textContent = `Stopped before signature 2: ${problem}`;
+      else statusWithButton(status, `${plan.dao} is created and only your account controls it.`, "budget-guard", "Sign signature 2 of 2");
+      return;
+    }
+    await sleep(1500);
+  }
+  status.textContent = `Signature 1 was sent, but ${plan.dao} cannot be read yet. Press Check my rules to continue from where it stopped.`;
+}
+
+/** Sign 2: the Guard, the agent and the role. Only the chain can say it worked, because Sputnik shows a failed call as Approved. */
+async function signBudgetGuard(button: HTMLButtonElement): Promise<void> {
+  const creation = budgetCreation;
+  const status = budgetSetupStatus();
+  if (creation === null || status === null) return;
+  const { plan, account, walletId } = creation;
+  const network = budgetNetwork();
+  button.disabled = true;
+  status.textContent = "Reading the DAO again…";
+  let signBudgetCalls: typeof import("./wallet.ts").signBudgetCalls;
+  let key: { publicKey: string; privateKey: string };
+  let calls: ReturnType<typeof secondSignatureCalls>;
+  try {
+    const dao = await readNewDao(plan.dao, network);
+    const problem = firstSignatureProblem(dao.policy, dao.last, account);
+    if (problem !== null) throw new Error(problem);
+    const wallet = await import("./wallet.ts");
+    signBudgetCalls = wallet.signBudgetCalls;
+    key = wallet.newAgentKey();
+    calls = secondSignatureCalls(plan, BUDGET_FACTORY, dao.policy, key.publicKey);
+  } catch (e) {
+    notDone(status, e);
+    return;
+  }
+  // Before the wallet opens: an answer lost on the way back must not lose the key of an agent that now exists.
+  creation.key = key;
+  status.textContent = `Waiting for ${walletLabel(walletId)}. Signature 2 of 2: check the transaction there before you approve.`;
+  let signError: unknown = null;
+  try {
+    await signBudgetCalls(account, network, plan.dao, calls, walletId, (step) => (status.textContent = step));
+  } catch (e) {
+    signError = e instanceof Error ? e : new Error("the wallet did not sign.");
+  }
+  status.textContent = "Checking the chain…";
+  let chain = await readBudgetChain(plan, network);
+  let failures = budgetCheckFailures(plan, key.publicKey, chain);
+  for (let attempt = 0; failures.length > 0 && attempt < (signError === null ? 5 : 2); attempt += 1) {
+    await sleep(2000);
+    chain = await readBudgetChain(plan, network);
+    failures = budgetCheckFailures(plan, key.publicKey, chain);
+  }
+  if (budgetCreation !== creation) return;
+  if (signError !== null && !chain.agentKeys?.some((k) => k.publicKey === key.publicKey)) {
+    creation.key = null;
+    notDone(status, signError);
+    return;
+  }
+  const agent = plan.args.agents[0]?.account_id ?? "";
+  status.innerHTML = renderBudgetKey(agent, plan.dao, failures.length === 0 ? null : failures.join("; ")).value;
+  document.querySelector<HTMLButtonElement>('#budget-setup-form button[type="submit"]')?.setAttribute("disabled", "");
+}
+
+/** Saves the agent's key as a file. It is never shown: a file goes straight to where the agent runs. */
+function downloadAgentKey(): void {
+  const creation = budgetCreation;
+  const agent = creation?.plan.args.agents[0]?.account_id;
+  if (!creation?.key || agent === undefined) return;
+  const url = URL.createObjectURL(new Blob([agentKeyFile(agent, creation.key)], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${agent}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 /** The Agent Guard page: the DAO form, or the DAO's Guards read live. Guards exist only on the factory's network. */
@@ -1043,6 +1232,15 @@ root.addEventListener("click", (event) => {
     case "budget-sign2":
       signSecondSignature(el as HTMLButtonElement);
       break;
+    case "budget-create":
+      void signBudgetCreate(el as HTMLButtonElement);
+      break;
+    case "budget-guard":
+      void signBudgetGuard(el as HTMLButtonElement);
+      break;
+    case "budget-key":
+      downloadAgentKey();
+      break;
     case "budget-pause":
       pauseBudget(el as HTMLButtonElement);
       break;
@@ -1139,7 +1337,7 @@ root.addEventListener("submit", (event) => {
   }
   if (form.id === "budget-setup-form") {
     event.preventDefault();
-    submitBudgetSetup(form);
+    void submitBudgetSetup(form);
     return;
   }
   if (form.id === "guard-create-form") {

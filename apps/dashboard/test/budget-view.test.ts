@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { addAgentProposal, agentProposal, amountFromForm, rulesProposal } from "../src/budget-flow.ts";
 import { topUpBlocks, withdrawableYocto, type BudgetLive } from "../src/budget-read.ts";
-import { describeKind, renderBudget, renderBudgetPanel, renderBudgetSetup, renderBudgetStart } from "../src/budget-view.ts";
+import { describeKind, renderBudget, renderBudgetKey, renderBudgetPanel, renderBudgetSetup, renderBudgetStart } from "../src/budget-view.ts";
 import type { RawPolicy } from "../src/guard-proposals.ts";
 
 const NEAR = (n: number) => `${n}${"0".repeat(24)}`;
@@ -86,7 +86,19 @@ describe("panels and setup", () => {
   });
   it("setup says creation is not available while the factory is not deployed", () => {
     assert.match(renderBudgetSetup(false).value, /not available yet: the Agent Budget factory <span class="mono">keydoctor-guards-v2\.testnet<\/span> is not deployed/);
-    assert.match(renderBudgetSetup(true).value, /not available yet/);
+    assert.doesNotMatch(renderBudgetSetup(true).value, /not available yet/);
+    assert.match(renderBudgetSetup(true).value, /2 signatures/);
+  });
+  it("asks for the agent's name, not an account: the account is always a1.<guard>", () => {
+    const form = renderBudgetSetup(true).value;
+    assert.match(form, /name="agentLabel"/);
+    assert.doesNotMatch(form, /name="agents"/);
+  });
+  it("after sign 2 asks to save the key first, and says when the chain does not show a finished budget", () => {
+    const done = renderBudgetKey("a1.g.testnet", "d.testnet", null).value;
+    assert.match(done, /data-action="budget-key"/);
+    assert.match(done, /leaving loses it/);
+    assert.match(renderBudgetKey("a1.g.testnet", "d.testnet", "the role is missing").value, /does not show a finished budget: the role is missing/);
   });
   it("the start form escapes what was typed", () => {
     assert.doesNotMatch(renderBudgetStart('"><script>', null, "").value, /<script>/);

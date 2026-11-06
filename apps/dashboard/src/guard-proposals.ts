@@ -28,7 +28,7 @@ export interface RawPolicy {
 }
 
 /** Sputnik takes FunctionCall args as base64 of the JSON bytes; labels may be any UTF-8. */
-function base64Json(value: unknown): string {
+export function base64Json(value: unknown): string {
   let binary = "";
   for (const byte of new TextEncoder().encode(JSON.stringify(value))) binary += String.fromCharCode(byte);
   return btoa(binary);

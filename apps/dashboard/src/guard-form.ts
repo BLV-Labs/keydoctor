@@ -30,7 +30,8 @@ export interface GuardFormInput {
 export interface GuardCreateArgs {
   name: string;
   policy: { max_per_tx: string; max_per_day: string; max_pending_per_agent: number; min_reserve: string };
-  agents: { account_id: string; label: string }[];
+  /** With `public_key` the Guard also creates the agent's account, holding that one key. */
+  agents: { account_id: string; label: string; public_key?: string }[];
   whitelist: { account_id: string; label: string; max_per_tx: string | null }[];
   guardians: string[];
 }
@@ -42,6 +43,7 @@ export type GuardFormCode =
   | "INVALID_PENDING"
   | "FUNDING_TOO_LOW"
   | "FUNDING_BELOW_RESERVE"
+  | "FUNDING_UNDER_MINIMUM"
   | "NO_AGENTS"
   | "TOO_MANY_AGENTS"
   | "TOO_MANY_WHITELIST"
@@ -62,6 +64,10 @@ export const GUARD_FORM_TEXT: Record<GuardFormCode, { vi: string; en: string }> 
   INVALID_PENDING: { vi: "Nhập số nguyên từ 1 đến 100.", en: "Enter a whole number from 1 to 100." },
   FUNDING_TOO_LOW: { vi: "Factory cần ít nhất 0.5 NEAR cho Guard.", en: "The factory needs at least 0.5 NEAR for the Guard." },
   FUNDING_BELOW_RESERVE: { vi: "Số nạp thấp hơn mức dự trữ: Guard sẽ từ chối mọi yêu cầu.", en: "Funding is below the reserve: the Guard would refuse every request." },
+  FUNDING_UNDER_MINIMUM: {
+    vi: "Số nạp phải đủ cho bond của mọi yêu cầu chờ, gas của agent, mức dự trữ và 0.5 NEAR cho Guard.",
+    en: "Funding must cover every waiting request's bond, the agent's gas, the reserve and 0.5 NEAR for the Guard.",
+  },
   NO_AGENTS: { vi: "Thêm ít nhất một agent.", en: "Add at least one agent." },
   TOO_MANY_AGENTS: { vi: `Tối đa ${MAX_AGENTS} agent.`, en: `At most ${MAX_AGENTS} agents.` },
   TOO_MANY_WHITELIST: { vi: `Tối đa ${MAX_WHITELIST} người nhận.`, en: `At most ${MAX_WHITELIST} receivers.` },
