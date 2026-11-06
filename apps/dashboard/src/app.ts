@@ -1,7 +1,7 @@
 // Browser entry: routing, scanning and DOM events. Rendering lives in pure modules that tests run in Node.
 import { isKdError, listProposals, scanAccount, scanTarget, type KdError, type KdReport, type ListProposalsResult, type Network } from "key-doctor";
 import { revealClampToggles, toggleClamp } from "./clamp.ts";
-import type { Html } from "./html.ts";
+import { html, type Html } from "./html.ts";
 import { renderAgents, renderError, renderHome, renderLayout, renderOnCall, renderScanning } from "./pages.ts";
 import { buildDeletePlan, GUARD_TEXT, METEOR_INSTALL_URL, type DeletePlan } from "./cleanup.ts";
 import { renderCleanup } from "./cleanup-view.ts";
@@ -9,9 +9,24 @@ import { PAGE_SIZE, pageOf, parsePaging, type Paging } from "./paging.ts";
 import { renderKeyDetail } from "./key-detail.ts";
 import { PROPOSALS_ID, PROPOSALS_LIST, renderProposals } from "./proposals-view.ts";
 import { renderAccount, renderCouncil } from "./report.ts";
-import { guardHref, homeHref, parseRoute, resolveInput, routeHref, suffixNetwork, type Page, type Route } from "./route.ts";
+import { budgetHref, guardHref, homeHref, parseRoute, resolveInput, routeHref, suffixNetwork, type Page, type Route } from "./route.ts";
 import { yoctoToNear } from "./format.ts";
 import { formToInput, validateGuardForm } from "./guard-form.ts";
+import {
+  actProposalArgs,
+  addAgentProposal,
+  agentProposal,
+  amountFromForm,
+  BudgetFlowError,
+  confirmFirstSignature,
+  confirmProposal,
+  rulesProposal,
+  withdrawProposal,
+  type ConfirmedProposal,
+  type VoteAction,
+} from "./budget-flow.ts";
+import { budgetRpc, proposalLabel, readBudget, readProposal, topUpBlocks, TOP_UP_TEXT, type BudgetLive } from "./budget-read.ts";
+import { BUDGET_FACTORY_NAME, describeKind, renderBudget, renderBudgetLoading, renderBudgetNext, renderBudgetPanel, renderBudgetSetup, renderBudgetStart, type BudgetPanel } from "./budget-view.ts";
 import {
   addGuardRoleProposal,
   createGuardProposal,
@@ -19,6 +34,7 @@ import {
   isGuardMethod,
   missingProposePermissions,
   removeGuardRoleProposal,
+  type AddProposalArgs,
 } from "./guard-proposals.ts";
 import { readGuardDao, type GuardDao } from "./guard-read.ts";
 import { renderGuardCreate, renderGuardDao, renderGuardLoading, renderGuardPreview, renderGuardStart, renderGuardSubmitted, type GuardPreview } from "./guard-view.ts";
@@ -35,6 +51,14 @@ const GUARD_FACTORY = typeof __KD_GUARD_FACTORY__ === "string" ? __KD_GUARD_FACT
 /** The Agent Guard page's last read, and the proposals its preview would sign. */
 let guardState: GuardDao | null = null;
 let guardPreview: (GuardPreview & { labels: string[] }) | null = null;
+declare const __KD_BUDGET_FACTORY__: string;
+/** Set at build time (KD_BUDGET_FACTORY); empty means Agent Budgets cannot be created yet (the v2 factory is not deployed). */
+const BUDGET_FACTORY = typeof __KD_BUDGET_FACTORY__ === "string" ? __KD_BUDGET_FACTORY__ : "";
+/** Budgets are read from the Budget factory when set, else from the Guard factory. */
+const BUDGET_READ_FACTORY = BUDGET_FACTORY || GUARD_FACTORY;
+/** The Agent Budget page's last read, and the proposal that is between sign 1 and sign 2. */
+let budgetState: BudgetLive | null = null;
+let budgetSign2: { account: string; walletId: WalletId; confirmed: ConfirmedProposal; description: string } | null = null;
 
 const root = document.getElementById("app") as HTMLElement;
 let scanSeq = 0;
@@ -208,6 +232,10 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
     await renderGuard(route.dao, focusMain, seq);
     return;
   }
+  if (route.target === null && route.page === "budget") {
+    await renderBudgetPage(route.dao, focusMain, seq);
+    return;
+  }
   if (route.target === null && route.page !== "check") {
     const network = route.network ?? storedNetwork();
     if (route.page === "oncall") paint(renderOnCall(), "On Call · Key Doctor", focusMain, network, "oncall");
@@ -234,6 +262,300 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
     if (!isKdError(e)) console.error("scan failed", { target, error: e });
     paint(renderError(target, route.from, isKdError(e) ? e.kd : UNKNOWN_ERROR, network), `${target} · Key Doctor`, false, network);
   }
+}
+
+const budgetNetwork = (): Network => suffixNetwork(BUDGET_READ_FACTORY) ?? "testnet";
+
+/** The Agent Budget page: the DAO form, or the DAO's Budget read live from the chain. Nothing here is sample data. */
+async function renderBudgetPage(dao: string | null, focusMain: boolean, seq: number): Promise<void> {
+  const network = budgetNetwork();
+  const title = "Agent Budget · Key Doctor";
+  budgetState = null;
+  budgetSign2 = null;
+  const start = (value: string, error: string | null) => {
+    const note =
+      BUDGET_READ_FACTORY === ""
+        ? "Reading a Budget needs the Guard factory set when this site is built (KD_GUARD_FACTORY). It is not set here."
+        : `Budgets are read from ${BUDGET_READ_FACTORY} on ${network}.`;
+    paint(html`${renderBudgetStart(value, error, note)}${renderBudgetSetup(BUDGET_FACTORY !== "")}`, title, focusMain, network, "budget");
+  };
+  if (dao === null || BUDGET_READ_FACTORY === "") {
+    start(dao ?? "", null);
+    return;
+  }
+  if (suffixNetwork(dao) !== network) {
+    start(dao, `The Budget factory is on ${network}: enter a ${network} DAO.`);
+    return;
+  }
+  paint(renderBudgetLoading(dao), title, focusMain, network, "budget");
+  try {
+    const state = await readBudget(dao, BUDGET_READ_FACTORY, network);
+    if (seq !== scanSeq) return;
+    budgetState = state;
+    paint(renderBudget(state, network, renderBudgetSetup(BUDGET_FACTORY !== "")), `${dao} · Agent Budget`, false, network, "budget");
+  } catch (e) {
+    if (seq !== scanSeq) return;
+    if (!isKdError(e)) console.error("budget read failed", { dao, error: e });
+    const why =
+      e instanceof Error && e.message === "FACTORY_UNREADABLE"
+        ? `Could not read the Guard factory ${BUDGET_READ_FACTORY}. Try again later.`
+        : isKdError(e)
+          ? `${dao}: ${e.kd.message.en}`
+          : `${dao} is not a Sputnik DAO.`;
+    start(dao, why);
+  }
+}
+
+const budgetStatus = (): HTMLElement | null => document.getElementById("budget-status");
+
+/** Puts a button into a status line, next to its text. */
+function statusWithButton(status: HTMLElement, text: string, action: string, label: string): void {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "btn btn-tint";
+  btn.dataset.action = action;
+  btn.textContent = label;
+  status.replaceChildren(`${text} `, btn);
+}
+
+/** The connected owner account that may run an action, or null after saying why in the status line. */
+function budgetSigner(status: HTMLElement, labels: string[]): { account: string; walletId: WalletId; state: BudgetLive; guardId: string } | null {
+  const state = budgetState;
+  const guardId = state?.guard?.guard_id;
+  if (state === null || guardId === undefined) return null;
+  if (connected === null) {
+    statusWithButton(status, "Connect the wallet of a DAO council member first.", "open-wallet", "Connect Wallet");
+    return null;
+  }
+  const account = connected.accounts.find((a) => missingProposePermissions(state.dao.policy, a, labels).length === 0);
+  if (account === undefined) {
+    const shown = connected.accounts[0] ?? "no account";
+    status.textContent = `${shown} may not add ${missingProposePermissions(state.dao.policy, shown, labels).join(" and ")} proposals in ${state.dao.dao}. Switch to a council account.`;
+    return null;
+  }
+  return { account, walletId: connected.walletId, state, guardId };
+}
+
+const notDone = (status: HTMLElement, e: unknown): void => {
+  status.textContent = `Not done: ${e instanceof Error ? e.message : "the wallet did not sign."}`;
+};
+
+/** Sign 1 outcome to a matched proposal. The chain can lag the wallet's answer, so an unreadable proposal is retried. */
+async function confirmAfterSign1(built: AddProposalArgs["proposal"], outcome: unknown, dao: string, network: Network): Promise<ConfirmedProposal> {
+  const rpc = budgetRpc(network);
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await confirmFirstSignature(built, outcome, (id) => readProposal(rpc, dao, id));
+    } catch (e) {
+      if (!(e instanceof BudgetFlowError && e.code === "PROPOSAL_UNREADABLE") || attempt >= 3) throw e;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  }
+}
+
+/**
+ * Sign 1 of an owner action: add the proposal, take its id from the transaction outcome, read it back and compare.
+ * Only a match shows the button for sign 2. If sign 1 went through but this stops, the proposal waits under "Needs you".
+ */
+function startTwoSignatures(args: AddProposalArgs): void {
+  const status = budgetStatus();
+  if (status === null) return;
+  const signer = budgetSigner(status, [proposalLabel(args.proposal.kind)]);
+  if (signer === null) return;
+  const { account, walletId, state } = signer;
+  const network = budgetNetwork();
+  budgetSign2 = null;
+  const next = document.getElementById("budget-next");
+  if (next) next.innerHTML = "";
+  status.textContent = `Waiting for ${walletLabel(walletId)}. Signature 1 of 2: check the transaction there before you approve.`;
+  import("./wallet.ts")
+    .then((w) => w.signAddProposalOutcome(account, network, state.dao.dao, state.dao.policy.proposal_bond, args, walletId, (t) => (status.textContent = t)))
+    .then(async (outcome) => {
+      status.textContent = "Signature 1 done. Reading the proposal back from the chain…";
+      try {
+        const confirmed = await confirmAfterSign1(args.proposal, outcome, state.dao.dao, network);
+        budgetSign2 = { account, walletId, confirmed, description: args.proposal.description };
+        status.textContent = "Signature 1 of 2 done and checked against the chain.";
+        if (next) next.innerHTML = renderBudgetNext(confirmed.id, args.proposal.description).value;
+        next?.querySelector("button")?.focus();
+      } catch (e) {
+        const why = e instanceof BudgetFlowError ? e.message : "The proposal could not be checked.";
+        statusWithButton(status, `Signature 1 is done, but signature 2 is not offered: ${why} Reload, then approve or reject the proposal under "Needs you".`, "rescan", "Reload");
+      }
+    })
+    .catch((e: unknown) => notDone(status, e));
+}
+
+/** Sign 2: `act_proposal(id, "VoteApprove", proposal)` for the proposal this page just matched. */
+function signSecondSignature(button: HTMLButtonElement): void {
+  const status = budgetStatus();
+  const pending = budgetSign2;
+  const state = budgetState;
+  if (status === null || pending === null || state === null) return;
+  const { account, walletId, confirmed } = pending;
+  button.disabled = true;
+  status.textContent = `Waiting for ${walletLabel(walletId)}. Signature 2 of 2: check the transaction there before you approve.`;
+  import("./wallet.ts")
+    .then((w) => w.signActProposal(account, budgetNetwork(), state.dao.dao, actProposalArgs(confirmed, "VoteApprove"), walletId, (t) => (status.textContent = t)))
+    .then(() => {
+      budgetSign2 = null;
+      const next = document.getElementById("budget-next");
+      if (next) next.innerHTML = "";
+      statusWithButton(status, `Done: proposal #${confirmed.id} approved.`, "rescan", "Reload");
+    })
+    .catch((e: unknown) => {
+      button.disabled = false;
+      notDone(status, e);
+    });
+}
+
+/** Approve or Reject a pending proposal: re-read it first and stop if it is no longer what the page showed. */
+function actOnPending(button: HTMLButtonElement): void {
+  const status = budgetStatus();
+  const state = budgetState;
+  const id = Number(button.dataset.id);
+  const action: VoteAction = button.dataset.vote === "VoteReject" ? "VoteReject" : "VoteApprove";
+  const shown = state?.proposals?.find((p) => p.id === id);
+  if (status === null || state === null || shown === undefined || state.guard === null) return;
+  if (connected === null) {
+    statusWithButton(status, "Connect the wallet of a DAO council member first.", "open-wallet", "Connect Wallet");
+    return;
+  }
+  const guardId = state.guard.guard_id;
+  const registry = state.dao.guards.map((g) => g.guard_id);
+  const account = connected.accounts.find((a) => !topUpBlocks(state.dao.policy, a, guardId, registry).includes("NOT_COUNCIL"));
+  if (account === undefined) {
+    status.textContent = TOP_UP_TEXT.NOT_COUNCIL;
+    return;
+  }
+  const { walletId } = connected;
+  const network = budgetNetwork();
+  button.disabled = true;
+  status.textContent = "Checking the proposal on the chain…";
+  confirmProposal({ description: shown.description, kind: shown.kind }, id, (n) => readProposal(budgetRpc(network), state.dao.dao, n))
+    .then((confirmed) => {
+      status.textContent = `Waiting for ${walletLabel(walletId)}. ${action === "VoteApprove" ? "Approve" : "Reject"} proposal #${id}: ${describeKind(confirmed.kind)}.`;
+      return import("./wallet.ts").then((w) => w.signActProposal(account, network, state.dao.dao, actProposalArgs(confirmed, action), walletId, (t) => (status.textContent = t)));
+    })
+    .then(() => statusWithButton(status, `Done: proposal #${id} ${action === "VoteApprove" ? "approved" : "rejected"}.`, "rescan", "Reload"))
+    .catch((e: unknown) => {
+      button.disabled = false;
+      notDone(status, e);
+    });
+}
+
+/** The guardian's emergency stop on the Budget page: one direct `pause` call on the Guard. */
+function pauseBudget(button: HTMLButtonElement): void {
+  const status = budgetStatus();
+  const guard = budgetState?.guard;
+  if (status === null || !guard) return;
+  if (connected === null) {
+    statusWithButton(status, "Connect a guardian's wallet first.", "open-wallet", "Connect Wallet");
+    return;
+  }
+  const guardians = guard.config?.guardians ?? [];
+  const account = connected.accounts.find((a) => guardians.includes(a));
+  if (account === undefined) {
+    status.textContent = `${connected.accounts[0] ?? "This account"} is not a guardian of ${guard.guard_id}. Guardians: ${guardians.join(", ")}.`;
+    return;
+  }
+  const { walletId } = connected;
+  button.disabled = true;
+  status.textContent = `Waiting for ${walletLabel(walletId)}. Check the transaction there before you approve.`;
+  import("./wallet.ts")
+    .then((w) => w.signGuardPause(account, budgetNetwork(), guard.guard_id, walletId, (t) => (status.textContent = t)))
+    .then(() => statusWithButton(status, "Paused. Every request now fails with PAUSED until the DAO passes unpause.", "rescan", "Reload"))
+    .catch((e: unknown) => {
+      button.disabled = false;
+      notDone(status, e);
+    });
+}
+
+function openBudgetPanel(panel: BudgetPanel): void {
+  const box = document.getElementById("budget-action");
+  if (box === null || budgetState === null) return;
+  box.innerHTML = renderBudgetPanel(panel, budgetState).value;
+  box.scrollIntoView({ block: "start" });
+  const first = box.querySelector<HTMLElement>("input");
+  first?.focus();
+}
+
+const isBudgetPanel = (v: unknown): v is BudgetPanel => v === "topup" || v === "withdraw" || v === "rules" || v === "add-agent";
+
+/** The owner-action form: validates, then starts the one-signature Top up or the two-signature flow. */
+function submitBudgetPanel(form: HTMLFormElement): void {
+  const state = budgetState;
+  const panel = form.dataset.panel;
+  const status = budgetStatus();
+  if (state === null || state.guard === null || status === null || !isBudgetPanel(panel)) return;
+  const values = Object.fromEntries([...new FormData(form).entries()].map(([k, v]) => [k, String(v)]));
+  const reject = (error: string) => {
+    form.outerHTML = renderBudgetPanel(panel, state, error, values).value;
+    document.querySelector<HTMLElement>("#budget-panel-form input")?.focus();
+  };
+  const guardId = state.guard.guard_id;
+  if (panel === "rules" || panel === "add-agent") {
+    const result = panel === "rules" ? rulesProposal(guardId, values) : addAgentProposal(guardId, values, (state.guard.agents ?? []).map((a) => a.account_id));
+    if (!result.ok) return reject(result.error);
+    startTwoSignatures(result.value);
+    return;
+  }
+  const amount = amountFromForm(values.amount ?? "", panel === "withdraw" ? state.balance : null);
+  if (!amount.ok) return reject(amount.error);
+  if (panel === "withdraw") {
+    if (connected === null) return statusWithButton(status, "Connect the wallet of a DAO council member first.", "open-wallet", "Connect Wallet");
+    const to = connected.accounts.find((a) => missingProposePermissions(state.dao.policy, a, ["transfer"]).length === 0);
+    if (to === undefined) {
+      status.textContent = `${connected.accounts[0] ?? "This account"} may not add transfer proposals in ${state.dao.dao}. Switch to a council account.`;
+      return;
+    }
+    startTwoSignatures({ proposal: withdrawProposal(to, amount.value.yocto, amount.value.near) });
+    return;
+  }
+  // Top up: one plain transfer, but only after the DAO's roles show this account is an owner and the Guard is the DAO's own.
+  if (connected === null) return statusWithButton(status, "Connect your wallet first.", "open-wallet", "Connect Wallet");
+  const registry = state.dao.guards.map((g) => g.guard_id);
+  const sender = connected.accounts.find((a) => topUpBlocks(state.dao.policy, a, guardId, registry).length === 0);
+  if (sender === undefined) {
+    status.textContent = topUpBlocks(state.dao.policy, connected.accounts[0] ?? "", guardId, registry).map((b) => TOP_UP_TEXT[b]).join(" ");
+    return;
+  }
+  const { walletId } = connected;
+  status.textContent = `Waiting for ${walletLabel(walletId)}. Check the transfer there before you approve.`;
+  import("./wallet.ts")
+    .then((w) => w.signTopUp(sender, budgetNetwork(), state.dao.dao, amount.value.yocto, walletId, (t) => (status.textContent = t)))
+    .then(() => statusWithButton(status, `Done: ${amount.value.near} NEAR sent to ${state.dao.dao}.`, "rescan", "Reload"))
+    .catch((e: unknown) => notDone(status, e));
+}
+
+/** Enable, disable or remove an agent: a Guard change proposal, two signatures. */
+function changeBudgetAgent(button: HTMLButtonElement): void {
+  const guardId = budgetState?.guard?.guard_id;
+  if (guardId === undefined) return;
+  const proposal = agentProposal(guardId, button.dataset.op ?? "", button.dataset.agent ?? "");
+  if (proposal !== null) startTwoSignatures(proposal);
+}
+
+/** The create form only checks the rules: creating a Budget needs the v2 factory, which is not deployed. */
+function submitBudgetSetup(form: HTMLFormElement): void {
+  const data = new FormData(form);
+  const get = (name: string) => String(data.get(name) ?? "");
+  const values = Object.fromEntries([...data.entries()].map(([k, v]) => [k, String(v)]));
+  // Code storage is the factory's to report; before it exists the funding check covers the minimum only.
+  const result = validateGuardForm(formToInput(get), BUDGET_FACTORY || BUDGET_FACTORY_NAME, "0");
+  if (!result.ok) {
+    form.outerHTML = renderBudgetSetup(BUDGET_FACTORY !== "", values, result.errors).value;
+    document.querySelector<HTMLElement>('#budget-setup-form [aria-invalid="true"]')?.focus();
+    return;
+  }
+  form.outerHTML = renderBudgetSetup(
+    BUDGET_FACTORY !== "",
+    values,
+    [],
+    BUDGET_FACTORY === ""
+      ? `Your rules are valid. Creating the budget is not available yet: ${BUDGET_FACTORY_NAME} is not deployed.`
+      : "Your rules are valid. Creating the budget from this page is not available yet.",
+  ).value;
 }
 
 /** The Agent Guard page: the DAO form, or the DAO's Guards read live. Guards exist only on the factory's network. */
@@ -690,6 +1012,24 @@ root.addEventListener("click", (event) => {
     case "guard-retire":
       previewGuardRetire(el.dataset.guard ?? "");
       break;
+    case "budget-open":
+      if (isBudgetPanel(el.dataset.panel)) openBudgetPanel(el.dataset.panel);
+      break;
+    case "budget-close":
+      document.getElementById("budget-action")?.replaceChildren();
+      break;
+    case "budget-act":
+      actOnPending(el as HTMLButtonElement);
+      break;
+    case "budget-agent":
+      changeBudgetAgent(el as HTMLButtonElement);
+      break;
+    case "budget-sign2":
+      signSecondSignature(el as HTMLButtonElement);
+      break;
+    case "budget-pause":
+      pauseBudget(el as HTMLButtonElement);
+      break;
     case "theme":
       setTheme(currentTheme() === "dark" ? "light" : "dark", true);
       break;
@@ -769,6 +1109,21 @@ root.addEventListener("submit", (event) => {
     event.preventDefault();
     const raw = String(new FormData(form).get("dao") ?? "").trim();
     navigate(guardHref(raw));
+    return;
+  }
+  if (form.id === "budget-dao-form") {
+    event.preventDefault();
+    navigate(budgetHref(String(new FormData(form).get("dao") ?? "").trim()));
+    return;
+  }
+  if (form.id === "budget-panel-form") {
+    event.preventDefault();
+    submitBudgetPanel(form);
+    return;
+  }
+  if (form.id === "budget-setup-form") {
+    event.preventDefault();
+    submitBudgetSetup(form);
     return;
   }
   if (form.id === "guard-create-form") {

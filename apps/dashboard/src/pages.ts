@@ -9,7 +9,7 @@ import { alertLines } from "./watch.ts";
 export const EXAMPLE_DAO = "kdoncall.sputnik-v2.testnet";
 export const EXAMPLE_ACCOUNT = "kdoncall-p.testnet";
 
-const NAV: ReadonlyArray<readonly [Page, string]> = [["check", "Check"], ["oncall", "On Call"], ["agents", "Agents"], ["guard", "Agent Guard"]];
+const NAV: ReadonlyArray<readonly [Page, string]> = [["check", "Key Check"], ["oncall", "On Call"], ["agents", "Agents"], ["guard", "Agent Guard"], ["budget", "Agent Budget"]];
 
 export function renderLayout(content: Html, network: Network = "testnet", page: Page = "check"): Html {
   const nav = NAV.map(

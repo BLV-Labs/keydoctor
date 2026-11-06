@@ -3,7 +3,7 @@ import { resolveTarget, type Network } from "key-doctor";
 export const BOT_USERNAME = "KeyDoctorOnCallBot";
 export const BOT_URL = `https://t.me/${BOT_USERNAME}`;
 
-export type Page = "check" | "oncall" | "agents" | "guard";
+export type Page = "check" | "oncall" | "agents" | "guard" | "budget";
 
 export interface Route {
   /** The nav page: `?page=` without a target; any `?target=` is the Check page. */
@@ -14,7 +14,7 @@ export interface Route {
   invalid: string | null;
   /** The DAO whose council the account was opened from. */
   from: string | null;
-  /** The Agent Guard page's DAO (`?page=guard&dao=`), or null. */
+  /** The Agent Guard or Agent Budget page's DAO (`?page=guard&dao=`, `?page=budget&dao=`), or null. */
   dao: string | null;
   view: "report" | "cleanup";
   level: "safe" | "full";
@@ -51,8 +51,8 @@ export function parseRoute(search: string): Route {
   const level = params.get("level") === "full" ? "full" : "safe";
   const network = parseNetwork(params.get("network"));
   const p = params.get("page");
-  const page: Page = raw === null && (p === "oncall" || p === "agents" || p === "guard") ? p : "check";
-  const daoRaw = page === "guard" ? params.get("dao") : null;
+  const page: Page = raw === null && (p === "oncall" || p === "agents" || p === "guard" || p === "budget") ? p : "check";
+  const daoRaw = page === "guard" || page === "budget" ? params.get("dao") : null;
   const dao = daoRaw === null ? null : normalize(daoRaw);
   if (raw === null || raw.trim() === "") return { page, target: null, invalid: null, from: null, dao, view: "report", level, network };
   const target = normalize(raw);
@@ -108,4 +108,9 @@ export function pageHref(page: Page, network: Network = "testnet"): string {
 /** The Agent Guard page for one DAO. */
 export function guardHref(dao: string): string {
   return `?${new URLSearchParams({ page: "guard", dao }).toString()}`;
+}
+
+/** The Agent Budget page for one DAO. */
+export function budgetHref(dao: string): string {
+  return `?${new URLSearchParams({ page: "budget", dao }).toString()}`;
 }
