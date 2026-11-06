@@ -8,8 +8,8 @@ It has never run on testnet. It stays off until the steps below are done, and it
 
 1. Create a testnet account for the keeper and fund it with `KEEPER_MAX_BALANCE` (5 NEAR) or less. Never add it to a DAO, a Guard whitelist or a plan: the job refuses such a Budget (K1).
 2. Apply the migration: `pnpm --filter worker db:migrate:remote`.
-3. Set `KEEPER_ACCOUNT_ID` and `KEEPER_ALERT_CHAT_ID` in `wrangler.toml`. The chat gets the balance warnings.
-4. `pnpm --filter worker exec wrangler secret put KEEPER_PRIVATE_KEY`, and paste the `ed25519:...` key at the prompt, so it stays out of the shell history.
+3. Set `KEEPER_ACCOUNT_ID` in `wrangler.toml`.
+4. `pnpm --filter worker exec wrangler secret put KEEPER_PRIVATE_KEY`, and paste the `ed25519:...` key at the prompt, so it stays out of the shell history. Do the same for `KEEPER_ALERT_CHAT_ID`, the chat that gets the balance warnings: the repo is public and a chat id is personal.
 5. `pnpm --filter worker run deploy`.
 6. Run one cycle by hand and read `errors`:
 

@@ -1,5 +1,5 @@
 # Key Doctor Worker. Secrets are not in this file: set them with `wrangler secret put <NAME>`
-# (RUN_CHECK_TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, KEEPER_PRIVATE_KEY). Local dev reads .dev.vars.
+# (RUN_CHECK_TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, KEEPER_PRIVATE_KEY, KEEPER_ALERT_CHAT_ID). Local dev reads .dev.vars.
 name = "key-doctor"
 main = "src/index.ts"
 compatibility_date = "2026-10-01"
@@ -31,6 +31,5 @@ KEEPER_ACCOUNT_ID = "keydoctor-keeper.testnet"
 KEEPER_FACTORY_ID = "keydoctor-guards-v2.testnet"
 KEEPER_MIN_BALANCE = "1"
 KEEPER_MAX_BALANCE = "5"
-KEEPER_ALERT_CHAT_ID = ""
 KEEPER_MAX_GUARDS_PER_RUN = "3"
 KEEPER_MAX_STEPS_PER_RUN = "3"
