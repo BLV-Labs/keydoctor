@@ -249,7 +249,7 @@ The tool descriptions and messages tell the agent not to send a pending payment 
 The dashboard's **Agent Guard** page (`?page=guard&dao=<dao>`) lets a council member set up a Guard without the CLI, through a Guard factory (`contracts/guard-factory`):
 
 - It reads the DAO policy and the DAO's Guards from the factory, and shows each Guard's limits, 24-hour window and the agent owner's two commands (the function-call key and the `claude mcp add guard` line).
-- The create form builds two `add_proposal` calls, signed in one transaction by the member's wallet: P1 calls `factory.create` (deposit = funding + the Guard's code storage, about 2.5 NEAR, + 0.01 NEAR for the registry record), P2 adds the Guard to role `agent-guard`. The page checks the member may add both kinds before the wallet opens.
+- The create form builds two `add_proposal` calls, signed in one transaction by the member's wallet: P1 calls `factory.create` (deposit = funding + the Guard's code storage as the factory reports it, about 2.5 NEAR on `keydoctor-guards.testnet`, + 0.01 NEAR for the registry record), P2 adds the Guard to role `agent-guard`. The page checks the member may add both kinds before the wallet opens.
 - "Propose a change" builds a DAO → Guard FunctionCall proposal (`set_policy`, `add_agent`, `add_whitelist`, `unpause`, ...).
 - "Pause now (guardian)" lets a guardian's wallet sign `pause` on the Guard directly, no vote; only a DAO `unpause` proposal restarts it. "Propose retire" builds the ChangePolicy that removes the Guard from role `agent-guard` (a Guard cannot be deleted). Both are render- and unit-tested only; neither has been signed on testnet yet.
 - The council votes in its usual DAO UI. Key Doctor signs nothing and stores nothing.
@@ -262,7 +262,7 @@ KD_GUARD_FACTORY=keydoctor-guards.testnet pnpm --filter dashboard dev
 # → the create form; "Preview proposals" shows P1 (create + deposit) and P2 (role agent-guard)
 ```
 
-To deploy your own factory (the factory account needs about 6 NEAR, see Limitations):
+To deploy your own factory (the factory account needs about 8 NEAR, see Limitations):
 
 ```bash
 KD_GUARD_PREFIX=<prefix> KD_GUARD_FUNDER=<rich>.testnet scripts/guard-setup/setup.sh factory
@@ -283,7 +283,7 @@ Invoice demo: put the four invoices in `demo/invoices/` (see its README for anot
 - Four Sputnik v2 facts that `checkProposals` relies on (proposal-id semantics, proposal JSON, status values, kind labels) were taken from the contract source. A live check on a testnet DAO (2026-10-29) confirmed the first two; the other two are only partly confirmed (`packages/key-doctor/fixtures/README.md`).
 - Revoke and Delete work one key at a time. The wallet does not say which key it signs with, so the dashboard keeps two full-access keys. There is no bulk delete.
 - Cron messages are bilingual by default (`ALERT_LANG`), because subscriptions do not store a language.
-- Guard factory: the factory keeps the Guard code (about 4.3 NEAR of storage with its own code, locked, not burned), so its account needs about 6 NEAR. Each Guard deploys its own copy, so every DAO pays about 2.5 NEAR of code storage in its create deposit; that NEAR stays locked on the Guard, which has no key and cannot be deleted. When a `create` fails after the DAO check, the factory refunds the DAO from its own balance, which may run before NEAR returns the failed account's funding to it; keep spare NEAR on the factory, or a large refund can fail and stay on the factory. At most 10 Guards per DAO; that limit is unit-tested only.
+- Guard factory: the factory keeps the Guard code (about 5.3 NEAR of storage with its own code when built from this repo, locked, not burned), so its account needs about 8 NEAR. Each Guard deploys its own copy, so every DAO pays for its code storage in its create deposit (about 3.3 NEAR from this repo, about 2.5 NEAR on the older `keydoctor-guards.testnet`); that NEAR stays locked on the Guard, which has no key and cannot be deleted. When a `create` fails after the DAO check, the factory refunds the DAO from its own balance, which may run before NEAR returns the failed account's funding to it; keep spare NEAR on the factory, or a large refund can fail and stay on the factory. At most 10 Guards per DAO; that limit is unit-tested only.
 - Agent Guard page: it creates proposals only; voting happens in the DAO's own UI. It reads a Guard's views at one block and cannot show requests or pending proposals per agent beyond the counts the Guard returns.
 - Trezu treasuries are Sputnik DAOs. A one-off read-only scan of a public mainnet treasury parsed correctly. Trezu has no testnet, so this is not part of the demo and is not reproducible here ([`docs/trezu-integration.md`](docs/trezu-integration.md)).
 - Agent Guard: the 24-hour window restarts at the first request after it ends (`docs/final-idea.md` §11.5.7), so an agent can spend up to twice `max_per_day` without the council across a reset. Each request record is stored at the Guard's cost and never deleted; requests stop with `INSUFFICIENT_GUARD_BALANCE` once the balance no longer covers the bond plus that storage (or `min_reserve`, if higher).

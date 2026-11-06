@@ -1,6 +1,6 @@
 // Guard data types (docs/final-idea.md §11.5.2). Times exposed in JSON are `U64` (nanoseconds as strings) so
 // JS readers such as Key Doctor and the Guard MCP do not lose precision.
-use near_sdk::json_types::{U128, U64};
+use near_sdk::json_types::{Base64VecU8, U128, U64};
 use near_sdk::{near, AccountId, PublicKey};
 
 #[near(serializers = [borsh, json])]
@@ -84,6 +84,8 @@ pub struct RequestRecord {
     pub updated_at: U64,
     /// The amount was added to `spent_in_window` and not refunded.
     pub counted_in_window: bool,
+    /// Set on a step of this plan; `agent` is then the Guard itself.
+    pub plan_id: Option<u32>,
 }
 
 /// `new` input: one agent.
@@ -102,4 +104,76 @@ pub struct WhitelistInput {
     pub account_id: AccountId,
     pub label: String,
     pub max_per_tx: Option<U128>,
+}
+
+/// What one step does (§4.11, §11.11.2). `swap` joins here in GĐ31: until then `create_plan` cannot parse it.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PlanAction {
+    Transfer {
+        receiver_id: AccountId,
+    },
+    /// Stored whole: `execute_plan_step` takes only a plan id, so a caller cannot change any of it.
+    Call {
+        target: AccountId,
+        method: String,
+        args_base64: Base64VecU8,
+        deposit: U128,
+        gas: U64,
+    },
+}
+
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanStatus {
+    Active,
+    Paused,
+    Completed,
+    Cancelled,
+}
+
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanPauseReason {
+    InsufficientBalance,
+    GuardLowNear,
+    Owner,
+    Failures,
+}
+
+/// §4.11. `next_run_at` is `None` once the plan ended. `runs_done` counts runs the Guard approved and the DAO did
+/// not report as failed, so a skipped run stays to do.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Plan {
+    pub plan_id: u32,
+    pub action: PlanAction,
+    pub strategy_id: String,
+    pub token_in: String,
+    pub amount_per_run: U128,
+    pub interval_sec: u32,
+    pub runs_total: u32,
+    pub runs_done: u32,
+    pub start_at: U64,
+    pub next_run_at: Option<U64>,
+    pub status: PlanStatus,
+    pub pause_reason: Option<PlanPauseReason>,
+}
+
+/// `create_plan` input.
+#[near(serializers = [json])]
+#[derive(Clone)]
+pub struct PlanInput {
+    pub action: PlanAction,
+    pub strategy_id: String,
+    /// `""` is NEAR, as in a Sputnik `Transfer`. The only value before GĐ23.
+    pub token_in: String,
+    pub amount_per_run: U128,
+    pub interval_sec: u32,
+    pub runs_total: u32,
+    /// ns. Already past means the first step is due at once.
+    pub start_at: U64,
 }

@@ -424,7 +424,7 @@ impl Env {
     /// A factory holding `code`: what a new Guard release ships as, and the source `upgrade` reads from.
     async fn code_source(&self, name: &str, code: &[u8]) -> anyhow::Result<(Contract, String)> {
         let root = self.worker.root_account()?;
-        let account = root.create_subaccount(name).initial_balance(NearToken::from_near(6)).transact().await?.into_result()?;
+        let account = root.create_subaccount(name).initial_balance(NearToken::from_near(8)).transact().await?.into_result()?;
         let factory_wasm = std::fs::read(FACTORY_WASM).expect("build the factory wasm first (contracts/guard-factory)");
         let factory = account.deploy(&factory_wasm).await?.into_result()?;
         let mut args = (code.len() as u32).to_le_bytes().to_vec();
@@ -467,7 +467,7 @@ impl Env {
 /// The Guard's own wasm with another version, so a test can see which code answers.
 fn guard_wasm_with_version(version: &[u8; 5]) -> Vec<u8> {
     let mut code = std::fs::read(GUARD_WASM).unwrap();
-    let hits: Vec<usize> = code.windows(5).enumerate().filter(|(_, w)| w == b"1.1.0").map(|(i, _)| i).collect();
+    let hits: Vec<usize> = code.windows(5).enumerate().filter(|(_, w)| w == b"1.2.0").map(|(i, _)| i).collect();
     assert!(!hits.is_empty(), "the version string must be in the wasm");
     for i in hits {
         code[i..i + 5].copy_from_slice(version);
@@ -591,7 +591,7 @@ async fn installed_sputnik_cannot_send_a_guard_sized_wasm_through_upgrade_remote
 #[tokio::test]
 async fn a_dao_upgrades_the_guard_and_every_record_survives() -> anyhow::Result<()> {
     let e = setup().await?;
-    assert_eq!(e.version().await?, "1.1.0");
+    assert_eq!(e.version().await?, "1.2.0");
     let held = e.request("up-pend-01", &e.stranger, NearToken::from_millinear(100)).await?;
     assert_eq!(held["status"], "Pending");
     let config: Value = e.guard.view("get_config").await?.json()?;
@@ -650,7 +650,7 @@ async fn nobody_outside_the_dao_reaches_upgrade_or_its_callbacks() -> anyhow::Re
     assert!(on_code.is_failure(), "on_code is private");
     let migrate = e.stranger.call(e.guard.id(), "migrate").max_gas().transact().await?;
     assert!(migrate.is_failure(), "migrate is private");
-    assert_eq!(e.version().await?, "1.1.0");
+    assert_eq!(e.version().await?, "1.2.0");
     Ok(())
 }
 
@@ -676,5 +676,240 @@ async fn an_agent_proposal_inserted_before_the_owner_votes_stays_open() -> anyho
     e.vote(owner, "VoteApprove").await?;
     assert_eq!(e.proposal(owner).await?["status"], "Approved");
     assert_eq!(e.proposal(owner + 1).await?["status"], "InProgress", "the owner's vote must not reach the agent's proposal");
+    Ok(())
+}
+
+// ---- plans (§11.11, UC18, ADR 0005 K2 and K2a)
+
+// 140 Tgas of static promise gas, plus the first receipt.
+const STEP_GAS: Gas = Gas::from_tgas(200);
+
+impl Env {
+    /// A plan paying the receiver 0.1 NEAR per run, every 60 s, due at once.
+    async fn pay_receiver_plan(&self, runs: u32) -> anyhow::Result<()> {
+        let action = json!({ "type": "transfer", "receiver_id": self.receiver.id() });
+        self.create_plan(action, runs).await
+    }
+
+    async fn create_plan(&self, action: Value, runs: u32) -> anyhow::Result<()> {
+        let plan = json!({ "plan": {
+            "action": action,
+            "strategy_id": "dca",
+            "token_in": "",
+            "amount_per_run": yocto(NearToken::from_millinear(100)),
+            "interval_sec": 60,
+            "runs_total": runs,
+            "start_at": self.now().await?.to_string(),
+        }});
+        let status = self.dao_calls_guard("create_plan", plan, NearToken::from_millinear(10)).await?;
+        assert_eq!(status, "Approved", "the council must be able to create a plan");
+        Ok(())
+    }
+
+    async fn now(&self) -> anyhow::Result<u64> {
+        Ok(self.worker.view_block().await?.timestamp())
+    }
+
+    async fn plan(&self, plan_id: u32) -> anyhow::Result<Value> {
+        Ok(self.guard.view("get_plan").args_json(json!({ "plan_id": plan_id })).await?.json()?)
+    }
+
+    async fn step_as(&self, who: &Account, plan_id: u32, gas: Gas) -> anyhow::Result<ExecutionFinalResult> {
+        Ok(who.call(self.guard.id(), "execute_plan_step").args_json(json!({ "plan_id": plan_id })).gas(gas).transact().await?)
+    }
+
+    /// Moves the chain until the plan's next step is due.
+    async fn wait_for_step(&self, plan_id: u32) -> anyhow::Result<()> {
+        let due: u64 = self.plan(plan_id).await?["next_run_at"].as_str().unwrap().parse()?;
+        while self.now().await? < due {
+            self.worker.fast_forward(100).await?;
+        }
+        Ok(())
+    }
+
+    /// What the DAO can spend: its balance above its storage cost.
+    async fn dao_free_near(&self) -> anyhow::Result<u128> {
+        let view = self.dao.view_account().await?;
+        Ok(view.balance.as_yoctonear() - view.storage_usage as u128 * 10_000_000_000_000_000_000)
+    }
+
+    /// Adds the two call permissions a `call` plan needs (§11.11.2 spec role).
+    async fn grant_call_rights(&self) -> anyhow::Result<()> {
+        let mut policy: Value = self.dao.view("get_policy").await?.json()?;
+        let role = policy["roles"].as_array_mut().unwrap().iter_mut().find(|r| r["name"] == "agent-guard").unwrap();
+        role["permissions"].as_array_mut().unwrap().extend([json!("call:AddProposal"), json!("call:VoteApprove")]);
+        role["vote_policy"]["call"] = json!({ "weight_kind": "RoleWeight", "quorum": "0", "threshold": "1" });
+        assert_eq!(self.council_passes(json!({ "ChangePolicy": { "policy": policy } })).await?, "Approved");
+        Ok(())
+    }
+
+    /// A second Guard of this DAO, used as a `call` target whose DAO-only method shows the args and deposit arrived.
+    async fn second_guard(&self) -> anyhow::Result<Contract> {
+        let root = self.worker.root_account()?;
+        let account = root.create_subaccount("target").initial_balance(NearToken::from_near(10)).transact().await?.into_result()?;
+        let target = account.deploy(&std::fs::read(GUARD_WASM)?).await?.into_result()?;
+        target
+            .call("new")
+            .args_json(json!({
+                "dao_id": self.dao.id(),
+                "policy": {
+                    "max_per_tx": "1", "max_per_day": "1", "max_pending_per_agent": 1, "min_reserve": "1",
+                },
+                "agents": [], "whitelist": [], "guardians": [],
+            }))
+            .max_gas()
+            .transact()
+            .await?
+            .into_result()?;
+        Ok(target)
+    }
+}
+
+#[tokio::test]
+async fn a_stranger_can_run_a_plan_to_its_end_and_each_run_pays_once() -> anyhow::Result<()> {
+    // K2 and UC18: nothing about the keeper is special, so a stranger's calls must carry a plan to completion.
+    let e = setup().await?;
+    e.pay_receiver_plan(3).await?;
+    let before = e.balance(&e.receiver).await?;
+    let amount = NearToken::from_millinear(100).as_yoctonear();
+
+    for run in 1..=3u64 {
+        let outcome = e.step_as(&e.stranger, 0, STEP_GAS).await?;
+        if run == 1 {
+            println!("GAS execute_plan_step burnt={:.1} Tgas", outcome.total_gas_burnt.as_gas() as f64 / 1e12);
+            for receipt in outcome.outcomes() {
+                println!("GAS   receipt on {} burnt={:.1} Tgas", receipt.executor_id, receipt.gas_burnt.as_gas() as f64 / 1e12);
+            }
+        }
+        let record: Value = outcome.into_result()?.json()?;
+        assert_eq!(record["status"], "AutoApproved", "{record}");
+        assert_eq!(record["plan_id"], 0);
+        assert_eq!(e.proposal(record["proposal_id"].as_u64().unwrap()).await?["status"], "Approved");
+        assert_eq!(e.balance(&e.receiver).await? - before, amount * run as u128, "one payment per run");
+        assert_eq!(e.plan(0).await?["runs_done"], run);
+
+        let request_id = record["request_id"].as_str().unwrap();
+        assert_eq!(e.sync(request_id).await?["status"], "Executed");
+        assert_eq!(e.plan(0).await?["runs_done"], run, "sync must not count the run again");
+
+        if run < 3 {
+            fails_with(e.step_as(&e.stranger, 0, STEP_GAS).await?, "PLAN_NOT_DUE");
+            e.wait_for_step(0).await?;
+        }
+    }
+    let plan = e.plan(0).await?;
+    assert_eq!((plan["status"].as_str(), &plan["next_run_at"]), (Some("completed"), &Value::Null), "{plan}");
+    fails_with(e.step_as(&e.stranger, 0, STEP_GAS).await?, "PLAN_NOT_ACTIVE");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_caller_short_of_gas_cannot_burn_a_run() -> anyhow::Result<()> {
+    // K2a: the caller picks the gas. If low gas could move the slot, a stranger could erase runs for a few mNEAR.
+    let e = setup().await?;
+    e.pay_receiver_plan(3).await?;
+    let plan = e.plan(0).await?;
+    let before = e.balance(&e.receiver).await?;
+    let outcome = e.step_as(&e.stranger, 0, Gas::from_tgas(100)).await?;
+    assert!(outcome.is_failure(), "100 Tgas is under the 140 Tgas of static promise gas");
+    assert_eq!(e.plan(0).await?, plan, "neither runs_done nor next_run_at may move");
+    assert_eq!(e.balance(&e.receiver).await?, before);
+    let window: Value = e.guard.view("get_window").await?.json()?;
+    assert_eq!(window["spent_in_window"], "0");
+    Ok(())
+}
+
+#[tokio::test]
+async fn only_the_dao_writes_plans() -> anyhow::Result<()> {
+    let e = setup().await?;
+    e.pay_receiver_plan(3).await?;
+    for who in [&e.stranger, &e.agent, &e.guardian, &e.council] {
+        for method in ["pause_plan", "resume_plan", "cancel_plan"] {
+            let outcome = who.call(e.guard.id(), method).args_json(json!({ "plan_id": 0 })).max_gas().transact().await?;
+            fails_with(outcome, "ONLY_DAO");
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_dao_out_of_near_pauses_the_plan_and_resume_continues_after_a_top_up() -> anyhow::Result<()> {
+    // UC18. The bond the Guard attaches goes back to it on approval, so the run needs 0.1 NEAR of the DAO's own.
+    let e = setup().await?;
+    e.pay_receiver_plan(2).await?;
+    let first: Value = e.step_as(&e.stranger, 0, STEP_GAS).await?.into_result()?.json()?;
+    assert_eq!(first["status"], "AutoApproved");
+
+    let keep = NearToken::from_millinear(50).as_yoctonear();
+    let drain = e.dao_free_near().await? - keep;
+    let kind = json!({ "Transfer": { "token_id": "", "receiver_id": e.stranger.id(), "amount": drain.to_string(), "msg": null } });
+    assert_eq!(e.council_passes(kind).await?, "Approved");
+    assert!(e.dao_free_near().await? < NearToken::from_millinear(100).as_yoctonear());
+
+    e.wait_for_step(0).await?;
+    let receiver = e.balance(&e.receiver).await?;
+    let outcome = e.step_as(&e.stranger, 0, STEP_GAS).await?;
+    let shortage = format!("{:?}", outcome.failures());
+    assert!(shortage.contains("LackBalanceForState"), "the reason code rests on this failure: {shortage}");
+    let plan = e.plan(0).await?;
+    assert_eq!((plan["status"].as_str(), plan["pause_reason"].as_str()), (Some("paused"), Some("insufficient_balance")), "{plan}");
+    assert_eq!(plan["runs_done"], 1, "the failed run must not count");
+    assert_eq!(e.balance(&e.receiver).await?, receiver, "nothing was paid");
+    fails_with(e.step_as(&e.stranger, 0, STEP_GAS).await?, "PLAN_NOT_ACTIVE");
+
+    e.council.transfer_near(e.dao.id(), NearToken::from_near(5)).await?.into_result()?;
+    assert_eq!(e.dao_calls_guard("resume_plan", json!({ "plan_id": 0 }), NearToken::from_near(0)).await?, "Approved");
+    e.wait_for_step(0).await?;
+    let record: Value = e.step_as(&e.stranger, 0, STEP_GAS).await?.into_result()?.json()?;
+    assert_eq!(record["status"], "AutoApproved", "{record}");
+    assert_eq!(e.balance(&e.receiver).await? - receiver, NearToken::from_millinear(100).as_yoctonear());
+    assert_eq!(e.plan(0).await?["status"], "completed");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_call_plan_delivers_its_stored_args_and_deposit() -> anyhow::Result<()> {
+    let e = setup().await?;
+    e.grant_call_rights().await?;
+    let target = e.second_guard().await?;
+    let args = json!({ "account_id": e.receiver.id(), "label": "from a plan", "max_per_tx": null });
+    let action = json!({
+        "type": "call",
+        "target": target.id(),
+        "method": "add_whitelist",
+        "args_base64": STANDARD.encode(args.to_string()),
+        "deposit": yocto(NearToken::from_millinear(10)),
+        "gas": Gas::from_tgas(30).as_gas().to_string(),
+    });
+    e.create_plan(action, 1).await?;
+    let outcome = e.step_as(&e.stranger, 0, STEP_GAS).await?;
+    println!("GAS call step burnt={:.1} Tgas", outcome.total_gas_burnt.as_gas() as f64 / 1e12);
+    let record: Value = outcome.into_result()?.json()?;
+    assert_eq!(record["status"], "AutoApproved", "{record}");
+    assert_eq!(e.proposal(record["proposal_id"].as_u64().unwrap()).await?["status"], "Approved");
+    let whitelist: Value = target.view("get_whitelist").await?.json()?;
+    assert_eq!(whitelist[0]["account_id"], e.receiver.id().as_str(), "the args and the storage deposit must arrive: {whitelist}");
+    let window: Value = e.guard.view("get_window").await?.json()?;
+    assert_eq!(window["spent_in_window"], yocto(NearToken::from_millinear(100)), "a call counts its amount_per_run");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_call_plan_without_the_call_right_pauses_at_its_first_step() -> anyhow::Result<()> {
+    // Today's Budget role holds only the two transfer rights: such a plan must stop and say so, and pay nothing.
+    // The DAO's `all` role lets anyone propose, so it is the Guard's vote that fails, and the bond stays in the
+    // open proposal until the council rejects it or it expires.
+    let e = setup().await?;
+    let action = json!({
+        "type": "call", "target": e.receiver.id(), "method": "anything", "args_base64": "",
+        "deposit": "0", "gas": Gas::from_tgas(10).as_gas().to_string(),
+    });
+    e.create_plan(action, 1).await?;
+    let record: Value = e.step_as(&e.stranger, 0, STEP_GAS).await?.into_result()?.json()?;
+    assert_eq!(record["status"], "Failed", "{record}");
+    let plan = e.plan(0).await?;
+    assert_eq!((plan["status"].as_str(), plan["pause_reason"].as_str()), (Some("paused"), Some("failures")), "{plan}");
+    let window: Value = e.guard.view("get_window").await?.json()?;
+    assert_eq!(window["spent_in_window"], "0");
     Ok(())
 }

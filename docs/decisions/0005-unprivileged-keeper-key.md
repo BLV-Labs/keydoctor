@@ -13,7 +13,7 @@ A plan in a Guard (ADR 0006) runs on a schedule, and a NEAR contract cannot wake
 
 Today's invariant forbids this: "The Worker never holds a key". The Guard emergency brake (GĐ24) was cut for that reason (plan D4). The brake key was privileged, because its reporter account could vote to reject proposals. A keeper needs no privilege: `sync_request` already accepts any caller, and `execute_plan_step` can be built the same way.
 
-State of the code: `sync_request` exists, `execute_plan_step` does not yet, and the Worker has no signing code.
+State of the code: `sync_request` and `execute_plan_step` exist in the Guard contract, with K2 and K2a tested in the sandbox, but no factory serves that code yet. The Worker has no signing code.
 
 ## Decision
 

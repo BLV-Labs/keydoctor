@@ -34,8 +34,8 @@
 # ~/.config/key-doctor/<agent>.json), KD_GUARD_FUND (DAO -> Guard, NEAR, default 1, 0 skips), KD_DAO_TREASURY
 # (NEAR the DAO keeps for the invoices after funding the Guard, default 8).
 # Factory: KD_GUARD_FACTORY (default <prefix>-guards.testnet). The factory code and the Guard code it keeps lock
-# about 4.3 NEAR of storage (0.00001 NEAR per byte, not burned), so the account needs 6 NEAR: KD_GUARD_FUNDER
-# creates it with that, or create and fund it yourself. Each DAO pays its own Guard's code storage (about 2.5 NEAR)
+# about 5.3 NEAR of storage (0.00001 NEAR per byte, not burned), so the account needs 8 NEAR: KD_GUARD_FUNDER
+# creates it with that, or create and fund it yourself. Each DAO pays its own Guard's code storage (about 3.3 NEAR)
 # in its create deposit. Build the dashboard with KD_GUARD_FACTORY.
 set -euo pipefail
 
@@ -330,10 +330,10 @@ step_factory() {
     echo "$GUARD_FACTORY already has code: guard code hash $(view "$GUARD_FACTORY" get_code_hash '{}')"
   else
     if [[ $(acct "$GUARD_FACTORY" exists) != true ]]; then
-      [[ -n "$FUNDER" ]] || { echo "$GUARD_FACTORY does not exist: set KD_GUARD_FUNDER (6 NEAR) or create it yourself." >&2; exit 1; }
-      near account create-account fund-myself "$GUARD_FACTORY" '6 NEAR' autogenerate-new-keypair "$SAVE" sign-as "$FUNDER" "${NET[@]}" "$SIGN" send
+      [[ -n "$FUNDER" ]] || { echo "$GUARD_FACTORY does not exist: set KD_GUARD_FUNDER (8 NEAR) or create it yourself." >&2; exit 1; }
+      near account create-account fund-myself "$GUARD_FACTORY" '8 NEAR' autogenerate-new-keypair "$SAVE" sign-as "$FUNDER" "${NET[@]}" "$SIGN" send
     fi
-    ge "$(acct "$GUARD_FACTORY" spendable)" "$(y 5)" || { echo "$GUARD_FACTORY needs about 6 NEAR before deploy." >&2; exit 1; }
+    ge "$(acct "$GUARD_FACTORY" spendable)" "$(y 7)" || { echo "$GUARD_FACTORY needs about 8 NEAR before deploy." >&2; exit 1; }
     (cd "$CRATE" && cargo near build non-reproducible-wasm --no-abi)
     (cd "$ROOT/contracts/guard-factory" && cargo near build non-reproducible-wasm --no-abi)
     local guard="$CRATE/target/near/kd_guard.wasm" factory="$ROOT/contracts/guard-factory/target/near/kd_guard_factory.wasm"

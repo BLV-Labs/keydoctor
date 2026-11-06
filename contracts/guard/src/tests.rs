@@ -1087,3 +1087,488 @@ fn removing_an_agent_keeps_its_spend_in_the_guards_total() {
     synced(&mut g, T0 + 3, "req-0001", "Failed", T0 + 1);
     assert_eq!(spent(&g), 0);
 }
+
+// ---- plans (§11.11, ADR 0005 K2)
+
+const MINUTE: u64 = 60_000_000_000;
+
+fn plan_of(action: PlanAction, amount: u128, runs: u32) -> PlanInput {
+    PlanInput {
+        action,
+        strategy_id: "dca".into(),
+        token_in: "".into(),
+        amount_per_run: U128(amount),
+        interval_sec: 60,
+        runs_total: runs,
+        start_at: U64(T0 + MINUTE),
+    }
+}
+
+fn pay_vendor(runs: u32) -> PlanInput {
+    plan_of(PlanAction::Transfer { receiver_id: id(VENDOR) }, NEAR, runs)
+}
+
+fn pool_call() -> PlanAction {
+    PlanAction::Call {
+        target: id("pool.testnet"),
+        method: "deposit".into(),
+        args_base64: b"{\"to\":1}".to_vec().into(),
+        deposit: U128(NEAR / 100),
+        gas: U64(30_000_000_000_000),
+    }
+}
+
+fn create(g: &mut Guard, plan: PlanInput) -> u32 {
+    env_full(DAO, T0, NEAR / 10, 10 * NEAR);
+    g.create_plan(plan)
+}
+
+fn step(g: &mut Guard, now: u64, plan_id: u32) {
+    env_as(STRANGER, now);
+    let _ = g.execute_plan_step(plan_id);
+}
+
+fn step_id(plan_id: u32, due: u64) -> String {
+    format!("plan-{plan_id}-{due}")
+}
+
+/// The step due at `due` through the whole chain, up to the Guard's vote.
+fn paid_step(g: &mut Guard, due: u64, plan_id: u32, proposal_id: u64) {
+    step(g, due, plan_id);
+    added(g, due, &step_id(plan_id, due), Ok(proposal_id));
+    voted(g, due, &step_id(plan_id, due), Ok(()));
+}
+
+fn plan(g: &Guard, plan_id: u32) -> Plan {
+    g.get_plan(plan_id).unwrap()
+}
+
+fn due_at(g: &Guard, plan_id: u32) -> u64 {
+    plan(g, plan_id).next_run_at.unwrap().0
+}
+
+fn logged(text: &str) -> bool {
+    get_logs().iter().any(|l| l.contains(text))
+}
+
+#[test]
+#[should_panic(expected = "ONLY_DAO")]
+fn an_agent_cannot_write_a_plan() {
+    // A plan spends without asking anyone at run time, so it needs the owner's vote at creation.
+    let mut g = setup();
+    env_full(AGENT, T0, NEAR, 10 * NEAR);
+    g.create_plan(pay_vendor(3));
+}
+
+#[test]
+#[should_panic(expected = "INSUFFICIENT_STORAGE_DEPOSIT")]
+fn a_plan_pays_for_its_own_storage() {
+    // Plans have no count limit; the deposit is what stops them eating the Guard's NEAR.
+    let mut g = setup();
+    env_as(DAO, T0);
+    g.create_plan(pay_vendor(3));
+}
+
+#[test]
+#[should_panic(expected = "NOT_WHITELISTED")]
+fn a_plan_cannot_pay_a_receiver_outside_the_whitelist() {
+    // §11.11.2. A plan pays with no vote at run time, which an agent can only do for a whitelisted receiver.
+    let mut g = setup();
+    create(&mut g, plan_of(PlanAction::Transfer { receiver_id: id(STRANGER) }, NEAR, 3));
+}
+
+#[test]
+#[should_panic(expected = "OVER_PER_TX")]
+fn a_plan_cannot_start_over_the_limit_an_agent_faces() {
+    let mut g = setup();
+    create(&mut g, plan_of(PlanAction::Transfer { receiver_id: id(VENDOR) }, 6 * NEAR, 3));
+}
+
+#[test]
+fn a_new_plan_waits_for_its_start_time_and_reads_as_section_4_11() {
+    let mut g = setup();
+    let plan_id = create(&mut g, pay_vendor(3));
+    assert_eq!(plan_id, 0);
+    let json = near_sdk::serde_json::to_value(plan(&g, 0)).unwrap();
+    assert_eq!(json["action"], near_sdk::serde_json::json!({ "type": "transfer", "receiver_id": VENDOR }));
+    assert_eq!(json["status"], "active");
+    assert_eq!(json["pause_reason"], Value::Null);
+    assert_eq!(json["next_run_at"], (T0 + MINUTE).to_string());
+    assert_eq!(json["amount_per_run"], NEAR.to_string());
+    assert_eq!(json["runs_done"], 0);
+}
+
+#[test]
+fn a_swap_plan_does_not_parse_before_it_can_run() {
+    // GĐ31 adds `swap`. Storing one now would give the owner a plan that can only fail.
+    let input = near_sdk::serde_json::json!({
+        "action": { "type": "swap", "pool_id": 1, "token_out": "wrap.testnet", "max_slippage_bps": 50 },
+        "strategy_id": "dca", "token_in": "", "amount_per_run": "1", "interval_sec": 60, "runs_total": 1, "start_at": "0",
+    });
+    assert!(near_sdk::serde_json::from_value::<PlanInput>(input).is_err());
+}
+
+#[test]
+fn get_plans_pages_in_id_order() {
+    let mut g = setup();
+    for _ in 0..3 {
+        create(&mut g, pay_vendor(1));
+    }
+    let ids: Vec<u32> = g.get_plans(Some(1), Some(5)).iter().map(|p| p.plan_id).collect();
+    assert_eq!(ids, [1, 2]);
+    assert_eq!(g.get_plans(None, Some(1)).len(), 1);
+    assert!(g.get_plan(9).is_none());
+}
+
+#[test]
+#[should_panic(expected = "PLAN_NOT_DUE")]
+fn a_step_before_its_time_is_refused() {
+    // K2: only the due step runs, or anyone could spend a plan's budget early.
+    let mut g = setup();
+    create(&mut g, pay_vendor(3));
+    step(&mut g, T0 + MINUTE - 1, 0);
+}
+
+#[test]
+#[should_panic(expected = "PLAN_NOT_DUE")]
+fn a_second_call_in_the_same_slot_is_refused_before_the_first_settles() {
+    // K2: the callbacks of the first call have not run yet, so the slot itself must be what stops this.
+    let mut g = setup();
+    create(&mut g, pay_vendor(3));
+    step(&mut g, T0 + MINUTE, 0);
+    step(&mut g, T0 + MINUTE, 0);
+}
+
+#[test]
+fn every_caller_gets_the_same_step() {
+    // K1 and K2: if some caller got a different result, that caller would hold a right, and the keeper key would
+    // stop being unprivileged.
+    let run_as = |caller: &str| {
+        let mut g = setup();
+        create(&mut g, pay_vendor(3));
+        env_as(caller, T0 + MINUTE);
+        let _ = g.execute_plan_step(0);
+        (calls(), plan(&g, 0), rec(&g, &step_id(0, T0 + MINUTE)))
+    };
+    assert_eq!(run_as(STRANGER), run_as(AGENT));
+    assert_eq!(run_as(STRANGER), run_as(DAO));
+}
+
+#[test]
+fn a_transfer_step_is_a_proposal_the_guard_approves_itself() {
+    let mut g = setup();
+    create(&mut g, pay_vendor(3));
+    let (due, rid) = (T0 + MINUTE, step_id(0, T0 + MINUTE));
+    step(&mut g, due, 0);
+    let add = calls().into_iter().find(|c| c.1 == "add_proposal").unwrap();
+    assert_eq!((add.0.as_str(), add.2), (DAO, BOND));
+    let proposal = &add.3["proposal"];
+    assert_eq!(proposal["kind"]["Transfer"]["receiver_id"], VENDOR);
+    assert_eq!(proposal["kind"]["Transfer"]["amount"], NEAR.to_string());
+    // Key Doctor renders this line as a Guard note, so it must keep the shape of an agent request.
+    let line = format!("[KD-GUARD] request={rid} agent={GUARD} decision=auto reasons=- memo=plan 0 run 1");
+    assert_eq!(proposal["description"], line);
+    assert_eq!(rec(&g, &rid).plan_id, Some(0));
+
+    added(&mut g, due, &rid, Ok(7));
+    let vote = calls().into_iter().find(|c| c.1 == "act_proposal").unwrap();
+    assert_eq!(vote.3["id"], 7);
+    assert_eq!(vote.3["action"], "VoteApprove");
+    assert_eq!(vote.3["proposal"]["Transfer"]["amount"], NEAR.to_string(), "the vote must name the same kind");
+    voted(&mut g, due, &rid, Ok(()));
+    assert_eq!(plan(&g, 0).runs_done, 1);
+    assert_eq!(rec(&g, &rid).status, RequestStatus::AutoApproved);
+}
+
+#[test]
+fn a_call_step_runs_the_stored_call_and_counts_against_the_limit() {
+    // Spec: every step counts `amount_per_run`, a `call` too, or a call plan would have no spending cap.
+    let mut g = setup();
+    create(&mut g, plan_of(pool_call(), NEAR, 3));
+    let (due, rid) = (T0 + MINUTE, step_id(0, T0 + MINUTE));
+    step(&mut g, due, 0);
+    assert_eq!(spent(&g), NEAR);
+    let add = calls().into_iter().find(|c| c.1 == "add_proposal").unwrap();
+    let call = &add.3["proposal"]["kind"]["FunctionCall"];
+    assert_eq!(call["receiver_id"], "pool.testnet");
+    assert_eq!(call["actions"][0]["method_name"], "deposit");
+    assert_eq!(call["actions"][0]["args"], "eyJ0byI6MX0=");
+    assert_eq!(call["actions"][0]["deposit"], (NEAR / 100).to_string());
+    assert_eq!(call["actions"][0]["gas"], "30000000000000");
+
+    added(&mut g, due, &rid, Ok(7));
+    let vote = calls().into_iter().find(|c| c.1 == "act_proposal").unwrap();
+    assert_eq!(vote.3["proposal"]["FunctionCall"], *call, "the vote must name the same kind");
+}
+
+#[test]
+fn a_plan_ends_after_exactly_its_runs() {
+    let mut g = setup();
+    create(&mut g, pay_vendor(2));
+    let first = T0 + MINUTE;
+    paid_step(&mut g, first, 0, 1);
+    assert_eq!(due_at(&g, 0), first + MINUTE);
+    assert_eq!(plan(&g, 0).status, PlanStatus::Active);
+    paid_step(&mut g, first + MINUTE, 0, 2);
+    assert!(logged("plan_completed"));
+    let p = plan(&g, 0);
+    assert_eq!((p.runs_done, p.status, p.next_run_at), (2, PlanStatus::Completed, None));
+}
+
+#[test]
+#[should_panic(expected = "PLAN_NOT_ACTIVE")]
+fn a_completed_plan_does_not_pay_again() {
+    let mut g = setup();
+    create(&mut g, pay_vendor(1));
+    paid_step(&mut g, T0 + MINUTE, 0, 1);
+    step(&mut g, T0 + 2 * MINUTE, 0);
+}
+
+#[test]
+fn a_day_over_the_limit_skips_the_slot_and_keeps_the_run() {
+    // §11.11.3 (2). The owner asked for `runs_total` payments, so a full day delays one and does not lose it.
+    let mut g = setup();
+    for i in 0..4 {
+        auto_approved(&mut g, T0 + 1, &format!("req-000{i}"), 4 * NEAR, i);
+    }
+    create(&mut g, plan_of(PlanAction::Transfer { receiver_id: id(VENDOR) }, 5 * NEAR, 3));
+    let due = T0 + MINUTE;
+    step(&mut g, due, 0);
+    assert!(logged("plan_step_skipped") && logged("OVER_DAILY_LIMIT"));
+    assert!(!method_called("add_proposal"), "a skip must not spend");
+    assert_eq!(spent(&g), 16 * NEAR);
+    let p = plan(&g, 0);
+    assert_eq!((p.runs_done, p.status, p.next_run_at), (0, PlanStatus::Active, Some(U64(due + MINUTE))));
+
+    let tomorrow = T0 + policy::DAY_NS + 1;
+    step(&mut g, tomorrow, 0);
+    assert!(method_called("add_proposal"), "the run still happens once the window rolls");
+}
+
+#[test]
+fn a_late_step_runs_once_and_does_not_catch_up() {
+    // The cron can be down for hours; the missed slots must not pay in a row afterwards.
+    let mut g = setup();
+    create(&mut g, pay_vendor(5));
+    let due = T0 + MINUTE;
+    step(&mut g, due + 90 * MINUTE + 1, 0);
+    assert_eq!(due_at(&g, 0), due + 91 * MINUTE);
+}
+
+#[test]
+fn a_guard_short_of_near_for_the_bond_pauses_the_plan() {
+    // §11.11.3 (3). Sending the proposal would fail and could eat into the Guard's reserve.
+    let mut g = setup();
+    create(&mut g, pay_vendor(3));
+    let due = T0 + MINUTE;
+    env_full(STRANGER, due, 0, NEAR);
+    let _ = g.execute_plan_step(0);
+    assert!(!method_called("add_proposal"));
+    assert!(logged("plan_paused"));
+    let p = plan(&g, 0);
+    assert_eq!((p.status, p.pause_reason), (PlanStatus::Paused, Some(PlanPauseReason::GuardLowNear)));
+    assert_eq!(p.next_run_at, Some(U64(due)), "the slot stays, so Resume runs it");
+    assert_eq!(spent(&g), 0);
+}
+
+#[test]
+fn a_receiver_taken_off_the_whitelist_stops_the_plan() {
+    // The owner's later decision wins over the plan. A skip would retry forever; only the owner can settle this.
+    let mut g = setup();
+    create(&mut g, pay_vendor(3));
+    env_as(DAO, T0);
+    g.remove_whitelist(id(VENDOR));
+    step(&mut g, T0 + MINUTE, 0);
+    assert!(!method_called("add_proposal"), "no payment to a removed receiver");
+    assert!(logged("NOT_WHITELISTED"));
+    assert_eq!(plan(&g, 0).pause_reason, Some(PlanPauseReason::Failures));
+}
+
+#[test]
+fn a_limit_lowered_under_the_run_stops_the_plan() {
+    let mut g = setup();
+    create(&mut g, pay_vendor(3));
+    env_as(DAO, T0);
+    g.set_policy(GuardPolicy { max_per_tx: U128(NEAR / 2), ..limits() });
+    step(&mut g, T0 + MINUTE, 0);
+    assert!(!method_called("add_proposal"));
+    assert_eq!(plan(&g, 0).pause_reason, Some(PlanPauseReason::Failures));
+}
+
+#[test]
+#[should_panic(expected = "PAUSED")]
+fn the_guards_own_pause_stops_plans_too() {
+    // The guardian's brake must hold for every spending path.
+    let mut g = setup();
+    create(&mut g, pay_vendor(3));
+    env_as(GUARDIAN, T0);
+    g.pause();
+    step(&mut g, T0 + MINUTE, 0);
+}
+
+#[test]
+fn a_refused_proposal_gives_back_the_limit_and_pauses() {
+    // The DAO refused the proposal: nothing paid, and a top-up would not help, so the reason must not say balance.
+    let mut g = setup();
+    create(&mut g, pay_vendor(3));
+    let due = T0 + MINUTE;
+    step(&mut g, due, 0);
+    assert_eq!(spent(&g), NEAR);
+    added(&mut g, due, &step_id(0, due), Err(PromiseError::Failed));
+    assert_eq!(spent(&g), 0, "no money left");
+    let p = plan(&g, 0);
+    assert_eq!((p.runs_done, p.pause_reason), (0, Some(PlanPauseReason::Failures)));
+}
+
+#[test]
+fn a_failed_vote_pauses_for_balance_and_resume_runs_it_again() {
+    // UC18: the DAO is short of NEAR, so the vote fails with the payment. After a top-up the plan carries on.
+    let mut g = setup();
+    create(&mut g, pay_vendor(2));
+    let due = T0 + MINUTE;
+    step(&mut g, due, 0);
+    added(&mut g, due, &step_id(0, due), Ok(1));
+    voted(&mut g, due, &step_id(0, due), Err(PromiseError::Failed));
+    let p = plan(&g, 0);
+    assert_eq!((p.runs_done, p.pause_reason), (0, Some(PlanPauseReason::InsufficientBalance)));
+    assert_eq!(spent(&g), 0);
+
+    env_as(DAO, due + 1);
+    g.resume_plan(0);
+    let retry = due + MINUTE;
+    paid_step(&mut g, retry, 0, 2);
+    assert_eq!(plan(&g, 0).runs_done, 1, "the failed run does not count");
+    assert_eq!(rec(&g, &step_id(0, due)).status, RequestStatus::Failed, "its record stays");
+}
+
+#[test]
+fn a_failed_vote_on_a_call_does_not_tell_the_owner_to_top_up() {
+    // Sandbox: a role without `call:VoteApprove` fails here, with the DAO's balance fine.
+    let mut g = setup();
+    create(&mut g, plan_of(pool_call(), NEAR, 2));
+    let due = T0 + MINUTE;
+    step(&mut g, due, 0);
+    added(&mut g, due, &step_id(0, due), Ok(1));
+    voted(&mut g, due, &step_id(0, due), Err(PromiseError::Failed));
+    assert_eq!(plan(&g, 0).pause_reason, Some(PlanPauseReason::Failures));
+}
+
+#[test]
+fn a_proposal_that_fails_later_takes_the_run_back_and_reopens_the_plan() {
+    // The vote landed but the payment did not. Without this the owner would get one payment fewer, with a plan
+    // that says completed.
+    let mut g = setup();
+    create(&mut g, pay_vendor(1));
+    let due = T0 + MINUTE;
+    paid_step(&mut g, due, 0, 1);
+    assert_eq!(plan(&g, 0).status, PlanStatus::Completed);
+    synced(&mut g, due + 5, &step_id(0, due), "Failed", due);
+    let p = plan(&g, 0);
+    assert_eq!((p.runs_done, p.status, p.pause_reason), (0, PlanStatus::Paused, Some(PlanPauseReason::Failures)));
+    assert_eq!(p.next_run_at, Some(U64(due + 5)), "a paused plan needs a slot for Resume");
+    assert_eq!(spent(&g), 0);
+}
+
+#[test]
+fn a_run_counts_once_however_sync_and_the_vote_interleave() {
+    // sync_request is public, so it can land before on_voted, or after it.
+    let mut g = setup();
+    create(&mut g, pay_vendor(3));
+    let due = T0 + MINUTE;
+    let rid = step_id(0, due);
+    step(&mut g, due, 0);
+    added(&mut g, due, &rid, Ok(1));
+    synced(&mut g, due, &rid, "Approved", due);
+    voted(&mut g, due, &rid, Ok(()));
+    assert_eq!(plan(&g, 0).runs_done, 1);
+
+    let next = due + MINUTE;
+    paid_step(&mut g, next, 0, 2);
+    synced(&mut g, next, &step_id(0, next), "Approved", next);
+    assert_eq!(plan(&g, 0).runs_done, 2);
+}
+
+#[test]
+#[should_panic(expected = "PLAN_NOT_ACTIVE")]
+fn a_plan_the_owner_paused_does_not_run() {
+    let mut g = setup();
+    create(&mut g, pay_vendor(3));
+    env_as(DAO, T0);
+    g.pause_plan(0);
+    step(&mut g, T0 + MINUTE, 0);
+}
+
+#[test]
+fn resume_runs_the_due_step_once() {
+    let mut g = setup();
+    create(&mut g, pay_vendor(3));
+    env_as(DAO, T0);
+    g.pause_plan(0);
+    assert_eq!(plan(&g, 0).pause_reason, Some(PlanPauseReason::Owner));
+    env_as(DAO, T0 + 30 * MINUTE);
+    g.resume_plan(0);
+    let p = plan(&g, 0);
+    assert_eq!((p.status, p.pause_reason), (PlanStatus::Active, None));
+    step(&mut g, T0 + 30 * MINUTE, 0);
+    assert!(method_called("add_proposal"));
+    assert_eq!(due_at(&g, 0), T0 + 31 * MINUTE);
+}
+
+#[test]
+fn a_late_failure_leaves_the_owners_pause_and_cancel_in_place() {
+    // A step in flight when the owner acts must not undo that choice.
+    let mut g = setup();
+    create(&mut g, pay_vendor(3));
+    let due = T0 + MINUTE;
+    paid_step(&mut g, due, 0, 1);
+    env_as(DAO, due + 1);
+    g.pause_plan(0);
+    synced(&mut g, due + 2, &step_id(0, due), "Failed", due);
+    let p = plan(&g, 0);
+    assert_eq!((p.runs_done, p.pause_reason), (0, Some(PlanPauseReason::Owner)));
+
+    env_as(DAO, due + 3);
+    g.cancel_plan(0);
+    let p = plan(&g, 0);
+    assert_eq!((p.status, p.next_run_at, p.pause_reason), (PlanStatus::Cancelled, None, None));
+}
+
+#[test]
+fn a_step_in_flight_when_cancelled_counts_but_does_not_complete_the_plan() {
+    let mut g = setup();
+    create(&mut g, pay_vendor(1));
+    let due = T0 + MINUTE;
+    step(&mut g, due, 0);
+    env_as(DAO, due);
+    g.cancel_plan(0);
+    added(&mut g, due, &step_id(0, due), Ok(1));
+    voted(&mut g, due, &step_id(0, due), Ok(()));
+    let p = plan(&g, 0);
+    assert_eq!((p.runs_done, p.status), (1, PlanStatus::Cancelled));
+}
+
+#[test]
+#[should_panic(expected = "PLAN_ENDED")]
+fn an_ended_plan_cannot_be_cancelled() {
+    let mut g = setup();
+    create(&mut g, pay_vendor(1));
+    paid_step(&mut g, T0 + MINUTE, 0, 1);
+    env_as(DAO, T0 + 2 * MINUTE);
+    g.cancel_plan(0);
+}
+
+#[test]
+#[should_panic(expected = "PLAN_NOT_PAUSED")]
+fn only_a_paused_plan_resumes() {
+    let mut g = setup();
+    create(&mut g, pay_vendor(1));
+    env_as(DAO, T0);
+    g.resume_plan(0);
+}
+
+#[test]
+#[should_panic(expected = "UNKNOWN_PLAN")]
+fn an_unknown_plan_is_refused() {
+    let mut g = setup();
+    step(&mut g, T0, 9);
+}

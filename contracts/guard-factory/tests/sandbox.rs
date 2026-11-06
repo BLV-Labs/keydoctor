@@ -49,7 +49,7 @@ async fn setup() -> anyhow::Result<Env> {
     let receiver = sub("receiver", 1).await?.into_result()?;
     let stranger = sub("stranger", 20).await?.into_result()?;
     let dao = sub("dao", 50).await?.into_result()?;
-    let factory = sub("factory", 6).await?.into_result()?; // what setup.sh gives the testnet factory
+    let factory = sub("factory", 8).await?.into_result()?; // what setup.sh gives the testnet factory
 
     let dao = dao.deploy(&std::fs::read(SPUTNIK_WASM)?).await?.into_result()?;
     dao.call("new")
