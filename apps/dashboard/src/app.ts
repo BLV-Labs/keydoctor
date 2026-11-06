@@ -74,7 +74,7 @@ const GUARD_FACTORY = typeof __KD_GUARD_FACTORY__ === "string" ? __KD_GUARD_FACT
 let guardState: GuardDao | null = null;
 let guardPreview: (GuardPreview & { labels: string[] }) | null = null;
 declare const __KD_BUDGET_FACTORY__: string;
-/** Set at build time (KD_BUDGET_FACTORY); empty means Agent Budgets cannot be created yet (the v2 factory is not deployed). */
+/** Set at build time (KD_BUDGET_FACTORY); empty means Agent Budgets cannot be created from this build. */
 const BUDGET_FACTORY = typeof __KD_BUDGET_FACTORY__ === "string" ? __KD_BUDGET_FACTORY__ : "";
 /** Budgets are read from the Budget factory when set, else from the Guard factory. */
 const BUDGET_READ_FACTORY = BUDGET_FACTORY || GUARD_FACTORY;
