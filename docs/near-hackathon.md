@@ -174,7 +174,7 @@ Lưu ý: luật không nói chọn nhiều track có làm tăng cơ hội giải
 - [ ] Bài X ghi "built at NEAR HACKATHON", tag @NEARProtocol và #NEARHackathon, kèm video.
 - [ ] Account NEAR mainnet nhận thưởng, do team tự tạo.
 - [ ] Mô tả 20 đến 2.000 ký tự: vấn đề, sản phẩm, NEAR ở đâu.
-- [ ] Tracks: `social`, `security`.
+- [ ] Tracks: `security` (chính), `social` (phụ), theo `final-idea.md` (T15).
 - [ ] Ô "Website" để trống.
 - [ ] Đồng ý điều khoản liên hệ (`consent: true`), do người xác nhận.
 - [ ] Nộp **một lần**, sau khi repo đã public và bài X đã đăng.
