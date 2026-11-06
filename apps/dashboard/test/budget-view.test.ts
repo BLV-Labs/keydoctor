@@ -20,6 +20,7 @@ import {
   renderRecipients,
 } from "../src/budget-view.ts";
 import { renderAgentGuide } from "../src/agent-guide.ts";
+import { budgetPolicy } from "../src/budget-create.ts";
 import type { RawPolicy } from "../src/guard-proposals.ts";
 
 const NEAR = (n: number) => `${n}${"0".repeat(24)}`;
@@ -230,6 +231,22 @@ describe("topUpBlocks", () => {
     assert.deepEqual(topUpBlocks(shared, "owner.testnet", "g1.guards.testnet", registry), ["FOREIGN_MEMBER"]);
     const added: RawPolicy = { ...policy, roles: [...policy.roles, { name: "extra", kind: { Group: ["other.testnet"] }, permissions: ["*:*"], vote_policy: {} }] };
     assert.deepEqual(topUpBlocks(added, "owner.testnet", "g1.guards.testnet", registry), ["FOREIGN_MEMBER"]);
+  });
+  it("blocks a role that names no account: a stranger holding a vote through it could send the money away", () => {
+    const everyone: RawPolicy = { ...policy, roles: [...policy.roles, { name: "all", kind: "Everyone", permissions: ["transfer:VoteApprove"], vote_policy: {} }] };
+    assert.deepEqual(topUpBlocks(everyone, "owner.testnet", "g1.guards.testnet", registry), ["FOREIGN_MEMBER"]);
+    const holders: RawPolicy = { ...policy, roles: [...policy.roles, { name: "holders", kind: { Member: "1" }, permissions: ["*:*"], vote_policy: {} }] };
+    assert.deepEqual(topUpBlocks(holders, "owner.testnet", "g1.guards.testnet", registry), ["FOREIGN_MEMBER"]);
+  });
+  it("reads every role named agent-guard: a second one must not hide behind the good first one", () => {
+    const second = (kind: unknown): RawPolicy => ({ ...policy, roles: [...policy.roles, { name: "agent-guard", kind, permissions: ["*:*"], vote_policy: {} }] });
+    assert.deepEqual(topUpBlocks(second({ Group: ["evil.testnet"] }), "owner.testnet", "g1.guards.testnet", registry), ["FOREIGN_GUARD"]);
+    assert.deepEqual(topUpBlocks(second("Everyone"), "owner.testnet", "g1.guards.testnet", registry), ["FOREIGN_GUARD"]);
+  });
+  it("still allows the policy a new Budget gets, so a real owner is never locked out of Top up", () => {
+    const made = budgetPolicy("owner.testnet");
+    const withGuard: RawPolicy = { ...made, roles: [...made.roles, { name: "agent-guard", kind: { Group: ["g1.guards.testnet"] }, permissions: [], vote_policy: {} }] };
+    assert.deepEqual(topUpBlocks(withGuard, "owner.testnet", "g1.guards.testnet", registry), []);
   });
 });
 

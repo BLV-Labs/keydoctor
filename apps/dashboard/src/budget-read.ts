@@ -156,7 +156,7 @@ export type TopUpBlock = "NOT_COUNCIL" | "FOREIGN_MEMBER" | "NO_GUARD_ROLE" | "F
 
 export const TOP_UP_TEXT: Record<TopUpBlock, string> = {
   NOT_COUNCIL: "The connected account is not the owner of this Budget.",
-  FOREIGN_MEMBER: "Another account also controls this Budget. Top up is blocked: money sent here would not be yours alone.",
+  FOREIGN_MEMBER: "Other accounts can also act on this Budget. Top up is blocked: money sent here would not be yours alone.",
   NO_GUARD_ROLE: "This Budget's setup is not finished, so agents cannot use it. Top up is blocked.",
   FOREIGN_GUARD: "An account this Budget did not create may ask to spend from it. Top up is blocked.",
 };
@@ -166,17 +166,19 @@ const isGroup = (kind: unknown): kind is { Group: string[] } => isRecord(kind) &
 /**
  * The DAO-policy check before every Top up (spec 11.10.4 item 3): the sender is a member of a DAO role, no other
  * account is, and role `agent-guard` lists this Guard and only Guards the factory registry shows for this DAO.
- * Empty means allowed.
+ * `Everyone` and `Member` roles name no account, so they count as other accounts: `budgetPolicy` has neither, and
+ * one may hold a vote. Every role named `agent-guard` counts, because a policy can repeat a name. Empty means allowed.
  */
 export function topUpBlocks(policy: RawPolicy, sender: string, guardId: string, registryGuards: string[]): TopUpBlock[] {
   const blocks: TopUpBlock[] = [];
-  const owners = policy.roles.flatMap((r) => (r.name !== GUARD_ROLE && isGroup(r.kind) ? r.kind.Group : []));
+  const ownerRoles = policy.roles.filter((r) => r.name !== GUARD_ROLE);
+  const owners = ownerRoles.flatMap((r) => (isGroup(r.kind) ? r.kind.Group : []));
   if (!owners.includes(sender)) blocks.push("NOT_COUNCIL");
-  else if (owners.some((m) => m !== sender)) blocks.push("FOREIGN_MEMBER");
-  const role = policy.roles.find((r) => r.name === GUARD_ROLE);
-  const members = role !== undefined && isGroup(role.kind) ? role.kind.Group : [];
+  else if (owners.some((m) => m !== sender) || ownerRoles.some((r) => !isGroup(r.kind))) blocks.push("FOREIGN_MEMBER");
+  const guardRoles = policy.roles.filter((r) => r.name === GUARD_ROLE);
+  const members = guardRoles.flatMap((r) => (isGroup(r.kind) ? r.kind.Group : []));
   if (!members.includes(guardId)) blocks.push("NO_GUARD_ROLE");
-  if (members.some((m) => !registryGuards.includes(m))) blocks.push("FOREIGN_GUARD");
+  if (members.some((m) => !registryGuards.includes(m)) || guardRoles.some((r) => !isGroup(r.kind))) blocks.push("FOREIGN_GUARD");
   return blocks;
 }
 
