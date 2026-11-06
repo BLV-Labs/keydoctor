@@ -21,6 +21,7 @@ import {
   confirmFirstSignature,
   confirmProposal,
   rulesProposal,
+  voteResultText,
   withdrawProposal,
   type ConfirmedProposal,
   type VoteAction,
@@ -397,16 +398,29 @@ function signSecondSignature(button: HTMLButtonElement): void {
   status.textContent = `Waiting for ${walletLabel(walletId)}. Signature 2 of 2: check the transaction there before you approve.`;
   import("./wallet.ts")
     .then((w) => w.signActProposal(account, budgetNetwork(), state.dao.dao, actProposalArgs(confirmed, "VoteApprove"), walletId, (t) => (status.textContent = t)))
-    .then(() => {
+    .then(() => statusAfterVote(budgetNetwork(), state.dao.dao, confirmed.id))
+    .then((after) => {
       budgetSign2 = null;
       const next = document.getElementById("budget-next");
       if (next) next.innerHTML = "";
-      statusWithButton(status, `Done: proposal #${confirmed.id} approved.`, "rescan", "Reload");
+      statusWithButton(status, voteResultText(confirmed.id, "VoteApprove", confirmed.kind, after), "rescan", "Reload");
     })
     .catch((e: unknown) => {
       button.disabled = false;
       notDone(status, e);
     });
+}
+
+/** The proposal's status after a vote, null when unreadable. Reads lag at the final block, so an open one is read again. */
+async function statusAfterVote(network: Network, dao: string, id: number): Promise<unknown> {
+  let status: unknown = null;
+  for (let tries = 0; tries < 4; tries += 1) {
+    if (tries > 0) await new Promise((done) => setTimeout(done, 1500));
+    const raw: unknown = await readProposal(budgetRpc(network), dao, id).catch(() => null);
+    status = typeof raw === "object" && raw !== null ? (raw as { status?: unknown }).status ?? null : null;
+    if (status !== null && status !== "InProgress") break;
+  }
+  return status;
 }
 
 /** Approve or Reject a pending proposal: re-read it first and stop if it is no longer what the page showed. */
@@ -435,9 +449,11 @@ function actOnPending(button: HTMLButtonElement): void {
   confirmProposal({ description: shown.description, kind: shown.kind }, id, (n) => readProposal(budgetRpc(network), state.dao.dao, n))
     .then((confirmed) => {
       status.textContent = `Waiting for ${walletLabel(walletId)}. ${action === "VoteApprove" ? "Approve" : "Reject"} proposal #${id}: ${describeKind(confirmed.kind)}.`;
-      return import("./wallet.ts").then((w) => w.signActProposal(account, network, state.dao.dao, actProposalArgs(confirmed, action), walletId, (t) => (status.textContent = t)));
+      return import("./wallet.ts")
+        .then((w) => w.signActProposal(account, network, state.dao.dao, actProposalArgs(confirmed, action), walletId, (t) => (status.textContent = t)))
+        .then(() => statusAfterVote(network, state.dao.dao, id))
+        .then((after) => statusWithButton(status, voteResultText(id, action, confirmed.kind, after), "rescan", "Reload"));
     })
-    .then(() => statusWithButton(status, `Done: proposal #${id} ${action === "VoteApprove" ? "approved" : "rejected"}.`, "rescan", "Reload"))
     .catch((e: unknown) => {
       button.disabled = false;
       notDone(status, e);
@@ -500,7 +516,7 @@ function submitBudgetPanel(form: HTMLFormElement): void {
     startTwoSignatures(result.value);
     return;
   }
-  const amount = amountFromForm(values.amount ?? "", panel === "withdraw" ? state.balance : null);
+  const amount = amountFromForm(values.amount ?? "", panel === "withdraw" ? state.withdrawable : null);
   if (!amount.ok) return reject(amount.error);
   if (panel === "withdraw") {
     if (connected === null) return statusWithButton(status, "Connect the wallet of a DAO council member first.", "open-wallet", "Connect Wallet");

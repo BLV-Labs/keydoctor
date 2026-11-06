@@ -4,7 +4,7 @@
 // unlocks sign 2, `act_proposal(id, action, proposal)`. The installed Sputnik ignores `proposal`, so this
 // read-back is the real protection against approving the wrong proposal.
 import { nearToYocto } from "./format.ts";
-import { MAX_LABEL_CHARS } from "./guard-form.ts";
+import { MAX_AGENTS, MAX_LABEL_CHARS } from "./guard-form.ts";
 import { guardChangeProposal, type AddProposalArgs } from "./guard-proposals.ts";
 
 export type BudgetFlowCode = "NO_PROPOSAL_ID" | "PROPOSAL_UNREADABLE" | "PROPOSAL_MISMATCH" | "PROPOSAL_NOT_OPEN";
@@ -87,6 +87,27 @@ export async function confirmFirstSignature(built: Built, outcome: unknown, read
 
 export type VoteAction = "VoteApprove" | "VoteReject";
 
+/** True when the wallet returned an outcome whose transaction failed. No outcome says nothing either way. */
+export function outcomeFailed(outcome: unknown): boolean {
+  const first = Array.isArray(outcome) ? outcome[0] : outcome;
+  return isRecord(first) && isRecord(first.status) && "Failure" in first.status;
+}
+
+/**
+ * What a vote did, from the proposal's status after it (null when that could not be read). The wallet's success only
+ * says the transaction ran: one vote of several leaves the proposal open, and the installed Sputnik sets no callback
+ * on a FunctionCall, so a call the Guard refused still shows `Approved`.
+ */
+export function voteResultText(id: number, action: VoteAction, kind: Record<string, unknown>, status: unknown): string {
+  if (status === null) return `The transaction went through, but the page could not read proposal #${id} back. Reload to see its state.`;
+  if (status === "InProgress") return `Your vote is in. Proposal #${id} stays open until it has enough votes.`;
+  if (status === "Rejected" && action === "VoteReject") return `Done: proposal #${id} rejected.`;
+  if (status === "Failed") return `Proposal #${id} was approved but failed on the chain. Nothing changed.`;
+  if (status !== "Approved") return `Proposal #${id} is now ${String(status)}.`;
+  if ("FunctionCall" in kind) return `Proposal #${id} approved. The DAO does not report whether the call worked: reload and check the change shows.`;
+  return `Done: proposal #${id} approved.`;
+}
+
 /** The arguments of sign 2 and of Approve / Reject. `proposal` is always passed, even though the installed Sputnik ignores it. */
 export function actProposalArgs(p: ConfirmedProposal, action: VoteAction): { id: number; action: VoteAction; proposal: Record<string, unknown> } {
   return { id: p.id, action, proposal: p.kind };
@@ -96,7 +117,8 @@ export function actProposalArgs(p: ConfirmedProposal, action: VoteAction): { id:
 export function withdrawProposal(receiver: string, yocto: string, nearText: string): Built {
   return {
     description: `Withdraw ${nearText} NEAR to ${receiver}`,
-    kind: { Transfer: { token_id: "", receiver_id: receiver, amount: yocto } },
+    // `msg: null` as the chain returns it, or the read-back never matches.
+    kind: { Transfer: { token_id: "", receiver_id: receiver, amount: yocto, msg: null } },
   };
 }
 
@@ -135,6 +157,7 @@ export function addAgentProposal(guardId: string, v: Record<string, string>, exi
   const label = (v.label ?? "").trim();
   if (!ACCOUNT_ID.test(account) || account.length > 64) return fail("Enter a valid .testnet or .near account name.");
   if (existing.includes(account)) return fail("That account is already an agent.");
+  if (existing.length >= MAX_AGENTS) return fail(`A Guard takes at most ${MAX_AGENTS} agents. Remove one first.`);
   if (label === "" || [...label].length > MAX_LABEL_CHARS) return fail(`Label: 1 to ${MAX_LABEL_CHARS} characters.`);
   return { ok: true, value: guardChangeProposal(guardId, "add_agent", { account_id: account, label }) };
 }

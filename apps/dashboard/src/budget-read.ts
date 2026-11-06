@@ -30,6 +30,8 @@ export interface BudgetLive {
   guard: GuardLive | null;
   /** The DAO account's NEAR balance in yoctoNEAR, null when it could not be read. */
   balance: string | null;
+  /** The part of `balance` not holding the DAO's storage, the most a transfer can send; null when unread. */
+  withdrawable: string | null;
   /** Open (InProgress) proposals of the DAO, newest first; null when the read failed. */
   proposals: BudgetProposal[] | null;
   /** The Guard's newest requests; null when the read failed. */
@@ -69,8 +71,16 @@ export function parseRequest(raw: unknown): BudgetRequest | null {
   };
 }
 
+const STORAGE_YOCTO_PER_BYTE = 10n ** 19n;
+
+/** What a transfer can send: `view_account.amount` still counts the NEAR locked for the account's storage. */
+export function withdrawableYocto(amount: string, storageBytes: number): string {
+  const free = BigInt(amount) - BigInt(storageBytes) * STORAGE_YOCTO_PER_BYTE;
+  return (free > 0n ? free : 0n).toString();
+}
+
 /** The account's NEAR balance at `height`; any failure is null (shown as unknown, never as zero). */
-async function readBalance(account: string, height: number, network: Network): Promise<string | null> {
+async function readBalance(account: string, height: number, network: Network): Promise<{ balance: string; withdrawable: string } | null> {
   for (const url of DEFAULT_RPC_URLS[network]) {
     try {
       const res = await fetch(url, {
@@ -80,8 +90,11 @@ async function readBalance(account: string, height: number, network: Network): P
       });
       if (!res.ok) continue;
       const body: unknown = await res.json();
-      const amount = isRecord(body) && isRecord(body.result) ? body.result.amount : undefined;
-      return typeof amount === "string" && /^\d+$/.test(amount) ? amount : null;
+      const result = isRecord(body) && isRecord(body.result) ? body.result : null;
+      const amount = result?.amount;
+      const storage = result?.storage_usage;
+      if (typeof amount !== "string" || !/^\d+$/.test(amount) || typeof storage !== "number") return null;
+      return { balance: amount, withdrawable: withdrawableYocto(amount, storage) };
     } catch {
       // try the next endpoint
     }
@@ -127,8 +140,8 @@ export async function readBudget(dao: string, factory: string, network: Network)
       return null;
     }
   };
-  const [balance, proposals, requests] = await Promise.all([readBalance(dao, height, network), proposalsRead(), requestsRead()]);
-  return { dao: state, guard, balance, proposals, requests };
+  const [funds, proposals, requests] = await Promise.all([readBalance(dao, height, network), proposalsRead(), requestsRead()]);
+  return { dao: state, guard, balance: funds?.balance ?? null, withdrawable: funds?.withdrawable ?? null, proposals, requests };
 }
 
 export type TopUpBlock = "NOT_COUNCIL" | "NO_GUARD_ROLE" | "FOREIGN_GUARD";

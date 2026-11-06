@@ -56,12 +56,14 @@ export function describeKind(kind: Record<string, unknown>): string {
     const amount = typeof t.amount === "string" && token === "NEAR" ? yoctoToNear(t.amount) : String(t.amount);
     return `Send ${amount} ${token} to ${String(t.receiver_id)}`;
   }
-  const call = kind.FunctionCall as { receiver_id?: unknown; actions?: { method_name?: unknown }[] } | undefined;
+  const call = kind.FunctionCall as { receiver_id?: unknown; actions?: { method_name?: unknown; deposit?: unknown }[] } | undefined;
   if (call !== undefined) {
     const methods = (call.actions ?? []).map((a) => String(a.method_name)).join(", ");
-    return `Call ${methods} on ${String(call.receiver_id)}`;
+    const deposit = (call.actions ?? []).reduce((sum, a) => sum + BigInt(typeof a.deposit === "string" && /^\d+$/.test(a.deposit) ? a.deposit : 0), 0n);
+    return `Call ${methods} on ${String(call.receiver_id)}${deposit > 0n ? `, attaching ${yoctoToNear(deposit.toString())} NEAR` : ""}`;
   }
-  return Object.keys(kind)[0] ?? "Unknown proposal";
+  const other = Object.keys(kind)[0] ?? "Unknown proposal";
+  return other.startsWith("ChangePolicy") ? `Change who controls this DAO (${other})` : other;
 }
 
 function percent(spent: string, limit: string): number {
@@ -178,7 +180,7 @@ export function renderBudget(b: BudgetLive, network: Network, setup: Html | "" =
       ${setup}`;
   }
   const paused = g.config?.paused === true;
-  const status = paused ? html`<span class="pill pill-high">Paused</span>` : g.in_role ? html`<span class="pill pill-ok">Active</span>` : html`<span class="pill pill-cleanup">Not in role agent-guard</span>`;
+  const status = g.config === null ? html`<span class="pill pill-cleanup">Status unknown</span>` : paused ? html`<span class="pill pill-high">Paused</span>` : g.in_role ? html`<span class="pill pill-ok">Active</span>` : html`<span class="pill pill-cleanup">Not in role agent-guard</span>`;
   return html`${head("Agents spend within the rules. Anything larger waits here for you.")}
     <section class="card pad budget-top" aria-label="Budget">
       <div class="stack-xs grow"><p class="strong mono wrap">${b.dao.dao}</p><p class="small muted">Guard <span class="mono">${g.guard_id}</span> · ${network}</p></div>
@@ -186,7 +188,7 @@ export function renderBudget(b: BudgetLive, network: Network, setup: Html | "" =
       <div class="actions">
         <button type="button" class="btn btn-primary" data-action="budget-open" data-panel="topup">Top up <span class="sig">${signatures(1)}</span></button>
         <button type="button" class="btn btn-secondary" data-action="budget-open" data-panel="withdraw">Withdraw <span class="sig">${signatures(2)}</span></button>
-        <button type="button" class="btn btn-danger" data-action="budget-pause" data-guard="${g.guard_id}"${paused ? " disabled" : ""}>Pause agents <span class="sig">${signatures(1)}</span></button>
+        <button type="button" class="btn btn-danger" data-action="budget-pause" data-guard="${g.guard_id}"${paused || g.config === null ? " disabled" : ""}>Pause agents <span class="sig">${signatures(1)}</span></button>
       </div>
       <div class="wallet-line">
         <span data-wallet-off class="small muted">No wallet connected.</span>

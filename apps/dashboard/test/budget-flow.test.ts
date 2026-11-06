@@ -7,6 +7,8 @@ import {
   confirmProposal,
   proposalIdFromOutcome,
   sameProposal,
+  outcomeFailed,
+  voteResultText,
   withdrawProposal,
 } from "../src/budget-flow.ts";
 
@@ -16,7 +18,8 @@ const onChain = (over: Record<string, unknown> = {}) => ({
   id: 7,
   status: "InProgress",
   description: built.description,
-  kind: { Transfer: { amount: "1000000000000000000000000", receiver_id: "owner.testnet", token_id: "" } },
+  // The chain's own shape, `msg: null` included (fixtures/sputnik/get_proposal.2.transfer.json).
+  kind: { Transfer: { amount: "1000000000000000000000000", msg: null, receiver_id: "owner.testnet", token_id: "" } },
   ...over,
 });
 
@@ -71,5 +74,33 @@ describe("confirmFirstSignature", () => {
     let reads = 0;
     await assert.rejects(confirmFirstSignature(built, undefined, async () => { reads += 1; return onChain(); }), { code: "NO_PROPOSAL_ID" });
     assert.equal(reads, 0);
+  });
+});
+
+describe("what a vote did", () => {
+  const transfer = { Transfer: {} };
+  const call = { FunctionCall: {} };
+  it("says done only when the proposal really passed", () => {
+    assert.match(voteResultText(7, "VoteApprove", transfer, "Approved"), /^Done: proposal #7 approved/);
+    assert.match(voteResultText(7, "VoteReject", transfer, "Rejected"), /^Done: proposal #7 rejected/);
+  });
+  it("one vote of several is not an approval", () => {
+    assert.doesNotMatch(voteResultText(7, "VoteApprove", transfer, "InProgress"), /Done|approved/);
+  });
+  it("a failed transfer is not reported as done", () => {
+    assert.doesNotMatch(voteResultText(7, "VoteApprove", transfer, "Failed"), /Done/);
+  });
+  it("an approved call does not claim it worked: Sputnik shows Approved even when the Guard refused", () => {
+    assert.doesNotMatch(voteResultText(7, "VoteApprove", call, "Approved"), /Done/);
+    assert.match(voteResultText(7, "VoteApprove", call, "Approved"), /check the change/);
+  });
+  it("an unreadable status claims nothing", () => {
+    assert.doesNotMatch(voteResultText(7, "VoteApprove", transfer, null), /Done|approved/);
+  });
+  it("only a failed outcome counts as failed, no outcome stays unknown", () => {
+    assert.equal(outcomeFailed({ status: { Failure: {} } }), true);
+    assert.equal(outcomeFailed([{ status: { Failure: {} } }]), true);
+    assert.equal(outcomeFailed({ status: { SuccessValue: "" } }), false);
+    assert.equal(outcomeFailed(undefined), false);
   });
 });

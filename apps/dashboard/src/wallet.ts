@@ -6,6 +6,7 @@ import { setupHereWallet } from "@near-wallet-selector/here-wallet";
 import { setupHotWallet } from "@near-wallet-selector/hot-wallet";
 import { setupMeteorWallet } from "@near-wallet-selector/meteor-wallet";
 import type { Network } from "key-doctor";
+import { outcomeFailed } from "./budget-flow.ts";
 import type { DeletePlan } from "./cleanup.ts";
 import type { AddProposalArgs } from "./guard-proposals.ts";
 import { walletLabel, type WalletId } from "./wallets.ts";
@@ -113,8 +114,8 @@ export async function signAddProposalOutcome(
   });
 }
 
-/** `act_proposal` runs the proposal (a Guard call or a transfer) in the same transaction, so it gets a large gas share. */
-const ACT_PROPOSAL_GAS = 200_000_000_000_000n;
+/** `act_proposal` runs the proposal in the same transaction, and a Guard `create` alone takes 220 Tgas: give it all. */
+const ACT_PROPOSAL_GAS = 300_000_000_000_000n;
 
 /** Approve or reject one DAO proposal: `act_proposal(id, action, proposal)`, always with `proposal`. */
 export async function signActProposal(
@@ -127,9 +128,10 @@ export async function signActProposal(
 ): Promise<void> {
   const wallet = await walletFor(accountId, network, walletId, onStep);
   onStep(`Step 3/3: approve the ${args.action === "VoteApprove" ? "approval" : "rejection"} of proposal ${args.id} in ${walletLabel(walletId)}.`);
-  await wallet.signAndSendTransactions({
+  const outcome: unknown = await wallet.signAndSendTransactions({
     transactions: [{ signerId: accountId, receiverId: dao, actions: [actionCreators.functionCall("act_proposal", args, ACT_PROPOSAL_GAS, 0n)] }],
   });
+  if (outcomeFailed(outcome)) throw new Error(`The transaction for proposal ${args.id} failed on the chain.`);
 }
 
 /** Top up: a plain NEAR transfer from the owner's account to the DAO. */

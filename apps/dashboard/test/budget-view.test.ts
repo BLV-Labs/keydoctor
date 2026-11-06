@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { addAgentProposal, agentProposal, amountFromForm, rulesProposal } from "../src/budget-flow.ts";
-import { topUpBlocks, type BudgetLive } from "../src/budget-read.ts";
-import { renderBudget, renderBudgetPanel, renderBudgetSetup, renderBudgetStart } from "../src/budget-view.ts";
+import { topUpBlocks, withdrawableYocto, type BudgetLive } from "../src/budget-read.ts";
+import { describeKind, renderBudget, renderBudgetPanel, renderBudgetSetup, renderBudgetStart } from "../src/budget-view.ts";
 import type { RawPolicy } from "../src/guard-proposals.ts";
 
 const NEAR = (n: number) => `${n}${"0".repeat(24)}`;
@@ -26,6 +26,7 @@ const live = (over: Partial<BudgetLive> = {}): BudgetLive => ({
     agents: [{ account_id: "bot.testnet", label: "ops", enabled: true, pending: 0 }],
   },
   balance: NEAR(12),
+  withdrawable: NEAR(11),
   proposals: [{ id: 4, proposer: "g1.guards.testnet", description: "pay vendor", kind: { Transfer: { receiver_id: "v.testnet", amount: NEAR(2), token_id: "" } }, status: "InProgress" }],
   requests: [],
   ...over,
@@ -43,6 +44,19 @@ describe("renderBudget", () => {
     const guard = { ...base.guard!, agents: [{ account_id: "bot.testnet", label: "", enabled: true, pending: 0 }] };
     const bare = renderBudget({ ...base, guard }, "testnet").value;
     assert.match(bare, />0 waiting</);
+  });
+  it("a failed config read is not shown as Active, and Pause is off", () => {
+    const base = live();
+    const unread = renderBudget({ ...base, guard: { ...base.guard!, config: null } }, "testnet").value;
+    assert.match(unread, /Status unknown/);
+    const top = unread.slice(unread.indexOf("budget-top"), unread.indexOf('class="actions"'));
+    assert.doesNotMatch(top, /Active/);
+    assert.match(unread, /data-action="budget-pause"[^>]* disabled>/);
+  });
+  it("Approve shows what a call spends and that a policy change hands over control", () => {
+    const pay = { FunctionCall: { receiver_id: "x.testnet", actions: [{ method_name: "go", deposit: NEAR(5) }] } };
+    assert.match(describeKind(pay), /attaching 5 NEAR/);
+    assert.match(describeKind({ ChangePolicy: {} }), /who controls this DAO/);
   });
   it("states the true signature count on each owner action", () => {
     assert.match(page, /Top up <span class="sig">1 signature</);
@@ -79,6 +93,15 @@ describe("panels and setup", () => {
   });
 });
 
+describe("withdrawableYocto", () => {
+  it("leaves out the NEAR holding the DAO's storage, which a transfer cannot send", () => {
+    assert.equal(withdrawableYocto(NEAR(12), 100_000), NEAR(11));
+  });
+  it("never goes below zero when storage takes it all", () => {
+    assert.equal(withdrawableYocto(NEAR(1), 200_000), "0");
+  });
+});
+
 describe("topUpBlocks", () => {
   const registry = ["g1.guards.testnet"];
   it("allows a council member when the role lists only this registry Guard", () => {
@@ -105,6 +128,10 @@ describe("form builders", () => {
     const ok = rulesProposal("g.testnet", { maxPerTx: "1", maxPerDay: "2", maxPending: "3", minReserve: "1" });
     assert.equal(ok.ok, true);
     assert.match(ok.ok ? ok.value.proposal.description : "", /set_policy/);
+  });
+  it("add agent: refuses an eleventh agent here, because a refusal on chain would still show Approved", () => {
+    const ten = Array.from({ length: 10 }, (_, i) => `a${i}.testnet`);
+    assert.equal(addAgentProposal("g.testnet", { agent: "bot.testnet", label: "x" }, ten).ok, false);
   });
   it("add agent: refuses a bad account, a duplicate and an empty label", () => {
     assert.equal(addAgentProposal("g.testnet", { agent: "Bad Name", label: "x" }, []).ok, false);
