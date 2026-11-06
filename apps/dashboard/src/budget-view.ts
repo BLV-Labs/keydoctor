@@ -5,17 +5,20 @@ import { SPUTNIK_FACTORY } from "./budget-create.ts";
 import type { BudgetLive, BudgetProposal, BudgetRequest } from "./budget-read.ts";
 import { nearToYocto, yoctoToNear } from "./format.ts";
 import { GUARD_FORM_TEXT, type GuardFormError } from "./guard-form.ts";
+import { NEW_AGENT_DEPOSIT } from "./guard-proposals.ts";
 import type { GuardLive } from "./guard-read.ts";
 import { html, type Html } from "./html.ts";
 import { icon } from "./icons.ts";
-import { budgetHref, routeHref } from "./route.ts";
+import { guardMcpCommand } from "./guard-view.ts";
+import { copyRow } from "./pages.ts";
+import { agentGuideHref, budgetHref, guardHref, routeHref } from "./route.ts";
 import { avatar } from "./ui.ts";
 
 /** Shown in the form's placeholder text only; creation needs this factory to be deployed and set at build time. */
 export const BUDGET_FACTORY_NAME = "keydoctor-guards-v2.testnet";
 const EXAMPLE_BUDGET_DAO = "kdoncall.sputnik-v2.testnet";
 
-export type BudgetPanel = "topup" | "withdraw" | "rules" | "add-agent";
+export type BudgetPanel = "topup" | "withdraw" | "rules" | "add-agent" | "recipients";
 export type ActivityFilter = "all" | "waiting" | "auto" | "rejected";
 
 /** Wording of the signature count on a button or note. */
@@ -32,7 +35,7 @@ function head(lead: string): Html {
 /** The DAO form. */
 export function renderBudgetStart(dao: string, error: string | null, note: string): Html {
   return html`<form id="budget-dao-form" class="card pad stack-sm budget-narrow" novalidate>
-      <label for="budget-dao" class="label">Open a Budget you already have: its Sputnik DAO</label>
+      <label for="budget-dao" class="label">Open a Budget you already have: its account name</label>
       <div class="input-row">
         <input id="budget-dao" name="dao" type="text" class="input mono" value="${dao}" placeholder="${EXAMPLE_BUDGET_DAO}"
           autocomplete="off" autocapitalize="none" spellcheck="false" required${error ? html` aria-invalid="true" aria-describedby="budget-dao-error"` : ""}>
@@ -44,7 +47,7 @@ export function renderBudgetStart(dao: string, error: string | null, note: strin
 }
 
 export function renderBudgetLoading(dao: string): Html {
-  return html`${head("Reading the DAO, its Guard and its requests from NEAR RPC…")}
+  return html`${head("Reading this Budget from the chain…")}
     <section class="card pad stack-sm" aria-busy="true" aria-label="Loading ${dao}"><p class="meta mono" role="status">${dao}</p></section>`;
 }
 
@@ -62,8 +65,8 @@ export function describeKind(kind: Record<string, unknown>): string {
     const deposit = (call.actions ?? []).reduce((sum, a) => sum + BigInt(typeof a.deposit === "string" && /^\d+$/.test(a.deposit) ? a.deposit : 0), 0n);
     return `Call ${methods} on ${String(call.receiver_id)}${deposit > 0n ? `, attaching ${yoctoToNear(deposit.toString())} NEAR` : ""}`;
   }
-  const other = Object.keys(kind)[0] ?? "Unknown proposal";
-  return other.startsWith("ChangePolicy") ? `Change who controls this DAO (${other})` : other;
+  const other = Object.keys(kind)[0] ?? "Unknown request";
+  return other.startsWith("ChangePolicy") ? `Change who controls this Budget (${other})` : other;
 }
 
 function percent(spent: string, limit: string): number {
@@ -119,7 +122,7 @@ function tiles(b: BudgetLive, now: number): Html {
     ${tile("auto", "Spent in last 24h", w === null ? "unknown" : p === null ? near(w.spent_in_window) : `${yoctoToNear(w.spent_in_window)} / ${near(p.max_per_day)}`,
       w === null ? "" : `${near(w.remaining)} left today`,
       w !== null && p !== null ? html`<progress class="progress" max="100" value="${percent(w.spent_in_window, p.max_per_day)}" aria-label="Share of the daily limit spent"></progress>` : "")}
-    ${tile("waiting", "Waiting for your approval", b.proposals === null ? "unknown" : String(b.proposals.length), left === null || left === 0 ? "Open proposals in the DAO" : `Oldest: ${hours(left)} left`)}
+    ${tile("waiting", "Waiting for your approval", b.proposals === null ? "unknown" : String(b.proposals.length), left === null || left === 0 ? "Approve or reject them below" : `Oldest: ${hours(left)} left`)}
     ${tile("all", "Agents", g?.config ? String(g.config.agents) : "unknown", off === null ? "" : off === 0 ? "All on" : `${off} off`)}
   </section>`;
 }
@@ -146,14 +149,14 @@ const requestOf = (b: BudgetLive, p: BudgetProposal): BudgetRequest | null => b.
 function needsRow(p: BudgetProposal, b: BudgetLive, now: number): Html {
   const g = b.guard;
   const r = requestOf(b, p);
-  const notes = [r !== null && r.memo !== "" ? `“${r.memo}”` : null, expiryText(hoursLeft(p, b, now)), `Proposal #${p.id}`].filter((n) => n !== null).join(" · ");
+  const notes = [r !== null && r.memo !== "" ? `“${r.memo}”` : null, expiryText(hoursLeft(p, b, now)), `Request #${p.id}`].filter((n) => n !== null).join(" · ");
   return html`<li class="needs-row">
     <div class="needs-main">
       ${avatar(r?.agent ?? p.proposer)}
       <div class="stack-xs grow-min">
         ${r === null
           ? html`<p class="strong wrap">${describeKind(p.kind)}</p><p class="small muted wrap">${p.description}</p>
-              <p class="small muted">Proposed by <span class="mono">${p.proposer}</span>${p.proposer === g?.guard_id ? " (the Guard, for an agent request)" : ""}</p>`
+              <p class="small muted">Asked by <span class="mono">${p.proposer}</span>${p.proposer === g?.guard_id ? " (for an agent)" : ""}</p>`
           : html`<p class="wrap">${agentName(g, r.agent)} wants to pay <strong>${near(r.amount)}</strong> to <span class="mono">${r.receiver_id}</span></p>`}
         <p class="small muted wrap">${notes}</p>
       </div>
@@ -172,7 +175,7 @@ function pendingCard(b: BudgetLive, now: number): Html {
   const open = proposals !== null && proposals.length > 0;
   const body =
     proposals === null
-      ? html`<p class="check-line pad-row">${icon.alert()}<span>Could not read the DAO's proposals right now. Pending items are unknown, not none.</span></p>`
+      ? html`<p class="check-line pad-row">${icon.alert()}<span>Could not read what waits for you right now. Waiting items are unknown, not none.</span></p>`
       : open
         ? html`<ul class="plain-list">${[...proposals].reverse().map((p) => needsRow(p, b, now))}</ul>`
         : html`<p class="muted pad-row">Nothing waits for you.</p>`;
@@ -182,7 +185,7 @@ function pendingCard(b: BudgetLive, now: number): Html {
 }
 
 const REQUEST_STATUS: Record<string, string> = {
-  Submitted: "Sent to the DAO",
+  Submitted: "Sent for approval",
   AutoApproved: "Approved by the rules",
   Pending: "Waiting",
   Executed: "Paid",
@@ -218,7 +221,7 @@ export function renderBudgetActivity(b: BudgetLive, filter: ActivityFilter, now:
   const rows = (b.requests ?? []).filter((r) => filter === "all" || activityGroup(r) === filter);
   const body =
     b.requests === null
-      ? html`<p class="check-line pad-row">${icon.alert()}<span>Could not read the Guard's requests right now.</span></p>`
+      ? html`<p class="check-line pad-row">${icon.alert()}<span>Could not read your agents' requests right now.</span></p>`
       : b.requests.length === 0
         ? html`<p class="muted pad-row">No requests yet.</p>`
         : rows.length === 0
@@ -245,7 +248,8 @@ function rulesCard(b: BudgetLive, g: GuardLive): Html {
           ${row("Waiting items per agent", p.max_pending_per_agent)}
           ${row("Waiting items expire after", period === null ? "unknown" : hours(Number(period / 3_600_000_000_000n)))}
           ${row("Reserve kept", near(p.min_reserve))}
-        </dl>`}</section>`;
+        </dl>
+        <div class="pad-row"><button type="button" class="btn btn-ghost btn-start" data-action="budget-open" data-panel="recipients">Manage recipients <span class="sig">${signatures(2)}</span></button></div>`}</section>`;
 }
 
 const agentUse = (a: NonNullable<GuardLive["agents"]>[number]): string =>
@@ -281,7 +285,7 @@ const STRATEGIES_CARD = html`<section class="card" aria-labelledby="b-later">
 
 const ALERTS_CARD = html`<section class="card" aria-labelledby="b-alerts">
     <div class="b-head"><h2 id="b-alerts" class="b-h">Alerts</h2><button type="button" class="btn btn-ghost" data-action="alerts-open">Manage</button></div>
-    <p class="small muted pad-row">Telegram alerts for risky proposals and key changes.</p></section>`;
+    <p class="small muted pad-row">Telegram alerts for risky requests, Budget changes and key changes.</p></section>`;
 
 const explorer = (id: string, network: Network): string => `https://${network === "testnet" ? "testnet." : ""}nearblocks.io/address/${id}`;
 
@@ -298,13 +302,13 @@ function technical(b: BudgetLive, g: GuardLive, network: Network): Html {
 export function renderBudget(b: BudgetLive, network: Network, setup: Html | "" = "", now: number = Date.now()): Html {
   const g = b.guard;
   if (g === null) {
-    return html`${head("This DAO has no Agent Budget yet.")}
-      <section class="stack-sm"><p>DAO <a class="mono" href="${routeHref(b.dao.dao)}" data-nav>${b.dao.dao}</a> · ${network}</p></section>
-      <section class="card pad"><p class="muted">No ready Guard from <span class="mono">${b.dao.factory}</span> serves this DAO.</p></section>
+    return html`${head("This account has no Agent Budget yet.")}
+      <section class="stack-sm"><p>Account <a class="mono" href="${routeHref(b.dao.dao)}" data-nav>${b.dao.dao}</a> · ${network}</p></section>
+      <section class="card pad stack-xs"><p class="muted">No finished Agent Budget was found for this account.</p><p class="small"><a href="${guardHref(b.dao.dao)}" data-nav>Team council? Use the council setup page.</a></p></section>
       ${setup}`;
   }
   const paused = g.config?.paused === true;
-  const status = g.config === null ? html`<span class="pill pill-cleanup">Status unknown</span>` : paused ? html`<span class="pill pill-cleanup">${icon.alertSmall()}Agents paused</span>` : g.in_role ? html`<span class="pill pill-ok">Active</span>` : html`<span class="pill pill-cleanup">Not in role agent-guard</span>`;
+  const status = g.config === null ? html`<span class="pill pill-cleanup">Status unknown</span>` : paused ? html`<span class="pill pill-cleanup">${icon.alertSmall()}Agents paused</span>` : g.in_role ? html`<span class="pill pill-ok">Active</span>` : html`<span class="pill pill-cleanup">Setup not finished</span>`;
   return html`${head(LEAD)}
     <section class="budget-top" aria-label="Budget">
       <div class="budget-name"><span class="strong mono wrap">${b.dao.dao}</span>${status}</div>
@@ -366,28 +370,43 @@ export function renderBudgetPanel(panel: BudgetPanel, b: BudgetLive, error: stri
       return form("Top up", "From your wallet to this Budget.", html`
         ${field("amount", "Amount", v("amount"), "5", { unit: true })}
         <div class="sum-box">${sumRow("Balance now", near(b.balance))}${sumRow("Balance after", html`<span id="bp-after">${balanceAfter(b, "topup", v("amount"))}</span>`)}</div>
-        <p class="small muted">${signatures(1)}: a NEAR transfer from your connected account to <span class="mono">${b.dao.dao}</span>. The page first checks the DAO's roles.</p>`, "Top up in wallet");
+        <p class="small muted">${signatures(1)}: a NEAR transfer from your connected account to <span class="mono">${b.dao.dao}</span>. The page first checks on the chain who controls this Budget.</p>`, "Top up in wallet");
     case "withdraw":
       return form("Withdraw", "Back to your wallet.", html`
         ${field("amount", "Amount", v("amount"), "1", { unit: true })}
         ${b.withdrawable === null ? "" : html`<button type="button" class="btn btn-ghost btn-start" data-action="budget-full" data-amount="${yoctoToNear(b.withdrawable)}">Use full balance (${near(b.withdrawable)})</button>`}
         <div class="sum-box">${sumRow("To", html`<span class="mono">${v("to", "your connected wallet")}</span>`)}${sumRow("Most you can withdraw", near(b.withdrawable))}${sumRow("Balance after", html`<span id="bp-after">${balanceAfter(b, "withdraw", v("amount"))}</span>`)}</div>
-        <p class="small muted">${signatures(2)}. Signature 1 proposes a transfer from <span class="mono">${b.dao.dao}</span> to your connected account. The page then reads the proposal back from the chain and, only if it matches, asks for signature 2 to approve it.</p>`, "Propose withdrawal");
+        <p class="small muted">${signatures(2)}. Signature 1 asks to send the money from <span class="mono">${b.dao.dao}</span> to your connected account. The page then reads the request back from the chain and, only if it matches, asks for signature 2 to approve it.</p>`, "Start withdrawal");
     case "rules":
-      return form("Edit spending rules", "These apply once the DAO passes the change.", html`
+      return form("Edit spending rules", "These apply after your second signature.", html`
         <div class="grid-2">
           ${field("maxPerTx", "Per request", v("maxPerTx", near2(p?.max_per_tx)), "", { unit: true })}
           ${field("maxPerDay", "Rolling 24 hours", v("maxPerDay", near2(p?.max_per_day)), "", { unit: true })}
           ${field("maxPending", "Waiting items per agent", v("maxPending", p === null ? "" : String(p.max_pending_per_agent)))}
           ${field("minReserve", "Reserve kept", v("minReserve", near2(p?.min_reserve)), "", { unit: true })}
         </div>
-        <p class="small muted">${signatures(2)}: a proposal that changes the Guard's limits, then your approval once the page has checked it.</p>`, "Propose new rules");
+        <p class="small muted">${signatures(2)}: a request to change your limits, then your approval once the page has checked it.</p>`, "Save new rules");
     case "add-agent":
       return form("Add an agent", "It follows the same spending rules.", html`
-        ${field("agent", "Agent account", v("agent"), "bot.kdoncall.testnet", { mono: true })}
-        ${field("label", "Label", v("label"), "payroll bot")}
-        <p class="small muted">${signatures(2)}: a proposal that adds the agent account to the Guard, then your approval once the page has checked it. Adding attaches 0.01 NEAR for storage.</p>`, "Propose agent");
+        ${field("label", "Agent name", v("label"), "payroll bot")}
+        ${agentLimits(b.dao.dao)}
+        <p class="small muted">${signatures(2)}. This page makes the agent's key and its own account. ${yoctoToNear(NEW_AGENT_DEPOSIT)} NEAR leaves the Budget: 0.5 NEAR is the agent's gas, the rest pays for storage and what is not used comes back. You then get the key file and the command for your agent.</p>`, "Add agent");
+    case "recipients":
+      return form("Allowed recipients", "Payments to these accounts can go through without you, within your limits.", html`
+        ${recipientList(b.guard?.whitelist ?? null)}
+        ${field("account", "Add a recipient", v("account"), "vendor.kdoncall.testnet", { mono: true })}
+        ${field("label", "Name (optional)", v("label"), "vendor")}
+        ${field("cap", "Limit per payment for this recipient (optional)", v("cap"), "2", { unit: true })}
+        <p class="small muted">${signatures(2)} for each add or remove. A small storage deposit leaves the Budget when you add one; what is not used comes back.</p>`, "Add recipient");
   }
+}
+
+/** What is on the list now, each with its own two-signature Remove. Unknown is said, never shown as an empty list. */
+function recipientList(list: NonNullable<GuardLive["whitelist"]> | null): Html {
+  if (list === null) return html`<p class="check-line">${icon.alert()}<span>Could not read the list right now. It is unknown, not empty.</span></p>`;
+  if (list.length === 0) return html`<p class="banner banner-cleanup">${icon.info()}<span>No recipients yet: every payment your agent asks for will wait for your approval.</span></p>`;
+  return html`<ul class="plain-list">${list.map((w) => html`<li class="recipient-row"><span class="stack-xs grow-min"><span class="mono wrap">${w.account_id}</span>${w.label === "" && w.max_per_tx === null ? "" : html`<span class="small muted">${[w.label, w.max_per_tx === null ? "" : `up to ${near(w.max_per_tx)} per payment`].filter((t) => t !== "").join(" · ")}</span>`}</span>
+    <button type="button" class="btn btn-ghost" data-action="budget-recipient-drop" data-account="${w.account_id}" aria-label="Remove ${w.account_id}">Remove</button></li>`)}</ul>`;
 }
 
 /** The check before Approve: what will be paid and why it was held. A recipient not on the list needs the amount typed back. */
@@ -395,7 +414,7 @@ export function renderBudgetApprove(p: BudgetProposal, b: BudgetLive, now: numbe
   const r = requestOf(b, p);
   const unknown = r?.reasons.includes("NOT_WHITELISTED") === true;
   const expiry = expiryText(hoursLeft(p, b, now));
-  return html`${drawerHead(r === null ? `Approve proposal #${p.id}?` : "Approve this payment?", r === null ? "It is open in your DAO." : `${agentName(b.guard, r.agent)} asked for it. It is outside your rules.`)}
+  return html`${drawerHead(r === null ? `Approve request #${p.id}?` : "Approve this payment?", r === null ? "It waits for your approval." : `${agentName(b.guard, r.agent)} asked for it. It is outside your rules.`)}
     <div class="drawer-body">
       <div class="sum-box">
         ${r === null
@@ -408,9 +427,18 @@ export function renderBudgetApprove(p: BudgetProposal, b: BudgetLive, now: numbe
           <div class="stack-xs"><label class="label" for="approve-check">Type ${yoctoToNear(r.amount)} to confirm</label>
             <input id="approve-check" type="text" class="input" autocomplete="off" spellcheck="false" data-expect="${yoctoToNear(r.amount)}"></div>`
         : ""}
-      <p class="small muted">${signatures(1)}: your vote on proposal #${p.id}. The page checks it against the chain first.</p>
+      <p class="small muted">${signatures(1)}: your approval of request #${p.id}. The page checks it against the chain first.</p>
     </div>
     <div class="drawer-foot">${CANCEL}<button type="button" class="btn btn-primary" data-action="budget-act" data-id="${p.id}" data-vote="VoteApprove"${unknown ? " disabled" : ""}>Approve <span class="sig">${signatures(1)}</span></button></div>`;
+}
+
+/** The short "what an agent can do" of §11.12, with the way to the full guide. */
+function agentLimits(dao: string): Html {
+  return html`<div class="stack-xs"><h3 class="drawer-h3">What this agent can do</h3><ul class="list small">
+      <li>See your rules, balance and what is left for today</li><li>Ask to pay one recipient, paid at once if it is within your rules</li><li>See the status of its own requests</li></ul></div>
+    <div class="stack-xs"><h3 class="drawer-h3">What it cannot do</h3><p class="small muted">The blockchain enforces this, not the agent.</p><ul class="list small">
+      <li>Withdraw from the Budget</li><li>Change rules, add recipients or raise limits</li><li>Approve its own larger payments</li><li>Add or remove other agents</li><li>Call any other contract</li><li>Use your key</li></ul></div>
+    <a class="small" href="${agentGuideHref(dao)}" target="_blank" rel="noopener">How your agent works</a>`;
 }
 
 /** What one agent can and cannot do, and the owner's controls over it. */
@@ -418,10 +446,7 @@ export function renderBudgetAgent(a: NonNullable<GuardLive["agents"]>[number], b
   const period = proposalPeriod(b);
   return html`${drawerHead(a.label === "" ? a.account_id : a.label, `${a.enabled ? "On" : "Off"} · ${agentUse(a)}`)}
     <div class="drawer-body">
-      <div class="stack-xs"><h3 class="drawer-h3">What this agent can do</h3><ul class="list small">
-        <li>See your spending rules, balance and what is left for today</li><li>Ask to pay one recipient</li><li>Pay at once if the payment is within your rules</li><li>See the status of its own requests</li></ul></div>
-      <div class="stack-xs"><h3 class="drawer-h3">What it cannot do</h3><p class="small muted">The blockchain enforces this, not the agent.</p><ul class="list small">
-        <li>Withdraw from the Budget</li><li>Change rules, add recipients or raise limits</li><li>Approve its own larger payments</li><li>Add or remove other agents</li><li>Call any other contract</li><li>Use your key</li></ul></div>
+      ${agentLimits(b.dao.dao)}
       <div class="stack-xs"><h3 class="drawer-h3">When it asks to pay</h3><ul class="list small">
         <li><strong>Paid at once:</strong> the recipient is on your list and the amount fits the per-request and 24-hour limits.</li>
         <li><strong>Waits for you:</strong> any of those fails.${period === null ? "" : ` It expires in ${hours(Number(period / 3_600_000_000_000n))}.`}</li>
@@ -434,33 +459,78 @@ export function renderBudgetAgent(a: NonNullable<GuardLive["agents"]>[number], b
     </div>`;
 }
 
+const CHANGE_NAME: Record<string, string> = {
+  set_policy: "Change the spending rules",
+  add_agent: "Add an agent",
+  remove_agent: "Remove an agent",
+  set_agent_enabled: "Turn an agent on or off",
+  add_whitelist: "Add a recipient",
+  remove_whitelist: "Remove a recipient",
+  unpause: "Resume agents",
+};
+
+/** The built request in the owner's words; what this page did not name keeps its on-chain description. */
+function changeName(description: string): string {
+  return CHANGE_NAME[/^Agent Guard \S+: (\w+)$/.exec(description)?.[1] ?? ""] ?? description;
+}
+
 /** What the owner sees between the two signatures: the id from the outcome, matched, ready for signature 2. */
 export function renderBudgetNext(id: number, description: string): Html {
   return html`<section class="card pad stack-sm" aria-labelledby="bn-title">
     <h2 id="bn-title" class="h2">Signature 2 of 2</h2>
-    <p class="small">Proposal #${id} on the chain matches what this page built: <span class="strong">${description}</span>.</p>
-    <div class="actions"><button type="button" class="btn btn-primary" data-action="budget-sign2">Approve proposal #${id} in wallet</button></div></section>`;
+    <p class="small">Request #${id} on the chain matches what this page built: <span class="strong">${changeName(description)}</span>.</p>
+    <div class="actions"><button type="button" class="btn btn-primary" data-action="budget-sign2">Approve request #${id} in wallet</button></div></section>`;
 }
 
-/** After sign 2. The private key exists only on this page, so saving it comes before anything else. */
-export function renderBudgetKey(agent: string, dao: string, problem: string | null): Html {
-  return html`<span class="stack-xs">
-    <span>${problem === null ? "Your budget is created and checked against the chain." : html`Signature 2 went through, but the chain does not show a finished budget: ${problem}.`}</span>
-    <span class="strong">Save the key of <span class="mono">${agent}</span> now. It exists only on this page, and leaving loses it.</span>
-    <span class="actions"><button type="button" class="btn btn-primary" data-action="budget-key">Download agent key</button>
-    <a class="btn btn-tint" href="${budgetHref(dao)}" data-nav>Open the budget to top up</a></span>
-  </span>`;
+/** The test line of §11.12.7: the first thing to ask an agent once it is plugged in. */
+export const AGENT_TEST_PROMPT = "How much can I still spend today?";
+
+/** The three steps of §11.12.7. The private key exists only on this page, so saving it comes before anything else. */
+function agentConnect(agent: string, guardId: string, dao: string, network: Network): Html {
+  const move = `mkdir -p ~/.config/key-doctor && mv ~/Downloads/${agent}.json ~/.config/key-doctor/ && chmod 600 ~/.config/key-doctor/${agent}.json`;
+  return html`<ol class="plain drawer-steps">
+      <li><span class="step-dot">1</span><div class="stack-xs grow-min"><strong>Save the agent's key</strong>
+        <p class="small strong">It exists only on this page, and leaving loses it.</p>
+        <button type="button" class="btn btn-primary btn-start" data-action="budget-key">Download agent key</button>
+        <p class="small muted">Do not send this file to anyone. It only lets the agent ask to spend within your rules; it cannot withdraw money.</p>
+        <p class="small muted">Then move it where the agent reads it:</p>${copyRow(move)}</div></li>
+      <li><span class="step-dot">2</span><div class="stack-xs grow-min"><strong>Connect it to Claude Code</strong>
+        <p class="small muted">Run this inside a clone of the Key Doctor repo.</p>${copyRow(guardMcpCommand(network, guardId, agent))}</div></li>
+      <li><span class="step-dot">3</span><div class="stack-xs grow-min"><strong>Ask your agent</strong>${copyRow(AGENT_TEST_PROMPT)}
+        <a class="small" href="${agentGuideHref(dao)}" target="_blank" rel="noopener">How your agent works</a></div></li>
+    </ol>`;
+}
+
+/** After the last signature of a new Budget. */
+export function renderBudgetKey(agent: string, guardId: string, dao: string, network: Network, problem: string | null): Html {
+  return html`<div class="stack-sm">
+    <p>${problem === null ? "Your budget is created and checked against the chain." : `Signature 2 went through, but the chain does not show a finished budget: ${problem}.`}</p>
+    ${agentConnect(agent, guardId, dao, network)}
+    <div class="actions"><a class="btn btn-tint" href="${budgetHref(dao)}" data-nav>Open the budget to top up</a></div>
+  </div>`;
+}
+
+/** After the last signature of Add an agent. */
+export function renderAgentAdded(agent: string, guardId: string, dao: string, network: Network, problem: string | null): Html {
+  return html`<section class="card pad stack-sm" aria-labelledby="aa-title">
+    <h2 id="aa-title" class="h2">Connect your agent</h2>
+    <p class="small">${problem === null ? html`<span class="mono">${agent}</span> is added and checked against the chain.` : `Your approval went through, but the chain does not show a finished agent: ${problem}.`}</p>
+    ${agentConnect(agent, guardId, dao, network)}
+    <div class="actions"><a class="btn btn-tint" href="${budgetHref(dao)}" data-nav>Back to the Budget</a></div>
+  </section>`;
 }
 
 /** The Balanced preset (docs/final-idea.md example). Custom opens these same fields. */
 export const BALANCED_RULES: Readonly<Record<string, string>> = { maxPerTx: "5", maxPerDay: "20", maxPendingPerAgent: "3", minReserve: "1", funding: "5" };
+/** §10.3 names this preset without numbers: these are a quarter of Balanced's 24-hour limit, with a tight per-request one. */
+export const CAUTIOUS_RULES: Readonly<Record<string, string>> = { maxPerTx: "1", maxPerDay: "5", maxPendingPerAgent: "2", minReserve: "1", funding: "5" };
 
 const RULE_FIELDS: ReadonlyArray<readonly [string, string]> = [
   ["maxPerTx", "Per request (NEAR)"],
   ["maxPerDay", "Rolling 24 hours (NEAR)"],
   ["maxPendingPerAgent", "Waiting items per agent"],
   ["minReserve", "Reserve kept (NEAR)"],
-  ["funding", "Funding for the Guard (NEAR)"],
+  ["funding", "Set aside for waiting requests (NEAR)"],
 ];
 
 const STEPS: ReadonlyArray<readonly [string, string]> = [
@@ -490,6 +560,8 @@ export function renderBudgetSetup(available: boolean, values: Record<string, str
     html`<div class="stack-xs"><label class="label" for="bs-${name}">${label}</label>
       <input id="bs-${name}" name="${name}" type="text" class="input" value="${values[name] ?? BALANCED_RULES[name] ?? ""}" placeholder="${placeholder}" autocomplete="off" spellcheck="false"${invalid(name)}>${fieldError(name)}</div>`;
   const custom = values.preset === "custom" || RULE_FIELDS.some(([n]) => errorFor(n).length > 0);
+  const chosen = custom ? "custom" : values.preset === "cautious" ? "cautious" : "balanced";
+  const presetNote = (r: Readonly<Record<string, string>>) => `${r.maxPerTx} NEAR per request, ${r.maxPerDay} NEAR per 24 hours`;
   const preset = (id: string, title: string, note: string, on: boolean) =>
     html`<button type="button" class="preset" data-action="budget-preset" data-preset="${id}" aria-pressed="${String(on)}"><span class="strong">${title}</span><span class="small muted">${note}</span></button>`;
   const whitelist = values.whitelist ?? "";
@@ -499,8 +571,8 @@ export function renderBudgetSetup(available: boolean, values: Record<string, str
       <div class="name-row"><input id="bs-name" name="name" type="text" class="input mono" value="${values.name ?? ""}" placeholder="payroll" autocomplete="off" autocapitalize="none" spellcheck="false"${invalid("name")}><span class="mono small muted">.${SPUTNIK_FACTORY}</span></div>
       <p id="b-name-msg" class="small" role="status"></p>${fieldError("name")}</div>
     <fieldset class="stack-sm plain-field"><legend class="setup-h">Spending rules</legend>
-      <input type="hidden" name="preset" value="${custom ? "custom" : "balanced"}">
-      <div class="presets">${preset("balanced", "Balanced", `${BALANCED_RULES.maxPerTx} NEAR per request, ${BALANCED_RULES.maxPerDay} NEAR per 24 hours`, !custom)}${preset("custom", "Custom", "Set your own limits", custom)}</div>
+      <input type="hidden" name="preset" value="${chosen}">
+      <div class="presets">${preset("cautious", "Cautious", presetNote(CAUTIOUS_RULES), chosen === "cautious")}${preset("balanced", "Balanced", presetNote(BALANCED_RULES), chosen === "balanced")}${preset("custom", "Custom", "Set your own limits", custom)}</div>
       <div id="bs-custom" class="grid-2"${custom ? "" : " hidden"}>${RULE_FIELDS.map(([n, l]) => field(n, l))}</div>
     </fieldset>
     ${field("agentLabel", "First agent name", "payroll bot")}
@@ -510,10 +582,10 @@ export function renderBudgetSetup(available: boolean, values: Record<string, str
       <textarea name="whitelist" hidden>${whitelist}</textarea>
       <div id="bs-recipients">${renderRecipients(whitelist)}</div>${fieldError("whitelist")}</div>
     <div class="sum-box"><p class="strong">${signatures(2)} now, 1 more to top up</p>
-      <p class="small muted">${available ? "This creates a new DAO that only your account controls, then its Guard and one agent. It takes 2 signatures." : html`Creating a budget is not available yet: the Agent Budget factory <span class="mono">${BUDGET_FACTORY_NAME}</span> is not deployed. You can fill in the form to check your rules.`}</p></div>
+      <p class="small muted">${available ? "This creates a new Budget that only your account controls, with one agent. It takes 2 signatures." : html`Creating a budget is not available yet: the Agent Budget factory <span class="mono">${BUDGET_FACTORY_NAME}</span> is not deployed. You can fill in the form to check your rules.`}</p></div>
     <p class="banner banner-cleanup">${icon.alertSmall()}<span>Testnet only. The contracts are unaudited.</span></p>
     <div class="actions"><button type="submit" class="btn btn-primary">Create Agent Budget</button></div>
-    <p id="budget-setup-status" class="small" role="status">${result ?? ""}</p>
+    <div id="budget-setup-status" class="small" role="status">${result ?? ""}</div>
   </form>`;
 }
 

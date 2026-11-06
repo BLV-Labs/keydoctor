@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   BudgetFlowError,
   actProposalArgs,
+  addRecipientProposal,
   confirmFirstSignature,
   confirmProposal,
   proposalIdFromOutcome,
@@ -77,12 +78,41 @@ describe("confirmFirstSignature", () => {
   });
 });
 
+describe("adding a recipient", () => {
+  const add = (v: Record<string, string>, existing: string[] = []) => addRecipientProposal("g.testnet", v, existing);
+  const callArgs = (r: ReturnType<typeof add>) => {
+    assert.ok(r.ok);
+    const kind = r.value.proposal.kind as { FunctionCall: { actions: { method_name: string; args: string }[] } };
+    return { method: kind.FunctionCall.actions[0]!.method_name, args: JSON.parse(atob(kind.FunctionCall.actions[0]!.args)) };
+  };
+  it("builds add_whitelist, and an empty limit means no limit of its own", () => {
+    assert.deepEqual(callArgs(add({ account: " Vendor.testnet ", label: "Vendor" })), {
+      method: "add_whitelist",
+      args: { account_id: "vendor.testnet", label: "Vendor", max_per_tx: null },
+    });
+    assert.equal(callArgs(add({ account: "vendor.testnet", cap: "2" })).args.max_per_tx, `2${"0".repeat(24)}`);
+  });
+  it("never lets the keeper be a recipient: it signs for every Budget and would then be paid by them (ADR 0005 K1)", () => {
+    assert.equal(add({ account: "keydoctor-keeper.testnet" }).ok, false);
+  });
+  it("refuses an account already listed: add_whitelist would silently replace its limit", () => {
+    assert.equal(add({ account: "vendor.testnet" }, ["vendor.testnet"]).ok, false);
+  });
+  it("refuses a limit of 0: that reads as no spending but would be a recipient nobody can pay", () => {
+    assert.equal(add({ account: "vendor.testnet", cap: "0" }).ok, false);
+    assert.equal(add({ account: "vendor.testnet", cap: "abc" }).ok, false);
+  });
+  it("stops at the Guard's own list size, before two signatures are spent on a call that must fail", () => {
+    assert.equal(add({ account: "vendor.testnet" }, Array.from({ length: 50 }, (_, i) => `r${i}.testnet`)).ok, false);
+  });
+});
+
 describe("what a vote did", () => {
   const transfer = { Transfer: {} };
   const call = { FunctionCall: {} };
   it("says done only when the proposal really passed", () => {
-    assert.match(voteResultText(7, "VoteApprove", transfer, "Approved"), /^Done: proposal #7 approved/);
-    assert.match(voteResultText(7, "VoteReject", transfer, "Rejected"), /^Done: proposal #7 rejected/);
+    assert.match(voteResultText(7, "VoteApprove", transfer, "Approved"), /^Done: request #7 approved/);
+    assert.match(voteResultText(7, "VoteReject", transfer, "Rejected"), /^Done: request #7 rejected/);
   });
   it("one vote of several is not an approval", () => {
     assert.doesNotMatch(voteResultText(7, "VoteApprove", transfer, "InProgress"), /Done|approved/);
@@ -92,7 +122,7 @@ describe("what a vote did", () => {
   });
   it("an approved call does not claim it worked: Sputnik shows Approved even when the Guard refused", () => {
     assert.doesNotMatch(voteResultText(7, "VoteApprove", call, "Approved"), /Done/);
-    assert.match(voteResultText(7, "VoteApprove", call, "Approved"), /check the change/);
+    assert.match(voteResultText(7, "VoteApprove", call, "Approved"), /check it shows/);
   });
   it("an unreadable status claims nothing", () => {
     assert.doesNotMatch(voteResultText(7, "VoteApprove", transfer, null), /Done|approved/);

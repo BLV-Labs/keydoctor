@@ -4,7 +4,7 @@ import type { KeyPermission } from "key-doctor";
 import { actProposalArgs } from "./budget-flow.ts";
 import { nearToYocto } from "./format.ts";
 import { formToInput, guardAccountId, validateGuardForm, type GuardCreateArgs, type GuardFormError } from "./guard-form.ts";
-import { addGuardRoleProposal, base64Json, createGuardProposal, GUARD_ROLE, type AddProposalArgs, type RawPolicy } from "./guard-proposals.ts";
+import { addGuardRoleProposal, AGENT_GAS_FUND_YOCTO, base64Json, createGuardProposal, GUARD_ROLE, type AddProposalArgs, type RawPolicy } from "./guard-proposals.ts";
 
 export const SPUTNIK_FACTORY = "sputnik-v2.testnet";
 const NEAR = 10n ** 24n;
@@ -13,8 +13,7 @@ const PROPOSAL_BOND_YOCTO = 10n ** 23n;
 const PROPOSAL_PERIOD_NS = "259200000000000";
 /** The DAO contract takes about 4.78 NEAR of storage; the rest pays for its proposals. */
 const DAO_STORAGE_YOCTO = 6n * NEAR;
-/** `AGENT_GAS_FUND` and `MIN_GUARD_BALANCE` in contracts/guard. */
-const AGENT_GAS_FUND_YOCTO = 5n * 10n ** 23n;
+/** `MIN_GUARD_BALANCE` in contracts/guard. */
 const MIN_GUARD_BALANCE_YOCTO = 5n * 10n ** 23n;
 const TGAS = 10n ** 12n;
 
@@ -139,6 +138,13 @@ export interface BudgetChain {
   policy: RawPolicy | null;
 }
 
+/** Null when the account holds exactly `publicKey`, limited to the Guard. That limit is what the page tells the owner the file can do. */
+export function agentKeyProblem(guardId: string, publicKey: string, keys: readonly ChainKey[] | null): string | null {
+  const key = keys?.length === 1 ? keys[0] : undefined;
+  const narrow = key?.permission.type === "function_call" && key.permission.receiver_id === guardId;
+  return key?.publicKey === publicKey && narrow ? null : "the agent does not have exactly its one key, limited to the Guard";
+}
+
 /** The checks of §11.10.3 after sign 2. Sputnik shows a failed call as Approved, so only these say the Budget exists. */
 export function budgetCheckFailures(plan: BudgetPlan, agentPublicKey: string, chain: BudgetChain): string[] {
   const failures: string[] = [];
@@ -147,9 +153,8 @@ export function budgetCheckFailures(plan: BudgetPlan, agentPublicKey: string, ch
   const role = chain.policy?.roles.find((r) => r.name === GUARD_ROLE);
   const members = (role?.kind as { Group?: unknown } | undefined)?.Group;
   if (!Array.isArray(members) || !members.includes(plan.guardId)) failures.push(`the DAO role ${GUARD_ROLE} does not list the Guard`);
-  const key = chain.agentKeys?.length === 1 ? chain.agentKeys[0] : undefined;
-  const narrow = key?.permission.type === "function_call" && key.permission.receiver_id === plan.guardId;
-  if (key?.publicKey !== agentPublicKey || !narrow) failures.push("the agent does not have exactly its one key, limited to the Guard");
+  const key = agentKeyProblem(plan.guardId, agentPublicKey, chain.agentKeys);
+  if (key !== null) failures.push(key);
   return failures;
 }
 

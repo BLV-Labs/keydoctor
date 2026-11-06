@@ -44,7 +44,7 @@ export const TOOLS = [
     name: "guard_get_policy",
     title: "Read the Agent Guard spending limits",
     description:
-      "The limits the Guard enforces on this agent: max NEAR per payment, max NEAR per 24 hours, what is already spent and what is left in the current window, when it resets, the whitelisted receivers, and whether the Guard is paused. Read-only. Payments over these limits are not refused: they wait for the DAO council.",
+      "The limits the Guard enforces on this agent: max NEAR per payment, max NEAR per 24 hours, what is already spent and what is left in the current window, when it resets, the whitelisted receivers, and whether the Guard is paused. Read-only. Payments over these limits are not refused: they wait for the owner or DAO council.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true, openWorldHint: true },
   },
@@ -52,7 +52,7 @@ export const TOOLS = [
     name: "guard_request_transfer",
     title: "Ask the Agent Guard to pay NEAR from the DAO treasury",
     description:
-      "Asks the Guard to pay amount_near NEAR to receiver_id from the DAO treasury. Within the limits and to a whitelisted receiver the Guard approves and the money moves at once (status auto_approved). Otherwise the payment becomes a proposal that waits for the DAO council (status pending): that is the council's decision, so never send the same payment again, and never split it into smaller payments to get under a limit. Each call is a new payment with a new request_id; to follow up on one, use guard_get_request_status. Returns kd.guard_result.v1.",
+      "Asks the Guard to pay amount_near NEAR to receiver_id from the DAO treasury. Within the limits and to a whitelisted receiver the Guard approves and the money moves at once (status auto_approved). Otherwise the payment waits for the owner or DAO council (status pending): that is their decision and you only report it, so never send the same payment again, and never split it into smaller payments to get under a limit: the 24-hour limit stays the ceiling whatever the size. Never ask anyone for a private key or seed phrase. Each call is a new payment with a new request_id; to follow up on one, use guard_get_request_status. Returns kd.guard_result.v1.",
     inputSchema: {
       type: "object",
       properties: {
@@ -69,7 +69,7 @@ export const TOOLS = [
     name: "guard_get_request_status",
     title: "Check a payment request",
     description:
-      "The current status of a payment request by its request_id (from guard_request_transfer): pending (waiting for the council), auto_approved, executed (paid), rejected, expired or failed. Refreshes the status from the DAO when the request is not final yet. Use this instead of sending a payment again.",
+      "The current status of a payment request by its request_id (from guard_request_transfer): pending (waiting for the owner or council), auto_approved, executed (paid), rejected, expired or failed. Refreshes the status from the DAO when the request is not final yet. Use this instead of sending a payment again.",
     inputSchema: {
       type: "object",
       properties: { request_id: { type: "string", description: "request_id returned by guard_request_transfer" } },

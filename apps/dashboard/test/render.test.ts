@@ -5,11 +5,11 @@ import { describe, it } from "node:test";
 import type { KdReport, ListProposalsResult, Member, ProposalInfo } from "key-doctor";
 import { escape, html } from "../src/html.ts";
 import { formatThreshold, formatUtc, relativeAge, truncateKey, yoctoToNear } from "../src/format.ts";
-import { renderAgents, renderError, renderHome, renderLayout, renderOnCall } from "../src/pages.ts";
+import { renderAgents, renderAlertsDrawer, renderError, renderHome, renderLayout } from "../src/pages.ts";
 import { PROPOSALS_ID, renderProposals } from "../src/proposals-view.ts";
 import { renderKeyDetail } from "../src/key-detail.ts";
 import { renderAccount, renderCouncil } from "../src/report.ts";
-import { parseRoute, resolveInput, routeHref } from "../src/route.ts";
+import { agentGuideHref, parseRoute, resolveInput, routeHref, settledHref } from "../src/route.ts";
 import { STATUS_LABEL, groupFlags, keyMix, mainReason, recentFullAccessKeys, sortMembers } from "../src/view.ts";
 import { viewButton } from "../src/key-detail.ts";
 import { renderWatchDialog, renderWatchLinks } from "../src/watch.ts";
@@ -63,6 +63,8 @@ describe("route", () => {
       view: "report",
       level: "safe",
       network: "testnet",
+      link: null,
+      help: false,
     });
     assert.deepEqual(parseRoute("?target=bad name&from=x"), {
       page: "check",
@@ -73,6 +75,8 @@ describe("route", () => {
       view: "report",
       level: "safe",
       network: null,
+      link: null,
+      help: false,
     });
     assert.equal(parseRoute("?target=a.kd-demo.testnet&from=%3Cx%3E").from, null);
     assert.equal(routeHref("a.kd-demo.testnet", "kd-demo.sputnik-dao.testnet"), "?target=a.kd-demo.testnet&from=kd-demo.sputnik-dao.testnet");
@@ -319,8 +323,8 @@ describe("proposal list (C7)", () => {
   });
 });
 
-describe("nav and the On Call / Agents pages", () => {
-  const nav = (page: "check" | "oncall" | "agents" | "guard" | "budget") => renderLayout(html`<p>x</p>`, "testnet", page).value.match(/<nav[\s\S]*?<\/nav>/)![0];
+describe("nav and the alerts / MCP pages", () => {
+  const nav = (page: "check" | "budget") => renderLayout(html`<p>x</p>`, "testnet", page).value.match(/<nav[\s\S]*?<\/nav>/)![0];
 
   it("has Key Check and Agent Budget, marks only the current page, and no longer links out to t.me", () => {
     for (const [page, label] of [["check", "Key Check"], ["budget", "Agent Budget"]] as const) {
@@ -332,26 +336,66 @@ describe("nav and the On Call / Agents pages", () => {
     }
   });
 
-  it("keeps On Call, Agents and Agent Guard reachable from the footer of every page, since they left the nav", () => {
+  it("keeps the MCP page reachable from the footer of every page, since it left the nav", () => {
     const layout = renderLayout(html`<p>x</p>`, "testnet", "check").value;
     const footer = layout.match(/<footer[\s\S]*?<\/footer>/)![0];
-    for (const page of ["oncall", "agents", "guard"]) assert.ok(footer.includes(`page=${page}`), page);
+    assert.ok(footer.includes("page=mcp"));
+    assert.ok(footer.includes("For AI agents (MCP)"));
   });
 
-  it("?page= picks the page without a target, and ?target= wins", () => {
-    assert.equal(parseRoute("?page=oncall").page, "oncall");
-    assert.equal(parseRoute("?page=agents").page, "agents");
+  it("the old pages stay valid links: what is published must not land on an empty page (§10.1)", () => {
+    assert.deepEqual([parseRoute("?page=oncall").page, parseRoute("?page=oncall").link], ["check", { kind: "alerts" }]);
+    assert.deepEqual([parseRoute("?page=agents").page, parseRoute("?page=agents").link], ["budget", { kind: "add-agent" }]);
+    assert.equal(parseRoute("?page=agents&dao=d.testnet").dao, "d.testnet");
+    assert.equal(parseRoute("?page=guard").page, "budget");
+  });
+
+  it("?page=guard&dao= stays the council page: the README documents it and a many-member DAO has no other", () => {
+    assert.equal(parseRoute("?page=guard&dao=d.testnet").page, "guard");
+  });
+
+  it("?page= picks the page without a target, and ?target= wins, with nothing left to open", () => {
+    assert.equal(parseRoute("?page=mcp").page, "mcp");
     assert.equal(parseRoute("?page=nope").page, "check");
     assert.equal(parseRoute("").page, "check");
-    assert.equal(parseRoute("?page=agents&target=kdoncall-p.testnet").page, "check");
+    const target = parseRoute("?page=agents&target=kdoncall-p.testnet");
+    assert.equal(target.page, "check");
+    assert.equal(target.link, null);
+    assert.equal(parseRoute("?page=budget&help=agent&target=kdoncall-p.testnet").help, false);
   });
 
-  it("On Call explains the schedule, the setup steps and every bot command", () => {
-    const t = text(renderOnCall());
-    assert.match(t, /every 15 minutes/);
-    assert.match(t, /02:00 UTC/);
-    for (const c of ["/check", "/changes", "/watch", "/unwatch", "/list", "/help"]) assert.ok(t.includes(c), c);
-    assert.match(renderOnCall().value, /href="https:\/\/t\.me\/KeyDoctorOnCallBot"/);
+  it("the deep links of §10.5 carry what the bot's message asked for", () => {
+    assert.deepEqual(parseRoute("?page=budget&approve=12").link, { kind: "approve", id: 12 });
+    assert.deepEqual(parseRoute("?page=budget&topup=NEAR&amount=2.5").link, { kind: "topup", token: "near", amount: "2.5" });
+    assert.equal(parseRoute("?page=budget&help=agent").help, true);
+  });
+
+  it("a malformed deep link opens nothing rather than the wrong thing", () => {
+    assert.equal(parseRoute("?page=budget&approve=abc").link, null);
+    assert.equal(parseRoute("?page=budget&approve=-1").link, null);
+    assert.equal(parseRoute("?page=budget&topup=").link, null);
+    assert.deepEqual(parseRoute("?page=budget&topup=near&amount=1e9").link, { kind: "topup", token: "near", amount: null });
+    assert.equal(parseRoute("?page=check&approve=12").link, null);
+    assert.equal(parseRoute("?page=budget&help=other").help, false);
+  });
+
+  it("a one-shot link settles on a URL that does not open its drawer again on reload", () => {
+    assert.equal(settledHref(parseRoute("?page=oncall")), "./");
+    assert.equal(settledHref(parseRoute("?page=oncall&network=mainnet")), "?network=mainnet");
+    assert.equal(settledHref(parseRoute("?page=agents")), "?page=budget");
+    assert.equal(settledHref(parseRoute("?page=budget&dao=d.testnet&approve=3")), "?page=budget&dao=d.testnet");
+    assert.equal(parseRoute(settledHref(parseRoute("?page=budget&dao=d.testnet&approve=3"))).link, null);
+  });
+
+  it("the agent guide link keeps the Budget it came from", () => {
+    assert.equal(agentGuideHref("d.testnet"), "?page=budget&dao=d.testnet&help=agent");
+    assert.equal(agentGuideHref(null), "?page=budget&help=agent");
+  });
+
+  it("the bell drawer keeps what the On Call page taught: every bot command and the bot link", () => {
+    const out = renderAlertsDrawer(null);
+    for (const c of ["/check", "/changes", "/watch", "/unwatch", "/list", "/help"]) assert.ok(text(out).includes(c), c);
+    assert.match(out.value, /href="https:\/\/t\.me\/KeyDoctorOnCallBot"/);
   });
 
   it("Agents shows the endpoint with copy commands, all five tools, and falls back to self-host without a Worker URL", () => {

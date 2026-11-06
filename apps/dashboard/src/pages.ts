@@ -11,7 +11,7 @@ export const EXAMPLE_ACCOUNT = "kdoncall-p.testnet";
 
 const NAV: ReadonlyArray<readonly [Page, string]> = [["check", "Key Check"], ["budget", "Agent Budget"]];
 /** Pages the header does not list stay one click away in the footer. */
-const FOOTER_NAV: ReadonlyArray<readonly [Page, string]> = [["oncall", "On Call"], ["agents", "For AI agents (MCP)"], ["guard", "Agent Guard"]];
+const FOOTER_NAV: ReadonlyArray<readonly [Page, string]> = [["mcp", "For AI agents (MCP)"]];
 
 export function renderLayout(content: Html, network: Network = "testnet", page: Page = "check"): Html {
   const link = ([p, label]: readonly [Page, string]) =>
@@ -44,7 +44,16 @@ export function renderLayout(content: Html, network: Network = "testnet", page: 
     ${walletDialog()}`;
 }
 
-/** The bell's drawer. The dashboard never writes subscriptions, so it only shows how to subscribe in the bot. */
+const BOT_COMMANDS: ReadonlyArray<readonly [string, string]> = [
+  ["/check <name>", "Scan an account or DAO now. Stores nothing."],
+  ["/changes <name>", "Show what changed since the daily baseline."],
+  ["/watch <name>", "Subscribe this chat to key-change and proposal alerts."],
+  ["/unwatch <name>", "Stop the alerts for a name."],
+  ["/list", "List what this chat watches."],
+  ["/help", "Show the commands."],
+];
+
+/** The bell's drawer, which is also what `?page=oncall` opens. The dashboard never writes subscriptions, so it only shows how to subscribe in the bot. */
 export function renderAlertsDrawer(target: string | null): Html {
   return html`<div class="drawer-head">
       <div class="drawer-title"><h2 id="alerts-title" class="drawer-h">Alerts</h2><p class="small muted">Key Doctor stays on call in Telegram.</p></div>
@@ -56,11 +65,19 @@ export function renderAlertsDrawer(target: string | null): Html {
         <li><span class="step-dot">2</span><div class="stack-xs grow-min"><strong>Send it what to watch</strong>${copyRow(watchCommand(target ?? "<name>"))}</div></li>
         <li><span class="step-dot">3</span><div class="stack-xs"><strong>Council? Add the bot to your group</strong><p class="small muted">Everyone in the group sees the same alert.</p></div></li>
       </ol>
-      <div class="stack-xs">
+      <div class="stack-xs small">
         <h3 class="drawer-h3">What you will get</h3>
+        ${alertLines(true)}
+      </div>
+      <div class="stack-xs">
+        <h3 class="drawer-h3">Bot commands</h3>
+        <ul class="plain stack-xs small">${BOT_COMMANDS.map(([c, d]) => html`<li><code class="mono">${c}</code> <span class="muted">${d}</span></li>`)}</ul>
+      </div>
+      <div class="stack-xs">
+        <h3 class="drawer-h3">Limits</h3>
         <ul class="list small">
-          <li>Risky proposals, checked every 15 minutes</li>
-          <li>Key changes, once a day</li>
+          <li>A DAO that needs only 1 vote can be warned only after the proposal executes.</li>
+          <li>An alert can arrive up to 15 minutes late.</li>
         </ul>
       </div>
     </div>
@@ -118,41 +135,6 @@ export function renderHome(value: string, error: string | null, network: Network
         <div class="card pad stack-xs"><h3 class="h3">A whole DAO council</h3>
           <p class="small muted">One report for every member, plus alerts in Telegram when a risky proposal or a new key shows up.</p></div>
       </div>
-    </section>`;
-}
-
-const BOT_COMMANDS: ReadonlyArray<readonly [string, string]> = [
-  ["/check <name>", "Scan an account or DAO now. Stores nothing."],
-  ["/changes <name>", "Show what changed since the daily baseline."],
-  ["/watch <name>", "Subscribe this chat to key-change and proposal alerts."],
-  ["/unwatch <name>", "Stop the alerts for a name."],
-  ["/list", "List what this chat watches."],
-  ["/help", "Show the commands."],
-];
-
-export function renderOnCall(): Html {
-  const rows = BOT_COMMANDS.map(([c, d]) => html`<tr><td><code class="mono">${c}</code></td><td>${d}</td></tr>`);
-  return html`<section class="page-head"><div class="stack-sm grow">
-      <p class="eyebrow">On Call</p>
-      <h1 class="h1">Key Doctor watches while you sleep</h1>
-      <p class="lead">The Telegram bot checks proposals every 15 minutes and diffs keys every day at 02:00 UTC. It only reads public chain data and never signs anything.</p>
-    </div></section>
-    <section class="card pad stack-sm" aria-labelledby="oc-get"><h2 id="oc-get" class="h2">Alerts you get</h2>${alertLines(true)}</section>
-    <section class="card pad stack" aria-labelledby="oc-steps"><h2 id="oc-steps" class="h2">Set it up</h2>
-      <ol class="steps">
-        <li><span class="step-num" aria-hidden="true">1</span><div class="stack-sm grow"><p class="strong">Open the bot</p>
-          <a class="btn btn-primary self-start" href="${BOT_URL}" target="_blank" rel="noopener">${icon.send()}Open @${BOT_USERNAME}</a></div></li>
-        <li><span class="step-num" aria-hidden="true">2</span><div class="stack-sm grow"><p class="strong">Send the watch command</p>
-          <div class="command-row"><code class="command mono">/watch ${EXAMPLE_DAO}</code>
-          <button type="button" class="btn btn-secondary" data-action="copy-command" data-command="/watch ${EXAMPLE_DAO}">${icon.copy()}<span data-copy-label>Copy</span></button></div></div></li>
-        <li><span class="step-num" aria-hidden="true">3</span><div class="stack-sm grow"><p class="strong">Add the bot to your council group</p>
-          <p class="small muted">Send the same command in the group so every member gets the alerts.</p></div></li>
-      </ol></section>
-    <section class="stack-sm" aria-labelledby="oc-cmds"><h2 id="oc-cmds" class="h2">Bot commands</h2>
-      <div class="card table-scroll"><table class="info-table"><thead><tr><th>Command</th><th>What it does</th></tr></thead><tbody>${rows}</tbody></table></div></section>
-    <section class="card pad stack-sm" aria-labelledby="oc-limits"><h2 id="oc-limits" class="h2">Limits</h2>
-      <p class="check-line">${icon.info()}<span>A DAO that needs only 1 vote can be warned only after the proposal executes.</span></p>
-      <p class="check-line">${icon.info()}<span>An alert can arrive up to one cron interval (15 minutes) late.</span></p>
     </section>`;
 }
 

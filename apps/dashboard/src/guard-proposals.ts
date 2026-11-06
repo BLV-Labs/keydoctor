@@ -109,10 +109,13 @@ export const isGuardMethod = (m: unknown): m is GuardMethod => (GUARD_METHODS as
 /** Methods that add an entry: the Guard refuses them without a deposit for the storage and refunds the rest to the DAO. */
 const STORAGE_METHODS: readonly GuardMethod[] = ["add_agent", "add_whitelist", "add_guardian"];
 export const GUARD_STORAGE_DEPOSIT = "10000000000000000000000";
+/** `AGENT_GAS_FUND` in contracts/guard: what the Guard gives a new agent account. */
+export const AGENT_GAS_FUND_YOCTO = 5n * 10n ** 23n;
+/** `add_agent` with a key: the entry's storage, and the fund. What is not used goes back to the DAO. */
+export const NEW_AGENT_DEPOSIT = (BigInt(GUARD_STORAGE_DEPOSIT) + AGENT_GAS_FUND_YOCTO).toString();
 
 /** A FunctionCall proposal DAO → Guard, the only way to change a locked Guard. */
-export function guardChangeProposal(guardId: string, method: GuardMethod, args: object): AddProposalArgs {
-  const deposit = STORAGE_METHODS.includes(method) ? GUARD_STORAGE_DEPOSIT : "0";
+export function guardChangeProposal(guardId: string, method: GuardMethod, args: object, deposit: string = STORAGE_METHODS.includes(method) ? GUARD_STORAGE_DEPOSIT : "0"): AddProposalArgs {
   return {
     proposal: {
       description: `Agent Guard ${guardId}: ${method}`,

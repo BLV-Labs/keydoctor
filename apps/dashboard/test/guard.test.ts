@@ -60,6 +60,11 @@ describe("nearToYocto", () => {
 });
 
 describe("validateGuardForm", () => {
+  it("refuses the keeper as a recipient: it signs for every Budget, so it must never be paid by one (ADR 0005 K1)", () => {
+    const r = validateGuardForm(input({ whitelist: [{ account_id: "keydoctor-keeper.testnet", label: "", max_per_tx: "" }] }), FACTORY, CODE_STORAGE);
+    assert.equal(r.ok, false);
+    assert.ok(!r.ok && r.errors.some((e) => e.code === "KEEPER_RECIPIENT"));
+  });
   it("builds exactly the create args the factory takes, deposit = funding + the Guard's code storage + record storage", () => {
     const r = validateGuardForm(input({ whitelist: [{ account_id: "vendor.kdoncall.testnet", label: "vendor", max_per_tx: "0.5" }] }), FACTORY, CODE_STORAGE);
     assert.ok(r.ok);

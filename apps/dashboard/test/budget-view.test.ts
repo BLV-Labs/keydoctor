@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { addAgentProposal, agentProposal, amountFromForm, rulesProposal } from "../src/budget-flow.ts";
+import { addAgentProblem, addAgentProposal, agentProposal, amountFromForm, freshAgentAccount, rulesProposal } from "../src/budget-flow.ts";
 import { topUpBlocks, withdrawableYocto, type BudgetLive, type BudgetProposal, type BudgetRequest } from "../src/budget-read.ts";
 import {
+  BALANCED_RULES,
+  CAUTIOUS_RULES,
   balanceAfter,
   describeKind,
   renderBudget,
@@ -10,12 +12,14 @@ import {
   renderBudgetAgent,
   renderBudgetApprove,
   renderBudgetCreate,
+  renderAgentAdded,
   renderBudgetKey,
   renderBudgetPanel,
   renderBudgetSetup,
   renderBudgetStart,
   renderRecipients,
 } from "../src/budget-view.ts";
+import { renderAgentGuide } from "../src/agent-guide.ts";
 import type { RawPolicy } from "../src/guard-proposals.ts";
 
 const NEAR = (n: number) => `${n}${"0".repeat(24)}`;
@@ -37,6 +41,7 @@ const live = (over: Partial<BudgetLive> = {}): BudgetLive => ({
     policy: { max_per_tx: NEAR(1), max_per_day: NEAR(4), max_pending_per_agent: 3, min_reserve: NEAR(1) },
     window: { spent_in_window: NEAR(1), remaining: NEAR(3), resets_at: "2026-11-07T00:00:00.000Z" },
     agents: [{ account_id: "bot.testnet", label: "ops", enabled: true, pending: 0 }],
+    whitelist: [],
   },
   balance: NEAR(12),
   withdrawable: NEAR(11),
@@ -69,7 +74,7 @@ describe("renderBudget", () => {
   it("Approve shows what a call spends and that a policy change hands over control", () => {
     const pay = { FunctionCall: { receiver_id: "x.testnet", actions: [{ method_name: "go", deposit: NEAR(5) }] } };
     assert.match(describeKind(pay), /attaching 5 NEAR/);
-    assert.match(describeKind({ ChangePolicy: {} }), /who controls this DAO/);
+    assert.match(describeKind({ ChangePolicy: {} }), /who controls this Budget/);
   });
   it("states the true signature count on each owner action", () => {
     assert.match(page, /Top up <span class="sig">1 signature</);
@@ -99,7 +104,61 @@ describe("renderBudget", () => {
   it("shows unknown, not zero, when a read failed", () => {
     const failed = renderBudget(live({ balance: null, proposals: null, requests: null }), "testnet").value;
     assert.match(failed, /unknown/);
-    assert.match(failed, /Pending items are unknown, not none/);
+    assert.match(failed, /Waiting items are unknown, not none/);
+  });
+});
+
+describe("words a newcomer sees (§10.4)", () => {
+  /** What the page says, without the Technical details block, where these words belong. */
+  const shown = (page: string) => page.replace(/<details class="card tech">[\s\S]*?<\/details>/g, "").replace(/<[^>]+>/g, " ");
+  // Case matters: the Budget's own account name is "team.sputnik-v2.testnet", and it has to be shown.
+  const jargon = /\bDAO\b|\b[Pp]roposals?\b|\bGuard\b|Sputnik/;
+  it("the Budget page, its panels and the setup page never name the machinery", () => {
+    for (const out of [
+      renderBudget(live(), "testnet").value,
+      ...(["topup", "withdraw", "rules", "add-agent", "recipients"] as const).map((p) => renderBudgetPanel(p, live()).value),
+      renderBudgetSetup(true).value,
+    ]) {
+      assert.doesNotMatch(shown(out), jargon);
+    }
+  });
+  it("the Technical details block still gives the real names, for whoever wants to check them", () => {
+    assert.match(renderBudget(live(), "testnet").value, /<details class="card tech">[\s\S]*team\.sputnik-v2\.testnet/);
+  });
+  it("the agent guide promises only the tools that exist, and tells the agent not to dodge the limits", () => {
+    const out = renderAgentGuide("team.sputnik-v2.testnet").value;
+    assert.doesNotMatch(shown(out), jargon);
+    for (const tool of ["guard_get_policy", "guard_request_transfer", "guard_get_request_status"]) assert.match(out, new RegExp(tool));
+    assert.doesNotMatch(out, /strategies_list|plans_status/);
+    assert.match(out, /private key/);
+  });
+});
+
+describe("presets and recipients", () => {
+  it("offers Cautious, Balanced and Custom, and Cautious is tighter than Balanced on every limit", () => {
+    const form = renderBudgetSetup(true).value;
+    for (const p of ["cautious", "balanced", "custom"]) assert.match(form, new RegExp(`data-preset="${p}"`));
+    assert.ok(Number(CAUTIOUS_RULES.maxPerTx) < Number(BALANCED_RULES.maxPerTx));
+    assert.ok(Number(CAUTIOUS_RULES.maxPerDay) < Number(BALANCED_RULES.maxPerDay));
+    assert.ok(Number(CAUTIOUS_RULES.maxPendingPerAgent) < Number(BALANCED_RULES.maxPendingPerAgent));
+  });
+  it("a chosen preset survives a failed submit, so the owner is not moved to other limits", () => {
+    assert.match(renderBudgetSetup(true, { preset: "cautious" }).value, /data-preset="cautious" aria-pressed="true"/);
+  });
+  it("the recipient panel lists each entry with its own limit and a way to remove it", () => {
+    const base = live();
+    const out = renderBudgetPanel("recipients", {
+      ...base,
+      guard: { ...base.guard!, whitelist: [{ account_id: "vendor.testnet", label: "Vendor", max_per_tx: NEAR(2) }] },
+    }).value;
+    assert.match(out, /vendor\.testnet/);
+    assert.match(out, /2 NEAR/);
+    assert.match(out, /data-action="budget-recipient-drop" data-account="vendor\.testnet"/);
+    assert.match(out, /2 signatures/);
+  });
+  it("says the list is unknown when it could not be read, not that it is empty", () => {
+    const base = live();
+    assert.match(renderBudgetPanel("recipients", { ...base, guard: { ...base.guard!, whitelist: null } }).value, /unknown|Could not read/i);
   });
 });
 
@@ -120,10 +179,26 @@ describe("panels and setup", () => {
     assert.doesNotMatch(form, /name="agents"/);
   });
   it("after sign 2 asks to save the key first, and says when the chain does not show a finished budget", () => {
-    const done = renderBudgetKey("a1.g.testnet", "d.testnet", null).value;
+    const done = renderBudgetKey("a1.g.testnet", "g.testnet", "d.testnet", "testnet", null).value;
     assert.match(done, /data-action="budget-key"/);
     assert.match(done, /leaving loses it/);
-    assert.match(renderBudgetKey("a1.g.testnet", "d.testnet", "the role is missing").value, /does not show a finished budget: the role is missing/);
+    assert.match(renderBudgetKey("a1.g.testnet", "g.testnet", "d.testnet", "testnet", "the role is missing").value, /does not show a finished budget: the role is missing/);
+  });
+  it("the connect screen gives all three steps of §11.12.7, so a newcomer needs nothing else to plug an agent in", () => {
+    const out = renderAgentAdded("a2.g.testnet", "g.testnet", "d.testnet", "testnet", null).value;
+    assert.match(out, /data-action="budget-key"/);
+    assert.match(out, /Do not send this file to anyone/);
+    assert.match(out, /claude mcp add guard/);
+    assert.match(out, /GUARD_CONTRACT_ID=g\.testnet/);
+    assert.match(out, /AGENT_ACCOUNT_ID=a2\.g\.testnet/);
+    assert.match(out, /How much can I still spend today\?/);
+    // Following the guide link in this tab would drop the only copy of the key.
+    assert.match(out, /href="\?page=budget&amp;dao=d\.testnet&amp;help=agent" target="_blank"/);
+  });
+  it("the connect screen says so when the chain does not show the agent, rather than call it added", () => {
+    const out = renderAgentAdded("a2.g.testnet", "g.testnet", "d.testnet", "testnet", "the agent does not have exactly its one key").value;
+    assert.match(out, /does not show a finished agent: the agent does not have exactly its one key/);
+    assert.doesNotMatch(out, /is added and checked/);
   });
   it("the start form escapes what was typed", () => {
     assert.doesNotMatch(renderBudgetStart('"><script>', null, "").value, /<script>/);
@@ -150,6 +225,12 @@ describe("topUpBlocks", () => {
     const foreign: RawPolicy = { ...policy, roles: [policy.roles[0]!, { ...policy.roles[1]!, kind: { Group: ["g1.guards.testnet", "evil.testnet"] } }] };
     assert.deepEqual(topUpBlocks(foreign, "owner.testnet", "g1.guards.testnet", registry), ["FOREIGN_GUARD"]);
   });
+  it("blocks the owner once a second account controls the Budget: money sent here would no longer be theirs alone", () => {
+    const shared: RawPolicy = { ...policy, roles: [{ ...policy.roles[0]!, kind: { Group: ["owner.testnet", "other.testnet"] } }, policy.roles[1]!] };
+    assert.deepEqual(topUpBlocks(shared, "owner.testnet", "g1.guards.testnet", registry), ["FOREIGN_MEMBER"]);
+    const added: RawPolicy = { ...policy, roles: [...policy.roles, { name: "extra", kind: { Group: ["other.testnet"] }, permissions: ["*:*"], vote_policy: {} }] };
+    assert.deepEqual(topUpBlocks(added, "owner.testnet", "g1.guards.testnet", registry), ["FOREIGN_MEMBER"]);
+  });
 });
 
 describe("form builders", () => {
@@ -167,17 +248,29 @@ describe("form builders", () => {
     assert.match(ok.ok ? ok.value.proposal.description : "", /set_policy/);
   });
   it("add agent: refuses an eleventh agent here, because a refusal on chain would still show Approved", () => {
-    const ten = Array.from({ length: 10 }, (_, i) => `a${i}.testnet`);
-    assert.equal(addAgentProposal("g.testnet", { agent: "bot.testnet", label: "x" }, ten).ok, false);
+    const ten = Array.from({ length: 10 }, (_, i) => `a${i}.g.testnet`);
+    assert.match(addAgentProblem("x", ten, null) ?? "", /at most 10/);
   });
-  it("add agent: refuses a Guard account here, because its old key would pass and the chain's refusal still shows Approved", () => {
-    assert.equal(addAgentProposal("g.testnet", { agent: "a1.g.testnet", label: "x" }, []).ok, false);
+  it("add agent: refuses an empty name and a Budget that cannot pay the 0.51 NEAR, which would fail after the owner signs", () => {
+    assert.match(addAgentProblem("", [], null) ?? "", /Name/);
+    assert.match(addAgentProblem("ops", [], "509999999999999999999999") ?? "", /Top up first/);
+    assert.equal(addAgentProblem("ops", [], "510000000000000000000000"), null);
+    assert.equal(addAgentProblem("ops", [], null), null);
   });
-  it("add agent: refuses a bad account, a duplicate and an empty label", () => {
-    assert.equal(addAgentProposal("g.testnet", { agent: "Bad Name", label: "x" }, []).ok, false);
-    assert.equal(addAgentProposal("g.testnet", { agent: "bot.testnet", label: "x" }, ["bot.testnet"]).ok, false);
-    assert.equal(addAgentProposal("g.testnet", { agent: "bot.testnet", label: "" }, []).ok, false);
-    assert.equal(addAgentProposal("g.testnet", { agent: "bot.testnet", label: "ops" }, []).ok, true);
+  it("add agent: sends the key and the fund, because without them the Guard makes no account and the key file is useless", () => {
+    const kind = addAgentProposal("g.testnet", "a2.g.testnet", "ops", "ed25519:abc").proposal.kind as { FunctionCall: { actions: { method_name: string; args: string; deposit: string }[] } };
+    const action = kind.FunctionCall.actions[0]!;
+    assert.equal(action.method_name, "add_agent");
+    assert.equal(action.deposit, "510000000000000000000000");
+    assert.deepEqual(JSON.parse(Buffer.from(action.args, "base64").toString()), { account_id: "a2.g.testnet", label: "ops", public_key: "ed25519:abc" });
+  });
+  it("add agent: skips a name the chain holds, because a removed agent's account stays and the Guard fails on it", async () => {
+    const held = new Set(["a1.g.testnet", "a2.g.testnet"]);
+    assert.equal(await freshAgentAccount("g.testnet", async (id) => held.has(id)), "a3.g.testnet");
+  });
+  it("add agent: stops rather than loop or make a name too long for NEAR", async () => {
+    assert.equal(await freshAgentAccount("g.testnet", async () => true), null);
+    assert.equal(await freshAgentAccount(`${"g".repeat(60)}.testnet`, async () => false), null);
   });
   it("agent op: unknown op builds nothing", () => {
     assert.equal(agentProposal("g.testnet", "nope", "bot.testnet"), null);
@@ -255,7 +348,7 @@ describe("Budget views the owner decides from", () => {
     const older = { ...base.proposals![0]!, id: 3, submission_time: nanos(NOW - 40 * HOUR) };
     const b = { ...base, proposals: [...base.proposals!, older] };
     const out = renderBudget(b, "testnet", "", NOW).value;
-    assert.ok(out.indexOf("Proposal #3") < out.indexOf("Proposal #4"));
+    assert.ok(out.indexOf("Request #3") < out.indexOf("Request #4"));
     assert.match(out, /Oldest: 32 hours left/);
   });
   it("a paused Budget offers Resume, with the proposal's 2 signatures, instead of Pause", () => {

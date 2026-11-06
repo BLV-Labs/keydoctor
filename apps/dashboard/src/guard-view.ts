@@ -52,10 +52,14 @@ function row(label: string, value: Html | string): Html {
   return html`<tr><th scope="row">${label}</th><td>${value}</td></tr>`;
 }
 
+/** Plugs the Guard MCP into Claude Code on the agent owner's machine, inside a clone of this repo. */
+export const guardMcpCommand = (network: Network, guardId: string, agent: string): string =>
+  `claude mcp add guard -e NEAR_NETWORK=${network} -e GUARD_CONTRACT_ID=${guardId} -e AGENT_ACCOUNT_ID=${agent} -e AGENT_KEY_PATH=$HOME/.config/key-doctor/${agent}.json -- pnpm --silent --filter guard-mcp start`;
+
 /** The agent owner's two commands for one agent: its function-call key, then the Guard MCP for Claude Code. */
 function agentSteps(g: GuardLive, agent: string, network: Network): Html {
   const addKey = `near account add-key ${agent} grant-function-call-access --allowance '1 NEAR' --contract-account-id ${g.guard_id} --function-names 'request_transfer, sync_request' use-manually-provided-public-key ed25519:<agent public key> network-config ${network} sign-with-keychain send`;
-  const mcp = `claude mcp add guard -e NEAR_NETWORK=${network} -e GUARD_CONTRACT_ID=${g.guard_id} -e AGENT_ACCOUNT_ID=${agent} -e AGENT_KEY_PATH=$HOME/.config/key-doctor/${agent}.json -- pnpm --silent --filter guard-mcp start`;
+  const mcp = guardMcpCommand(network, g.guard_id, agent);
   return html`<div class="stack-sm"><p class="strong mono wrap">${agent}</p>
     <p class="small muted">1. Give the agent a key that can only call this Guard (keep the private key in a mode-600 file, never in a repo):</p>${copyRow(addKey)}
     <p class="small muted">2. Add the Guard MCP to Claude Code on the agent owner's machine:</p>${copyRow(mcp)}</div>`;

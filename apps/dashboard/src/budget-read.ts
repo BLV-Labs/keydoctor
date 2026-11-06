@@ -152,24 +152,27 @@ export async function readBudget(dao: string, factory: string, network: Network)
   return { dao: state, guard, balance: funds?.balance ?? null, withdrawable: funds?.withdrawable ?? null, proposals, requests };
 }
 
-export type TopUpBlock = "NOT_COUNCIL" | "NO_GUARD_ROLE" | "FOREIGN_GUARD";
+export type TopUpBlock = "NOT_COUNCIL" | "FOREIGN_MEMBER" | "NO_GUARD_ROLE" | "FOREIGN_GUARD";
 
 export const TOP_UP_TEXT: Record<TopUpBlock, string> = {
-  NOT_COUNCIL: "The connected account is not a member of a DAO role, so it is not the owner of this Budget.",
-  NO_GUARD_ROLE: "The DAO has no agent-guard role for this Guard. Top up is blocked until the council adds it.",
-  FOREIGN_GUARD: "The agent-guard role lists an account that is not a Guard this DAO created. Top up is blocked.",
+  NOT_COUNCIL: "The connected account is not the owner of this Budget.",
+  FOREIGN_MEMBER: "Another account also controls this Budget. Top up is blocked: money sent here would not be yours alone.",
+  NO_GUARD_ROLE: "This Budget's setup is not finished, so agents cannot use it. Top up is blocked.",
+  FOREIGN_GUARD: "An account this Budget did not create may ask to spend from it. Top up is blocked.",
 };
 
 const isGroup = (kind: unknown): kind is { Group: string[] } => isRecord(kind) && Array.isArray(kind.Group);
 
 /**
- * The DAO-policy check before every Top up (spec 11.10.4 item 3): the sender is a member of a DAO role, and role
- * `agent-guard` lists this Guard and only Guards the factory registry shows for this DAO. Empty means allowed.
+ * The DAO-policy check before every Top up (spec 11.10.4 item 3): the sender is a member of a DAO role, no other
+ * account is, and role `agent-guard` lists this Guard and only Guards the factory registry shows for this DAO.
+ * Empty means allowed.
  */
 export function topUpBlocks(policy: RawPolicy, sender: string, guardId: string, registryGuards: string[]): TopUpBlock[] {
   const blocks: TopUpBlock[] = [];
-  const isMember = policy.roles.some((r) => r.name !== GUARD_ROLE && isGroup(r.kind) && r.kind.Group.includes(sender));
-  if (!isMember) blocks.push("NOT_COUNCIL");
+  const owners = policy.roles.flatMap((r) => (r.name !== GUARD_ROLE && isGroup(r.kind) ? r.kind.Group : []));
+  if (!owners.includes(sender)) blocks.push("NOT_COUNCIL");
+  else if (owners.some((m) => m !== sender)) blocks.push("FOREIGN_MEMBER");
   const role = policy.roles.find((r) => r.name === GUARD_ROLE);
   const members = role !== undefined && isGroup(role.kind) ? role.kind.Group : [];
   if (!members.includes(guardId)) blocks.push("NO_GUARD_ROLE");

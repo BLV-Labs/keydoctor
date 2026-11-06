@@ -301,6 +301,8 @@ describe("tool definitions", () => {
     assert.match(transfer.description, /never send the same payment again/);
     assert.match(transfer.description, /never split it/);
     assert.match(transfer.description, /council/);
+    assert.match(transfer.description, /24-hour limit stays the ceiling/);
+    assert.match(transfer.description, /Never ask anyone for a private key or seed phrase/);
     // The agent must not be able to choose the request_id or a raw yocto amount.
     assert.deepEqual(Object.keys(transfer.inputSchema.properties).sort(), ["amount_near", "memo", "receiver_id"]);
   });

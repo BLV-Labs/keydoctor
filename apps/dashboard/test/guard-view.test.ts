@@ -19,6 +19,7 @@ const guard = (over: Partial<GuardLive> = {}): GuardLive => ({
   ready: true,
   in_role: true,
   config: { paused: false, proposal_bond: policy.proposal_bond, agents: 1, whitelist: 2, guardians: [] },
+  whitelist: [],
   policy: { max_per_tx: (5n * NEAR).toString(), max_per_day: (10n * NEAR).toString(), max_pending_per_agent: 3, min_reserve: NEAR.toString() },
   window: { spent_in_window: "0", remaining: (10n * NEAR).toString(), resets_at: "2026-11-03T00:00:00Z" },
   agents: [{ account_id: "bot.kdoncall.testnet", label: "payroll bot", enabled: true, pending: 0 }],
