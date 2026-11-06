@@ -1,6 +1,6 @@
 // Sends one alert to every chat watching its target. Send first, record after (§8.5).
 import type { KdAlert, Network } from "key-doctor";
-import type { Env } from "../env.ts";
+import type { D1Database, Env } from "../env.ts";
 import { sendMessage, TelegramError, type Outgoing } from "../telegram/api.ts";
 import { renderAlert, type Lang } from "../telegram/render.ts";
 import { alertSent, markSent } from "../store/alerts.ts";
@@ -39,6 +39,13 @@ export async function deliver(env: Env, alert: KdAlert, message: Outgoing, targe
   const chats = await chatsFor(env.DB, target, network);
   const token = env.TELEGRAM_BOT_TOKEN;
   if (chats.length === 0 || !token) return { delivered: false, skipped: "no_chats", retry: false, errors: [] };
+  const { sent, retry, errors } = await sendToChats(env.DB, token, alert.alert_id, message, chats);
+  if (!retry) await markSent(env.DB, alert);
+  return { delivered: sent > 0, skipped: null, retry, errors };
+}
+
+/** Sends to each chat and looks after the chats that moved or left. Recording the alert stays with the caller. */
+export async function sendToChats(db: D1Database, token: string, alertId: string, message: Outgoing, chats: readonly string[]): Promise<{ sent: number; retry: boolean; errors: string[] }> {
   const errors: string[] = [];
   let sent = 0;
   let retry = false;
@@ -51,26 +58,25 @@ export async function deliver(env: Env, alert: KdAlert, message: Outgoing, targe
         break;
       } catch (e) {
         if (e instanceof TelegramError && e.migrateTo !== null && attempt === 0) {
-          await moveChat(env.DB, to, e.migrateTo);
+          await moveChat(db, to, e.migrateTo);
           to = e.migrateTo;
           continue;
         }
         if (e instanceof TelegramError && e.chatGone) {
-          await deleteChat(env.DB, to);
+          await deleteChat(db, to);
         } else if (!(e instanceof TelegramError) || e.transient) {
           retry = true;
-          errors.push(`send ${alert.alert_id}: ${e instanceof TelegramError ? e.status : "network"}`);
+          errors.push(`send ${alertId}: ${e instanceof TelegramError ? e.status : "network"}`);
         } else {
           // A permanent refusal for this one chat must not hold the alert back from the others.
-          errors.push(`send ${alert.alert_id}: ${e.status} (not retried)`);
+          errors.push(`send ${alertId}: ${e.status} (not retried)`);
           console.error("telegram refused a chat", { status: e.status });
         }
         break;
       }
     }
   }
-  if (!retry) await markSent(env.DB, alert);
-  return { delivered: sent > 0, skipped: null, retry, errors };
+  return { sent, retry, errors };
 }
 
 export const alertMessage = (env: Env, alert: KdAlert): Outgoing =>

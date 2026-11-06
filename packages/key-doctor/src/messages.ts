@@ -1,4 +1,4 @@
-import type { Messages } from "./types.ts";
+import type { Messages, PlanAction, PlanPauseReason } from "./types.ts";
 import { BLOCK_TIME_MS, FA_OLD_DAYS, MAX_KEYS, ROLE_LABEL_MAX_LEN } from "./rules/thresholds.ts";
 
 type Evidence = Record<string, unknown>;
@@ -453,3 +453,84 @@ export const ACTION_TEXT = {
   upgradeSelf: (): Text => ({ vi: "nâng cấp code contract của DAO", en: "upgrade the DAO contract code" }),
   upgradeRemote: (on: string): Text => ({ vi: `nâng cấp code của ${on}`, en: `upgrade the code of ${on}` }),
 };
+
+// ---------------------------------------------------------------------------
+// kd.budget_alert.v1 texts (§9.5). Fixed templates, no generated text.
+// ---------------------------------------------------------------------------
+
+const STRATEGY_NAME: Record<string, Text> = {
+  "scheduled-payouts": { vi: "Chi định kỳ", en: "Scheduled payouts" },
+  "dca-near": { vi: "DCA NEAR", en: "DCA NEAR" },
+};
+
+/** "2026-11-07T09:00:00.000Z" to "2026-11-07 09:00 UTC". */
+const utc = (iso: string): string => iso.replace("T", " ").replace(/:\d\d(\.\d+)?Z$/, " UTC");
+
+const planTitle = (strategyId: string, run: number, total: number): Text => {
+  const name = STRATEGY_NAME[strategyId] ?? { vi: strategyId, en: strategyId };
+  return { vi: `${name.vi} (${run}/${total})`, en: `${name.en} (${run}/${total})` };
+};
+
+const stepDone = (action: PlanAction, amount: string): Text => {
+  const near = formatNear(amount);
+  if (action.type === "transfer") return { vi: `Đã chuyển ${near} NEAR cho ${action.receiver_id}.`, en: `Sent ${near} NEAR to ${action.receiver_id}.` };
+  if (action.type === "call") return { vi: `Đã gọi ${action.method} trên ${action.target}.`, en: `Called ${action.method} on ${action.target}.` };
+  return { vi: `Đã chạy bước với ${near} NEAR.`, en: `Ran the step with ${near} NEAR.` };
+};
+
+function textOf(title: Text, vi: string[], en: string[], action: Text = { vi: "", en: "" }): AlertText {
+  return {
+    vi: { title: title.vi, body: vi.join("\n"), action: action.vi },
+    en: { title: title.en, body: en.join("\n"), action: action.en },
+  };
+}
+
+export function planStepText(strategyId: string, action: PlanAction, amount: string, run: number, total: number, spent: string, nextRun: string | null): AlertText {
+  const done = stepDone(action, amount);
+  const next = nextRun === null ? null : utc(nextRun);
+  return textOf(
+    planTitle(strategyId, run, total),
+    [done.vi, `Tổng đã chi: ${formatNear(spent)} NEAR`, ...(next ? [`Lần tới: ${next}`] : [])],
+    [done.en, `Total spent: ${formatNear(spent)} NEAR`, ...(next ? [`Next run: ${next}`] : [])],
+  );
+}
+
+export function planCompletedText(strategyId: string, action: PlanAction, amount: string, total: number, spent: string): AlertText {
+  const done = stepDone(action, amount);
+  return textOf(
+    planTitle(strategyId, total, total),
+    [done.vi, `Kế hoạch hoàn tất: ${total}/${total} lần, tổng đã chi ${formatNear(spent)} NEAR.`],
+    [done.en, `Plan complete: ${total}/${total} runs, ${formatNear(spent)} NEAR spent in total.`],
+  );
+}
+
+export function planSkippedText(strategyId: string, run: number, total: number, reason: string, nextRun: string | null): AlertText {
+  const why: Text = reason === "OVER_DAILY_LIMIT" ? { vi: "vượt hạn mức 24 giờ", en: "over the 24 h limit" } : { vi: reason, en: reason };
+  const next = nextRun === null ? null : utc(nextRun);
+  return textOf(
+    planTitle(strategyId, run, total),
+    [`Bỏ qua lần này: ${why.vi}. Không có tiền nào được chi.`, ...(next ? [`Lần tới: ${next}`] : [])],
+    [`Skipped this run: ${why.en}. No money moved.`, ...(next ? [`Next run: ${next}`] : [])],
+  );
+}
+
+export function planPausedText(strategyId: string, run: number, total: number, reason: PlanPauseReason, code: string | null): AlertText {
+  const title = planTitle(strategyId, run, total);
+  if (reason === "insufficient_balance") {
+    return textOf(title, ["Kế hoạch tạm dừng: Budget không đủ số dư."], ["Plan paused: the Budget is short of funds."], {
+      vi: "Top up rồi bấm Resume để chạy tiếp.",
+      en: "Top up, then press Resume to continue.",
+    });
+  }
+  if (reason === "guard_low_near") {
+    return textOf(title, ["Kế hoạch tạm dừng: Guard không đủ NEAR để đặt cọc đề xuất."], ["Plan paused: the Guard is short of NEAR for the proposal bond."], {
+      vi: "Top up Guard rồi bấm Resume để chạy tiếp.",
+      en: "Top up the Guard, then press Resume to continue.",
+    });
+  }
+  const detail = code === null ? "" : ` (${code})`;
+  return textOf(title, [`Kế hoạch tạm dừng: bước không chạy được${detail}.`], [`Plan paused: the step could not run${detail}.`], {
+    vi: "Mở Agent Budget, xem lại luật, rồi bấm Resume.",
+    en: "Open Agent Budget, review the rules, then press Resume.",
+  });
+}

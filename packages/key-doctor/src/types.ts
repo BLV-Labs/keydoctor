@@ -352,6 +352,77 @@ export interface KdPreflight {
 }
 
 // ---------------------------------------------------------------------------
+// kd.budget_alert.v1: Agent Budget plans and their messages (§4.11). kd.alert.v1 stays as it is.
+// ---------------------------------------------------------------------------
+
+export type PlanAction =
+  | { type: "transfer"; receiver_id: string }
+  | { type: "call"; target: string; method: string; args_base64: string; deposit: string; gas: string }
+  | { type: "swap"; pool_id: number; token_out: string; max_slippage_bps: number };
+export type PlanStatus = "active" | "paused" | "completed" | "cancelled";
+export type PlanPauseReason = "insufficient_balance" | "guard_low_near" | "owner" | "failures" | null;
+
+/** Stored on chain, in the Guard. Times are nanoseconds as strings, as the Guard's `get_plans` returns them. */
+export interface Plan {
+  plan_id: number;
+  action: PlanAction;
+  strategy_id: string;
+  token_in: string;
+  amount_per_run: string;
+  interval_sec: number;
+  runs_total: number;
+  runs_done: number;
+  start_at: string;
+  next_run_at: string | null;
+  status: PlanStatus;
+  pause_reason: PlanPauseReason;
+}
+
+/** The Worker reads this from the chain and stores it in D1. */
+export interface PlanStepResult {
+  plan_id: number;
+  run: number;
+  status: "executed" | "skipped" | "failed";
+  reason?: string;
+  amount_in: string;
+  amount_out?: string;
+  price?: string;
+  proposal_id?: number;
+  tx_hash?: string;
+  executed_at: string;
+}
+
+export type BudgetAlertKind = "budget_owner_action" | "plan_step_executed" | "plan_step_skipped" | "plan_paused" | "plan_completed";
+
+export interface KdBudgetAlert {
+  schema_version: "kd.budget_alert.v1";
+  /**
+   * `<network>:<budget>:<kind>:<plan_id>:<run>-<n>`. `n` tells apart messages that share a run, which §4.11's plain
+   * `<run>` cannot: the slot (`due`) for a step, the count of failed steps for a pause.
+   */
+  alert_id: string;
+  created_at: string;
+  network: Network;
+  budget: { dao_id: string; guard_id: string };
+  kind: BudgetAlertKind;
+  severity: Severity;
+  muteable: boolean;
+  owner_action?: {
+    action: "withdraw" | "edit_rules" | "add_agent" | "disable_agent" | "remove_agent" | "create_plan" | "pause_plan" | "resume_plan" | "cancel_plan" | "pause_agents" | "upgrade_guard";
+    proposal_id: number | null;
+    summary: string;
+  };
+  plan?: Plan;
+  step?: PlanStepResult;
+  totals?: { spent: string; received: string | null; avg_price: string | null };
+  links: { tx?: string; dashboard: string };
+  messages: {
+    vi: { title: string; body: string; action: string };
+    en: { title: string; body: string; action: string };
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Library options (§7)
 // ---------------------------------------------------------------------------
 

@@ -2,3 +2,7 @@
 RUN_CHECK_TOKEN=change-me-run-check
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_WEBHOOK_SECRET=change-me-webhook
+# Keeper (ADR 0005): a test key of a testnet account only. Leave empty to keep the job off.
+KEEPER_ACCOUNT_ID=
+KEEPER_PRIVATE_KEY=
+KEEPER_ALERT_CHAT_ID=

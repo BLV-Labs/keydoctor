@@ -17,7 +17,15 @@ export interface Chain {
   keys: Record<string, any>;
   calls: Record<string, unknown>[];
   /** Extra answers for call_function, by method name. */
-  views: Record<string, (args: any) => unknown>;
+  views: Record<string, (args: any, accountId: string) => unknown>;
+  /** Block hash the stub reports. Signing needs a real one: 32 bytes in base58. */
+  blockHash: string;
+  /** Account balances for view_account, in yoctoNEAR. */
+  balances: Record<string, string>;
+  /** Nonce of any access key. */
+  accessKeyNonce: number;
+  /** Answers send_tx; without it the RPC fails. */
+  sendTx?: (signedBase64: string) => unknown;
   /** Telegram Bot API calls: method name and JSON body. */
   telegram: { method: string; body: any }[];
   /** Status the stub Telegram API answers with (200 by default). */
@@ -40,6 +48,9 @@ export function installChain(t: TestContext): Chain {
     telegram: [],
     telegramStatus: 200,
     head: HEAD,
+    blockHash: "h",
+    balances: {},
+    accessKeyNonce: 100,
   };
   t.mock.method(globalThis, "fetch", async (url: unknown, init?: RequestInit) => {
     const tg = /^https:\/\/api\.telegram\.org\/bot[^/]+\/(\w+)$/.exec(String(url));
@@ -55,14 +66,19 @@ export function installChain(t: TestContext): Chain {
     chain.calls.push({ method: body.method, ...body.params });
     const p = body.params;
     let reply: unknown;
-    if (body.method === "block") reply = ok({ header: { height: chain.head, hash: "h", timestamp_nanosec: `${1793671210000 + (chain.head - HEAD) * 600}000000` }, chunks: [] });
-    else if (p.request_type === "call_function") {
+    if (body.method === "block") reply = ok({ header: { height: chain.head, hash: chain.blockHash, timestamp_nanosec: `${1793671210000 + (chain.head - HEAD) * 600}000000` }, chunks: [] });
+    else if (body.method === "send_tx") {
+      if (!chain.sendTx) return new Response("{}", { status: 500 });
+      reply = ok(chain.sendTx(p.signed_tx_base64));
+    } else if (p.request_type === "call_function") {
       const args = JSON.parse(Buffer.from(p.args_base64, "base64").toString() || "{}");
       const view = chain.views[p.method_name];
-      if (view) reply = view(args);
+      if (view) reply = view(args, p.account_id);
       else if (p.account_id === DAO && p.method_name === "get_policy") reply = fixture("rpc/call_function.get_policy.json");
       else reply = ok({ error: "wasm execution failed with error: CompilationError(CodeDoesNotExist)", logs: [] });
     } else if (p.request_type === "view_access_key_list") reply = chain.keys[p.account_id] ?? unknownAccount;
+    else if (p.request_type === "view_access_key") reply = ok({ nonce: chain.accessKeyNonce, permission: "FullAccess" });
+    else if (p.request_type === "view_account" && chain.balances[p.account_id]) reply = ok({ amount: chain.balances[p.account_id] });
     else if (p.request_type === "view_account") reply = p.account_id === "game.kd-demo.testnet" ? fixture("rpc/view_account.game.json") : unknownAccount;
     else return new Response("{}", { status: 500 });
     return new Response(JSON.stringify(reply), { status: 200 });

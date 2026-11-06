@@ -1,5 +1,5 @@
 # Key Doctor Worker. Secrets are not in this file: set them with `wrangler secret put <NAME>`
-# (RUN_CHECK_TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET). Local dev reads .dev.vars.
+# (RUN_CHECK_TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, KEEPER_PRIVATE_KEY). Local dev reads .dev.vars.
 name = "key-doctor"
 main = "src/index.ts"
 compatibility_date = "2026-10-01"
@@ -11,9 +11,10 @@ database_name = "key-doctor"
 database_id = "a7ab0080-7623-4914-bab6-979e63ff8328"
 migrations_dir = "migrations"
 
-# Proposal watch every 15 minutes, daily key diff at 02:00 UTC (src/index.ts PROPOSAL_CRON, DAILY_CRON).
+# Proposal watch every 15 minutes, daily key diff at 02:00 UTC, keeper every 15 minutes
+# (src/index.ts PROPOSAL_CRON, DAILY_CRON, KEEPER_CRON).
 [triggers]
-crons = ["*/15 * * * *", "0 2 * * *"]
+crons = ["*/15 * * * *", "0 2 * * *", "7,22,37,52 * * * *"]
 
 [vars]
 NEW_KEY_WINDOW_HOURS = "48"
@@ -25,3 +26,11 @@ PROPOSAL_UI_URL_TEMPLATE = ""
 ALERT_LANG = "both"
 RPC_URL_TESTNET = "https://rpc.testnet.fastnear.com,https://rpc.testnet.near.org"
 RPC_URL_MAINNET = "https://rpc.mainnet.fastnear.com,https://rpc.mainnet.near.org"
+# Keeper (ADR 0005, testnet only). Off until KEEPER_ACCOUNT_ID and the KEEPER_PRIVATE_KEY secret are set: README.md here.
+KEEPER_ACCOUNT_ID = ""
+KEEPER_FACTORY_ID = "keydoctor-guards-v2.testnet"
+KEEPER_MIN_BALANCE = "1"
+KEEPER_MAX_BALANCE = "5"
+KEEPER_ALERT_CHAT_ID = ""
+KEEPER_MAX_GUARDS_PER_RUN = "3"
+KEEPER_MAX_STEPS_PER_RUN = "3"

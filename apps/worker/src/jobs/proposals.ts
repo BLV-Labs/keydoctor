@@ -6,14 +6,14 @@ import { getProposalState, saveProposalState } from "../store/proposal-state.ts"
 import { alertMessage, deliver } from "./deliver.ts";
 
 export interface JobResult {
-  job: "proposals" | "daily";
+  job: "proposals" | "daily" | "keeper";
   targets_checked: number;
   alerts_sent: number;
   alerts: string[];
   errors: string[];
 }
 
-const intVar = (v: string | undefined, fallback: number, min: number, max: number): number => {
+export const intVar = (v: string | undefined, fallback: number, min: number, max: number): number => {
   const n = Number(v);
   return Number.isInteger(n) && n >= min && n <= max ? n : fallback;
 };
