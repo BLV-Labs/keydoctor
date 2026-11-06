@@ -161,7 +161,8 @@ export function renderBudgetAlert(lang: Lang, a: KdBudgetAlert): Outgoing {
   const short = a.plan?.pause_reason === "insufficient_balance" || a.plan?.pause_reason === "guard_low_near";
   const buttons: Button[] = [];
   if (a.links.tx) buttons.push({ text: lang === "vi" ? "Xem giao dịch" : "View transaction", url: a.links.tx });
-  if (a.links.dashboard) buttons.push({ text: short ? "Top up" : lang === "vi" ? "Mở Agent Budget" : "Open Agent Budget", url: a.links.dashboard });
+  const open = a.links.dashboard.includes("/?target=") ? (lang === "vi" ? "Mở Key Check cho tài khoản này" : "Open Key Check for this account") : lang === "vi" ? "Mở Agent Budget" : "Open Agent Budget";
+  if (a.links.dashboard) buttons.push({ text: short ? "Top up" : open, url: a.links.dashboard });
   return { text: [`Key Doctor · ${m.title}`, m.body, ...(m.action ? [m.action] : [])].join("\n"), buttons };
 }
 

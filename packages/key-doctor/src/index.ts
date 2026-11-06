@@ -9,5 +9,5 @@ export { checkProposals, listProposals } from "./proposals.ts";
 export { KdErrorException, isKdError } from "./errors.ts";
 export { RULESET_VERSION } from "./rules/thresholds.ts";
 export { MEMBER_ERROR_TEXT } from "./messages.ts";
-export { budgetAlerts, type BudgetAlertInput, type PlanRequest, type PlanStepRecord } from "./budget-alerts.ts";
+export { budgetAlerts, guardPausedAlert, type BudgetAlertInput, type PlanRequest, type PlanStepRecord } from "./budget-alerts.ts";
 export { createRpc, DEFAULT_RPC_URLS, type Rpc } from "./rpc.ts";

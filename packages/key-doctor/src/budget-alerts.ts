@@ -1,6 +1,6 @@
 // kd.budget_alert.v1 from chain state (§4.11, §9.5). Pure, like diffReports: the keeper passes what it read and
 // sends whatever `alerts_sent` does not hold yet, so a message missed in one cycle comes out of the next.
-import { planCompletedText, planPausedText, planSkippedText, planStepText, type AlertText } from "./messages.ts";
+import { OWNER_TEXT, ownerActionText, planCompletedText, planPausedText, planSkippedText, planStepText, type AlertText, type Text } from "./messages.ts";
 import type { BudgetAlertKind, KdBudgetAlert, Network, Plan, PlanStepResult } from "./types.ts";
 
 /** The fields of a Guard `RequestRecord` that matter here. */
@@ -97,4 +97,53 @@ export function budgetAlerts(input: BudgetAlertInput): KdBudgetAlert[] {
     out.push(alert("plan_paused", plan, `${run}-${failed.length}`, last, planPausedText(plan.strategy_id, run, plan.runs_total, plan.pause_reason, last?.reason ?? null)));
   }
   return out;
+}
+
+export type OwnerActionKind = NonNullable<KdBudgetAlert["owner_action"]>["action"];
+
+/** One thing the owner did. The schema's list has no `enable_agent` or `resume_agents`: those go out as `add_agent` and `pause_agents`, and the text says which. */
+export interface OwnerStep {
+  action: OwnerActionKind;
+  text: Text;
+}
+
+export interface OwnerAlertInput {
+  network: Network;
+  budget: { dao_id: string; guard_id: string };
+  /** Never empty. The first step names the alert; every step is in the text, so a second action in a proposal cannot hide. */
+  steps: readonly OwnerStep[];
+  /** `<proposal_id>:1`, or `pause:open` for the one pause that has no proposal. */
+  slot: string;
+  proposalId: number | null;
+  /** True when the message may only claim the vote (see `ownerActionText`). */
+  voteOnly: boolean;
+  /** The account that acted, for the Key Check link. */
+  account: string | null;
+  now: string;
+  dashboardUrl?: string;
+}
+
+/** High and never muted: this is the warning when the owner's key is stolen (§9.5). */
+export function ownerAlert(input: OwnerAlertInput): KdBudgetAlert {
+  const { network, budget, steps, proposalId, account } = input;
+  const base = input.dashboardUrl?.replace(/\/+$/, "") ?? "";
+  const page = account === null ? `page=budget&dao=${encodeURIComponent(budget.dao_id)}` : `target=${encodeURIComponent(account)}`;
+  return {
+    schema_version: "kd.budget_alert.v1",
+    alert_id: `${network}:${budget.dao_id}:budget_owner_action:${input.slot}`,
+    created_at: input.now,
+    network,
+    budget,
+    kind: "budget_owner_action",
+    severity: "high",
+    muteable: false,
+    owner_action: { action: steps[0]!.action, proposal_id: proposalId, summary: steps.map((s) => s.text.en).join("; ") },
+    links: { dashboard: base ? `${base}/?${page}` : "" },
+    messages: ownerActionText(budget.dao_id, steps.map((s) => s.text), input.voteOnly ? proposalId : null),
+  };
+}
+
+/** `pause()` is a guardian's own call: no proposal, and nothing on chain says who made it. The id stays the same for one whole pause. */
+export function guardPausedAlert(input: { network: Network; budget: { dao_id: string; guard_id: string }; now: string; dashboardUrl?: string }): KdBudgetAlert {
+  return ownerAlert({ ...input, steps: [{ action: "pause_agents", text: OWNER_TEXT.pauseAgents() }], slot: "pause:open", proposalId: null, voteOnly: false, account: null });
 }

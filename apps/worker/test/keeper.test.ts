@@ -30,6 +30,8 @@ class FakeGuard {
   dao_id: string;
   plans: Plan[] = [];
   requests: any[] = [];
+  /** What `get_config` says. */
+  paused = false;
   /** What the next step meets. */
   next: "ok" | "over_limit" | "short" | "paused_guard" = "ok";
   /** What the next sync finds: the DAO has paid, has not settled yet, or the payment failed. */
@@ -165,6 +167,7 @@ function setup(t: TestContext, guards: FakeGuard[] = [new FakeGuard()], extra: P
   const byId = (id: string) => guards.find((g) => g.guard_id === id)!;
   chain.views.list_guards = (a: { from_index: number; limit: number }) =>
     bytes(guards.slice(a.from_index, a.from_index + a.limit).map((g) => ({ guard_id: g.guard_id, dao_id: g.dao_id, name: "x", created_at: "0", ready: true })));
+  chain.views.get_config = (_a, id) => bytes({ paused: byId(id).paused });
   chain.views.get_plans = (_a, id) => bytes(structuredClone(byId(id).plans));
   chain.views.list_requests = (_a, id) => bytes(structuredClone(byId(id).requests));
   chain.sendTx = (b64) => {
@@ -193,6 +196,49 @@ async function watched(env: Env, chain: Chain, target = DAO) {
 const nextHour = (chain: Chain) => {
   chain.head += HOUR_BLOCKS;
 };
+
+describe("GĐ28 keeper: a guardian's pause has no proposal to read", () => {
+  const told = (chain: Chain) => texts(chain).filter((x) => /Just paused every agent/.test(x));
+
+  it("tells the pause once, on a Budget with no plan too, and tells the next pause again", async (t) => {
+    const { env, chain, guard } = setup(t);
+    await watched(env, chain);
+    assert.equal(guard.plans.length, 0);
+    guard.paused = true;
+    await runKeeperJob(env);
+    await runKeeperJob(env);
+    assert.equal(told(chain).length, 1, "a pause lasting many cycles is one message");
+    const m = sends(chain).find((x) => /Just paused/.test(String(x.body.text)))!;
+    assert.deepEqual(buttons(m), [{ text: "Open Agent Budget", url: `https://dash.test/?page=budget&dao=${DAO}` }], "nothing on chain names who paused");
+
+    guard.paused = false;
+    await runKeeperJob(env);
+    guard.paused = true;
+    await runKeeperJob(env);
+    assert.equal(told(chain).length, 2);
+  });
+
+  it("a failed send is sent again next cycle", async (t) => {
+    const { env, chain, guard } = setup(t);
+    await watched(env, chain);
+    guard.paused = true;
+    chain.telegramReply = (_m, body) => (/Just paused/.test(String(body.text)) ? { status: 500, json: { ok: false } } : undefined);
+    await runKeeperJob(env);
+    chain.telegramReply = undefined;
+    chain.telegram.length = 0;
+    await runKeeperJob(env);
+    assert.equal(told(chain).length, 1);
+  });
+
+  it("a pause nobody watched is not replayed to a later /watch", async (t) => {
+    const { env, chain, guard } = setup(t);
+    guard.paused = true;
+    await runKeeperJob(env);
+    await watched(env, chain);
+    await runKeeperJob(env);
+    assert.equal(told(chain).length, 0);
+  });
+});
 
 describe("GĐ29 keeper: when it may run", () => {
   it("stays off, without a single read, until the owner sets the account, the key and the factory", async (t) => {
@@ -577,6 +623,7 @@ describe("GĐ29 keeper: Worker limits and the key", () => {
     chain.telegramStatus = 403; // each send then costs a delete too
     for (const [i, g] of guards.entries()) {
       await addSubscription(db, { target: g.dao_id, network: "testnet", target_type: "dao", chat_id: `-50${i}`, chat_type: "group", created_at: "2026-11-01T00:00:00.000Z" });
+      g.paused = true; // read in every cycle, and a message of its own
       for (let p = 0; p < 2; p++) g.plan();
       // A backlog of unsaid steps with open syncs, each of which fails: the most work a cycle can find.
       for (let run = 1; run <= 8; run++) {
@@ -594,7 +641,7 @@ describe("GĐ29 keeper: Worker limits and the key", () => {
     const r = await runKeeperJob(env);
     assert.equal(r.steps_run, 3, "the case must really be the busiest");
     assert.equal(guards[0]!.calls.filter((c) => c.method === "sync_request").length, 2);
-    assert.equal(sends(chain).length, 6, "the warning and five messages");
+    assert.equal(sends(chain).length, 5, "the warning and four messages");
     const used = chain.calls.length + chain.telegram.length + db.log.length;
     assert.ok(used <= 50, `used ${used}: ${chain.calls.length} RPC, ${chain.telegram.length} Telegram, ${db.log.length} D1`);
   });

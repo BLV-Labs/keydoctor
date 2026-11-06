@@ -242,7 +242,7 @@ export const missingMemberLimitation = (id: string): string =>
 // kd.diff.v1 change texts (§4.3). Built from report fields only; ids are already validated or sanitized by the scan.
 // ---------------------------------------------------------------------------
 
-type Text = { vi: string; en: string };
+export type Text = { vi: string; en: string };
 
 export const DIFF_TEXT = {
   memberAdded: (id: string): Text => ({
@@ -533,4 +533,44 @@ export function planPausedText(strategyId: string, run: number, total: number, r
     vi: "Mở Agent Budget, xem lại luật, rồi bấm Resume.",
     en: "Open Agent Budget, review the rules, then press Resume.",
   });
+}
+
+// budget_owner_action (§9.5). Each text finishes "Vừa ..." / "Just ...".
+export const OWNER_TEXT = {
+  withdrawNear: (amount: string, to: string): Text => ({ vi: `rút ${amount} NEAR về ${to}`, en: `withdrew ${amount} NEAR to ${to}` }),
+  withdrawToken: (amount: string, token: string, to: string): Text => ({
+    vi: `rút ${amount} (đơn vị gốc) token ${token} về ${to}`,
+    en: `withdrew ${amount} raw units of ${token} to ${to}`,
+  }),
+  editRules: (): Text => ({ vi: "đổi luật chi tiêu", en: "changed the spending rules" }),
+  addReceiver: (who: string): Text => ({ vi: `thêm ${who} vào danh sách người nhận`, en: `added ${who} to the receivers` }),
+  removeReceiver: (who: string): Text => ({ vi: `gỡ ${who} khỏi danh sách người nhận`, en: `removed ${who} from the receivers` }),
+  addGuardian: (who: string): Text => ({ vi: `thêm ${who} làm guardian`, en: `made ${who} a guardian` }),
+  removeGuardian: (who: string): Text => ({ vi: `gỡ guardian ${who}`, en: `removed the guardian ${who}` }),
+  addAgent: (who: string): Text => ({ vi: `thêm agent ${who}`, en: `added the agent ${who}` }),
+  enableAgent: (who: string): Text => ({ vi: `bật lại agent ${who}`, en: `enabled the agent ${who} again` }),
+  disableAgent: (who: string): Text => ({ vi: `tắt agent ${who}`, en: `disabled the agent ${who}` }),
+  removeAgent: (who: string): Text => ({ vi: `gỡ agent ${who}`, en: `removed the agent ${who}` }),
+  createPlan: (): Text => ({ vi: "tạo một kế hoạch", en: "created a plan" }),
+  pausePlan: (id: string): Text => ({ vi: `tạm dừng kế hoạch ${id}`, en: `paused plan ${id}` }),
+  resumePlan: (id: string): Text => ({ vi: `chạy lại kế hoạch ${id}`, en: `resumed plan ${id}` }),
+  cancelPlan: (id: string): Text => ({ vi: `hủy kế hoạch ${id}`, en: `cancelled plan ${id}` }),
+  pauseAgents: (): Text => ({ vi: "tạm dừng mọi agent", en: "paused every agent" }),
+  resumeAgents: (): Text => ({ vi: "mở lại mọi agent", en: "resumed every agent" }),
+  upgradeGuard: (): Text => ({ vi: "nâng cấp code của Guard", en: "upgraded the Guard's code" }),
+};
+
+/**
+ * `viaProposal`: the id of a FunctionCall proposal. The installed Sputnik sets no callback on a call, so `Approved`
+ * proves the vote and not the change, and the message says only what is known.
+ */
+export function ownerActionText(dao: string, done: readonly Text[], viaProposal: number | null): AlertText {
+  const vi = done.map((d) => d.vi).join("; ");
+  const en = done.map((d) => d.en).join("; ");
+  return textOf(
+    { vi: `Agent Budget ${dao}`, en: `Agent Budget ${dao}` },
+    [viaProposal === null ? `Vừa ${vi}.` : `Vừa duyệt đề xuất #${viaProposal}: ${vi}.`],
+    [viaProposal === null ? `Just ${en}.` : `Proposal #${viaProposal} was just approved: ${en}.`],
+    { vi: "Nếu không phải bạn: tài khoản của bạn có thể đã bị chiếm. Kiểm tra key ngay.", en: "If this was not you, your account may have been taken over. Check its keys now." },
+  );
 }

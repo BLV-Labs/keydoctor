@@ -33,3 +33,8 @@ export async function markSent(db: D1Database, alert: { alert_id: string }): Pro
     .bind(alert.alert_id, new Date().toISOString(), JSON.stringify(alert))
     .run();
 }
+
+/** Forgets an alert so the same id can go out again: only for a state that ended, such as a Guard pause. */
+export async function clearSent(db: D1Database, alertId: string): Promise<void> {
+  await db.prepare("DELETE FROM alerts_sent WHERE alert_id = ?").bind(alertId).run();
+}

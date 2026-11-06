@@ -263,6 +263,10 @@ export interface CheckProposalsOptions {
   newKeyWindowHours?: number;
   /** e.g. "https://<ui>/{dao}/proposals/{id}" */
   proposalUiUrlTemplate?: string;
+  /** The Guard factory that marks a DAO as an Agent Budget. Without it no `budget_alerts` are built. */
+  budgetFactoryId?: string;
+  /** Base of the links in `budget_alerts`. */
+  dashboardUrl?: string;
 }
 
 export interface ListProposalsOptions {
@@ -285,6 +289,8 @@ export interface ListProposalsResult {
 
 export interface CheckProposalsResult {
   alerts: KdAlert[];
+  /** Owner actions on an Agent Budget (§9.5), in their own schema: `kd.alert.v1` does not change. */
+  budget_alerts: KdBudgetAlert[];
   state: ProposalWatchState;
   errors: string[];
 }

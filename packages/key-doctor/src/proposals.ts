@@ -4,6 +4,7 @@ import type {
   CheckProposalsOptions,
   CheckProposalsResult,
   KdAlert,
+  KdBudgetAlert,
   ListProposalsOptions,
   ListProposalsResult,
   Network,
@@ -17,6 +18,7 @@ import { fail, isKdError } from "./errors.ts";
 import {
   ACTION_TEXT,
   formatNear,
+  OWNER_TEXT,
   guardAutoText,
   guardPendingText,
   proposalAlertText,
@@ -25,6 +27,7 @@ import {
   type AlertText,
 } from "./messages.ts";
 import { accountKind, isDigits, isRecord, parsePolicy, resolveTarget, type Policy } from "./parse.ts";
+import { ownerAlert, type OwnerStep } from "./budget-alerts.ts";
 import { createRpc, DEFAULT_RPC_URLS, type Rpc } from "./rpc.ts";
 import { approvalsNeeded, permits } from "./rules/dao.ts";
 import {
@@ -188,6 +191,87 @@ export function actionText(p: Proposal): { vi: string; en: string } {
   }
 }
 
+/** The JSON arguments of one FunctionCall action, or an empty object. */
+function callArgs(action: Record<string, unknown>): Record<string, unknown> {
+  try {
+    const args: unknown = JSON.parse(atob(str(action.args)));
+    return isRecord(args) ? args : {};
+  } catch {
+    return {};
+  }
+}
+
+function guardCallStep(method: string, args: Record<string, unknown>): OwnerStep | null {
+  const account = safeId(args.account_id);
+  const plan = Number.isSafeInteger(args.plan_id) ? String(args.plan_id) : "?";
+  switch (method) {
+    case "set_policy":
+      return { action: "edit_rules", text: OWNER_TEXT.editRules() };
+    case "add_whitelist":
+      return { action: "edit_rules", text: OWNER_TEXT.addReceiver(account) };
+    case "remove_whitelist":
+      return { action: "edit_rules", text: OWNER_TEXT.removeReceiver(account) };
+    case "add_guardian":
+      return { action: "edit_rules", text: OWNER_TEXT.addGuardian(account) };
+    case "remove_guardian":
+      return { action: "edit_rules", text: OWNER_TEXT.removeGuardian(account) };
+    case "add_agent":
+      return { action: "add_agent", text: OWNER_TEXT.addAgent(account) };
+    case "remove_agent":
+      return { action: "remove_agent", text: OWNER_TEXT.removeAgent(account) };
+    case "set_agent_enabled":
+      return args.enabled === true ? { action: "add_agent", text: OWNER_TEXT.enableAgent(account) } : { action: "disable_agent", text: OWNER_TEXT.disableAgent(account) };
+    case "create_plan":
+      return { action: "create_plan", text: OWNER_TEXT.createPlan() };
+    case "pause_plan":
+      return { action: "pause_plan", text: OWNER_TEXT.pausePlan(plan) };
+    case "resume_plan":
+      return { action: "resume_plan", text: OWNER_TEXT.resumePlan(plan) };
+    case "cancel_plan":
+      return { action: "cancel_plan", text: OWNER_TEXT.cancelPlan(plan) };
+    case "unpause":
+      return { action: "pause_agents", text: OWNER_TEXT.resumeAgents() };
+    case "upgrade":
+      return { action: "upgrade_guard", text: OWNER_TEXT.upgradeGuard() };
+    default:
+      return null;
+  }
+}
+
+/** What an approved proposal did to a Budget. Empty for what §9.5 does not tell, such as `storage_deposit`. */
+function ownerSteps(p: Proposal, guards: readonly string[]): OwnerStep[] {
+  const b = p.body;
+  const receiver = str(b.receiver_id);
+  if (p.label === "transfer") {
+    const token = str(b.token_id);
+    const text = token === "" ? OWNER_TEXT.withdrawNear(formatNear(str(b.amount)), safeId(receiver)) : OWNER_TEXT.withdrawToken(isDigits(str(b.amount)) ? str(b.amount) : "?", safeId(token), safeId(receiver));
+    return [{ action: "withdraw", text }];
+  }
+  if (p.label === "upgrade_remote" && guards.includes(receiver)) return [{ action: "upgrade_guard", text: OWNER_TEXT.upgradeGuard() }];
+  if (p.label !== "call" || !Array.isArray(b.actions)) return [];
+  const steps: OwnerStep[] = [];
+  for (const a of b.actions) {
+    if (!isRecord(a)) continue;
+    const method = str(a.method_name);
+    const args = callArgs(a);
+    if (guards.includes(receiver)) {
+      const step = guardCallStep(method, args);
+      if (step) steps.push(step);
+    } else if (method === "ft_transfer" || method === "ft_transfer_call") {
+      // Tokens leave through a call, not a Transfer, when the proposal is written by hand.
+      steps.push({ action: "withdraw", text: OWNER_TEXT.withdrawToken(isDigits(str(args.amount)) ? str(args.amount) : "?", safeId(receiver), safeId(args.receiver_id)) });
+    }
+  }
+  return steps;
+}
+
+/** The Guards the factory made for this DAO. None means the DAO is not an Agent Budget. */
+async function budgetGuardsOf(rpc: Rpc, factory: string, dao: string, height: number): Promise<string[]> {
+  const raw = await rpc.callFunction(factory, height, "get_guards_for_dao", { dao_id: dao });
+  if (!Array.isArray(raw)) throw fail("RPC_ERROR", { retryable: false });
+  return raw.flatMap((g) => (isRecord(g) && typeof g.guard_id === "string" ? [g.guard_id] : []));
+}
+
 /** The group role that can approve this label and is closest to passing it; ties go to policy order. */
 /** `guards`: a role made only of known Guards that did not approve is skipped, so a council is never told to wait for a Guard. */
 export function tally(
@@ -335,7 +419,7 @@ export async function checkProposals(
 
   const head = await rpc.block();
   const last = parseLastId(await rpc.callFunction(dao, head.height, "get_last_proposal_id", {}));
-  if (prev === null) return { alerts: [], state: { last_proposal_id: last, pending: {} }, errors: [] };
+  if (prev === null) return { alerts: [], budget_alerts: [], state: { last_proposal_id: last, pending: {} }, errors: [] };
 
   const policy = parsePolicy(await rpc.callFunction(dao, head.height, "get_policy", {}));
   if (policy === null) throw fail("NOT_A_DAO");
@@ -344,6 +428,9 @@ export async function checkProposals(
   const base = { network, dao, createdAt };
   const errors: string[] = [];
   const alerts: KdAlert[] = [];
+  const budgetAlerts: KdBudgetAlert[] = [];
+  /** Read on the first approved proposal only, so a quiet DAO pays nothing for it. */
+  let budgetGuards: string[] | undefined;
   const pending: ProposalWatchState["pending"] = {};
 
   // Pending first (votes are what we watch), then new ids in order; the rest wait for the next call.
@@ -393,6 +480,39 @@ export async function checkProposals(
 
     const group = callsUpgrade(p) ? "upgrade" : groupOf(p.label);
     if (group === null) continue;
+
+    // §9.5. Told once the proposal went through, because "just withdrew" must be true; an open one stays in `pending`.
+    // A Guard's proposals are not the owner's: they have their own messages.
+    if (p.status === "Approved" && opts.budgetFactoryId) {
+      if (budgetGuards === undefined) {
+        try {
+          budgetGuards = await budgetGuardsOf(rpc, opts.budgetFactoryId, dao, head.height);
+        } catch (e) {
+          errors.push(`proposal ${id}: budget check ${codeOf(e)}`);
+          if (seen !== undefined) pending[String(id)] = seen;
+          if (isNew) nextLast = Math.min(nextLast, id);
+          continue;
+        }
+      }
+      const guard = budgetGuards.includes(str(p.body.receiver_id)) ? str(p.body.receiver_id) : budgetGuards[0];
+      const steps = guard === undefined || budgetGuards.includes(p.proposer) ? [] : ownerSteps(p, budgetGuards);
+      if (guard !== undefined && steps.length > 0) {
+        budgetAlerts.push(
+          ownerAlert({
+            network,
+            budget: { dao_id: dao, guard_id: guard },
+            steps,
+            slot: `${id}:1`,
+            proposalId: id,
+            voteOnly: p.label !== "transfer",
+            account: safeId(p.proposer) === "?" ? null : p.proposer,
+            now: createdAt,
+            ...(opts.dashboardUrl && { dashboardUrl: opts.dashboardUrl }),
+          }),
+        );
+      }
+    }
+
     const action = actionText(p);
     const afterTheFact = p.status !== "InProgress";
 
@@ -489,7 +609,7 @@ export async function checkProposals(
     }
   }
 
-  return { alerts, state: { last_proposal_id: nextLast, pending }, errors };
+  return { alerts, budget_alerts: budgetAlerts, state: { last_proposal_id: nextLast, pending }, errors };
 }
 
 /**

@@ -34,7 +34,7 @@ export interface Delivery {
  * a duplicate is better than a missed alert. A chat that blocked or removed the bot loses its subscriptions;
  * a group that became a supergroup moves to its new id; any other refusal is reported and not retried.
  */
-export async function deliver(env: Env, alert: KdAlert, message: Outgoing, target: string, network: Network): Promise<Delivery> {
+export async function deliver(env: Env, alert: { alert_id: string }, message: Outgoing, target: string, network: Network): Promise<Delivery> {
   if (await alertSent(env.DB, alert.alert_id)) return { delivered: false, skipped: "duplicate", retry: false, errors: [] };
   const chats = await chatsFor(env.DB, target, network);
   const token = env.TELEGRAM_BOT_TOKEN;

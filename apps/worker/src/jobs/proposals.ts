@@ -3,7 +3,8 @@ import { checkProposals, isKdError, resolveTarget, type Network } from "key-doct
 import type { D1Database, Env } from "../env.ts";
 import { rpcUrlsFor } from "../core.ts";
 import { getProposalState, saveProposalState } from "../store/proposal-state.ts";
-import { alertMessage, deliver } from "./deliver.ts";
+import { renderBudgetAlert } from "../telegram/render.ts";
+import { alertLang, alertMessage, deliver, renderFor } from "./deliver.ts";
 
 export interface JobResult {
   job: "proposals" | "daily" | "keeper";
@@ -54,6 +55,9 @@ export async function runProposalJob(env: Env, only?: string): Promise<JobResult
         ...(rpcUrl && { rpcUrl }),
         newKeyWindowHours: intVar(env.NEW_KEY_WINDOW_HOURS, 48, 1, 24 * 30),
         ...(env.PROPOSAL_UI_URL_TEMPLATE && { proposalUiUrlTemplate: env.PROPOSAL_UI_URL_TEMPLATE }),
+        // The factory is on testnet only (ADR 0005).
+        ...(network === "testnet" && env.KEEPER_FACTORY_ID && { budgetFactoryId: env.KEEPER_FACTORY_ID }),
+        ...(env.DASHBOARD_URL && { dashboardUrl: env.DASHBOARD_URL }),
       });
     } catch (e) {
       // A throw keeps the old state, so the next run retries from the same point.
@@ -66,6 +70,13 @@ export async function runProposalJob(env: Env, only?: string): Promise<JobResult
     for (const alert of checked.alerts) {
       result.alerts.push(alert.alert_id);
       const d = await deliver(env, alert, alertMessage(env, alert), target, network);
+      if (d.delivered) result.alerts_sent += 1;
+      if (d.retry) retry = true;
+      result.errors.push(...d.errors);
+    }
+    for (const alert of checked.budget_alerts) {
+      result.alerts.push(alert.alert_id);
+      const d = await deliver(env, alert, renderFor(alertLang(env), (l) => renderBudgetAlert(l, alert)), target, network);
       if (d.delivered) result.alerts_sent += 1;
       if (d.retry) retry = true;
       result.errors.push(...d.errors);

@@ -1,10 +1,10 @@
 // Keeper (ADR 0005, GĐ29): calls the plan steps that are due and tells the Budget's chats what happened.
 // The Guard decides everything: this job only pays the gas (K2). It never takes an amount, a receiver or a choice.
-import { DEFAULT_RPC_URLS, budgetAlerts, type KdBudgetAlert, type Plan, type PlanRequest, type PlanStepRecord } from "key-doctor";
+import { DEFAULT_RPC_URLS, budgetAlerts, guardPausedAlert, type KdBudgetAlert, type Plan, type PlanRequest, type PlanStepRecord } from "key-doctor";
 import type { Env } from "../env.ts";
 import { rpcUrlsFor } from "../core.ts";
 import { RpcFailed, createKeeperRpc, guardEvents, loadKeeperKey, panicCode, signCall, type KeeperKey, type KeeperMethod, type KeeperRpc, type TxOutcome } from "../keeper/near.ts";
-import { MAX_MARKS, alertSent, markSent, markSentMany, sentIds } from "../store/alerts.ts";
+import { MAX_MARKS, alertSent, clearSent, markSent, markSentMany, sentIds } from "../store/alerts.ts";
 import { acquireLease, releaseLease, saveStep, stepsFor } from "../store/plan-steps.ts";
 import { chatsFor } from "../store/subscriptions.ts";
 import { sendMessage, type Outgoing } from "../telegram/api.ts";
@@ -17,7 +17,7 @@ const LEASE_MS = 10 * 60_000;
 const PAGE = 50;
 /** The free plan allows 50 subrequests per invocation, D1 included. Worst case with these limits: test "stays inside". */
 const MAX_SYNCS = 2;
-const MAX_SENDS = 5;
+const MAX_SENDS = 4;
 /** The newest messages are the ones that can still be unsent; `sentIds` takes 100 ids. */
 const MAX_CANDIDATES = 90;
 const NEAR = 10n ** 24n;
@@ -199,11 +199,13 @@ function stepRecord(plan: Plan, due: string, hash: string, tx: TxOutcome, now: s
 
 async function runGuard(c: Cycle, g: GuardView): Promise<void> {
   const { rpc, result, env } = c;
+  const now = new Date().toISOString();
+  const { paused: guardPaused } = await rpc.view<{ paused: boolean }>(g.guard_id, "get_config", {});
   const readPlans = () => rpc.view<Plan[]>(g.guard_id, "get_plans", { from: 0, limit: PAGE });
   let plans = await readPlans();
-  if (plans.length === 0) return;
+  // A Budget with no plan can be paused too.
+  if (plans.length === 0) return tell(c, g, [], [], now, guardPaused);
   if (plans.length === PAGE) result.errors.push(`${g.guard_id}: only the first ${PAGE} plans are served`);
-  const now = new Date().toISOString();
 
   // Read once per Guard, and fail closed: an unreadable policy throws before anything is signed.
   let allowed: boolean | null = null;
@@ -264,26 +266,25 @@ async function runGuard(c: Cycle, g: GuardView): Promise<void> {
     }
   }
 
-  await tell(c, g, plans, requests, now);
+  await tell(c, g, plans, requests, now, guardPaused);
 }
 
 const budgetMessage = (env: Env, a: KdBudgetAlert): Outgoing => renderFor(alertLang(env), (l) => renderBudgetAlert(l, a));
 
 /** Send first, record after (§8.5): a crash between the two repeats a message, it never loses one. */
-async function tell(c: Cycle, g: GuardView, plans: Plan[], requests: PlanRequest[], now: string): Promise<void> {
+async function tell(c: Cycle, g: GuardView, plans: Plan[], requests: PlanRequest[], now: string, guardPaused: boolean): Promise<void> {
   const { env, result } = c;
   const token = env.TELEGRAM_BOT_TOKEN;
   if (!token) return;
-  const alerts = budgetAlerts({
-    network: NETWORK,
-    budget: { dao_id: g.dao_id, guard_id: g.guard_id },
-    plans,
-    requests,
-    steps: await stepsFor(env.DB, g.guard_id),
-    now,
-    ...(env.DASHBOARD_URL && { dashboardUrl: env.DASHBOARD_URL }),
-  }).slice(-MAX_CANDIDATES);
-  const sent = await sentIds(env.DB, alerts.map((a) => a.alert_id));
+  const budget = { dao_id: g.dao_id, guard_id: g.guard_id };
+  const link = env.DASHBOARD_URL ? { dashboardUrl: env.DASHBOARD_URL } : {};
+  const planAlerts = plans.length === 0 ? [] : budgetAlerts({ network: NETWORK, budget, plans, requests, steps: await stepsFor(env.DB, g.guard_id), now, ...link }).slice(-MAX_CANDIDATES);
+  // `pause()` is the one owner action with no proposal, so the proposal job cannot see it (§9.5). The row lives as long
+  // as the pause: gone after it, the next pause is told. First in line, because it is the warning the plans are not.
+  const pause = guardPausedAlert({ network: NETWORK, budget, now, ...link });
+  const sent = await sentIds(env.DB, [pause.alert_id, ...planAlerts.map((a) => a.alert_id)]);
+  if (!guardPaused && sent.has(pause.alert_id)) await clearSent(env.DB, pause.alert_id);
+  const alerts = guardPaused ? [pause, ...planAlerts] : planAlerts;
   const fresh = alerts.filter((a) => !sent.has(a.alert_id));
   if (fresh.length === 0) return;
 
