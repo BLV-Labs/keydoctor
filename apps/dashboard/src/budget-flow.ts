@@ -157,6 +157,7 @@ export function addAgentProposal(guardId: string, v: Record<string, string>, exi
   const label = (v.label ?? "").trim();
   if (!ACCOUNT_ID.test(account) || account.length > 64) return fail("Enter a valid .testnet or .near account name.");
   if (existing.includes(account)) return fail("That account is already an agent.");
+  if (account.endsWith(`.${guardId}`)) return fail("That name is an account of this Guard, which keeps any old key. Use an account of your own.");
   if (existing.length >= MAX_AGENTS) return fail(`A Guard takes at most ${MAX_AGENTS} agents. Remove one first.`);
   if (label === "" || [...label].length > MAX_LABEL_CHARS) return fail(`Label: 1 to ${MAX_LABEL_CHARS} characters.`);
   return { ok: true, value: guardChangeProposal(guardId, "add_agent", { account_id: account, label }) };

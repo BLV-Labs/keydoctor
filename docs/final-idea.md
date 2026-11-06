@@ -1654,7 +1654,7 @@ Guard factory tạo Guard **không có full-access key** (khóa từ đầu; rul
 - `AgentInput` thêm `public_key` (không bắt buộc). `Guard.new` và `add_agent` nhận trường này. Có `public_key` thì `account_id` phải là account con trực tiếp của Guard, và Guard tạo account đó trong một batch: `create_account`, chuyển `AGENT_GAS_FUND`, gắn function-call key. Trong `add_agent`, agent có key bắt đầu ở trạng thái tắt và chỉ bật trong callback khi tạo account thành công: nếu tên từng dùng, account cũ và key cũ còn tồn tại, key đó không được qua Guard trong lúc chờ. Không có `public_key` thì giữ cách cũ (account agent ngoài, script Guard demo vẫn chạy).
 - **Function-call key do contract cố định:** `receiver_id` = chính Guard, `method_names` = `request_transfer`, `sync_request`. Không ai truyền hai giá trị này từ ngoài. Allowance không giới hạn: số dư account đã là trần, và không có full-access key để đổi allowance về sau.
 - `AGENT_GAS_FUND`: 0,5 NEAR, đã đo ở GĐ25. Một request Auto bằng key agent tốn 1,33 mNEAR, Pending 0,75 mNEAR. Gắn 200 Tgas cần số dư từ khoảng 0,25 NEAR, nên quỹ đủ khoảng 180 request. Hết gas thì chuyển NEAR thường vào account agent.
-- Gas: mỗi agent có key tốn khoảng 9 Tgas trong `new`. Factory dành 120 Tgas cho `new`, nên `create` cần ít nhất 190 Tgas và dashboard gắn 220 Tgas (đủ cho 10 agent, đã đo trong sandbox).
+- Gas: mỗi agent có key tốn khoảng 9 Tgas trong `new`. Factory dành 120 Tgas cho `new`, nên `create` cần ít nhất 215 Tgas và dashboard gắn 220 Tgas. Đo trong sandbox: đủ cho 1 agent với 50 whitelist, hoặc 10 agent với whitelist ngắn. 10 agent với 50 whitelist hết gas trong `new`, tiền được hoàn và tên được trả lại. Gas của `on_dao_checked` (190 Tgas) phải là gas tĩnh: hết gas ở bước này thì tiền cọc kẹt trong factory.
 - Account agent **không có full-access key**, nên không đổi hay khôi phục key được. Mất file key hoặc lộ key: gỡ agent, thêm agent mới.
 - **Tên agent người dùng nhập là `label`** trong Guard, không phải tên account. Lý do: `name` 32 ký tự + đuôi Guard 28 ký tự = 60, chỉ còn 4 ký tự cho phần đầu (`a10.`) dưới trần 64. Tối đa 10 agent (11.5.10) nên `a<n>` luôn vừa.
 - `GAS_GUARD_NEW` (40 Tgas) phải đo lại vì `new` có thêm batch này.
@@ -2287,7 +2287,7 @@ Không có Guard thì bỏ cảnh 4, trả thời lượng cho "Bằng chứng" 
 | G-Q4 | Ví ký được `AddKey` function-call cho account agent, hay dùng near-cli | GĐ18 |
 | G-Q5 | Thêm track `agents` không | Khi quay video |
 | B-Q1 | Tham số `create` của factory Sputnik (định dạng policy, tiền cọc chính xác) | GĐ25 |
-| B-Q2 | Gộp `add_proposal` + `act_proposal` với id đoán trước trong một giao dịch có chạy không | GĐ25 |
+| B-Q2 | **Đã chốt 2026-11-06:** chạy được (test sandbox `sign_2_creates_the_guard_and_its_role_in_one_transaction`, DAO đúng policy ký 1). Ký 2 là một giao dịch 4 lời gọi, chia gas 15 + 245 + 15 + 25 = 300 Tgas, thực đốt khoảng 79 Tgas. Ví ký được giao dịch nhiều action hay không vẫn là B-Q6 | Đã đóng |
 | B-Q3 | **Đã chốt 2026-11-05:** code hiện tại không làm được. Guard tự tạo account con `a<n>.<guard>` kèm function-call key trong `new` / `add_agent`; cần sửa Guard và factory mới (mục 11.10.2) | Đã đóng |
 | B-Q4 | Swap qua `ft_transfer_call` tới Rhea từ DAO: cần đăng ký gì; contract và pool Rhea trên testnet; thanh khoản đủ demo không | GĐ31 |
 | B-Q5 | Contract USDC dùng trên testnet | GĐ31 |

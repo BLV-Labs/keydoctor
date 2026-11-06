@@ -15,13 +15,17 @@ mod types;
 pub use types::*;
 
 const GAS_VIEW: Gas = Gas::from_tgas(10);
-const GAS_ON_DAO_CHECKED: Gas = Gas::from_tgas(160);
+// Static, never left to unused gas: running out here panics before any refund path, and the deposit stays in the
+// factory. Measured need is about 180 Tgas: GAS_GUARD_NEW, GAS_ON_CREATED, 22 burnt here, 17+ of deploy fees.
+const GAS_ON_DAO_CHECKED: Gas = Gas::from_tgas(190);
 // The Guard's `new` reads the DAO policy itself (10 + 15 Tgas static, contracts/guard/src/lib.rs) and pays about 9 Tgas
-// per keyed agent account; 120 covers the ten a Guard accepts.
+// per keyed agent account. 120 covers ten keyed agents with 10 whitelist entries, or one with the full 50. Ten with
+// the full 50 runs out inside `new`, which `on_created` refunds.
 const GAS_GUARD_NEW: Gas = Gas::from_tgas(120);
 const GAS_ON_CREATED: Gas = Gas::from_tgas(15);
-/// `create` checks this so a short-gassed call fails before any money moves. The dashboard attaches 220 Tgas.
-const MIN_CREATE_GAS: Gas = Gas::from_tgas(190);
+/// `create` checks this so a short-gassed call fails before any money moves: GAS_VIEW, GAS_ON_DAO_CHECKED and what
+/// `create` burns itself (5 Tgas at the longest input). The dashboard attaches 220 Tgas.
+const MIN_CREATE_GAS: Gas = Gas::from_tgas(215);
 
 const MAX_GUARDS_PER_DAO: u32 = 10;
 const MAX_NAME_LEN: usize = 32;

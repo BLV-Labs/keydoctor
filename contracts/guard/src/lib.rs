@@ -26,7 +26,8 @@ const GAS_ON_VOTED: Gas = Gas::from_tgas(10);
 const GAS_VIEW: Gas = Gas::from_tgas(10);
 const GAS_ON_VIEW: Gas = Gas::from_tgas(15);
 const GAS_ON_AGENT_CREATED: Gas = Gas::from_tgas(5);
-const GAS_GET_CODE: Gas = Gas::from_tgas(30);
+// Fixed, so it caps the code size: 30 Tgas stopped at about 340 KB, and the Guard is 262 KB.
+const GAS_GET_CODE: Gas = Gas::from_tgas(60);
 const GAS_ON_CODE: Gas = Gas::from_tgas(60);
 const GAS_MIGRATE: Gas = Gas::from_tgas(20);
 // NEAR's limit on one contract's code.
@@ -114,7 +115,7 @@ impl Guard {
             if let Some(key) = a.public_key {
                 create_agent_account(&a.account_id, key).detach();
             }
-            guard.agents.insert(a.account_id, AgentInfo { label: a.label, enabled: true, pending: 0 });
+            guard.agents.insert(a.account_id, AgentInfo { label: a.label, enabled: true, creating: false, pending: 0 });
         }
         for w in whitelist {
             assert_label(&w.label);
@@ -139,7 +140,7 @@ impl Guard {
         require!(!self.paused, "PAUSED");
         let agent = env::predecessor_account_id();
         let (enabled, pending) = match self.agents.get(&agent) {
-            Some(a) => (a.enabled, a.pending),
+            Some(a) => (a.enabled && !a.creating, a.pending),
             None => env::panic_str("UNKNOWN_AGENT"),
         };
         require!(enabled, "AGENT_DISABLED");
@@ -301,9 +302,10 @@ impl Guard {
             }
             None => {
                 require!(self.agents.len() < MAX_AGENTS, "TOO_MANY_AGENTS");
-                // A keyed agent starts disabled: if the name was used before, the old account and its key still
-                // exist, and until the new account is confirmed that key must not pass as this agent.
-                self.agents.insert(account_id.clone(), AgentInfo { label, enabled: public_key.is_none(), pending: 0 });
+                // The account of a removed agent stays with its key, so that key must never pass as this agent:
+                // a Guard subaccount needs a new key, and a keyed agent waits until its account is confirmed.
+                require!(public_key.is_some() || !account_id.is_sub_account_of(&env::current_account_id()), "AGENT_KEY_REQUIRED");
+                self.agents.insert(account_id.clone(), AgentInfo { label, enabled: true, creating: public_key.is_some(), pending: 0 });
             }
         }
         self.agents.flush();
@@ -318,16 +320,21 @@ impl Guard {
     }
 
     /// The account of a removed agent stays, so reusing its name fails here: the agent must not stay registered
-    /// with a key its owner does not hold. If this callback never runs, the agent stays disabled.
+    /// with a key its owner does not hold. If this callback never runs, the agent stays unable to request. It
+    /// touches only an entry still `creating`: the DAO may have disabled the agent or replaced it meanwhile.
     #[private]
     pub fn on_agent_created(&mut self, account_id: AccountId, #[callback_result] created: Result<(), PromiseError>) {
+        let creating = self.agents.get(&account_id).is_some_and(|a| a.creating);
         if created.is_err() {
-            self.agents.remove(&account_id);
+            if creating {
+                self.agents.remove(&account_id);
+            }
             Promise::new(self.dao_id.clone()).transfer(AGENT_GAS_FUND).detach();
             emit("agent_updated", json!({ "account_id": account_id, "action": "create_failed" }));
-        } else if let Some(a) = self.agents.get_mut(&account_id) {
-            a.enabled = true;
-            emit("agent_updated", json!({ "account_id": account_id, "action": "enabled", "enabled": true }));
+        } else if creating {
+            let a = self.agents.get_mut(&account_id).unwrap_or_else(|| env::panic_str("UNKNOWN_AGENT"));
+            a.creating = false;
+            emit("agent_updated", json!({ "account_id": account_id, "action": "created" }));
         }
     }
 
@@ -458,7 +465,7 @@ impl Guard {
     pub fn get_agents(&self) -> Vec<Value> {
         self.agents
             .iter()
-            .map(|(id, a)| json!({ "account_id": id, "label": a.label, "enabled": a.enabled, "pending": a.pending }))
+            .map(|(id, a)| json!({ "account_id": id, "label": a.label, "enabled": a.enabled && !a.creating, "pending": a.pending }))
             .collect()
     }
 

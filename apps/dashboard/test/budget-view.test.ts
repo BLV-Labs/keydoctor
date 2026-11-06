@@ -133,6 +133,9 @@ describe("form builders", () => {
     const ten = Array.from({ length: 10 }, (_, i) => `a${i}.testnet`);
     assert.equal(addAgentProposal("g.testnet", { agent: "bot.testnet", label: "x" }, ten).ok, false);
   });
+  it("add agent: refuses a Guard account here, because its old key would pass and the chain's refusal still shows Approved", () => {
+    assert.equal(addAgentProposal("g.testnet", { agent: "a1.g.testnet", label: "x" }, []).ok, false);
+  });
   it("add agent: refuses a bad account, a duplicate and an empty label", () => {
     assert.equal(addAgentProposal("g.testnet", { agent: "Bad Name", label: "x" }, []).ok, false);
     assert.equal(addAgentProposal("g.testnet", { agent: "bot.testnet", label: "x" }, ["bot.testnet"]).ok, false);

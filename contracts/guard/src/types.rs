@@ -21,6 +21,8 @@ pub struct GuardPolicy {
 pub struct AgentInfo {
     pub label: String,
     pub enabled: bool,
+    /// Its account is not confirmed yet, so it cannot request. Separate from `enabled`, which only the DAO sets.
+    pub creating: bool,
     /// Requests whose proposal still waits on the DAO (statuses `Submitted` and `Pending`).
     pub pending: u32,
 }

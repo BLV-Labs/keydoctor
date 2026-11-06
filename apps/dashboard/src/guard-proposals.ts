@@ -6,7 +6,7 @@ export const GUARD_ROLE = "agent-guard";
 /** The role of docs/guard-integration.md step 2: the Guard alone adds and approves transfers, nothing else. */
 export const GUARD_PERMISSIONS = ["transfer:AddProposal", "transfer:VoteApprove"];
 const GUARD_VOTE_POLICY = { transfer: { weight_kind: "RoleWeight", quorum: "0", threshold: "1" } };
-/** Gas on the factory call: `create` refuses less than 190 Tgas, and the sandbox test runs on this. */
+/** Gas on the factory call: `create` refuses less than 215 Tgas, and the sandbox test runs on this. */
 export const CREATE_GAS = "220000000000000";
 const GUARD_CALL_GAS = "50000000000000";
 

@@ -23,7 +23,7 @@ fn ctx(predecessor: &str, deposit: u128) -> VMContextBuilder {
         .predecessor_account_id(id(predecessor))
         .signer_account_id(id(predecessor))
         .attached_deposit(NearToken::from_yoctonear(deposit))
-        .prepaid_gas(Gas::from_tgas(220))
+        .prepaid_gas(Gas::from_tgas(300))
         .account_balance(NearToken::from_near(100));
     b
 }

@@ -821,6 +821,52 @@ fn a_late_callback_does_not_bring_back_an_agent_the_dao_removed() {
 }
 
 #[test]
+fn a_late_callback_does_not_undo_a_disable_by_the_dao() {
+    // The DAO disabled this agent on purpose; account creation finishing must not switch it back on.
+    let mut g = setup();
+    env_full(DAO, T0, NEAR, 10 * NEAR);
+    g.add_agent(id(AGENT_SUB), "x".into(), Some(key()));
+    env_full(DAO, T0, 0, 10 * NEAR);
+    g.set_agent_enabled(id(AGENT_SUB), false);
+    g.on_agent_created(id(AGENT_SUB), Ok(()));
+    assert_eq!(keyed_agent_enabled(&g), Some(false));
+}
+
+#[test]
+fn enabling_during_creation_does_not_open_the_window() {
+    let mut g = setup();
+    env_full(DAO, T0, NEAR, 10 * NEAR);
+    g.add_agent(id(AGENT_SUB), "x".into(), Some(key()));
+    env_full(DAO, T0, 0, 10 * NEAR);
+    g.set_agent_enabled(id(AGENT_SUB), true);
+    assert_eq!(keyed_agent_enabled(&g), Some(false));
+}
+
+#[test]
+fn a_failed_creation_leaves_an_entry_the_dao_added_again() {
+    // An entry not `creating` is not the one this callback was for, so it stays. Only an outside agent can be
+    // re-added without a key, so the entry is set up as already created.
+    let mut g = setup();
+    env_full(DAO, T0, NEAR, 10 * NEAR);
+    g.add_agent(id(AGENT_SUB), "x".into(), Some(key()));
+    g.on_agent_created(id(AGENT_SUB), Ok(()));
+    g.on_agent_created(id(AGENT_SUB), Err(PromiseError::Failed));
+    assert_eq!(keyed_agent_enabled(&g), Some(true));
+}
+
+#[test]
+#[should_panic(expected = "AGENT_KEY_REQUIRED")]
+fn a_removed_agent_account_cannot_return_with_its_old_key() {
+    // Removing `a1.<guard>` is how the DAO answers a leaked key; that account and key stay on chain.
+    let mut g = setup();
+    env_full(DAO, T0, NEAR, 10 * NEAR);
+    g.add_agent(id(AGENT_SUB), "x".into(), Some(key()));
+    g.on_agent_created(id(AGENT_SUB), Ok(()));
+    g.remove_agent(id(AGENT_SUB));
+    g.add_agent(id(AGENT_SUB), "x".into(), None);
+}
+
+#[test]
 fn new_with_a_key_creates_the_same_narrow_account() {
     env_as(DAO, T0);
     Guard::new(id(DAO), limits(), vec![keyed_input(AGENT_SUB)], vec![], vec![]);
