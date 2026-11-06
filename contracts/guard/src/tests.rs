@@ -811,12 +811,23 @@ fn a_keyed_agent_works_only_after_its_account_is_created() {
 }
 
 #[test]
-fn a_late_callback_does_not_bring_back_an_agent_the_dao_removed() {
+#[should_panic(expected = "AGENT_CREATING")]
+fn an_agent_cannot_be_removed_while_its_account_is_being_created() {
+    // Otherwise remove + re-add with a new key lets the first callback confirm the second entry, and the account
+    // holds the removed key: the key the DAO meant to drop would pass as the new agent.
     let mut g = setup();
     env_full(DAO, T0, NEAR, 10 * NEAR);
     g.add_agent(id(AGENT_SUB), "x".into(), Some(key()));
     g.remove_agent(id(AGENT_SUB));
+}
+
+#[test]
+fn an_agent_can_be_removed_once_its_account_exists() {
+    let mut g = setup();
+    env_full(DAO, T0, NEAR, 10 * NEAR);
+    g.add_agent(id(AGENT_SUB), "x".into(), Some(key()));
     g.on_agent_created(id(AGENT_SUB), Ok(()));
+    g.remove_agent(id(AGENT_SUB));
     assert_eq!(keyed_agent_enabled(&g), None);
 }
 

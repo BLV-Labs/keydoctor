@@ -321,7 +321,7 @@ impl Guard {
 
     /// The account of a removed agent stays, so reusing its name fails here: the agent must not stay registered
     /// with a key its owner does not hold. If this callback never runs, the agent stays unable to request. It
-    /// touches only an entry still `creating`: the DAO may have disabled the agent or replaced it meanwhile.
+    /// touches only an entry still `creating`, and `remove_agent` waits for it, so that entry is the one it was for.
     #[private]
     pub fn on_agent_created(&mut self, account_id: AccountId, #[callback_result] created: Result<(), PromiseError>) {
         let creating = self.agents.get(&account_id).is_some_and(|a| a.creating);
@@ -341,6 +341,9 @@ impl Guard {
     #[payable]
     pub fn remove_agent(&mut self, account_id: AccountId) {
         self.assert_dao();
+        // Removing and re-adding in these few blocks would let the first callback confirm the second entry, whose
+        // key never reaches the account: the removed key would pass as the new agent. A `creating` agent cannot request.
+        require!(!self.agents.get(&account_id).is_some_and(|a| a.creating), "AGENT_CREATING");
         self.agents.remove(&account_id);
         emit("agent_updated", json!({ "account_id": account_id, "action": "removed" }));
         refund_deposit(0);
