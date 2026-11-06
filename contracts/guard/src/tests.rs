@@ -784,6 +784,42 @@ fn add_agent_with_a_key_creates_a_narrow_account() {
     assert_agent_account(&actions_to(AGENT_SUB));
 }
 
+fn keyed_agent_enabled(g: &Guard) -> Option<bool> {
+    g.get_agents().iter().find(|a| a["account_id"] == AGENT_SUB).map(|a| a["enabled"].as_bool().unwrap())
+}
+
+#[test]
+#[should_panic(expected = "AGENT_DISABLED")]
+fn a_reused_name_gets_no_window_before_the_new_account_is_confirmed() {
+    // The caller here may be the old account with the key of a removed agent: the DAO took that key out, so it must
+    // not spend again in the blocks before account creation fails.
+    let mut g = setup();
+    env_full(DAO, T0, NEAR, 10 * NEAR);
+    g.add_agent(id(AGENT_SUB), "x".into(), Some(key()));
+    env_as(AGENT_SUB, T0);
+    let _ = g.request_transfer("req-0001".into(), id(VENDOR), U128(NEAR), None);
+}
+
+#[test]
+fn a_keyed_agent_works_only_after_its_account_is_created() {
+    let mut g = setup();
+    env_full(DAO, T0, NEAR, 10 * NEAR);
+    g.add_agent(id(AGENT_SUB), "x".into(), Some(key()));
+    assert_eq!(keyed_agent_enabled(&g), Some(false));
+    g.on_agent_created(id(AGENT_SUB), Ok(()));
+    assert_eq!(keyed_agent_enabled(&g), Some(true));
+}
+
+#[test]
+fn a_late_callback_does_not_bring_back_an_agent_the_dao_removed() {
+    let mut g = setup();
+    env_full(DAO, T0, NEAR, 10 * NEAR);
+    g.add_agent(id(AGENT_SUB), "x".into(), Some(key()));
+    g.remove_agent(id(AGENT_SUB));
+    g.on_agent_created(id(AGENT_SUB), Ok(()));
+    assert_eq!(keyed_agent_enabled(&g), None);
+}
+
 #[test]
 fn new_with_a_key_creates_the_same_narrow_account() {
     env_as(DAO, T0);

@@ -301,7 +301,9 @@ impl Guard {
             }
             None => {
                 require!(self.agents.len() < MAX_AGENTS, "TOO_MANY_AGENTS");
-                self.agents.insert(account_id.clone(), AgentInfo { label, enabled: true, pending: 0 });
+                // A keyed agent starts disabled: if the name was used before, the old account and its key still
+                // exist, and until the new account is confirmed that key must not pass as this agent.
+                self.agents.insert(account_id.clone(), AgentInfo { label, enabled: public_key.is_none(), pending: 0 });
             }
         }
         self.agents.flush();
@@ -316,13 +318,16 @@ impl Guard {
     }
 
     /// The account of a removed agent stays, so reusing its name fails here: the agent must not stay registered
-    /// with a key its owner does not hold.
+    /// with a key its owner does not hold. If this callback never runs, the agent stays disabled.
     #[private]
     pub fn on_agent_created(&mut self, account_id: AccountId, #[callback_result] created: Result<(), PromiseError>) {
         if created.is_err() {
             self.agents.remove(&account_id);
             Promise::new(self.dao_id.clone()).transfer(AGENT_GAS_FUND).detach();
             emit("agent_updated", json!({ "account_id": account_id, "action": "create_failed" }));
+        } else if let Some(a) = self.agents.get_mut(&account_id) {
+            a.enabled = true;
+            emit("agent_updated", json!({ "account_id": account_id, "action": "enabled", "enabled": true }));
         }
     }
 
