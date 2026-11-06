@@ -1,11 +1,11 @@
 # 0005 — Unprivileged keeper key in the Worker
 
 - **Date**: 2026-11-06
-- **Status**: Proposed
-- **Deciders**: pending owner approval
+- **Status**: Accepted
+- **Deciders**: owner, 2026-11-06
 - **Spec**: `docs/final-idea.md` §11.11.3, §11.11.5, T16; `docs/usecase.md` UC18
 
-Items marked *(added)* go beyond §11.11.5. They came out of writing this ADR and need the same approval.
+Items marked *(added)* go beyond §11.11.5. They came out of writing this ADR and were approved with it.
 
 ## Context
 
@@ -30,7 +30,7 @@ Accept one conditional exception: the Worker holds exactly one key, the key of a
 
 The key is a full-access key of the keeper account. A function-call key binds to one receiver, each Budget has its own Guard, and the account holds nothing worth protecting beyond K4's balance.
 
-The CLAUDE.md invariant changes, once this ADR is accepted, to: *"The Worker never holds a key that has any privilege. The only key it holds is the unprivileged keeper key (ADR 0005)."*
+The CLAUDE.md invariant now reads: *"The Worker never holds a key that has any privilege. The only key it holds is the unprivileged keeper key (ADR 0005)."*
 
 Scope of the approval *(added)*:
 
