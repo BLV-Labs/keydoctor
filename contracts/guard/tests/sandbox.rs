@@ -352,3 +352,35 @@ async fn function_call_key_allowance_per_request() -> anyhow::Result<()> {
     assert!(agent_key.call(e.guard.id(), "pause").transact().await.is_err(), "the key must be limited to request_transfer and sync_request");
     Ok(())
 }
+
+// B-Q7 (docs/final-idea.md §11.10.5): the Sputnik code testnet DAOs run does not compare `proposal` with proposal
+// `id`. A one-signature "add_proposal + act_proposal(guessed id)" batch can therefore approve an agent's proposal
+// that landed first, so the dashboard must read the real id and vote in a second transaction.
+#[tokio::test]
+async fn installed_sputnik_ignores_the_proposal_argument_of_act_proposal() -> anyhow::Result<()> {
+    let env = setup().await?;
+    let real = json!({ "Transfer": { "token_id": "", "receiver_id": env.receiver.id(), "amount": "1", "msg": null } });
+    let other = json!({ "Transfer": { "token_id": "", "receiver_id": env.stranger.id(), "amount": "2", "msg": null } });
+    let id: u64 = env
+        .council
+        .call(env.dao.id(), "add_proposal")
+        .args_json(json!({ "proposal": { "description": "real", "kind": real } }))
+        .deposit(NearToken::from_yoctonear(env.bond))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?
+        .json()?;
+
+    let outcome = env
+        .council
+        .call(env.dao.id(), "act_proposal")
+        .args_json(json!({ "id": id, "action": "VoteApprove", "proposal": other }))
+        .max_gas()
+        .transact()
+        .await?;
+
+    assert!(outcome.is_success(), "this build started checking `proposal`: B-Q7 changes, one-signature batches may be safe");
+    assert_eq!(env.proposal(id).await?["status"], "Approved");
+    Ok(())
+}

@@ -27,7 +27,7 @@ All answered by the owner on 2026-11-04.
 | Y1 | Use an LLM? | Yes, with the limits in §2 |
 | Y2 | Who and what before 14 Nov? | Sputnik DAO councils. Rhea Lend gets the full flow: suggestion plus proposal. Aave, Compound, Morpho and Curve appear for comparison only |
 | Y3 | Network? | Testnet runs the full flow: a DAO farms test tokens on testnet Rhea, and the demo uses `usdc.fakes.testnet`. Mainnet rates are read for comparison. Intents has no testnet (HACKATHON Q-007), so `dry: true` quotes only |
-| Y4 | Can the agent execute? | No. Every move is a council vote. Guard handles only `Transfer` and is not extended |
+| Y4 | Can the agent execute? | No. Every move is a council vote. This plan does not extend the Guard. A self-running version inside Agent Budget is Roadmap: it would use a `PlanAction` `call` plan (ADR 0006) and needs a new owner decision |
 | Y5 | Which model? | TEE models on NEAR AI only. Start with `Qwen/Qwen3.6-35B-A3B-FP8`, then `z-ai/glm-5.3-flash`, then the rule-ordered list. Never a non-TEE model. The first live test compares `deepseek-ai/DeepSeek-V4.1-Flash-1017`, which moves to first place if every run returns valid JSON and its Vietnamese is better |
 | Y6 | Who pays for inference? | One project key, Worker secret `NEAR_AI_API_KEY`, used only by the paths in §2 |
 | Y7 | Which assets? | One stablecoin at a time. Mainnet: native USDC and USDt only. Bridged USDC.e and USDT.e and DAI are out because they add bridge risk. Testnet has its own allowlist. No LP, looping or LST |
@@ -212,5 +212,6 @@ export function validateAdvice(raw: unknown, candidates: YieldOpportunity[]): Yi
 - Swap proposals through Intents for a DAO with no eligible token.
 - Per-DAO reserve settings and a payroll schedule, and Guard limits for `FunctionCall`.
 - Attestation checks on every model call.
+- Self-running supply and withdraw inside Agent Budget, as `PlanAction` `call` plans within the 24-hour limit (ADR 0006). Reopens Y4.
 - Rhea DEX pools and farms, once APR and impermanent loss can be computed from a checked source.
 - Reading strategy text from the open web, which needs its own injection review.

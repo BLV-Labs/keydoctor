@@ -181,7 +181,7 @@ Dùng **chung một tài khoản Cloudflare** cho cả team.
 | 13 | Đổi luật, tạm dừng, gỡ Guard | Council / guardian | `pause` (guardian); đổi luật, unpause, gỡ role qua đề xuất DAO | G0 | GĐ16, GĐ17 |
 | 14 | Key Doctor rà soát Guard | Người dùng / cron | `scanDao` nhận diện Guard, rule `GUARD_*` | G0 (rule), G1 (thẻ dashboard) | GĐ20, GĐ21 |
 | 15 | Tạo Agent Budget | Người dùng | Guard factory (Guard + agent) → factory Sputnik (DAO) → Top up | Bắt buộc | GĐ25, GĐ26, GĐ27 |
-| 16 | Hành động của chủ Budget | Chủ | Top up, Withdraw, Approve / Reject, Pause, sửa luật, quản lý agent; mỗi việc một lần ký | Bắt buộc | GĐ26, GĐ28 |
+| 16 | Hành động của chủ Budget | Chủ | Top up, Withdraw, Approve / Reject, Pause, sửa luật, quản lý agent; Top up, Approve, Reject, Pause một lần ký, việc cần tạo đề xuất hai lần ký (11.10.5) | Bắt buộc | GĐ26, GĐ28 |
 | 17 | Thiết lập chiến lược | Chủ | Danh mục → ngăn kéo thiết lập → danh sách kiểm tra → Start (ký) | Nên có | GĐ29, GĐ30 |
 | 18 | Kế hoạch tự chạy và thông báo | Keeper | Cron → `execute_plan_step` → đề xuất tự duyệt → tin Telegram | Nên có (payout), tùy (DCA) | GĐ29, GĐ31 |
 | 19 | Agent hỏi về chiến lược | Agent | `strategies_list`, `plans_status` (chỉ đọc) → link dashboard | Nên có | GĐ30 |
@@ -229,7 +229,7 @@ UC11 và UC12 áp dụng nguyên cho Agent Budget; "council" là chính chủ Bu
 | Bắt người dùng thường tự tạo DAO rồi cài Guard | Quá khó; thay bằng Agent Budget (DAO tạo ẩn bên dưới) |
 | Luật "nới luật phải chờ 24 giờ" cho Agent Budget | Với DAO một thành viên, ai cầm key của chủ thì rút thẳng được; luật chờ không bảo vệ gì. Thay bằng Key Check và thông báo mọi hành động của chủ |
 | Ví người dùng gọi Guard factory với `dao_id` truyền vào, rồi mới tạo DAO (hoặc ngược lại) | Tên DAO và Guard đoán trước được, factory công khai: kẻ gian chiếm trước tên giữa hai lần ký, Guard gắn vào DAO của kẻ gian và tiền Top up chảy vào đó. Thay bằng DAO tự tạo Guard (mục 11.10.4) |
-| Gộp `add_proposal` + `act_proposal` với số đoán trước mà không đối chiếu nội dung | Có thể duyệt nhầm khoản chờ của agent vừa chen vào. Thay bằng tham số `proposal` bắt buộc (mục 11.10.5) |
+| Gộp `add_proposal` + `act_proposal` với số đoán trước | Có thể duyệt nhầm khoản chờ của agent vừa chen vào, và Sputnik trên testnet không kiểm tham số `proposal` (B-Q7). Thay bằng hai giao dịch: tạo đề xuất, đọc số thật, rồi duyệt (mục 11.10.5) |
 | Agent tự tạo hoặc đề xuất kế hoạch đầu tư | Rủi ro prompt injection mở luồng chi tiền mới; chỉ chủ tạo kế hoạch trên dashboard |
 | Swap qua NEAR Intents trong bài thi | Guard chưa kiểm được trên chain rằng báo giá 1Click trả tiền về DAO; DAO không có key để ký intent. Để Roadmap; dùng Rhea |
 
@@ -697,20 +697,19 @@ export interface BudgetInfo {
   pending_approvals: number;
 }
 
-export type PlanKind = "payout" | "dca";
+export type PlanAction =
+  | { type: "transfer"; receiver_id: string }          // payout, phải nằm trong danh sách người nhận
+  | { type: "call"; target: string; method: string; args_base64: string; deposit: string; gas: string }
+  | { type: "swap"; pool_id: number; token_out: string; max_slippage_bps: number };  // dca: min_out tính lúc chạy
 export type PlanStatus = "active" | "paused" | "completed" | "cancelled";
 export type PlanPauseReason = "insufficient_balance" | "guard_low_near" | "owner" | "failures" | null;
 
 export interface Plan {                 // lưu trên chain, trong Guard
   plan_id: number;
-  kind: PlanKind;
-  strategy_id: string;                  // "scheduled-payouts" | "dca-near"
+  action: PlanAction;                   // Guard chạy theo action, không theo strategy_id
+  strategy_id: string;                  // nhãn cho giao diện: "scheduled-payouts" | "dca-near"
   token_in: string;
-  amount_per_run: string;
-  token_out?: string;                   // dca
-  pool_id?: number;                     // dca, pool Rhea đã duyệt
-  max_slippage_bps?: number;            // dca
-  receiver_id?: string;                 // payout, phải nằm trong danh sách người nhận
+  amount_per_run: string;               // luôn trừ vào hạn mức 24 giờ, kể cả action "call"
   interval_sec: number;
   runs_total: number;
   runs_done: number;
@@ -763,7 +762,7 @@ export interface KdBudgetAlert {
   muteable: boolean;              // chỉ plan_step_executed là true (mục 9.5)
   owner_action?: {
     action: "withdraw" | "edit_rules" | "add_agent" | "disable_agent" | "remove_agent"
-          | "create_plan" | "pause_plan" | "resume_plan" | "cancel_plan" | "pause_agents";
+          | "create_plan" | "pause_plan" | "resume_plan" | "cancel_plan" | "pause_agents" | "upgrade_guard";
     proposal_id: number | null;
     summary: string;              // vd "Rút 40 NEAR về coldhost3480.testnet"
   };
@@ -1323,7 +1322,7 @@ Nguồn: `github.com/near-daos/sputnik-dao-contract`, thư mục `sputnikdao2/sr
 4. Khi đạt Approved, `act_proposal` gọi `internal_execute_proposal` **ngay trong cùng giao dịch**.
 5. `add_proposal` bắt buộc `attached_deposit == proposal_bond` (`ERR_MIN_BOND`). **Function-call key không gửi kèm tiền được**, nên agent không thể gọi thẳng DAO: mọi yêu cầu phải qua Guard, Guard tự trả bond.
 6. `add_proposal` trả về `u64` (proposal id).
-7. `act_proposal(id, action, proposal, memo)` phải truyền đúng `ProposalKind` (`ERR_WRONG_KIND`). Guard tự tạo đề xuất nên biết kind.
+7. `act_proposal(id, action, proposal, memo)`: bản Sputnik mới kiểm `ProposalKind` (`ERR_WRONG_KIND`), **bản `sputnik-v2.testnet` đang cài thì bỏ qua tham số này** (B-Q7). Guard vẫn truyền kind, và dùng số thật do `add_proposal` trả về nên không phụ thuộc phép kiểm đó.
 8. `ProposalKind::Transfer { token_id, receiver_id, amount, msg }`, `token_id = ""` là NEAR.
 9. Ngưỡng: `Weight(n)` tính `min(n, total)`; `Ratio(a, b)` tính `min(a * total / b + 1, total)`; ngưỡng thực tế là `max(quorum, threshold)`.
 10. Bond được hoàn cho người tạo đề xuất khi đề xuất Approved hoặc Rejected; **mất khi Removed**.
@@ -1349,7 +1348,7 @@ Thêm bằng một đề xuất `ChangePolicyAddOrUpdateRole` (hoặc `ChangePol
 
 Quy tắc:
 
-- Guard **chỉ** có quyền với loại `transfer`. Không có quyền với `policy`, `call`, `add_member_to_role`, `upgrade_*`, nên không đổi luật DAO, không gọi contract khác.
+- Guard **chỉ** có quyền với loại `transfer`. Không có quyền với `policy`, `call`, `add_member_to_role`, `upgrade_*`, nên không đổi luật DAO, không gọi contract khác. Áp dụng cho Guard gắn vào DAO có sẵn; Guard của Agent Budget có thêm hai quyền `call` (11.10.3).
 - Guard **không có** `VoteReject` (trừ khi bật phanh khẩn cấp, mục 11.9): khoản ngoài hạn mức để người quyết.
 - Các role của người (council) **giữ nguyên ngưỡng** của họ. Ngưỡng 1/1 chỉ áp dụng cho role `agent-guard`.
 
@@ -1362,7 +1361,7 @@ Quy tắc:
 - **Một Guard cho một DAO.** `dao_id` cố định lúc khởi tạo.
 - Deploy lên một account riêng do chủ DAO tạo, ví dụ `kd-guard.blvlabs.testnet`.
 - Khởi tạo kèm cấu hình ban đầu (agents, whitelist, hạn mức, guardians). **Sau khởi tạo, chỉ DAO được sửa cấu hình.** Không có "owner".
-- **Khóa contract:** sau khi deploy và kiểm xong, xóa full-access key của account Guard để không ai deploy lại code khác được. Script cài đặt làm bước này (có xác nhận). Nếu chưa khóa, README và Key Doctor phải nói rõ (rule `GUARD_NOT_LOCKED`, mục 5.3).
+- **Khóa contract:** sau khi deploy và kiểm xong, xóa full-access key của account Guard để không key nào deploy lại code khác được; đường đổi code duy nhất còn lại là đề xuất `UpgradeRemote` của chính DAO (11.5.12). Script cài đặt làm bước này (có xác nhận). Nếu chưa khóa, README và Key Doctor phải nói rõ (rule `GUARD_NOT_LOCKED`, mục 5.3).
 
 #### 11.5.2 State
 
@@ -1512,7 +1511,21 @@ Whitelist tối đa 50, agents tối đa 10, guardians tối đa 5, `recent` t�
 - Token NEP-141 (dùng `token_id` của `Transfer`): tùy chọn, GĐ23.
 - Phanh khẩn cấp: mục 11.9.
 
----
+#### 11.5.12 Nâng cấp Guard (ADR 0006)
+
+Guard tạo từ factory không có key, nên code chỉ đổi được qua **đề xuất `UpgradeRemote` của chính DAO**. Code Sputnik trên testnet có `upgrade_remote`, `store_blob`, `remove_blob`.
+
+| Hàm | Ai gọi | Làm gì |
+|---|---|---|
+| `upgrade` (nhận wasm thô làm input) | **Chỉ `dao_id`** | Deploy code lên chính Guard, rồi gọi `migrate` trong cùng batch |
+| `migrate` | `#[private]` | Đọc state cũ, ghi state mới; lỗi thì batch hoàn lại, code cũ giữ nguyên |
+
+Các bước của chủ: `store_blob` wasm vào DAO (kèm tiền cọc lưu trữ, khoảng 2,5 NEAR), đề xuất `UpgradeRemote { receiver_id: guard, method_name: "upgrade", hash }`, duyệt, rồi `remove_blob` lấy lại tiền cọc.
+
+- Dashboard chỉ đề nghị bản có hash nằm trong danh sách phát hành của repo, hiện hash cho chủ xem trước khi ký, và đọc lại `code_hash` của Guard sau khi chạy.
+- `kd_guard_info` trả thêm `version`. Dashboard dựa vào đó để biết tính năng nào dùng được.
+- Key Doctor giữ nguyên cảnh báo `code_upgrade_proposal` (`high`) cho mọi đề xuất `upgrade_remote`, và gửi `budget_owner_action` với `upgrade_guard`.
+- Rule `GUARD_NOT_LOCKED` không đổi: nó kiểm full-access key, và Guard vẫn không có key.
 
 ### 11.6 Agent: account, key, Guard MCP
 
@@ -1613,6 +1626,8 @@ Cùng contract, thêm:
 | A6 | Kế hoạch chạy bằng **keeper**: Worker gọi hàm công khai, hàm chỉ thực hiện đúng bước đến hạn của kế hoạch đã duyệt. Worker giữ một key keeper không đặc quyền (ADR mới, mục 11.11.5) |
 | A7 | **Không có luật "nới luật chờ 24 giờ"** (xem 11.10.6) |
 | A8 | Cùng code phục vụ DAO nhiều thành viên |
+| A9 | Kế hoạch mô tả bằng `PlanAction` (`transfer`, `call`, `swap`). Chiến lược mới dùng được action có sẵn thì chỉ thêm mẫu ở dashboard, không sửa contract. Một contract singleton cho mọi Budget bị loại (ADR 0006) |
+| A10 | Guard có hàm `upgrade`, chỉ DAO gọi được, qua đề xuất `UpgradeRemote`. Guard vẫn không có key; Budget đã tạo nhận tính năng mới mà không phải tạo lại (ADR 0006, mục 11.5.12) |
 
 #### 11.10.2 Thành phần trên chain
 
@@ -1636,7 +1651,7 @@ Guard factory tạo Guard **không có full-access key** (khóa từ đầu; rul
 - **Tên agent người dùng nhập là `label`** trong Guard, không phải tên account. Lý do: `name` 32 ký tự + đuôi Guard 28 ký tự = 60, chỉ còn 4 ký tự cho phần đầu (`a10.`) dưới trần 64. Tối đa 10 agent (11.5.10) nên `a<n>` luôn vừa.
 - `GAS_GUARD_NEW` (40 Tgas) phải đo lại vì `new` có thêm batch này.
 
-**Đổi code Guard cần factory mới.** Factory cố định `guard_code_hash` lúc init, nên Budget dùng factory mới `keydoctor-guards-v2.testnet` (đặt qua `KD_GUARD_FACTORY`). `keydoctor-guards.testnet` giữ nguyên cho Guard đã tạo. Guard không có key nên không nâng cấp được: Budget tạo trên một phiên bản giữ code phiên bản đó. Thêm kế hoạch (GĐ29) hay hạn mức theo token (GĐ23) sau GĐ25 thì cần factory `-v3` (cùng độ dài tên) và Budget mới.
+**Budget mới cần factory mới.** Factory cố định `guard_code_hash` lúc init, nên Budget dùng factory mới `keydoctor-guards-v2.testnet` (đặt qua `KD_GUARD_FACTORY`). `keydoctor-guards.testnet` giữ nguyên cho Guard đã tạo. Guard không có key, nhưng DAO của nó đổi được code qua `upgrade` (11.5.12). Vì vậy thêm kế hoạch (GĐ29) hay hạn mức theo token (GĐ23) sau GĐ25 **không** bắt tạo lại Budget: Budget cũ nâng cấp bằng đề xuất của chủ; factory `-v3` (cùng độ dài tên) chỉ cần để Budget **mới** có sẵn code mới. Guard tạo từ `keydoctor-guards.testnet` không có `upgrade`, giữ nguyên code cũ.
 
 **Phương án đã bỏ:** implicit account (không sửa contract) khiến file đưa cho agent là full-access key, trái với chính điều Key Doctor cảnh báo. Account con của ví chủ cần thêm một lần ký và lệ thuộc G-Q4.
 
@@ -1657,7 +1672,7 @@ Guard factory tạo Guard **không có full-access key** (khóa từ đầu; rul
 - **Không** có role "Everyone được tạo đề xuất".
 - `proposal_period` = **72 giờ**: khoản chờ tự hết hạn theo cơ chế của Sputnik.
 - `proposal_bond` = **0,1 NEAR** (thay vì 1 NEAR như DAO demo). Mỗi `add_proposal` phải gửi kèm đúng số này (`ERR_MIN_BOND`); bond được hoàn khi đề xuất được duyệt hoặc bị từ chối. Bond nhỏ để chủ không phải gửi kèm nhiều NEAR cho mỗi hành động, và Guard giữ ít NEAR hơn cho các khoản chờ.
-- Quyền `call` của Guard chỉ dùng cho lời gọi Guard **tự dựng từ mẫu** (swap Rhea). Rule `GUARD_ROLE_TOO_BROAD` (mục 5.3) cập nhật: được phép đúng bốn quyền trên; ngoài ra là cờ đỏ.
+- Quyền `call` của Guard chỉ dùng cho lời gọi Guard **tự dựng từ kế hoạch chủ đã duyệt** (`PlanAction` loại `call`, `swap`). Role này không có quyền `upgrade_*`, nên Guard không tự đổi code của mình được. Rule `GUARD_ROLE_TOO_BROAD` (mục 5.3) cập nhật: được phép đúng bốn quyền trên; ngoài ra là cờ đỏ.
 
 #### 11.10.4 Tạo Budget: 3 lần ký, DAO tự tạo Guard của mình
 
@@ -1701,31 +1716,37 @@ File key của agent tải về máy sau khi ký 2 thành công (không hiện t
 | Người dùng bấm | Giao dịch bên dưới | Số lần ký |
 |---|---|---|
 | Top up | Kiểm policy (11.10.4 mục 3), rồi chuyển NEAR (và `ft_transfer` USDC khi có GĐ31) vào DAO | 1 |
-| Withdraw | DAO: `add_proposal(Transfer)` + `act_proposal(N, VoteApprove, proposal)` trong **một giao dịch** | 1 |
-| Approve / Reject khoản chờ | DAO: `act_proposal(id, VoteApprove / VoteReject, proposal)` với `proposal` lấy từ chính đề xuất đang hiển thị | 1 |
+| Withdraw | DAO: `add_proposal(Transfer)`, đọc số thật, rồi `act_proposal(id, VoteApprove, proposal)` | 2 |
+| Approve / Reject khoản chờ | DAO: `act_proposal(id, VoteApprove / VoteReject, proposal)` với `id` và `proposal` lấy từ chính đề xuất đang hiển thị | 1 |
 | Pause agents | `guard.pause()` (chủ là guardian) | 1 |
-| Sửa luật, thêm / tắt / gỡ agent, tạo / tạm dừng / hủy kế hoạch | DAO: `add_proposal(FunctionCall tới Guard)` + `act_proposal(N, VoteApprove, proposal)` trong một giao dịch | 1 |
-| Enable USDC | DAO: đề xuất `storage_deposit` trên contract USDC (và `wrap.near` nếu dùng DCA) + tự duyệt có `proposal` | 1 |
+| Sửa luật, thêm / tắt / gỡ agent, tạo / tạm dừng / hủy kế hoạch | DAO: `add_proposal(FunctionCall tới Guard)`, đọc số thật, rồi `act_proposal` | 2 |
+| Enable USDC | DAO: đề xuất `storage_deposit` trên contract USDC (và `wrap.near` nếu dùng DCA), đọc số thật, rồi duyệt | 2 |
+| Nâng cấp Guard | DAO: `store_blob`, `add_proposal(UpgradeRemote)`, duyệt, `remove_blob` (11.5.12) | 3 đến 4 |
 
-**Bắt buộc: mọi lời gọi `act_proposal` phải truyền tham số `proposal`** (loại và nội dung đề xuất) để Sputnik đối chiếu với đề xuất số `id`; không khớp thì báo `ERR_WRONG_KIND`.
+**Không gộp `add_proposal` và `act_proposal` với số đoán trước (chốt 2026-11-06, B-Q7).** Guard **liên tục** tạo đề xuất trên cùng DAO (agent xin chi, keeper chạy kế hoạch mỗi 15 phút). Nếu đúng lúc chủ bấm Withdraw, agent vừa tạo khoản chờ số N, thì `act_proposal(N, VoteApprove)` sẽ **duyệt nhầm khoản vượt luật của agent**. Spec trước đó dựa vào tham số `proposal` để chặn việc này, nhưng code Sputnik `sputnik-v2.testnet` đang cài (hash `ZGdM2TFdQpcXrxPxvq25514EViyi9xBSboetDiB3Uiq`) **không kiểm tham số đó**: test sandbox `installed_sputnik_ignores_the_proposal_argument_of_act_proposal` duyệt được đề xuất với `proposal` sai.
 
-Lý do: Guard **liên tục** tạo đề xuất trên cùng DAO (agent xin chi, keeper chạy kế hoạch mỗi 15 phút). Nếu đúng lúc chủ bấm Withdraw, agent vừa tạo khoản chờ số N, thì `act_proposal(N, VoteApprove)` không kèm `proposal` sẽ **duyệt nhầm khoản vượt luật của agent**. Khi kèm `proposal`:
+**Luồng hai lần ký:**
 
-- Khoản của agent (ví dụ chuyển 500 NEAR cho attacker) khác khoản rút của chủ (chuyển 40 NEAR về ví chủ), lệnh duyệt thất bại.
-- Các lời gọi trong cùng giao dịch tới cùng contract chạy chung, nên lệnh duyệt thất bại thì `add_proposal` cũng bị hoàn lại. Không có đề xuất mồ côi; dashboard đọc lại `get_last_proposal_id` và cho ký lại.
+1. Ký 1: `add_proposal`. Dashboard lấy số đề xuất từ **giá trị trả về của giao dịch**, không dùng `get_last_proposal_id` (số cuối có thể là khoản của agent).
+2. Dashboard đọc `get_proposal(id)` và so nội dung với đề xuất vừa dựng. Khác nhau thì dừng, báo lỗi, không cho ký tiếp.
+3. Ký 2: `act_proposal(id, VoteApprove, proposal)`.
+
+Ngoại lệ duy nhất được gộp: ký 2 khi tạo Budget (11.10.4), vì lúc đó Guard chưa tồn tại và không ai khác tạo được đề xuất.
+
+**Vẫn truyền `proposal` trong mọi `act_proposal`:** bản Sputnik không kiểm thì bỏ qua, bản mới kiểm thì bắt buộc (`ERR_WRONG_KIND`). Tham số này không còn là lớp bảo vệ.
 
 | Chỗ gọi `act_proposal` | Bắt buộc |
 |---|---|
-| Gộp đề xuất + duyệt (Withdraw, sửa luật, quản lý agent, kế hoạch, Enable USDC, tạo Guard) | Truyền `proposal` đúng nội dung vừa tạo |
-| Approve / Reject khoản chờ | Truyền `proposal` lấy từ đề xuất đang hiển thị: chủ duyệt **đúng cái mình đã xem** |
-| Guard tự duyệt | Giữ nguyên (đã truyền kind, mục 11.5.5) |
+| Sau đề xuất của chủ (Withdraw, sửa luật, quản lý agent, kế hoạch, Enable USDC) | `id` từ giá trị trả về, đã đối chiếu nội dung |
+| Approve / Reject khoản chờ | `id` và `proposal` lấy từ đề xuất đang hiển thị: chủ duyệt **đúng cái mình đã xem**. Đề xuất Sputnik không sửa được sau khi tạo |
+| Tạo Budget (ký 2) | Gộp được, số đoán trước an toàn (11.10.4) |
+| Guard tự duyệt | Giữ nguyên, dùng số do `add_proposal` trả về (mục 11.5.5) |
 
-**Test bắt buộc:** cố ý chèn một đề xuất của agent vào giữa lúc dựng và gửi giao dịch Withdraw; xác nhận giao dịch của chủ thất bại toàn bộ, khoản của agent vẫn ở trạng thái chờ, không có đề xuất mồ côi.
+**Test bắt buộc:** cố ý chèn một đề xuất của agent giữa lúc chủ tạo và duyệt đề xuất Withdraw; xác nhận lệnh duyệt của chủ chỉ chạm đúng số của chủ, khoản của agent vẫn ở trạng thái chờ.
 
-**Điều kiện dùng cách gộp:**
+**Đề xuất mồ côi:** ký 1 xong mà chủ không ký 2 thì đề xuất nằm chờ. Dashboard hiện đề xuất này trong khoản chờ với nút duyệt hoặc hủy, tự hết hạn sau 72 giờ.
 
-- Phiên bản code Sputnik mà factory đang cài phải kiểm tham số `proposal` (B-Q7, kiểm ở GĐ25). Nếu không có, **không được** gộp với số đoán trước: tách thành hai giao dịch (tạo đề xuất, đọc số thật, rồi duyệt), tức hai lần ký.
-- Ví phải gửi các lời gọi thành **nhiều action trong một giao dịch** (một receipt), không tách thành nhiều giao dịch. Chỉ khi đó lệnh duyệt thất bại mới kéo `add_proposal` hoàn lại theo. Kiểm với **cả ba ví** dashboard hỗ trợ: Meteor, HERE, HOT (B-Q6). Ví nào không đạt thì không cho tạo hay quản lý Agent Budget bằng ví đó: dashboard báo "Ví này chưa hỗ trợ Agent Budget, hãy dùng <ví đã đạt>".
+**Ký 2 khi tạo Budget** vẫn cần ví gửi **nhiều action trong một giao dịch** (B-Q6). Kiểm với **cả ba ví** dashboard hỗ trợ: Meteor, HERE, HOT. Ví nào không đạt thì không cho tạo Budget bằng ví đó: dashboard báo "Ví này chưa hỗ trợ Agent Budget, hãy dùng <ví đã đạt>".
 
 #### 11.10.6 Luật chi tiêu
 
@@ -1743,7 +1764,7 @@ Ba mẫu khi tạo: **Thận trọng**, **Cân bằng**, **Tùy chỉnh**. Mọi
 
 - Thẻ khởi tạo có ô nhập người nhận (account + nhãn, tối đa 50, 11.5.10). Dashboard kiểm account tồn tại ngay khi nhập. Danh sách đi vào tham số `whitelist` đã có của `create`, không cần sửa contract.
 - Để trống vẫn được tạo, nhưng phải hiện rõ trước khi ký: "Chưa có người nhận: mọi khoản agent xin sẽ chờ bạn duyệt."
-- Thêm về sau qua Edit rules (`add_whitelist`, một lần ký).
+- Thêm về sau qua Edit rules (`add_whitelist`, hai lần ký, 11.10.5).
 
 **Chỉ NEAR cho tới khi có GĐ23.** Guard hiện có một `policy` và một `spent_in_window: u128`, không tách theo token. GĐ26 làm luật cho NEAR; `BudgetInfo.rules[]` giữ dạng mảng, lúc đó chỉ có một dòng `token_id = ""`. Hạn mức USDC trong bảng trên có hiệu lực khi GĐ23 xong, và GĐ23 chỉ bắt buộc cho GĐ31 (DCA).
 
@@ -1758,7 +1779,8 @@ Luồng một khoản agent xin chi: giữ nguyên mục 11.5 (7 điều kiện 
 - Key của chủ bị lộ: kẻ gian rút được tiền. Không contract nào chặn được; Key Check và thông báo hành động của chủ là lớp bảo vệ.
 - Keeper bị chiếm (key trên Worker lộ): chỉ kích hoạt được đúng bước đến hạn của kế hoạch đã duyệt, việc mà bất kỳ ai cũng làm được; thiệt hại tối đa là số NEAR gas trong account keeper (mục 11.11.5).
 - Chiếm trước tên DAO hoặc Guard: chặn bằng thứ tự tạo 11.10.4 (DAO tự tạo Guard, chốt `predecessor`) và các bước kiểm của dashboard trước khi nạp tiền.
-- Duyệt nhầm khoản của agent khi chủ gộp đề xuất + duyệt: chặn bằng tham số `proposal` bắt buộc trong mọi `act_proposal` (11.10.5).
+- Duyệt nhầm khoản của agent: chặn bằng luồng hai lần ký, `id` lấy từ giá trị trả về và đối chiếu nội dung trước khi duyệt (11.10.5). Tham số `proposal` không bảo vệ được trên bản Sputnik testnet.
+- Đổi code Guard: chỉ DAO làm được (`upgrade`, 11.5.12). Với Budget một thành viên, kẻ cầm key của chủ vốn đã rút được tiền, nên không thêm rủi ro. Agent và keeper không làm được. Code Guard hỏng không mất tiền, vì tiền ở DAO; chủ vẫn rút được bằng đề xuất thường.
 - Bản hackathon: testnet, chưa kiểm toán, ghi rõ trên giao diện và README.
 
 ### 11.11 Chiến lược và kế hoạch
@@ -1782,11 +1804,24 @@ Không được để thẻ trông như dùng được mà bấm không làm gì
 
 | Hàm | Ai gọi |
 |---|---|
-| `create_plan`, `pause_plan`, `resume_plan`, `cancel_plan` | **Chỉ DAO** (chủ, qua đề xuất một lần ký) |
+| `create_plan`, `pause_plan`, `resume_plan`, `cancel_plan` | **Chỉ DAO** (chủ, qua đề xuất hai lần ký, 11.10.5) |
 | `execute_plan_step(plan_id)` | **Bất kỳ ai** (keeper) |
 | `get_plans`, `get_plan` | View |
 
 **Không có hàm nào cho agent tạo hay sửa kế hoạch.**
+
+**Action của kế hoạch (`PlanAction`, A9):**
+
+| Action | Dùng cho | Guard kiểm khi `create_plan` |
+|---|---|---|
+| `transfer` | Scheduled payouts | `receiver_id` nằm trong danh sách người nhận |
+| `call` | Chiến lược gọi một hàm cố định với tham số cố định (auto-stake, gửi vào Rhea khi có) | `target` không được là chính Guard, DAO, hay factory (nếu không, kế hoạch sẽ đổi được luật) |
+| `swap` | DCA, vì `min_out` phải tính lúc chạy | `pool_id` và `token_out` có trong mẫu đã duyệt |
+
+- Tham số của `call` lưu nguyên trong kế hoạch. **Keeper không truyền được tham số nào** ngoài `plan_id` (K1, K2).
+- Guard không giữ danh sách contract được phép: chỉ DAO tạo được kế hoạch, mà DAO vốn gọi được mọi contract. Danh sách mẫu nằm ở dashboard, chủ thấy `target`, `method` và số tiền trước khi ký.
+- Chiến lược cần logic mới lúc chạy (như `swap`) thì thêm action mới và nâng cấp Guard (11.5.12).
+- `create_plan` chỉ chạy với Guard có quyền `call` trong DAO khi action là `call` hoặc `swap`, tức Agent Budget. Guard gắn vào DAO có sẵn chỉ dùng `transfer`.
 
 #### 11.11.3 Một bước kế hoạch
 
@@ -1795,8 +1830,9 @@ keeper gọi execute_plan_step(plan_id)
  1. Kế hoạch active? Đến next_run_at? Còn lượt?            Không → từ chối
  2. Còn hạn mức 24 giờ của token_in?                       Không → bỏ qua lần này (OVER_DAILY_LIMIT)
  3. Guard đủ NEAR trả tiền cọc?                            Không → tạm dừng (guard_low_near)
- 4a. payout: tạo đề xuất Transfer tới receiver_id → tự duyệt
- 4b. dca:   hỏi Rhea giá (get_return trên pool_id) → min_out = giá × (1 − max_slippage)
+ 4a. transfer: tạo đề xuất Transfer tới receiver_id → tự duyệt
+ 4b. call:  tạo đề xuất FunctionCall đúng target, method, args đã lưu → tự duyệt
+ 4c. swap:  hỏi Rhea giá (get_return trên pool_id) → min_out = giá × (1 − max_slippage)
             → đề xuất FunctionCall trên contract USDC:
               ft_transfer_call(Rhea, amount_per_run, lệnh swap kèm min_out)
             → tự duyệt → wNEAR về lại DAO
@@ -1806,6 +1842,7 @@ keeper gọi execute_plan_step(plan_id)
 ```
 
 - Trước GĐ23, `create_plan` chỉ nhận `token_in` là NEAR (11.10.6).
+- **Mọi bước đều trừ `amount_per_run` vào hạn mức 24 giờ**, kể cả `call` chuyển tiền sang nơi vẫn đứng tên DAO: Guard không đọc được ý nghĩa của args, nên không miễn trừ theo loại.
 - Guard không đọc được số dư NEAR của DAO trên chain; thiếu tiền được phát hiện khi đề xuất thất bại.
 - Số mua được lấy từ log của Rhea; Worker lưu `PlanStepResult` vào D1.
 - DCA nhận **wNEAR**, giao diện hiển thị là NEAR.
@@ -2094,13 +2131,13 @@ GĐ14 (README, video, nộp bài) vẫn luôn là việc cuối.
 
 | GĐ | Nội dung | Mức | Phụ thuộc | Xong khi |
 |---|---|---|---|---|
-| **25** | Kiểm nền: sửa Guard để tạo account agent (11.10.2), deploy factory `keydoctor-guards-v2.testnet`; tạo DAO qua factory Sputnik (policy chỉ chủ); DAO gọi Guard factory qua đề xuất (chốt `predecessor`, tên Guard tự chọn và kiểm khi nhập) tạo Guard không key, Guard tạo account agent có function-call key; thêm role `agent-guard`; gộp 4 lời gọi một giao dịch; code Sputnik có kiểm tham số `proposal`; test chèn đề xuất của agent khi chủ Withdraw | Bắt buộc | Guard hiện có | Có tx hash cho từng việc trên testnet; account agent chỉ có đúng một function-call key gọi Guard, agent gọi `request_transfer` được bằng key đó; trả lời B-Q1, B-Q2, B-Q6, B-Q7; test chèn đề xuất pass |
-| **26** | Luồng tạo Budget (11.10.4, gồm 4 bước kiểm của dashboard), hành động của chủ (11.10.5, `proposal` bắt buộc), luật 11.10.6 cho NEAR | Bắt buộc | 25 | Tạo Budget bằng 3 lần ký; có người nhận thì khoản trong hạn mức tự chi, danh sách trống thì thành khoản chờ và có cảnh báo trước khi ký; Withdraw, Approve, Reject, Pause, Edit rules mỗi việc một lần ký; Top up bị chặn khi policy DAO không đúng |
+| **25** | Kiểm nền: sửa Guard để tạo account agent (11.10.2), deploy factory `keydoctor-guards-v2.testnet`; tạo DAO qua factory Sputnik (policy chỉ chủ); DAO gọi Guard factory qua đề xuất (chốt `predecessor`, tên Guard tự chọn và kiểm khi nhập) tạo Guard không key, Guard tạo account agent có function-call key; thêm role `agent-guard`; gộp 4 lời gọi một giao dịch (ký 2 khi tạo Budget); hàm `upgrade`, `migrate` (11.5.12); test chèn đề xuất của agent khi chủ Withdraw | Bắt buộc | Guard hiện có | Có tx hash cho từng việc trên testnet; account agent chỉ có đúng một function-call key gọi Guard, agent gọi `request_transfer` được bằng key đó; trả lời B-Q1, B-Q2, B-Q6, B-Q10; test chèn đề xuất pass; DAO nâng cấp được Guard trong sandbox và state còn nguyên, account lạ gọi `upgrade` bị từ chối |
+| **26** | Luồng tạo Budget (11.10.4, gồm 4 bước kiểm của dashboard), hành động của chủ (11.10.5, luồng hai lần ký), luật 11.10.6 cho NEAR | Bắt buộc | 25 | Tạo Budget bằng 3 lần ký; có người nhận thì khoản trong hạn mức tự chi, danh sách trống thì thành khoản chờ và có cảnh báo trước khi ký; Approve, Reject, Pause một lần ký; Withdraw, Edit rules hai lần ký; Top up bị chặn khi policy DAO không đúng |
 | **27** | Giao diện mới: điều hướng 10.1, trang 10.2 và 10.3, từ ngữ 10.4, link sâu 10.5, chuyển hướng link cũ; ngăn kéo Add an agent và trang "How your agent works" (11.12) | Bắt buộc | 26 | Người mới tạo Budget, nạp tiền, cắm agent mà không đọc chữ "DAO" |
 | **28** | Thông báo khoản chờ và hành động của chủ (9.5) | Bắt buộc | 26 | Rút tiền thử, nhận tin trong một chu kỳ |
-| **29** | **ADR keeper được duyệt trước khi bắt đầu.** Khung kế hoạch + **Scheduled payouts** + keeper (điều kiện K1 đến K5) + thông báo bước (11.11.2, 11.11.3 nhánh payout, 9.5) | Nên có | 26 | Kế hoạch trả 3 lần chạy đủ, mỗi lần một tin Telegram; thiếu tiền thì tạm dừng và báo; test K2 pass (account lạ gọi được, gọi trước hạn bị từ chối, không chạy hai lần) |
+| **29** | **ADR keeper được duyệt trước khi bắt đầu.** Khung kế hoạch (`PlanAction`) + **Scheduled payouts** + keeper (điều kiện K1 đến K5) + thông báo bước (11.11.2, 11.11.3 nhánh transfer, 9.5); Budget đã tạo nhận code mới qua `upgrade` | Nên có | 26 | Kế hoạch trả 3 lần chạy đủ, mỗi lần một tin Telegram; thiếu tiền thì tạm dừng và báo; test K2 pass (account lạ gọi được, gọi trước hạn bị từ chối, không chạy hai lần) |
 | **30** | Danh mục chiến lược (11.11.1), Notify me, Build your own, danh sách kiểm tra 11.11.4, tool `strategies_list` và `plans_status` | Nên có | 27 | Thẻ "Sắp có" ghi rõ; link từ agent mở đúng ngăn kéo |
-| **31** | **DCA qua Rhea** (11.11.3 nhánh dca), Enable USDC / wNEAR | Tùy thời gian | 23, 29 | 2 lần mua trên testnet (hoặc mainnet số nhỏ) có số mua được và tin Telegram |
+| **31** | **DCA qua Rhea** (11.11.3 nhánh swap), Enable USDC / wNEAR | Tùy thời gian | 23, 29 | 2 lần mua trên testnet (hoặc mainnet số nhỏ) có số mua được và tin Telegram |
 
 **Điểm cắt:** GĐ26 và GĐ27 chưa xong trước **9/11** thì dừng mở rộng, hoàn thiện và quay video với những gì đang chạy. **Thứ tự cắt:** GĐ31 → GĐ30 → GĐ29. Cắt GĐ23 (13.7) thì cắt luôn GĐ31.
 
@@ -2247,9 +2284,10 @@ Không có Guard thì bỏ cảnh 4, trả thời lượng cho "Bằng chứng" 
 | B-Q4 | Swap qua `ft_transfer_call` tới Rhea từ DAO: cần đăng ký gì; contract và pool Rhea trên testnet; thanh khoản đủ demo không | GĐ31 |
 | B-Q5 | Contract USDC dùng trên testnet | GĐ31 |
 | B-Q6 | Từng ví (Meteor, HERE, HOT) ký được **một giao dịch nhiều action** tới DAO không (không tự tách thành nhiều giao dịch); ví không đạt thì không dùng cho Agent Budget | GĐ25 |
-| B-Q7 | Code Sputnik do factory testnet cài có kiểm tham số `proposal` trong `act_proposal` không (nếu không: không gộp, tách hai giao dịch) | GĐ25 |
+| B-Q7 | **Đã chốt 2026-11-06:** code Sputnik testnet **không** kiểm tham số `proposal` (test sandbox). Không gộp với số đoán trước, tách hai giao dịch (11.10.5). Kiểm lại trên `sputnik-dao.near` trước khi ra mainnet | GĐ25 |
 | B-Q8 | **Đã chốt 2026-11-04:** tên Guard tự do (giữ factory và Path B như hiện tại), đuôi hiển thị cố định, chỉ sửa phần đầu, kiểm khi nhập và ngay trước ký 2 (mục 11.10.4). Cập nhật 2026-11-05: luật tên giữ nguyên, nhưng đuôi đổi sang factory `-v2` vì sửa code Guard (B-Q3, mục 11.10.2) | Đã đóng |
 | B-Q9 | **Đã chốt 2026-11-04:** tạm bỏ qua yield agent (ADR 0004, `docs/stories/epics/yield/`): không build trong bài thi. Chiến lược (mục 11.11) giữ nguyên theo GĐ29 đến GĐ31 | Đã đóng |
+| B-Q10 | `upgrade_remote` chạy với Guard không, đủ gas không (đo trong sandbox); từng ví ký được `store_blob` wasm khoảng 250 KB không (không được thì chủ dùng near-cli) | GĐ25, GĐ29 |
 
 (Đã đóng: Q6, được chọn nhiều track; Q7, xác thực MCP bằng header Bearer.)
 
@@ -2273,6 +2311,6 @@ Không có Guard thì bỏ cảnh 4, trả thời lượng cho "Bằng chứng" 
 14. **Guard MCP chạy local** trên máy chủ agent; key đọc từ file theo `AGENT_KEY_PATH`. Đây là key của chính agent, không phải key của người dùng Key Doctor.
 15. **Agent Budget:** chỉ bắt đầu GĐ25 khi lõi (GĐ0 đến GĐ10) đạt; làm theo mục 13.8, tôn trọng điểm cắt 9/11. Không có hàm nào cho agent tạo hay sửa kế hoạch; mô tả tool phải khớp mục 11.12. Mọi số tiền tính bằng đơn vị nhỏ nhất của token.
 16. **Giao diện chính không dùng chữ** DAO, proposal, Guard, Sputnik (chỉ trong Technical details); dùng từ ngữ mục 10.4. Thẻ chiến lược "Sắp có" phải ghi rõ nhãn.
-17. **An toàn khi tạo Budget và khi duyệt:** không thêm tham số `dao_id` cho Guard factory (giữ chốt `predecessor`); tên Guard tự chọn nhưng phải qua kiểm ô nhập ở 11.10.4; Guard của Budget chỉ được tạo bằng đề xuất của chính DAO. **Mọi lời gọi `act_proposal` phải truyền tham số `proposal`** (mục 11.10.5); không có ngoại lệ. Dashboard kiểm policy DAO trước mọi lần Top up.
+17. **An toàn khi tạo Budget và khi duyệt:** không thêm tham số `dao_id` cho Guard factory (giữ chốt `predecessor`); tên Guard tự chọn nhưng phải qua kiểm ô nhập ở 11.10.4; Guard của Budget chỉ được tạo bằng đề xuất của chính DAO. **Không gộp `add_proposal` với `act_proposal` bằng số đoán trước**, trừ ký 2 khi tạo Budget; `id` lấy từ giá trị trả về và đối chiếu nội dung trước khi duyệt (mục 11.10.5). Mọi `act_proposal` vẫn truyền `proposal`. Dashboard kiểm policy DAO trước mọi lần Top up.
 18. **Keeper:** không bắt đầu GĐ29 khi ADR keeper chưa được duyệt. Worker giữ đúng một key (keeper, không đặc quyền); không contract nào được cấp quyền riêng cho account keeper; `execute_plan_step` và `sync_request` phải có test chứng minh không phân biệt người gọi.
 19. **Hợp đồng dữ liệu:** không thêm kind hay trường vào `kd.alert.v1`; thông báo Agent Budget dùng `kd.budget_alert.v1`. Không xóa hay ghi đè nội dung đã có trong code (`kd.preflight.v1`, `FA_RECENT`, `preflight`, UC8 quy tắc 7 và 8) khi sửa tài liệu.
