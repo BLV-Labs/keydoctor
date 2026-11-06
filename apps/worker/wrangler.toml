@@ -27,7 +27,7 @@ ALERT_LANG = "both"
 RPC_URL_TESTNET = "https://rpc.testnet.fastnear.com,https://rpc.testnet.near.org"
 RPC_URL_MAINNET = "https://rpc.mainnet.fastnear.com,https://rpc.mainnet.near.org"
 # Keeper (ADR 0005, testnet only). Off until KEEPER_ACCOUNT_ID and the KEEPER_PRIVATE_KEY secret are set: README.md here.
-KEEPER_ACCOUNT_ID = ""
+KEEPER_ACCOUNT_ID = "keydoctor-keeper.testnet"
 KEEPER_FACTORY_ID = "keydoctor-guards-v2.testnet"
 KEEPER_MIN_BALANCE = "1"
 KEEPER_MAX_BALANCE = "5"
