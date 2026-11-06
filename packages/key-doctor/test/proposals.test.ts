@@ -634,6 +634,10 @@ describe("GĐ28 owner actions on an Agent Budget (§9.5)", () => {
     // The name of a harmless call must not buy silence for a large deposit.
     assert.equal((await told(paid("drain.kd-demo.testnet", "storage_deposit", "9000000000000000000000000")))?.owner_action?.summary, "called storage_deposit on drain.kd-demo.testnet with 9 NEAR attached");
     assert.equal((await told(paid(GUARD, "new_method", "0")))?.owner_action?.summary, `called new_method on ${GUARD}`);
+    // A known Guard method, or a quiet one, must not hide a large deposit either.
+    assert.equal((await told(paid(GUARD, "add_guardian", "9000000000000000000000000")))?.owner_action?.summary, `made ? a guardian; called add_guardian on ${GUARD} with 9 NEAR attached`);
+    assert.equal((await told(paid(GUARD, "refresh_bond", "9000000000000000000000000")))?.owner_action?.summary, `called refresh_bond on ${GUARD} with 9 NEAR attached`);
+    assert.equal((await told(paid(GUARD, "new_method", "9000000000000000000000000")))?.owner_action?.summary, `called new_method on ${GUARD} with 9 NEAR attached`, "told once, not twice");
     assert.equal((await told(paid("drain.kd-demo.testnet", "<b>x</b>\nclick", "0")))?.owner_action?.summary, "called ? on drain.kd-demo.testnet", "chain text stays out of the message");
   });
 

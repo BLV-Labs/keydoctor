@@ -271,6 +271,8 @@ function ownerSteps(p: Proposal, guards: readonly string[]): OwnerStep[] {
     if (guards.includes(receiver)) {
       const step = guardCallStep(method, args, receiver, deposit);
       if (step) steps.push(step);
+      // The Guard refunds what storage does not use, but a stolen key's deposit is not the owner's to discover later.
+      if (step?.action !== "withdraw" && isDigits(deposit) && BigInt(deposit) > BigInt(BUDGET_STORAGE_DEPOSIT_MAX_YOCTO)) steps.push(otherCallStep(method, receiver, deposit));
     } else if (method === "ft_transfer" || method === "ft_transfer_call") {
       // Tokens leave through a call, not a Transfer, when the proposal is written by hand.
       steps.push({ action: "withdraw", text: OWNER_TEXT.withdrawToken(isDigits(str(args.amount)) ? str(args.amount) : "?", safeId(receiver), safeId(args.receiver_id)) });
