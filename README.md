@@ -244,6 +244,19 @@ claude mcp add guard -e NEAR_NETWORK=testnet -e GUARD_CONTRACT_ID=<prefix>-guard
 
 The tool descriptions and messages tell the agent not to send a pending payment again and not to split it into smaller ones: over the limit is the council's call. When the outcome of a transaction is not known (`UNKNOWN_OUTCOME`), the result carries the tx hash and the agent must check the status instead of retrying.
 
+### Example agent on NEAR AI Cloud (not part of Key Doctor)
+
+`examples/near-ai-agent` is the agent being guarded, not a Key Doctor feature: Key Doctor itself has no LLM. A model on NEAR AI Cloud (default `Qwen/Qwen3.8-27B`, a private TEE model with tool calls; `NEAR_AI_MODEL` picks another) decides, and `guard-mcp`, started as a child process over stdio, is its only way to pay. The agent key stays on your machine; NEAR AI sees only the conversation, and `guard-mcp` never gets the NEAR AI key. The model sees only the tools `guard-mcp` lists, and a run stops after 8 model turns.
+
+```bash
+NEAR_AI_API_KEY=<from cloud.near.ai> NEAR_NETWORK=testnet GUARD_CONTRACT_ID=<budget>.keydoctor-guards-v2.testnet \
+AGENT_ACCOUNT_ID=<agent>.<budget>.keydoctor-guards-v2.testnet AGENT_KEY_PATH=$HOME/.config/key-doctor/<agent>.json \
+pnpm --silent --filter near-ai-agent start "Pay 0.1 NEAR to bob.testnet for invoice 7"
+# → stderr shows each guard_* call and the Guard's kd.guard_result.v1; stdout is the model's answer
+```
+
+Status: unit-tested with a scripted model and a stub MCP server (`pnpm --filter near-ai-agent test`); not yet run against NEAR AI Cloud and a live Budget. It does not verify the TEE attestation of the model.
+
 ### Agent Guard page (dashboard, factory on testnet)
 
 The dashboard's **Agent Guard** page (`?page=guard&dao=<dao>`) lets a council member set up a Guard without the CLI, through a Guard factory (`contracts/guard-factory`):
@@ -320,7 +333,7 @@ After the first setup (steps 1 to 5), every later release is one command: `pnpm 
 
 ## Libraries, AI-written code and prepared data
 
-- **Runtime:** the library and the Worker have no dependencies and use only web platform APIs (`fetch`, `crypto.subtle`). The dashboard uses `@near-wallet-selector/core`, `meteor-wallet`, `here-wallet` and `hot-wallet` 10.1.4, `near-api-js` 6.5.1 and `@near-js/crypto` 2.5.1 for wallet signing. The Guard MCP uses only Node built-ins: its borsh encoding and ed25519 signing (`node:crypto`) are written in the repo, checked against bytes from `@near-js/transactions` 2.5.1 in its tests.
+- **Runtime:** the library and the Worker have no dependencies and use only web platform APIs (`fetch`, `crypto.subtle`). The dashboard uses `@near-wallet-selector/core`, `meteor-wallet`, `here-wallet` and `hot-wallet` 10.1.4, `near-api-js` 6.5.1 and `@near-js/crypto` 2.5.1 for wallet signing. The example NEAR AI agent (`examples/near-ai-agent`) uses only `fetch` and Node built-ins. The Guard MCP uses only Node built-ins: its borsh encoding and ed25519 signing (`node:crypto`) are written in the repo, checked against bytes from `@near-js/transactions` 2.5.1 in its tests.
 - **Fonts:** Fira Sans and Fira Code from Google Fonts.
 - **Build and dev tools:**
   - TypeScript

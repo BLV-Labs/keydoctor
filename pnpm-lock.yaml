@@ -76,6 +76,15 @@ importers:
         specifier: 4.149.0
         version: 4.149.0(@types/node@22.19.1)(bufferutil@4.1.0)(utf-8-validate@6.0.6)
 
+  examples/near-ai-agent:
+    devDependencies:
+      '@types/node':
+        specifier: 22.19.1
+        version: 22.19.1
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
   packages/key-doctor:
     devDependencies:
       '@types/node':
