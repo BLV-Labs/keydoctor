@@ -43,7 +43,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
    pnpm test
    ```
 
-   You see `fail 0` for `packages/key-doctor`, `apps/dashboard`, `apps/guard-mcp` and `apps/worker`. The tests run on fixtures and never call a live RPC. `pnpm typecheck` checks all four packages. The library source is checked without Node types, because it may only use `fetch`.
+   You see `fail 0` for `packages/key-doctor`, `apps/dashboard`, `apps/guard-mcp`, `apps/worker` and `examples/near-ai-agent`. The tests run on fixtures and never call a live RPC. `pnpm typecheck` checks all five packages. The library source is checked without Node types, because it may only use `fetch`.
 
 2. **Scan a testnet DAO in the dashboard**
 
@@ -155,7 +155,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 | GĐ0 | pnpm monorepo, data contracts (`packages/key-doctor/src/types.ts`), fixtures | Done |
 | GĐ1 | Scan library: `scanAccount`, `scanDao`, `scanTarget`, 14 rules, vi/en messages | Done (checked against live testnet RPC) |
 | GĐ2 | `diffReports`, `toSummary` | Done |
-| GĐ3 | Worker: MCP `diagnose`, `compare`, `list_keys`, `list_proposals`, `watch`, D1 baselines, no auth for now | Deployed on Cloudflare; `tools/list` returns the five tools and Claude Code connects (2026-10-30) |
+| GĐ3 | Worker: MCP `diagnose`, `compare`, `list_keys`, `list_proposals`, `watch`, D1 baselines, no auth for now | Deployed on Cloudflare; Claude Code connects (2026-10-30). The hosted `tools/list` returns all seven tools, with `preflight` and `yield_suggestions` (2026-11-09) |
 | Agent pre-flight | `FA_RECENT` rule, `preflightVerdict` (`kd.preflight.v1`), MCP `preflight` | Deployed; `tools/list` lists `preflight` and a live call returns `kd.preflight.v1` (2026-11-04). `block` not yet seen live |
 | GĐ4 | Telegram bot: `/check`, `/changes`, `/watch`, `/unwatch`, `/list`, `/help` | Deployed; webhook live. `/list` and `/unwatch` not yet checked on the live bot |
 | GĐ5 | `checkProposals` | Built; of four Sputnik proposal facts, two confirmed live and two partly (`packages/key-doctor/fixtures/README.md`) |
@@ -166,13 +166,14 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 | GĐ10 | Network stats script | Built; numbers pending a live run |
 | GĐ12 | One-tap watch links: `POST /api/watch-link`, MCP `watch`, `/start <code>`, dashboard "Create links" | Deployed with the Worker; MCP `watch` is in `tools/list`, a link has not been opened live yet |
 | GĐ11, GĐ13 | History backtest, NearBlocks key dates | Not built (Roadmap) |
-| GĐ15–GĐ17 | Agent Guard contract (`contracts/guard`) | Built; 91 unit tests and 18 sandbox tests against the real Sputnik v2 wasm. A spike version paid a transfer on testnet (2026-11-02) |
+| GĐ15–GĐ17 | Agent Guard contract (`contracts/guard`) | Built; `pnpm test:guard` passes 130 unit and 24 sandbox tests for the Guard and 18 unit and 12 sandbox tests for the factory, sandbox against the real Sputnik v2 wasm (2026-11-09). A spike version paid a transfer on testnet (2026-11-02) |
 | GĐ18 | Guard testnet setup script (`scripts/guard-setup/setup.sh`) | Ran end to end on testnet (2026-11-02): full Guard 1.0.0 deployed, role added, funded and locked; `setup.sh verify` passes |
 | YD1 | Yield library: `scanVault` reads DAO balances, open transfers and Rhea Lend rates (on-chain and the Rhea API on mainnet), allowlist and floor filters, `kd.yield.v1` | Built; fixture tests, and live reads through the deployed Worker (2026-11-08) |
 | YD2 | TEE model step: `adviceRequest`, `validateAdvice`, cached advice in D1 (`yield_advice`), rule-order fallback | Deployed 2026-11-08. Model picked by a live compare of three TEE models ([`data/yield-model-compare.md`](data/yield-model-compare.md)). No model call from the Worker seen live yet: no test DAO holds the token, so there is nothing to order |
 | YD3 | Bot `/yield`, `/yield_watch`, `/yield_unwatch`, 15-minute yield push, MCP `yield_suggestions` | Deployed 2026-11-08; a live MCP call returns `kd.yield.v1`. The bot commands and the push not yet checked on the live bot |
-| YD4 | Dashboard Yield page (`?page=yield&dao=<dao>`) and My Agents (`?page=my-agents`): the testnet allowlist proposal builder (register, supply, withdraw all as DAO `FunctionCall` proposals the council's wallet signs), council votes, and every agent of the DAOs where a connected account sits on the council | Built 2026-11-09; render and builder tests, live read of `payroll-2.sputnik-v2.testnet` in the browser. No proposal signed from the dashboard yet, so the supply and withdraw path (YD0) is still unproven. Off on mainnet |
+| YD4 | Dashboard Yield page (`?page=yield&dao=<dao>`) and My Agents (`?page=my-agents`): the testnet allowlist proposal builder (register, supply, withdraw all as DAO `FunctionCall` proposals the council's wallet signs), council votes, and every agent of the DAOs where a connected account sits on the council | Deployed to Pages 2026-11-09; render and builder tests, live read of `payroll-2.sputnik-v2.testnet` in the browser. No proposal signed from the dashboard yet, so the supply and withdraw path (YD0) is still unproven. Off on mainnet |
 | GĐ19 | Guard MCP (`apps/guard-mcp`) and demo invoices (`demo/invoices/`) | Built; 42 tests with a mocked chain. All four invoices run live on testnet (2026-11-02): `inv-001`..`003` `auto_approved`, the DAO paid each receiver in the same tx (15.2 Tgas each); `inv-004` (500 NEAR to `attacker.testnet`) became proposal 5, `pending` with `NOT_WHITELISTED`, `OVER_PER_TX`, `OVER_DAILY_LIMIT`, nothing paid (8.4 Tgas) |
+| GĐ25–GĐ28 | Agent Budget: Guard factory v2 (`keydoctor-guards-v2.testnet`), dashboard Budget page (`?page=budget`), Telegram alerts for the owner's actions on a Budget | Deployed on testnet. Run live 2026-11-08 with a wallet on two Budgets, see [Agent Budget page](#agent-budget-page-dashboard-testnet) |
 
 ## Agents
 
@@ -197,7 +198,8 @@ apps/worker           one Cloudflare Worker + D1
   POST /telegram      bot webhook, secret-token header, 200 at once + waitUntil
   POST /run-check     runs a cron job now, Bearer RUN_CHECK_TOKEN
   POST /api/watch-link  one-time /start links, CORS only for DASHBOARD_ORIGIN
-  crons               */15 proposal watch, 0 2 * * * daily key diff, 11,26,41,56 * * * * yield push
+  crons               */15 proposal watch, 0 2 * * * daily key diff, 11,26,41,56 * * * * yield push,
+                      7,22,37,52 * * * * Agent Budget keeper (off unless its secrets are set)
 ```
 
 - **One block per scan.** Every RPC query in a scan is pinned to the same block height.
@@ -238,8 +240,8 @@ Measured in the sandbox (`cargo test --test sandbox -- --nocapture`, gas price 1
 
 | `request_transfer` | Gas burnt | Allowance used, net |
 |---|---|---|
-| Auto (Guard approves, NEAR moves in the same tx) | 14.6 Tgas | 1.33 mNEAR |
-| Pending (proposal waits for the council) | 7.9 Tgas | 0.74 mNEAR |
+| Auto (Guard approves, NEAR moves in the same tx) | 14.9 Tgas | 1.36 mNEAR |
+| Pending (proposal waits for the council) | 8.1 Tgas | 0.76 mNEAR |
 
 - **Attach 200 Tgas.** The Guard reserves gas for the DAO calls and callbacks up front, so a call with 140 Tgas or less fails before it changes anything; 145 Tgas was the lowest that worked.
 - **Agent key allowance.** The agent signs with a function-call key limited to the Guard and to `request_transfer` and `sync_request`. NEAR checks the allowance against the attached gas at a pessimistic price, about 1 mNEAR per Tgas, so at 200 Tgas the key needs more than 0.2 NEAR left even though each call uses about 1 mNEAR after the refund. A key with 0.2 NEAR is refused; 0.25 NEAR (the wallet default) works, but only for about 35 Auto requests. 1 NEAR lasts about 600.
@@ -310,6 +312,16 @@ KD_GUARD_FACTORY=<prefix>-guards.testnet pnpm --filter dashboard build
 
 Invoice demo: put the four invoices in `demo/invoices/` (see its README for another prefix) and ask the agent "Submit every invoice in demo/invoices/ to the guard tool. The Guard and the DAO council decide what gets paid." Expected: the first three are paid at once, the fourth (500 NEAR to `attacker.testnet`, with a prompt injection) becomes a pending proposal for the council.
 
+### Agent Budget page (dashboard, testnet)
+
+The dashboard's **Agent Budget** page (`?page=budget`) gives one person's agent a spending limit without a council: the Budget is a Sputnik DAO that only its owner controls, with its own Guard and agent.
+
+- **Create.** Pick Cautious (1 NEAR per request, 5 NEAR per 24 hours), Balanced (5 / 20) or Custom. Signature 1 creates the DAO. Signature 2 is one transaction of four calls: the Guard from the factory `keydoctor-guards-v2.testnet`, the agent account with one function-call key (receiver the Guard, methods `request_transfer` and `sync_request` only) and the Guard's role. The page reads the chain back after each signature. The agent key is made in the browser and downloaded as a file; the page asks before you leave while it has not been downloaded.
+- **Run.** Top up, Withdraw, change the rules, add an agent, edit the recipient list, and approve or reject a waiting request. Each button says how many signatures it takes. `?page=budget&help=agent` explains to the agent's owner how the agent connects (key file, the `claude mcp add guard` line).
+- **Live on testnet, 2026-11-08** (Budgets `payroll-1` and `payroll-2.sputnik-v2.testnet`): created with a wallet, topped up 25 NEAR, withdrew 1 NEAR. Through `apps/guard-mcp`, 0.1 NEAR to a listed recipient was paid at once, and 0.2 NEAR to another account waited for the owner with `NOT_WHITELISTED`. The [example agent on NEAR AI Cloud](#example-agent-on-near-ai-cloud-not-part-of-key-doctor) then paid 0.1 NEAR within the limits. Chats watching the Budgets got the waiting request (`payroll-2`) and the Withdraw (`payroll-1`) in Telegram on the next cron.
+
+The deploy workflow builds the dashboard with `KD_BUDGET_FACTORY=keydoctor-guards-v2.testnet` (repo variable overrides); a local build without it cannot create a Budget.
+
 ## Yield agent
 
 V1 alerts and suggests; it never moves funds. The plan is in [`docs/stories/epics/yield/plan.md`](docs/stories/epics/yield/plan.md).
@@ -346,7 +358,7 @@ V1 alerts and suggests; it never moves funds. The plan is in [`docs/stories/epic
 - Backtest the proposal rules on 12 months of history (`kd.backtest.v1`), using NearBlocks for keys added and later removed.
 - Exact key creation dates from NearBlocks, and more rules.
 - **Agent Guard:** Guard checks in the council report (`/check`).
-- **Agent Budget keeper (GĐ29):** a Worker job that calls due plan steps with an unprivileged testnet key and reports each run in Telegram (ADR 0005). The code and its tests are in `apps/worker`. It has been deployed on testnet since 2026-11-06 and cycles every 15 minutes, but no Budget exists yet, so it has never executed a step. See [`apps/worker/README.md`](apps/worker/README.md).
+- **Agent Budget keeper (GĐ29):** a Worker job that calls due plan steps with an unprivileged testnet key and reports each run in Telegram (ADR 0005). The code and its tests are in `apps/worker`. It has been deployed on testnet since 2026-11-06 and cycles every 15 minutes. Two Budgets exist (2026-11-08) but neither has a plan, so it has never executed a step. See [`apps/worker/README.md`](apps/worker/README.md).
 - **Hosted Guard agent (after the hackathon):** each DAO adds its own Telegram bot; a separate Worker turns allowed members' chat into Guard `request_transfer` calls through a model on NEAR AI Cloud. Secrets encrypted per DAO, council-signed registration, the Guard limits and the council vote still decide every payment. It would put an LLM and agent keys in a hosted service, which Key Doctor avoids today, so it is a plan only: `docs/stories/epics/guard/hosted-agent-plan.md`.
 - **Yield agent:** a tiny mainnet run of the dashboard proposal builder (YD4b), after the testnet path passes. Later (V2), the agent supplies within council-set limits by itself, through a Guard-style contract. Other protocols and chains (Chain Signatures) after a feasibility check.
 - Link a Telegram user to a NEAR account by signature to mention voters by name. Discord and email alerts. Near-real-time watching through an indexer.
