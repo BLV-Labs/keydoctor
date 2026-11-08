@@ -18,10 +18,14 @@ import { sendMessage, sendTyping, TelegramError, type Outgoing } from "./api.ts"
 import { langOf, renderChanges, renderCheck, renderHelp, renderYield, TEXT, type Lang } from "./render.ts";
 import { takePending } from "../store/pending.ts";
 import { isCode } from "../watch-link.ts";
+import { yieldAdvice } from "../yield/agent.ts";
 
 export const MAX_SUBS_PER_CHAT = 20;
 /** /yield and /yield_watch per chat per minute: each one reads two networks and scans the council. */
 export const YIELD_PER_CHAT_PER_MIN = 3;
+/** Model calls from /yield and /yield_watch per isolate per minute, across all chats: past it, the rule order shows. */
+export const YIELD_MODEL_PER_MIN = 6;
+const modelGate = () => (checkRate("yield-model", YIELD_MODEL_PER_MIN) > 0 ? "BUSY" : null);
 
 export type Command =
   | { name: "check" | "changes" | "watch" | "unwatch" | "yield" | "yield_watch" | "yield_unwatch"; target: string | null }
@@ -127,10 +131,11 @@ async function run(cmd: Command, inc: Incoming, env: Env, typing: () => void): P
     case "watch":
       return watchTarget(t.id, t.network, t.rpcUrl, inc, env, typing);
     case "yield": {
-      // Read-only: never writes D1 (the push state belongs to /yield_watch and the job).
+      // Writes only the advice cache (YD2), never the push state: that belongs to /yield_watch and the job.
       typing();
       const { report, council } = await yieldCheck({ target: t.id, network: t.network }, env);
-      return renderYield(lang, report, council, { ...(env.DASHBOARD_URL && { dashboardUrl: env.DASHBOARD_URL }) });
+      const advice = await yieldAdvice(report, env, modelGate);
+      return renderYield(lang, report, council, { advice, ...(env.DASHBOARD_URL && { dashboardUrl: env.DASHBOARD_URL }) });
     }
     case "yield_unwatch":
       return (await removeYieldWatch(env.DB, t.id, t.network, chatId)) ? TEXT.yieldUnwatched(lang, t.id) : TEXT.yieldNotWatched(lang, t.id);
@@ -153,8 +158,9 @@ async function yieldWatch(id: string, network: Network, inc: Incoming, env: Env,
   // First watcher of this DAO: record the current top so the job pushes only a later change. A report with a
   // read error is not a starting point; the job records the first complete one.
   if (isComplete(report) && (await getYieldTop(env.DB, id, network)) === undefined) await saveYieldTop(env.DB, id, network, topOf(report));
+  const advice = await yieldAdvice(report, env, modelGate);
   const watched = TEXT.yieldWatched(lang, id);
-  const shown = renderYield(lang, report, council, { watching: true, ...(env.DASHBOARD_URL && { dashboardUrl: env.DASHBOARD_URL }) });
+  const shown = renderYield(lang, report, council, { watching: true, advice, ...(env.DASHBOARD_URL && { dashboardUrl: env.DASHBOARD_URL }) });
   return { text: `${watched.text}\n\n${shown.text.split("\n").slice(1).join("\n")}`, buttons: shown.buttons ?? [] };
 }
 

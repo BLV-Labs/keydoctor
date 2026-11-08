@@ -1,5 +1,5 @@
-// Yield watches and the last pushed top suggestion (migrations/0003_yield.sql). Only the Worker writes these.
-import type { Network } from "key-doctor";
+// Yield watches, the last pushed top suggestion (migrations/0003_yield.sql) and the cached model advice (0004). Only the Worker writes these.
+import type { KdYieldAdvice, Network } from "key-doctor";
 import type { D1Database } from "../env.ts";
 
 export interface YieldTop {
@@ -84,5 +84,28 @@ export async function touchYieldChecked(db: D1Database, target: string, network:
   await db
     .prepare("UPDATE yield_state SET checked_at = ? WHERE target = ? AND network = ?")
     .bind(new Date().toISOString(), target, network)
+    .run();
+}
+
+/** The cached model advice for a DAO, or null. A row that does not parse as kd.yield_advice.v1 counts as none. */
+export async function getYieldAdvice(db: D1Database, target: string, network: Network): Promise<KdYieldAdvice | null> {
+  const row = await db
+    .prepare("SELECT advice_json FROM yield_advice WHERE target = ? AND network = ?")
+    .bind(target, network)
+    .first<{ advice_json: string }>();
+  if (row === null) return null;
+  try {
+    const advice = JSON.parse(row.advice_json) as KdYieldAdvice;
+    return advice?.schema_version === "kd.yield_advice.v1" ? advice : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Replaces the DAO's cached advice. Callers store model answers only (plan §2). */
+export async function saveYieldAdvice(db: D1Database, advice: KdYieldAdvice): Promise<void> {
+  await db
+    .prepare("INSERT OR REPLACE INTO yield_advice (target, network, advice_json, created_at) VALUES (?, ?, ?, ?)")
+    .bind(advice.dao, advice.network, JSON.stringify(advice), advice.generated_at)
     .run();
 }

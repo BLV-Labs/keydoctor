@@ -2,6 +2,7 @@
 import { isKdError, type KdError } from "key-doctor";
 import type { Env } from "../env.ts";
 import { compare, diagnose, preflight, listKeys, listProposals, yieldCheck } from "../core.ts";
+import { yieldAdvice } from "../yield/agent.ts";
 import { json, kdErrorBody, readJson } from "../http.ts";
 import { createWatchLink } from "../watch-link.ts";
 import { checkRate } from "./rate-limit.ts";
@@ -97,7 +98,7 @@ export const TOOLS = [
     name: "yield_suggestions",
     title: "Rhea Lend supply suggestions for a Sputnik DAO treasury",
     description:
-      "Reads the DAO's token balances and open transfer proposals, then Rhea Lend rates, and returns { report: kd.yield.v1, council }. report lists allowlisted opportunities, what was filtered out and why, and rule-ordered suggestions capped at the free balance (balance minus open transfers). council is the council's key status (null = could not be read: risk unknown). Data, not financial advice: the council decides and signs any proposal. DAO targets only. Read-only; stores nothing; never signs.",
+      "Reads the DAO's token balances and open transfer proposals, then Rhea Lend rates, and returns { report: kd.yield.v1, council, advice }. report lists allowlisted opportunities, what was filtered out and why, and rule-ordered suggestions capped at the free balance (balance minus open transfers). council is the council's key status (null = could not be read: risk unknown). advice is kd.yield_advice.v1: the last order and reasons a TEE model on NEAR AI gave for these same suggestions (by = model, with model id and generation id), or the rule order (by = rules, fallback NO_CACHE or NO_KEY); this tool never calls the model. Every number comes from code. Data, not financial advice: the council decides and signs any proposal. DAO targets only. Read-only; stores nothing; never signs.",
     inputSchema: { type: "object", properties: { ...targetProps }, required: ["target"], additionalProperties: false },
     annotations: { readOnlyHint: true, openWorldHint: true },
   },
@@ -149,7 +150,11 @@ async function callTool(name: ToolName, args: Record<string, unknown>, env: Env)
     if (name === "list_proposals") return toolResult(await listProposals(args as unknown as Parameters<typeof listProposals>[0], env));
     if (name === "watch") return toolResult(await createWatchLink(args as unknown as Parameters<typeof createWatchLink>[0], env));
     if (name === "preflight") return toolResult(await preflight(args as unknown as Parameters<typeof preflight>[0], env));
-    if (name === "yield_suggestions") return toolResult(await yieldCheck(args as unknown as Parameters<typeof yieldCheck>[0], env));
+    if (name === "yield_suggestions") {
+      const checked = await yieldCheck(args as unknown as Parameters<typeof yieldCheck>[0], env);
+      // ADR 0003: /mcp is open, so it serves cached model advice only and never spends the NEAR AI key.
+      return toolResult({ ...checked, advice: await yieldAdvice(checked.report, env, () => "NO_CACHE") });
+    }
     return toolResult(await compare(args as unknown as Parameters<typeof compare>[0], env));
   } catch (e) {
     if (isKdError(e)) return toolResult(e.kd, true);

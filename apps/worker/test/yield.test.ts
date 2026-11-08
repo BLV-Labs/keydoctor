@@ -290,3 +290,160 @@ describe("YD3 MCP yield_suggestions", () => {
     assert.equal((await call(env, { target: DAO, amount: "1" })).isError, true);
   });
 });
+
+// YD2 (plan §2): a TEE model on NEAR AI may order the suggestions and explain them; code checks what comes back.
+const QWEN = "Qwen/Qwen3.6-35B-A3B-FP8";
+const GLM = "z-ai/glm-5.3-flash";
+const KEY = { NEAR_AI_API_KEY: "test-key" };
+const chat = (content: string, id = "chatcmpl-test-1") =>
+  new Response(JSON.stringify({ id, choices: [{ message: { role: "assistant", content } }] }), { status: 200 });
+const order = (reasonEn: string, reasonVi = "Ổn định.") => JSON.stringify({ order: [{ opportunity_id: TOP, reason_vi: reasonVi, reason_en: reasonEn }] });
+
+/** The bot's model cap is per minute and in memory: each test runs in a minute of its own. */
+let minute = Date.now();
+function ownMinute(t: TestContext): void {
+  minute += 120_000;
+  t.mock.timers.enable({ apis: ["Date"], now: minute });
+}
+
+describe("YD2 /yield with the model step", () => {
+  it("shows the model's reason and marks the order as AI-assisted, with the TEE model and generation id", async (t) => {
+    ownMinute(t);
+    const { env, chain, db } = setup(t, KEY);
+    chain.aiReply = () => chat(order("10.53% APR with 16.5 free; 2 open transfers stay covered."));
+    await say(env, `/yield ${DAO}`, newChat());
+    const text = lastText(chain);
+    assert.match(text, /Supply USDC \(test\) on Rhea Lend: 10\.53% APR, up to 16\.50\n  10\.53% APR with 16\.5 free; 2 open transfers stay covered\./);
+    assert.match(text, new RegExp(`AI-assisted order and reasons \\(${QWEN} in a NEAR AI TEE, id chatcmpl-test-1\\)\\. Every number comes from code\\.`));
+
+    // The model got the candidates as data, a JSON schema, no tools, and the key as a bearer token.
+    assert.equal(chain.ai.length, 1);
+    const sent = chain.ai[0]!;
+    assert.equal(sent.bearer, true);
+    assert.equal(sent.body.model, QWEN);
+    assert.equal(sent.body.tools, undefined);
+    assert.equal(sent.body.response_format.type, "json_schema");
+    const data = JSON.parse(sent.body.messages[1].content);
+    assert.deepEqual(data.candidates.map((c: any) => c.opportunity_id), [TOP]);
+    assert.equal(data.candidates[0].dao_free, 16.5);
+
+    // Cached: another chat in the same hour gets the same advice without spending the key again.
+    const [row] = rows(db, "SELECT target, network FROM yield_advice");
+    assert.deepEqual(row, { target: DAO, network: "testnet" });
+    await say(env, `/yield ${DAO}`, newChat());
+    assert.equal(chain.ai.length, 1);
+    assert.match(lastText(chain), /AI-assisted order/);
+  });
+
+  it("drops a reason with a number the report does not have, and keeps the AI order mark", async (t) => {
+    ownMinute(t);
+    const { env, chain } = setup(t, KEY);
+    chain.aiReply = () => chat(order("Expect 25% APR next month."));
+    await say(env, `/yield ${DAO}`, newChat());
+    const text = lastText(chain);
+    assert.doesNotMatch(text, /25%/, "a model must not put a made-up yield in front of the council");
+    assert.match(text, /AI-assisted order/);
+  });
+
+  it("goes to the next TEE model when one fails, and never to a model off the TEE list", async (t) => {
+    ownMinute(t);
+    const { env, chain } = setup(t, KEY);
+    chain.aiReply = (body) => (body.model === QWEN ? new Response("busy", { status: 503 }) : chat(order("Fine.")));
+    await say(env, `/yield ${DAO}`, newChat());
+    assert.deepEqual(chain.ai.map((x) => x.body.model), [QWEN, GLM]);
+    assert.match(lastText(chain), new RegExp(`\\(${GLM} in a NEAR AI TEE`));
+  });
+
+  it("falls back to the rule order, marked, when every model fails, and caches nothing", async (t) => {
+    ownMinute(t); // three /yield calls, under the model cap
+    for (const reply of [() => new Response("x", { status: 500 }), () => chat("I think USDC is best."), () => { throw new Error("network"); }]) {
+      const { env, chain, db } = setup(t, KEY);
+      chain.aiReply = reply;
+      await say(env, `/yield ${DAO}`, newChat());
+      const text = lastText(chain);
+      assert.match(text, /Supply USDC \(test\) on Rhea Lend: 10\.53% APR, up to 16\.50/, "the suggestion itself never depends on the model");
+      assert.match(text, /Ordered by rules: highest APR first\./);
+      assert.doesNotMatch(text, /AI-assisted/);
+      assert.deepEqual(chain.ai.map((x) => x.body.model), [QWEN, GLM]);
+      assert.equal(rows(db, "SELECT * FROM yield_advice").length, 0, "a fallback is not cached: the next call may reach the model");
+    }
+  });
+
+  it("without a key it never calls the model and keeps the rule order", async (t) => {
+    const { env, chain, db } = setup(t);
+    chain.aiReply = () => chat(order("Fine."));
+    await say(env, `/yield ${DAO}`, newChat());
+    assert.equal(chain.ai.length, 0);
+    assert.match(lastText(chain), /Ordered by rules/);
+    assert.equal(db.log.length, 0);
+  });
+
+  it("caps model calls across chats: past the cap /yield answers with the rule order and spends nothing", async (t) => {
+    ownMinute(t);
+    const { env, chain } = setup(t, KEY);
+    chain.aiReply = () => chat("not json"); // nothing is cached, so every /yield wants the model
+    const { YIELD_MODEL_PER_MIN } = await import("../src/telegram/commands.ts");
+    for (let i = 0; i < YIELD_MODEL_PER_MIN; i++) await say(env, `/yield ${DAO}`, newChat());
+    const spent = chain.ai.length;
+    await say(env, `/yield ${DAO}`, newChat());
+    assert.equal(chain.ai.length, spent);
+    assert.match(lastText(chain), /Ordered by rules/);
+  });
+});
+
+describe("YD2 push job and MCP with the model step", () => {
+  it("the job calls the model only when it pushes, never on a quiet cycle (plan Y20)", async (t) => {
+    ownMinute(t);
+    const { env, chain } = setup(t, KEY);
+    chain.aiReply = () => chat("not json");
+    await say(env, `/yield_watch ${DAO}`, newChat());
+    chain.ai.length = 0;
+    chain.telegram.length = 0;
+
+    await runJob(env);
+    chain.setApr("0.1073");
+    await runJob(env);
+    assert.equal(chain.ai.length, 0, "no push, no model call");
+
+    chain.aiReply = () => chat(order("11.53% APR."), "chatcmpl-push");
+    chain.setApr("0.1153");
+    await runJob(env);
+    assert.equal(sends(chain).length, 1);
+    assert.equal(chain.ai.length, 1);
+    assert.match(lastText(chain), /11\.53% APR, up to 16\.50\n  11\.53% APR\./);
+    assert.match(lastText(chain), /id chatcmpl-push/);
+  });
+
+  it("open /mcp serves cached advice only and never spends the key (ADR 0003)", async (t) => {
+    ownMinute(t);
+    const db = testD1();
+    const chain = installYieldChain(t);
+    chain.aiReply = () => chat(order("Fine."));
+    const env: Env = { DB: db, TELEGRAM_BOT_TOKEN: "1:x", ...KEY };
+    const call = async () => {
+      const res = await worker.fetch(
+        new Request("https://kd.test/mcp", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "yield_suggestions", arguments: { target: DAO } } }),
+        }),
+        env,
+        ctx,
+      );
+      return ((await res.json()) as any).result.structuredContent;
+    };
+    const before = await call();
+    assert.equal(chain.ai.length, 0);
+    assert.equal(before.advice.by, "rules");
+    assert.equal(before.advice.fallback, "NO_CACHE");
+    assert.equal(writes(db).length, 0);
+
+    await say(env, `/yield ${DAO}`, newChat()); // the bot spends the key and caches the answer
+    assert.equal(chain.ai.length, 1);
+    const after = await call();
+    assert.equal(chain.ai.length, 1);
+    assert.equal(after.advice.by, "model");
+    assert.equal(after.advice.model, QWEN);
+    assert.equal(after.advice.generation_id, "chatcmpl-test-1");
+  });
+});

@@ -179,6 +179,14 @@ export function validateAdvice(raw: unknown, candidates: YieldOpportunity[]): Yi
 }
 ```
 
+**Built 2026-11-08, live run pending** (library `src/yield/advice.ts`, `src/yield/models.ts`, kd.yield_advice.v1 in `types.ts`; Worker `src/yield/agent.ts`, `migrations/0004_yield_advice.sql`; scripts `packages/key-doctor/scripts/compare-yield-models.ts` (`pnpm yield-models`) and `scripts/yield-setup/verify-tee.sh`; tests in `test/yield-advice.test.ts` and `apps/worker/test/yield.test.ts` with a fake model). Changes against the text above:
+- The cache table is `yield_advice`, not `yield_suggestions`, so it does not share a name with the MCP tool. One row per DAO and network, model answers only; a fallback is never cached, so the next allowed caller tries again. Cached advice is reused while it is under a day old and the suggestions, amounts and APRs (within the push delta) still match.
+- The model sees `adviceCandidates` (code facts in token units), gets no tools, and the body comes from one builder, `adviceRequest`, shared by the Worker and both scripts. The chain is `YIELD_MODEL_CHAIN` (Qwen, then GLM), checked against `YIELD_TEE_MODELS`.
+- `validateAdvice` also drops reasons that carry a link, a handle, an account name or control characters, and accepts the number formats people write (8,96 in Vietnamese, 25k, $12.8M), each checked against that candidate's own evidence.
+- Who may spend the key: the push job (only on a push, Y20) and bot `/yield` / `/yield_watch`, capped at `YIELD_MODEL_PER_MIN` = 6 model calls per minute per isolate. MCP `yield_suggestions` returns `advice` from the cache only, never calling the model. The rule order is marked with why: `NO_KEY` (no secret: no model call and no D1 read, same as YD3), `MODEL_FAILED`, `BUSY` (over the cap), `NO_CACHE` (MCP, nothing cached).
+- Telegram shows the model's reason under each suggestion, plus one line naming the model, the TEE and the generation id, and saying every number comes from code.
+- Not done yet: the live Y5 compare and the verifier run (owner runs both with the key; the Worker secret is not readable locally), and the testnet deploy with `0004_yield_advice.sql`.
+
 ### YD3: surfaces
 
 **What.** Bot `/yield <dao>`, rate-limited per chat. `/yield_watch <dao>` opts a chat in to the daily push, stored in a new D1 table `yield_watches`, not in `subscriptions`. The push runs inside the `0 2 * * *` cron and sends only when the top candidate differs from the last sent one. It follows the alert rule: send first, record after, and delete rows for chats that blocked the bot. MCP `yield_suggestions`, read-only and cached. Dashboard Yield panel on the DAO report. If `diagnose` finds a `high` flag on the council, the report leads with that warning.
@@ -187,7 +195,7 @@ export function validateAdvice(raw: unknown, candidates: YieldOpportunity[]): Yi
 
 **Built 2026-11-08** (`apps/worker`: `src/jobs/yield.ts`, `src/store/yield.ts`, `migrations/0003_yield.sql`, `yieldCheck` in `src/core.ts`, `renderYield` in `src/telegram/render.ts`; tests in `test/yield.test.ts`). Changes against the text above:
 - The push has its own cron, `11,26,41,56 * * * *` (Y20, every 15 minutes), not the `0 2 * * *` daily job. It pushes when the top suggestion changes or its APR moves by `YIELD_PUSH_APR_DELTA`. Any read error skips the push and keeps the state, so a long Rhea API outage also blocks pushes.
-- MCP `yield_suggestions` runs a fresh, rule-ordered scan: no model, no D1, no key spent (`/mcp` is open, ADR 0003). The cached model advice comes with YD2.
+- MCP `yield_suggestions` runs a fresh, rule-ordered scan: no model, no D1, no key spent (`/mcp` is open, ADR 0003). YD2 adds the cached model advice as an `advice` field; MCP still never calls the model.
 - Subrequest budget: one DAO costs about 10 subrequests, plus a council scan and one send per chat on a push. `MAX_YIELD_DAOS_PER_RUN` defaults to 1 (at most 3) and watched DAOs take turns, least recently checked first. With N watched DAOs, each one is checked every N × 15 minutes.
 - `deleteChat` and `moveChat` now run as one D1 batch (one subrequest, atomic) and cover `yield_watches` as well as `subscriptions`.
 - `/yield` and `/yield_watch` are rate-limited to 3 per chat per minute. `/yield` never writes D1. `/yield_watch` records the starting top only from a report with no read error.

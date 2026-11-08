@@ -13,5 +13,18 @@ export { budgetAlerts, guardPausedAlert, type BudgetAlertInput, type PlanRequest
 export { createRpc, DEFAULT_RPC_URLS, type Rpc } from "./rpc.ts";
 export { scanVault, availableAmount, shouldPushYield, type ScanVaultOptions } from "./yield/vault.ts";
 export { readRheaLend, filterCandidates, type RheaRow } from "./yield/rhea.ts";
-export { YIELD_RULESET_VERSION, YIELD_TOKENS, YIELD_LIMITS } from "./yield/thresholds.ts";
+export { YIELD_RULESET_VERSION, YIELD_TOKENS, YIELD_LIMITS, YIELD_ADVICE } from "./yield/thresholds.ts";
+export { YIELD_TEE_MODELS, YIELD_MODEL_CHAIN, isTeeModel, type TeeModel } from "./yield/models.ts";
+export {
+  ADVICE_SCHEMA,
+  adviceCandidates,
+  adviceFresh,
+  advicePrompt,
+  adviceRequest,
+  modelAdvice,
+  orderSuggestions,
+  ruleAdvice,
+  validateAdvice,
+  type AdviceCandidate,
+} from "./yield/advice.ts";
 export { NOT_ADVICE_NOTE, YIELD_REASON_TEXT, YIELD_WARNING_TEXT } from "./yield/messages.ts";

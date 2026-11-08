@@ -61,3 +61,21 @@ export const YIELD_PROPOSAL_SCAN = 40;
 
 /** Y20: a push goes out when the top candidate changes or its APR moves at least this much (0.5 percentage point). */
 export const YIELD_PUSH_APR_DELTA = 0.005;
+
+/**
+ * YD2 model step (plan §2). These limits shape the AI-assisted order only, never the report, so they do not move
+ * YIELD_RULESET_VERSION.
+ */
+export const YIELD_ADVICE = {
+  /** Cached advice is reused for at most a day (plan YD2), and only while its basis still matches the report. */
+  max_age_ms: 24 * 60 * 60 * 1000,
+  /** Per model call. Two calls on the chain plus the scans must fit the 30 s a webhook gets after its 200. */
+  timeout_ms: 9000,
+  /** A longer reason is dropped. */
+  max_reason_chars: 400,
+  max_tokens: 1200,
+  /** A reason may write an evidence value as is, or in thousands, millions or billions (25k, $12.8M). */
+  scales: [1, 1_000, 1_000_000, 1_000_000_000],
+  /** More decimals than this is not a number a person would write: the reason is dropped. */
+  max_decimals: 8,
+} as const;

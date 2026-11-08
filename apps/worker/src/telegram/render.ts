@@ -1,6 +1,6 @@
 // Telegram message templates (§9). Pure: report/diff/alert in, plain text out. Rule texts come from `messages`.
-import { YIELD_REASON_TEXT, YIELD_TOKENS, YIELD_WARNING_TEXT } from "key-doctor";
-import type { Flag, KdAlert, KdBudgetAlert, KdDiff, KdReport, KdYieldReport, Member, Severity, Status } from "key-doctor";
+import { orderSuggestions, YIELD_REASON_TEXT, YIELD_TOKENS, YIELD_WARNING_TEXT } from "key-doctor";
+import type { Flag, KdAlert, KdBudgetAlert, KdDiff, KdReport, KdYieldAdvice, KdYieldReport, Member, Severity, Status } from "key-doctor";
 import type { Button, Outgoing } from "./api.ts";
 
 export type Lang = "vi" | "en";
@@ -193,6 +193,17 @@ function councilLine(lang: Lang, dao: string, c: KdReport["summary"] | null): st
   return lang === "vi" ? `Khóa council: ${STATUS.vi[c.status]}` : `Council keys: ${STATUS.en[c.status]}`;
 }
 
+/** Says who ordered the suggestions (plan §2): a TEE model, with its id and generation id, or the rules. */
+function adviceLine(lang: Lang, a: KdYieldAdvice): string {
+  if (a.by === "model" && a.model !== null) {
+    const id = a.generation_id === null ? "" : lang === "vi" ? `, mã ${a.generation_id}` : `, id ${a.generation_id}`;
+    return lang === "vi"
+      ? `🤖 Thứ tự và lý do do AI gợi ý (${a.model} chạy trong TEE của NEAR AI${id}). Mọi con số do code tính.`
+      : `🤖 AI-assisted order and reasons (${a.model} in a NEAR AI TEE${id}). Every number comes from code.`;
+  }
+  return lang === "vi" ? "Thứ tự theo quy tắc: APR cao nhất trước." : "Ordered by rules: highest APR first.";
+}
+
 /**
  * `/yield` reply and the opt-in push (YD3). Every number comes from kd.yield.v1, every reason and note from
  * `messages`. A high-risk council leads the message: a proposal is only as safe as the council that votes on it.
@@ -201,7 +212,7 @@ export function renderYield(
   lang: Lang,
   r: KdYieldReport,
   council: KdReport["summary"] | null,
-  opts: { update?: boolean; watching?: boolean; dashboardUrl?: string } = {},
+  opts: { update?: boolean; watching?: boolean; dashboardUrl?: string; advice?: KdYieldAdvice | null } = {},
 ): Outgoing {
   const vi = lang === "vi";
   const net = r.chain.network;
@@ -231,14 +242,17 @@ export function renderYield(
 
   lines.push("", vi ? "Đề xuất:" : "Suggestion:");
   if (r.suggestions.length === 0) lines.push(vi ? "- Chưa có đề xuất nào." : "- No suggestion right now.");
-  for (const s of r.suggestions.slice(0, MAX_LINES)) {
+  const advice = opts.advice ?? null;
+  for (const { suggestion: s, reason } of orderSuggestions(r, advice).slice(0, MAX_LINES)) {
     const o = r.opportunities.find((x) => x.id === s.opportunity_id);
     const h = r.holdings.find((x) => x.token_id === s.token_id);
     if (o === undefined || h === undefined) continue;
     const max = fmtUnits(s.max_amount, h.decimals);
     lines.push(vi ? `- Gửi ${o.symbol} vào Rhea Lend: APR ${pct(o.apr)}, tối đa ${max}` : `- Supply ${o.symbol} on Rhea Lend: ${pct(o.apr)} APR, up to ${max}`);
     for (const w of o.warnings) lines.push(`  ⚠️ ${YIELD_WARNING_TEXT[w][lang]}`);
+    if (reason !== null) lines.push(`  ${reason[lang]}`);
   }
+  if (r.suggestions.length > 0 && advice !== null) lines.push(adviceLine(lang, advice));
 
   const reference = r.opportunities.filter((o) => !o.executable);
   if (reference.length > 0) {

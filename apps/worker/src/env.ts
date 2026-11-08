@@ -65,4 +65,9 @@ export interface Env {
    * a council scan and one send per chat, so 1 keeps a cycle well under the free plan's 50. Watched DAOs take turns.
    */
   MAX_YIELD_DAOS_PER_RUN?: string;
+  /**
+   * Secret (YD2, ADR 0004). NEAR AI Cloud key for the yield model step. Unset: suggestions keep the rule order.
+   * Only the yield job and the rate-limited bot commands spend it; open /mcp serves cached advice only.
+   */
+  NEAR_AI_API_KEY?: string;
 }

@@ -5,6 +5,7 @@ import type { Env } from "../env.ts";
 import { councilStatus, scanYield } from "../core.ts";
 import { getYieldTop, saveYieldTop, touchYieldChecked, watchedYieldDaos, yieldChatsFor, type YieldTop } from "../store/yield.ts";
 import { renderYield } from "../telegram/render.ts";
+import { yieldAdvice } from "../yield/agent.ts";
 import { alertLang, renderFor, sendToChats } from "./deliver.ts";
 import { intVar, type JobResult } from "./proposals.ts";
 
@@ -65,9 +66,13 @@ export async function runYieldJob(env: Env, only?: string): Promise<JobResult> {
       await saveYieldTop(env.DB, target, network, next);
       continue;
     }
-    // Only on a push: a council scan costs a subrequest per member.
+    // Only on a push: a council scan costs a subrequest per member, and the model runs only here, never on a quiet
+    // cycle (plan Y20).
     const council = await councilStatus({ target, network }, env);
-    const message = renderFor(alertLang(env), (l) => renderYield(l, report, council, { update: true, ...(env.DASHBOARD_URL && { dashboardUrl: env.DASHBOARD_URL }) }));
+    const advice = await yieldAdvice(report, env, () => null);
+    const message = renderFor(alertLang(env), (l) =>
+      renderYield(l, report, council, { update: true, advice, ...(env.DASHBOARD_URL && { dashboardUrl: env.DASHBOARD_URL }) }),
+    );
     const sent = await sendToChats(env.DB, token, alertId, message, chats);
     if (sent.sent > 0) result.alerts_sent += 1;
     result.errors.push(...sent.errors);

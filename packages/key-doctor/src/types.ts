@@ -520,6 +520,45 @@ export interface KdYieldReport {
 }
 
 // ---------------------------------------------------------------------------
+// kd.yield_advice.v1 (yield plan YD2): the order of a report's suggestions, with reasons. A new contract next to
+// kd.yield.v1, which stays unchanged: code still owns every number and the report itself.
+// ---------------------------------------------------------------------------
+
+/** Why the rule order is shown instead of a model order. */
+export type YieldAdviceFallback =
+  /** NEAR_AI_API_KEY is not set. */
+  | "NO_KEY"
+  /** Every model on the chain failed: error, timeout, or output that did not pass validateAdvice. */
+  | "MODEL_FAILED"
+  /** The model-call cap for this Worker was reached. */
+  | "BUSY"
+  /** A path that never calls the model (open /mcp) found no fresh cached advice. */
+  | "NO_CACHE";
+
+export interface YieldAdviceItem {
+  opportunity_id: string;
+  /** AI-assisted text, or null when the model gave none or validateAdvice dropped it (a number not in the evidence). */
+  reason: { vi: string; en: string } | null;
+}
+
+export interface KdYieldAdvice {
+  schema_version: "kd.yield_advice.v1";
+  generated_at: string;
+  dao: string;
+  network: Network;
+  by: "model" | "rules";
+  /** A model on the TEE list, null for the rule order. */
+  model: string | null;
+  /** The NEAR AI response id, for GET /v1/signature/{id}. */
+  generation_id: string | null;
+  fallback: YieldAdviceFallback | null;
+  /** The suggestions this advice was made for; adviceFresh compares them with a newer report. */
+  basis: { opportunity_id: string; apr: number; max_amount: string }[];
+  /** Every suggestion of the report, exactly once, in the order to show. */
+  items: YieldAdviceItem[];
+}
+
+// ---------------------------------------------------------------------------
 // Library options (§7)
 // ---------------------------------------------------------------------------
 

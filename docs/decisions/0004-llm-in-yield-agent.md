@@ -1,7 +1,7 @@
 # 0004 — LLM in the yield agent only
 
 - **Date**: 2026-11-04
-- **Status**: Accepted again 2026-11-08. It was accepted on 2026-11-04 and deferred the same day (`docs/final-idea.md` §16, B-Q9). On 2026-11-08 the owner revived the yield agent for the hackathon with an LLM step, a proposal builder, mainnet rates read and testnet execution, and a 15-minute check (yield plan Y17–Y20). Nothing in this ADR is built yet. Until YD2 ships, the no-LLM rule still holds in practice.
+- **Status**: Accepted again 2026-11-08. It was accepted on 2026-11-04 and deferred the same day (`docs/final-idea.md` §16, B-Q9). On 2026-11-08 the owner revived the yield agent for the hackathon with an LLM step, a proposal builder, mainnet rates read and testnet execution, and a 15-minute check (yield plan Y17–Y20). YD2 built the model step on 2026-11-08 (`apps/worker/src/yield/agent.ts`, `packages/key-doctor/src/yield/advice.ts`); it is off until the Worker has `NEAR_AI_API_KEY`, and the live model compare and TEE verifier run are still pending.
 - **Deciders**: owner, 2026-11-04 (will use an LLM for the yield agent)
 - **Story**: [yield agent plan](../stories/epics/yield/plan.md)
 
