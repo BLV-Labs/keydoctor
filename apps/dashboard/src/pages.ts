@@ -9,7 +9,7 @@ import { alertLines, watchCommand } from "./watch.ts";
 export const EXAMPLE_DAO = "kdoncall.sputnik-v2.testnet";
 export const EXAMPLE_ACCOUNT = "kdoncall-p.testnet";
 
-const NAV: ReadonlyArray<readonly [Page, string]> = [["check", "Key Check"], ["budget", "Agent Budget"]];
+const NAV: ReadonlyArray<readonly [Page, string]> = [["check", "Key Check"], ["my-agents", "My Agents"], ["budget", "Agent Budget"]];
 /** Pages the header does not list stay one click away in the footer. */
 const FOOTER_NAV: ReadonlyArray<readonly [Page, string]> = [["mcp", "For AI agents (MCP)"]];
 

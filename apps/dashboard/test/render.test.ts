@@ -324,12 +324,12 @@ describe("proposal list (C7)", () => {
 });
 
 describe("nav and the alerts / MCP pages", () => {
-  const nav = (page: "check" | "budget") => renderLayout(html`<p>x</p>`, "testnet", page).value.match(/<nav[\s\S]*?<\/nav>/)![0];
+  const nav = (page: "check" | "budget" | "my-agents") => renderLayout(html`<p>x</p>`, "testnet", page).value.match(/<nav[\s\S]*?<\/nav>/)![0];
 
-  it("has Key Check and Agent Budget, marks only the current page, and no longer links out to t.me", () => {
-    for (const [page, label] of [["check", "Key Check"], ["budget", "Agent Budget"]] as const) {
+  it("has Key Check, My Agents and Agent Budget, marks only the current page, and no longer links out to t.me", () => {
+    for (const [page, label] of [["check", "Key Check"], ["my-agents", "My Agents"], ["budget", "Agent Budget"]] as const) {
       const n = nav(page);
-      assert.equal((n.match(/<a /g) ?? []).length, 2);
+      assert.equal((n.match(/<a /g) ?? []).length, 3);
       assert.equal((n.match(/aria-current="page"/g) ?? []).length, 1);
       assert.match(n, new RegExp(`aria-current="page">${label}<`));
       assert.ok(!n.includes("t.me"));

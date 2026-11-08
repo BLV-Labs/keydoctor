@@ -4,6 +4,9 @@ Static mockups for two new dashboard screens. They link the real `apps/dashboard
 `docs/design/dashboard/tokens.css`, so they look like the live dashboard. `mockup.css` holds only the classes these
 screens add (prefix `mk-`); `mockup.js` only toggles the theme and opens the drawers. All data is sample testnet data.
 
+Both screens are built (2026-11-09): `apps/dashboard/src/agents-*.ts` and `yield-*.ts`, styles copied into
+`apps/dashboard/public/styles.css` without the `mk-` prefix. The mockups stay as the design reference.
+
 Open them from the repo root (`python3 -m http.server 8791`, launch config `design-mockups`):
 
 - http://localhost:8791/docs/design/agents/MyAgents.html

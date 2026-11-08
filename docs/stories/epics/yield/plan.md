@@ -221,6 +221,8 @@ export function validateAdvice(raw: unknown, candidates: YieldOpportunity[]): Yi
 
 **Why.** It turns a suggestion into a council vote without a new signer.
 
+**Built 2026-11-09** (branch `feat/yield-my-agents`): `yield-proposals.ts` (testnet allowlist: `contract.1638481328.burrow.testnet` and `usdc.fakes.testnet`, with the args from `spike.sh`; register, supply, withdraw all; supply capped at the free balance), `yield-read.ts`, `yield-view.ts`, and the My Agents page (`agents-read.ts`, `agents-view.ts`). Council DAOs come from the Guard factory's `list_guards` plus Yield DAOs remembered in the browser. Not done: no proposal signed from the dashboard yet. The first dashboard supply and withdraw that pass on testnet also serve as the YD0 proof. Mainnet stays off (YD4b).
+
 ### YD4b: mainnet builder
 
 **What.** After YD4, add the mainnet allowlist from Y13. The owner runs a tiny supply and a withdraw on the real DAO, then records the args that differed from testnet. Tx hashes and the DAO name stay out of the repo.

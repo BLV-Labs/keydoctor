@@ -3,7 +3,7 @@ import { resolveTarget, type Network } from "key-doctor";
 export const BOT_USERNAME = "KeyDoctorOnCallBot";
 export const BOT_URL = `https://t.me/${BOT_USERNAME}`;
 
-export type Page = "check" | "mcp" | "guard" | "budget";
+export type Page = "check" | "mcp" | "guard" | "budget" | "my-agents" | "yield";
 
 /** What a link asks the page to open once, after it has painted (docs/final-idea.md §10.1, §10.5). */
 export type RouteLink =
@@ -21,7 +21,7 @@ export interface Route {
   invalid: string | null;
   /** The DAO whose council the account was opened from. */
   from: string | null;
-  /** The Agent Guard or Agent Budget page's DAO (`?page=guard&dao=`, `?page=budget&dao=`), or null. */
+  /** The Agent Guard, Agent Budget or Yield agent page's DAO (`?page=guard&dao=`, `?page=budget&dao=`, `?page=yield&dao=`), or null. */
   dao: string | null;
   view: "report" | "cleanup";
   level: "safe" | "full";
@@ -74,7 +74,7 @@ export function parseRoute(search: string): Route {
   const level = params.get("level") === "full" ? "full" : "safe";
   const network = parseNetwork(params.get("network"));
   const p = params.get("page");
-  const daoRaw = p === "guard" || p === "budget" || p === "agents" ? params.get("dao") : null;
+  const daoRaw = p === "guard" || p === "budget" || p === "agents" || p === "yield" ? params.get("dao") : null;
   const dao = daoRaw === null ? null : normalize(daoRaw);
   const page = raw === null ? pageOf(p, dao) : "check";
   const link = raw === null ? parseLink(p, params) : null;
@@ -103,7 +103,7 @@ export function parseRoute(search: string): Route {
  * Agent Budget. `?page=guard&dao=` stays the council page: the README documents it and a many-member DAO has no other.
  */
 function pageOf(p: string | null, dao: string | null): Page {
-  if (p === "mcp" || p === "budget") return p;
+  if (p === "mcp" || p === "budget" || p === "my-agents" || p === "yield") return p;
   if (p === "agents") return "budget";
   if (p === "guard") return dao === null ? "budget" : "guard";
   return "check";
@@ -157,6 +157,11 @@ export function guardHref(dao: string): string {
 /** The Agent Budget page for one DAO. */
 export function budgetHref(dao: string): string {
   return `?${new URLSearchParams({ page: "budget", dao }).toString()}`;
+}
+
+/** The Yield agent page for one DAO. */
+export function yieldHref(dao: string): string {
+  return `?${new URLSearchParams({ page: "yield", dao }).toString()}`;
 }
 
 /** The full "How your agent works" guide. */
