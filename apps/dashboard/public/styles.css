@@ -435,3 +435,45 @@ li:last-child > .member-row { border-bottom: 0; }
   .activity-text { order: 2; flex: 1 1 100%; }
   .activity-time { order: 3; flex: 1 1 100%; min-width: 0; text-align: left; }
 }
+
+/* My Agents: "New agent" menu, agents table, Your DAOs */
+.menu { position: relative; }
+.menu > summary { list-style: none; cursor: pointer; }
+.menu > summary::-webkit-details-marker { display: none; }
+.pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: min(320px, calc(100vw - 32px)); padding: 6px; box-shadow: var(--kd-shadow-dialog); display: flex; flex-direction: column; }
+.pop-item { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: var(--kd-radius-md); color: inherit; text-decoration: none; }
+.pop-item:hover, .pop-item:focus-visible { background: var(--kd-surface-muted); }
+.agents { min-width: 860px; }
+.agents .who { align-items: flex-start; }
+.who-text { display: flex; flex-direction: column; min-width: 0; }
+.block { display: block; }
+.agents .block { white-space: nowrap; }
+.tag-yield { color: var(--kd-info); background: var(--kd-info-bg); }
+.dao-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 4px 16px; padding: 10px 20px; border-top: 1px solid var(--kd-border); }
+.dao-actions { display: flex; gap: 8px; }
+@media (max-width: 640px) {
+  .dao-row { grid-template-columns: 1fr; }
+}
+
+/* Yield agent: suggestion, rates */
+.sugg-list { border-top: 1px solid var(--kd-border); }
+.sugg { display: flex; align-items: flex-start; gap: 12px; padding: 14px 20px; }
+.rank { flex: none; width: 28px; height: 28px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: var(--kd-fs-sm); color: var(--kd-primary); background: var(--kd-primary-tint); }
+.sugg-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.sugg-top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.apr { font-size: var(--kd-fs-lg); font-weight: 700; color: var(--kd-text); }
+.banner-note { background: var(--kd-info-bg); border-color: var(--kd-info-border); }
+.banner-note svg { color: var(--kd-info); }
+.pad-row-banner { margin: 0 20px 16px; }
+@media (max-width: 640px) {
+  .sugg { flex-wrap: wrap; }
+  .sugg > .btn { margin-left: 40px; }
+}
+.rates { min-width: 760px; }
+.rejected { border-top: 1px solid var(--kd-border); }
+.rejected > summary { display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 20px; cursor: pointer; list-style: none; font-weight: 600; }
+.rejected > summary::-webkit-details-marker { display: none; }
+.rejected > summary svg { color: var(--kd-text-muted); transition: transform 0.15s; }
+.rejected[open] > summary svg { transform: rotate(90deg); }
+.rej { display: flex; flex-wrap: wrap; gap: 2px 12px; padding: 8px 20px; border-top: 1px solid var(--kd-border); }
+.rej > .strong { min-width: 64px; }

@@ -9,7 +9,7 @@ import { PAGE_SIZE, pageOf, parsePaging, type Paging } from "./paging.ts";
 import { renderKeyDetail } from "./key-detail.ts";
 import { PROPOSALS_ID, PROPOSALS_LIST, renderProposals } from "./proposals-view.ts";
 import { renderAccount, renderCouncil } from "./report.ts";
-import { budgetHref, guardHref, homeHref, parseRoute, resolveInput, routeHref, settledHref, suffixNetwork, type Page, type Route, type RouteLink } from "./route.ts";
+import { budgetHref, guardHref, homeHref, parseRoute, resolveInput, routeHref, settledHref, suffixNetwork, yieldHref, type Page, type Route, type RouteLink } from "./route.ts";
 import { renderAgentGuide } from "./agent-guide.ts";
 import { yoctoToNear } from "./format.ts";
 import { formToInput, validateGuardForm, type GuardFormError } from "./guard-form.ts";
@@ -66,6 +66,11 @@ import {
 import { readGuardDao, type GuardDao } from "./guard-read.ts";
 import { renderGuardCreate, renderGuardDao, renderGuardLoading, renderGuardPreview, renderGuardStart, renderGuardSubmitted, type GuardPreview } from "./guard-view.ts";
 import { avatar } from "./ui.ts";
+import { readMyAgents } from "./agents-read.ts";
+import { agentMatches, renderMyAgents, renderMyAgentsError, renderMyAgentsLoading, renderMyAgentsSignedOut, type AgentFilter } from "./agents-view.ts";
+import { allowedYieldKind, registerProposal, supplyProposal, tokenRaw, withdrawAllProposal, YIELD_ALLOWLIST, YieldProposalError } from "./yield-proposals.ts";
+import { councilAccounts, readYield, rememberYieldDao, type YieldLive } from "./yield-read.ts";
+import { renderYield, renderYieldLoading, renderYieldPanel, renderYieldStart, type YieldPanel } from "./yield-view.ts";
 import { renderWatchDialog, renderWatchLinks } from "./watch.ts";
 import { isWalletId, walletLabel, type WalletId } from "./wallets.ts";
 import { connectedAccount, forgetConnected, lockedNotice, rememberConnected, viewerRole, walletBar, type Role } from "./session.ts";
@@ -228,6 +233,11 @@ const viewerRoleNow = (): Role => viewerRole(connected?.accounts ?? null, lastRe
  *  Also shows the wallet name and Disconnect in place of Connect Wallet while a wallet is connected. */
 function syncWallet(): void {
   restoreConnected(currentNetwork());
+  // My Agents lists what the connected accounts sit on: a new wallet means a new list.
+  const route = parseRoute(location.search);
+  const shown = root.querySelector<HTMLElement>("[data-agents-for]")?.dataset.agentsFor ?? null;
+  const now = (connected?.accounts ?? []).join(",");
+  if (route.target === null && route.page === "my-agents" && shown !== null && shown !== now) void render(false);
   const role = viewerRoleNow();
   const id = lastReport?.target.id ?? "";
   for (const b of root.querySelectorAll<HTMLButtonElement>('[data-action="delete-key"]')) {
@@ -273,6 +283,14 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
   }
   if (route.target === null && route.page === "budget") {
     await renderBudgetPage(route.dao, focusMain, seq, route.link, route.help);
+    return;
+  }
+  if (route.target === null && route.page === "yield") {
+    await renderYieldPage(route.dao, focusMain, seq);
+    return;
+  }
+  if (route.target === null && route.page === "my-agents") {
+    await renderMyAgentsPage(focusMain, seq);
     return;
   }
   if (route.target === null && route.page === "mcp") {
@@ -589,6 +607,177 @@ function pauseBudget(button: HTMLButtonElement): void {
       button.disabled = false;
       notDone(status, e);
     });
+}
+
+/** The Yield agent page's last read. */
+let yieldState: YieldLive | null = null;
+
+const yieldNetwork = (dao: string): Network => suffixNetwork(dao) ?? "testnet";
+const yieldStatus = (): HTMLElement | null => document.getElementById("yield-status");
+
+/** The Yield agent page: the DAO form, or the DAO's treasury, Rhea Lend rates and yield proposals read live. */
+async function renderYieldPage(dao: string | null, focusMain: boolean, seq: number): Promise<void> {
+  const title = "Yield agent · Key Doctor";
+  yieldState = null;
+  if (dao === null) {
+    paint(renderYieldStart("", null), title, focusMain, "testnet", "my-agents");
+    return;
+  }
+  const network = yieldNetwork(dao);
+  paint(renderYieldLoading(dao), title, focusMain, network, "my-agents");
+  try {
+    const live = await readYield(dao, network);
+    if (seq !== scanSeq) return;
+    yieldState = live;
+    rememberYieldDao(dao);
+    paint(renderYield(live, network), `${dao} · Yield agent`, false, network, "my-agents");
+  } catch (e) {
+    if (seq !== scanSeq) return;
+    if (!isKdError(e)) console.error("yield read failed", { dao, error: e });
+    const why = isKdError(e) ? `${dao}: ${e.kd.message.en}` : `${dao} could not be read right now. Try again.`;
+    paint(renderYieldStart(dao, why), title, false, network, "my-agents");
+  }
+}
+
+function openYieldPanel(panel: YieldPanel, trigger: HTMLElement, error: string | null = null, amount = ""): void {
+  const state = yieldState;
+  const box = document.getElementById("yield-action") as HTMLDialogElement | null;
+  if (state === null || box === null) return;
+  const content = renderYieldPanel(panel, state, yieldNetwork(state.report.dao), error, amount);
+  if (content === null) return;
+  box.innerHTML = content.value;
+  dialogTrigger = trigger;
+  if (!box.open) box.showModal();
+  box.querySelector<HTMLElement>("input")?.focus();
+}
+
+/** The proposal for a drawer, built only from the allowlist. A typed amount that does not fit reopens the drawer with why. */
+function yieldProposalFor(panel: YieldPanel, amountText: string): AddProposalArgs | string {
+  const state = yieldState;
+  if (state === null) return "Reload the page first.";
+  const network = yieldNetwork(state.report.dao);
+  const token = YIELD_ALLOWLIST[network]?.tokens[0];
+  try {
+    if (panel === "register") return registerProposal(network);
+    if (token === undefined) return `Yield proposals are not open on ${network} yet.`;
+    if (panel === "withdraw") return withdrawAllProposal(network, token.token_id);
+    const raw = tokenRaw(amountText, token.decimals);
+    if (raw === null) return `Enter an amount like 12.5, with at most ${token.decimals} decimals.`;
+    const available = state.report.holdings.find((h) => h.token_id === token.token_id)?.available ?? null;
+    if (available === null) return "The DAO's available balance could not be read. Reload and try again.";
+    return supplyProposal(network, token.token_id, raw, available);
+  } catch (e) {
+    if (e instanceof YieldProposalError) return e.message;
+    throw e;
+  }
+}
+
+/** One signature: the connected council member adds the proposal with the DAO's bond. It moves no funds. */
+function signYieldProposal(panel: YieldPanel, amountText: string, trigger: HTMLElement): void {
+  const state = yieldState;
+  const status = yieldStatus();
+  if (state === null || status === null) return;
+  const built = yieldProposalFor(panel, amountText);
+  if (typeof built === "string") {
+    openYieldPanel(panel, trigger, built, amountText);
+    return;
+  }
+  (document.getElementById("yield-action") as HTMLDialogElement | null)?.close();
+  if (connected === null) {
+    statusWithButton(status, "Connect a council member's wallet first.", "open-wallet", "Connect Wallet");
+    return;
+  }
+  const policy = state.policy;
+  const account = policy === null ? undefined : connected.accounts.find((a) => missingProposePermissions(policy, a, ["call"]).length === 0);
+  if (policy === null || account === undefined) {
+    status.textContent =
+      policy === null
+        ? "The DAO's policy could not be read, so the bond is unknown. Reload and try again."
+        : `${connected.accounts[0] ?? "This account"} may not add function-call proposals to ${state.report.dao}. Switch to a council member's account.`;
+    return;
+  }
+  const { walletId } = connected;
+  const dao = state.report.dao;
+  status.textContent = `Waiting for ${walletLabel(walletId)}. Check the transaction there before you approve.`;
+  import("./wallet.ts")
+    .then((w) => w.signAddProposals(account, yieldNetwork(dao), dao, policy.proposal_bond, [built], walletId, (t) => (status.textContent = t)))
+    .then(() => statusWithButton(status, "Proposal added. The council votes on it under Council votes; funds move only when it passes.", "rescan", "Reload"))
+    .catch((e: unknown) => notDone(status, e));
+}
+
+/** Approve or Reject a yield proposal: re-read it first and stop if it is no longer what the page showed. */
+function voteYield(button: HTMLButtonElement): void {
+  const status = yieldStatus();
+  const state = yieldState;
+  const id = Number(button.dataset.id);
+  const action: VoteAction = button.dataset.vote === "VoteReject" ? "VoteReject" : "VoteApprove";
+  const shown = state?.proposals?.find((p) => p.id === id);
+  if (status === null || state === null || shown === undefined) return;
+  if (connected === null) {
+    statusWithButton(status, "Connect a council member's wallet first.", "open-wallet", "Connect Wallet");
+    return;
+  }
+  const account = state.policy === null ? undefined : councilAccounts(state.policy, connected.accounts)[0];
+  if (account === undefined) {
+    status.textContent = `${connected.accounts[0] ?? "This account"} is not on ${state.report.dao}'s council.`;
+    return;
+  }
+  const { walletId } = connected;
+  const dao = state.report.dao;
+  const network = yieldNetwork(dao);
+  button.disabled = true;
+  status.textContent = "Checking the proposal on the chain…";
+  confirmProposal({ description: shown.description, kind: shown.kind }, id, (n) => readProposal(budgetRpc(network), dao, n))
+    .then((confirmed) => {
+      if (action === "VoteApprove" && !allowedYieldKind(network, confirmed.kind)) {
+        throw new Error(`Proposal #${id} is not a call this page builds. Check it in the DAO before you vote.`);
+      }
+      status.textContent = `Waiting for ${walletLabel(walletId)}. ${action === "VoteApprove" ? "Approve" : "Reject"} proposal #${id}.`;
+      return import("./wallet.ts")
+        .then((w) => w.signActProposal(account, network, dao, actProposalArgs(confirmed, action), walletId, (t) => (status.textContent = t)))
+        .then(() => statusAfterVote(network, dao, id))
+        .then((after) => statusWithButton(status, voteResultText(id, action, confirmed.kind, after), "rescan", "Reload"));
+    })
+    .catch((e: unknown) => {
+      button.disabled = false;
+      notDone(status, e);
+    });
+}
+
+/** My Agents: needs a connected wallet, then reads every council DAO of its accounts. */
+async function renderMyAgentsPage(focusMain: boolean, seq: number): Promise<void> {
+  const network = budgetNetwork();
+  const title = "My Agents · Key Doctor";
+  const accounts = connected?.accounts ?? [];
+  if (accounts.length === 0) {
+    paint(renderMyAgentsSignedOut(), title, focusMain, network, "my-agents");
+    return;
+  }
+  paint(renderMyAgentsLoading(accounts), title, focusMain, network, "my-agents");
+  try {
+    const data = await readMyAgents(accounts, BUDGET_READ_FACTORY, network);
+    if (seq !== scanSeq) return;
+    paint(renderMyAgents(data, accounts), title, false, network, "my-agents");
+  } catch (e) {
+    if (seq !== scanSeq) return;
+    console.error("my agents read failed", { error: e });
+    const why =
+      e instanceof Error && e.message === "FACTORY_UNREADABLE"
+        ? `Could not read the Guard factory ${BUDGET_READ_FACTORY} right now.`
+        : "Could not read your DAOs right now.";
+    paint(renderMyAgentsError(why, accounts), title, false, network, "my-agents");
+  }
+}
+
+/** Filter chips hide rows on the page; nothing is read again. */
+function filterAgents(chip: HTMLElement): void {
+  const filter = chip.dataset.filter as AgentFilter | undefined;
+  if (filter === undefined) return;
+  for (const c of document.querySelectorAll<HTMLElement>('[data-action="agents-filter"]')) c.setAttribute("aria-pressed", String(c === chip));
+  for (const tr of document.querySelectorAll<HTMLElement>("tr[data-agent-kind]")) {
+    const row = { kind: tr.dataset.agentKind, status: tr.dataset.agentStatus } as Parameters<typeof agentMatches>[0];
+    tr.hidden = !agentMatches(row, filter);
+  }
 }
 
 function openAlerts(trigger: HTMLElement): void {
@@ -1468,6 +1657,24 @@ root.addEventListener("click", (event) => {
     case "rescan":
       void render(false);
       break;
+    case "yield-open":
+      openYieldPanel(el.dataset.panel === "withdraw" ? "withdraw" : el.dataset.panel === "register" ? "register" : "supply", el);
+      break;
+    case "yield-max": {
+      const input = document.getElementById("yp-amount") as HTMLInputElement | null;
+      if (input !== null) input.value = el.dataset.amount ?? "";
+      input?.focus();
+      break;
+    }
+    case "yield-sign":
+      signYieldProposal(el.dataset.panel === "register" ? "register" : "withdraw", "", el);
+      break;
+    case "yield-vote":
+      voteYield(el as HTMLButtonElement);
+      break;
+    case "agents-filter":
+      filterAgents(el);
+      break;
     case "guard-sign":
       signGuardProposals(el as HTMLButtonElement);
       break;
@@ -1647,6 +1854,16 @@ root.addEventListener("submit", (event) => {
   if (form.id === "budget-dao-form") {
     event.preventDefault();
     navigate(budgetHref(String(new FormData(form).get("dao") ?? "").trim()));
+    return;
+  }
+  if (form.id === "yield-dao-form") {
+    event.preventDefault();
+    navigate(yieldHref(String(new FormData(form).get("dao") ?? "").trim()));
+    return;
+  }
+  if (form.id === "yield-panel-form") {
+    event.preventDefault();
+    signYieldProposal("supply", String(new FormData(form).get("amount") ?? ""), form);
     return;
   }
   if (form.id === "budget-panel-form") {
