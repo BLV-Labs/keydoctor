@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 import ts from "typescript";
 import { RULESET_VERSION, scanAccount } from "../src/index.ts";
 import * as T from "../src/rules/thresholds.ts";
+import * as Y from "../src/yield/thresholds.ts";
 import { installFetch, world, ed } from "./support/stub.ts";
 
 const SRC = join(import.meta.dirname, "..", "src");
@@ -44,8 +45,13 @@ describe("S1-AC7: source invariants", () => {
       if (typeof v === "number" && v >= 3) values.add(v);
     }
     for (const x of Object.values(T.GENESIS_HEIGHT)) values.add(x);
+    // The yield agent keeps its own thresholds file (its own ruleset version); the same rule holds for it.
+    for (const v of [...Object.values(Y), ...Object.values(Y.YIELD_LIMITS)]) {
+      if (typeof v === "number" && v >= 3) values.add(v);
+    }
+    assert.ok(values.has(250_000) && values.has(40));
     assert.ok(values.has(730) && values.has(45) && values.has(15_000) && values.has(9_820_210));
-    for (const f of ALL.filter((x) => rel(x) !== "rules/thresholds.ts")) {
+    for (const f of ALL.filter((x) => !["rules/thresholds.ts", "yield/thresholds.ts"].includes(rel(x)))) {
       const sf = ts.createSourceFile(f, readFileSync(f, "utf8"), ts.ScriptTarget.Latest, true);
       const visit = (n: ts.Node): void => {
         if (!ts.isNumericLiteral(n)) return void ts.forEachChild(n, visit);

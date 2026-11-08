@@ -157,6 +157,13 @@ export function availableAmount(balance: string, openTransfers: string[]): strin
 }
 ```
 
+**Built 2026-11-08** (`src/yield/`: `rhea.ts`, `vault.ts`, `thresholds.ts`, `messages.ts`; tests in `test/yield.test.ts`). Changes against the sketch above:
+- `readDefiLlama` is not built. Y20 keeps DefiLlama out of the Worker, so the second source is the Rhea API (`api.burrow.finance/list_token_data`, ~9 KB). It also gives the price: the on-chain Pyth prices for USDC and USDt were months old on 2026-11-08, and `priceoracle.near` returned none.
+- The floors held on live data: native USDC TVL $12.8M, liquidity $1.86M, price 0.9998, APR 8.96% on both sources; USDt $12.6M, $1.98M, 0.9986, 7.28%. Liquidity is supplied minus borrowed and ignores the reserve, which is conservative.
+- `YIELD_PUSH_APR_DELTA` = 0.005 (0.5 percentage point) for `shouldPushYield`.
+- Open Transfers come from the newest 40 proposals (a limitation says so when there are more). A failed or unparseable read leaves `available` null and suggests nothing.
+- Mainnet captures sit in `test/yield-data.ts`, not `fixtures/`, because `fixtures/` holds testnet names only.
+
 ### YD2: LLM step
 
 **What.** `apps/worker/src/yield/agent.ts` calls NEAR AI with a JSON schema, then `validateAdvice` applies §2. A new D1 table `yield_suggestions` caches one report per DAO per day. It does not touch `snapshots` or `subscriptions`. The first live test runs the same candidates through Qwen and DeepSeek and settles Y5. `scripts/yield-setup/verify-tee.sh` runs `nearai-cloud-verifier` on one real call and writes `docs/yield-tee-verify.md`, so a judge can rerun it.

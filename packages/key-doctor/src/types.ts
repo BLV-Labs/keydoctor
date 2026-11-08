@@ -429,6 +429,97 @@ export interface KdBudgetAlert {
 }
 
 // ---------------------------------------------------------------------------
+// kd.yield.v1 (yield plan YD1). A new contract: no existing schema changes.
+// ---------------------------------------------------------------------------
+
+/** Why a lending row is not a candidate. Floors (TVL to SOURCE_GAP) apply on mainnet only. */
+export type YieldRejectReason =
+  | "NOT_ALLOWLISTED"
+  | "DEPOSIT_CLOSED"
+  | "WITHDRAW_CLOSED"
+  | "PRICE_UNKNOWN"
+  | "PRICE_GAP"
+  | "TVL_LOW"
+  | "LIQUIDITY_LOW"
+  | "SOURCE_MISSING"
+  | "SOURCE_GAP";
+
+export type YieldWarning = "APR_HIGH";
+
+export interface YieldSource {
+  name: "rhea-lend" | "rhea-api";
+  /** Supply APR as a fraction (0.07 = 7%). */
+  apr: number;
+  at: string;
+}
+
+export interface YieldOpportunity {
+  /** `rhea-lend:<token_id>:supply` */
+  id: string;
+  protocol: "rhea-lend";
+  network: Network;
+  token_id: string;
+  /** From the code allowlist, never from chain or API text. */
+  symbol: string;
+  /** Supply APR from the Rhea Lend contract, a fraction. */
+  apr: number;
+  apy_reward: number | null;
+  tvl_usd: number | null;
+  liquidity_usd: number | null;
+  price_usd: number | null;
+  sources: YieldSource[];
+  /** True only when the row is on the DAO's network, so a proposal can act on it. */
+  executable: boolean;
+  /** Testnet rates and prices mean nothing: such rows skip the floors and must be shown as test data. */
+  test_data: boolean;
+  warnings: YieldWarning[];
+}
+
+export interface YieldRejected {
+  id: string;
+  network: Network;
+  token_id: string;
+  reasons: YieldRejectReason[];
+}
+
+export interface YieldHolding {
+  token_id: string;
+  symbol: string;
+  decimals: number;
+  /** Raw token units; null when the balance could not be read. */
+  balance: string | null;
+  /** Open (InProgress) Transfer proposals in this token. */
+  open_transfers: { proposal_id: number; amount: string }[];
+  /** balance minus open_transfers, never below 0; null when either could not be read. */
+  available: string | null;
+  error: string | null;
+}
+
+/** A supply the council could vote on. The member enters the amount, at most `max_amount`. */
+export interface YieldSuggestion {
+  opportunity_id: string;
+  token_id: string;
+  max_amount: string;
+}
+
+export interface KdYieldReport {
+  schema_version: "kd.yield.v1";
+  yield_ruleset_version: string;
+  generated_at: string;
+  chain: { network: Network; block_height: number; block_timestamp: string };
+  dao: string;
+  holdings: YieldHolding[];
+  /** Candidates that passed the filter, highest APR first (the rule order). */
+  opportunities: YieldOpportunity[];
+  rejected: YieldRejected[];
+  suggestions: YieldSuggestion[];
+  /** User-facing notes; the bot and the dashboard reuse them verbatim. */
+  notes: { vi: string; en: string }[];
+  errors: string[];
+  limitations: string[];
+}
+
+// ---------------------------------------------------------------------------
 // Library options (§7)
 // ---------------------------------------------------------------------------
 
