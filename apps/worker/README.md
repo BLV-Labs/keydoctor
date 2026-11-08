@@ -2,9 +2,9 @@
 
 The keeper (ADR 0005, GĐ29) calls Guard plan steps that are due, on testnet only. It pays gas and decides nothing: every check is in the Guard. Its code is in `src/jobs/keeper.ts` and `src/keeper/near.ts`.
 
-It runs on testnet since 2026-11-06 as `keydoctor-keeper.testnet`, every 15 minutes. No Budget exists yet, so it has never executed a step: only a stub chain proves that path. Without the setup below it stays off and touches neither RPC nor D1.
+It runs on testnet since 2026-11-06 as `keydoctor-keeper.testnet`, every 15 minutes. Two Budgets exist since 2026-11-08 (`payroll-1`, `payroll-2`), but neither has a plan, so it has never executed a step: only a stub chain proves that path. Without the setup below it stays off and touches neither RPC nor D1.
 
-It also tells a guardian's `pause` (GĐ28): `pause()` has no proposal for the proposal job to read, so the keeper sends one `budget_owner_action` per pause, on its own cycle. That code is not deployed yet.
+It also tells a guardian's `pause` (GĐ28): `pause()` has no proposal for the proposal job to read, so the keeper sends one `budget_owner_action` per pause, on its own cycle. That code is deployed with the Worker since 2026-11-07; a pause has not been seen live yet.
 
 ## Turn it on (owner)
 
