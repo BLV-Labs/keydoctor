@@ -68,7 +68,7 @@ import { renderGuardCreate, renderGuardDao, renderGuardLoading, renderGuardPrevi
 import { avatar } from "./ui.ts";
 import { readMyAgents } from "./agents-read.ts";
 import { agentMatches, renderMyAgents, renderMyAgentsError, renderMyAgentsLoading, renderMyAgentsSignedOut, type AgentFilter } from "./agents-view.ts";
-import { registerProposal, supplyProposal, tokenRaw, withdrawAllProposal, YIELD_ALLOWLIST, YieldProposalError } from "./yield-proposals.ts";
+import { allowedYieldKind, registerProposal, supplyProposal, tokenRaw, withdrawAllProposal, YIELD_ALLOWLIST, YieldProposalError } from "./yield-proposals.ts";
 import { councilAccounts, readYield, rememberYieldDao, type YieldLive } from "./yield-read.ts";
 import { renderYield, renderYieldLoading, renderYieldPanel, renderYieldStart, type YieldPanel } from "./yield-view.ts";
 import { renderWatchDialog, renderWatchLinks } from "./watch.ts";
@@ -729,6 +729,9 @@ function voteYield(button: HTMLButtonElement): void {
   status.textContent = "Checking the proposal on the chain…";
   confirmProposal({ description: shown.description, kind: shown.kind }, id, (n) => readProposal(budgetRpc(network), dao, n))
     .then((confirmed) => {
+      if (action === "VoteApprove" && !allowedYieldKind(network, confirmed.kind)) {
+        throw new Error(`Proposal #${id} is not a call this page builds. Check it in the DAO before you vote.`);
+      }
       status.textContent = `Waiting for ${walletLabel(walletId)}. ${action === "VoteApprove" ? "Approve" : "Reject"} proposal #${id}.`;
       return import("./wallet.ts")
         .then((w) => w.signActProposal(account, network, dao, actProposalArgs(confirmed, action), walletId, (t) => (status.textContent = t)))

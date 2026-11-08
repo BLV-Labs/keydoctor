@@ -7,7 +7,7 @@ import { html, type Html } from "./html.ts";
 import { icon } from "./icons.ts";
 import { copyRow } from "./pages.ts";
 import { pageHref } from "./route.ts";
-import { RHEA_STORAGE_YOCTO, tokenAmount, YIELD_ALLOWLIST, YIELD_PREFIX, type YieldAllowlist } from "./yield-proposals.ts";
+import { allowedYieldKind, RHEA_STORAGE_YOCTO, tokenAmount, YIELD_ALLOWLIST, YIELD_PREFIX, type YieldAllowlist } from "./yield-proposals.ts";
 import type { YieldLive, YieldProposal } from "./yield-read.ts";
 
 export type YieldPanel = "supply" | "withdraw" | "register";
@@ -168,29 +168,39 @@ const STATUS_PILL: Record<string, Html> = {
   Failed: html`<span class="pill pill-cleanup">Failed</span>`,
 };
 
-function proposalRow(p: YieldProposal, canVote: boolean): Html {
+function proposalRow(p: YieldProposal, network: Network, canVote: boolean): Html {
   const text = p.description.startsWith(YIELD_PREFIX) ? p.description.slice(YIELD_PREFIX.length).trim() : p.description;
   const open = p.status === "InProgress";
   const pill = open ? html`<span class="pill pill-info">${icon.clock()}${String(p.approvals)} approved</span>` : (STATUS_PILL[p.status] ?? html`<span class="pill pill-note">${p.status}</span>`);
-  const votes = open && canVote
+  const allowed = allowedYieldKind(network, p.kind);
+  const warn = allowed ? "" : html`<span class="small activity-why">${icon.alertSmall()} Not a call this page builds (${callText(p.kind)}). Check it in the DAO before you vote.</span>`;
+  const votes = open && canVote && allowed
     ? html`<span class="activity-time actions">
         <button type="button" class="btn btn-danger btn-sm" data-action="yield-vote" data-id="${String(p.id)}" data-vote="VoteReject">Reject</button>
         <button type="button" class="btn btn-primary btn-sm" data-action="yield-vote" data-id="${String(p.id)}" data-vote="VoteApprove">Approve <span class="sig">1 signature</span></button></span>`
     : "";
   return html`<li class="activity-row">
     <span class="activity-status">${pill}</span>
-    <span class="activity-text wrap">#${String(p.id)} ${text}<span class="small muted activity-why">Proposed by <span class="mono">${p.proposer}</span></span></span>
+    <span class="activity-text wrap">#${String(p.id)} ${text}<span class="small muted activity-why">Proposed by <span class="mono">${p.proposer}</span></span>${warn}</span>
     ${votes}
   </li>`;
 }
 
-function votesCard(proposals: YieldProposal[] | null, canVote: boolean): Html {
+/** What the proposal really calls, from its kind (never its description). */
+function callText(kind: Record<string, unknown>): string {
+  const fc = kind.FunctionCall as { receiver_id?: unknown; actions?: Array<{ method_name?: unknown }> } | undefined;
+  if (fc === undefined || typeof fc !== "object" || fc === null) return Object.keys(kind)[0] ?? "unknown kind";
+  const methods = Array.isArray(fc.actions) ? fc.actions.map((a) => String(a?.method_name)).join(", ") : "?";
+  return `${String(fc.receiver_id)}: ${methods}`;
+}
+
+function votesCard(proposals: YieldProposal[] | null, network: Network, canVote: boolean): Html {
   const body =
     proposals === null
       ? html`<p class="pad muted">The DAO's proposals could not be read right now.</p>`
       : proposals.length === 0
         ? html`<p class="pad muted">No yield proposal among the DAO's newest 40.</p>`
-        : html`<ul class="plain-list">${proposals.map((p) => proposalRow(p, canVote))}</ul>`;
+        : html`<ul class="plain-list">${proposals.map((p) => proposalRow(p, network, canVote))}</ul>`;
   return html`<section class="card" aria-labelledby="y-props">
     <div class="b-head"><div><h2 id="y-props" class="b-h">Council votes</h2><p class="small muted">Supply, withdraw and register proposals, newest first.</p></div></div>
     ${body}
@@ -287,7 +297,7 @@ export function renderYield(live: YieldLive, network: Network): Html {
     ${f === null ? "" : tiles(live, f)}
     <p id="yield-status" class="small" role="status"></p>
     <div class="budget-cols">
-      <div class="budget-main">${suggestionCard(r, can.supply)}${ratesCard(r)}${votesCard(live.proposals, can.open)}</div>
+      <div class="budget-main">${suggestionCard(r, can.supply)}${ratesCard(r)}${votesCard(live.proposals, network, can.open)}</div>
       <aside class="budget-side" aria-label="Position and settings">
         ${f === null ? "" : html`${positionCard(live, f, can.withdraw)}${treasuryCard(f)}`}
         ${runsCard(r.dao, list)}

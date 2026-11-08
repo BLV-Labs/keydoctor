@@ -56,6 +56,46 @@ export function checkYieldCall(network: Network, receiver: string, method: strin
   if (!onLend && !onToken) throw new YieldProposalError("OFF_ALLOWLIST", `${method} on ${receiver} is not an allowed yield call.`);
 }
 
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+const sameKeys = (o: Record<string, unknown>, keys: readonly string[]) => Object.keys(o).length === keys.length && keys.every((k) => k in o);
+
+function decodeArgs(b64: unknown): unknown {
+  if (typeof b64 !== "string") return undefined;
+  try {
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * True only when a proposal kind is one of the three calls this page builds, read back from the chain: one
+ * FunctionCall action, the allowlisted receiver and method, the exact args shape and deposit. The description is
+ * never trusted: anyone can add a proposal that says "[KD-YIELD] supply" but pays someone else.
+ */
+export function allowedYieldKind(network: Network, kind: Record<string, unknown>): boolean {
+  const list = YIELD_ALLOWLIST[network];
+  const fc = kind.FunctionCall;
+  if (list === null || !isObj(fc) || !sameKeys(fc, ["receiver_id", "actions"]) || !Array.isArray(fc.actions) || fc.actions.length !== 1) return false;
+  const a: unknown = fc.actions[0];
+  if (!isObj(a) || typeof a.method_name !== "string") return false;
+  const args = decodeArgs(a.args);
+  if (!isObj(args)) return false;
+  const receiver = fc.receiver_id;
+  const isToken = (id: unknown) => list.tokens.some((t) => t.token_id === id);
+  if (receiver === list.lend && a.method_name === "storage_deposit") return a.deposit === RHEA_STORAGE_YOCTO && Object.keys(args).length === 0;
+  if (a.deposit !== ONE_YOCTO) return false;
+  if (isToken(receiver) && a.method_name === "ft_transfer_call") {
+    return sameKeys(args, ["receiver_id", "amount", "msg"]) && args.receiver_id === list.lend && typeof args.amount === "string" && /^[1-9]\d*$/.test(args.amount) && args.msg === "";
+  }
+  if (receiver === list.lend && a.method_name === "execute") {
+    if (!sameKeys(args, ["actions"]) || !Array.isArray(args.actions) || args.actions.length !== 1) return false;
+    const w: unknown = args.actions[0];
+    return isObj(w) && sameKeys(w, ["Withdraw"]) && isObj(w.Withdraw) && sameKeys(w.Withdraw, ["token_id"]) && isToken(w.Withdraw.token_id);
+  }
+  return false;
+}
+
 function yieldCall(network: Network, description: string, receiver: string, method: string, args: Record<string, unknown>, deposit: string, gas: string): AddProposalArgs {
   checkYieldCall(network, receiver, method, args);
   return {

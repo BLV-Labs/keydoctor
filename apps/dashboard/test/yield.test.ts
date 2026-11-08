@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { KdYieldReport, YieldOpportunity } from "key-doctor";
 import type { RawPolicy } from "../src/guard-proposals.ts";
-import { checkYieldCall, registerProposal, supplyProposal, tokenAmount, tokenRaw, withdrawAllProposal, YIELD_ALLOWLIST, YIELD_PREFIX, YieldProposalError } from "../src/yield-proposals.ts";
+import { allowedYieldKind, checkYieldCall, registerProposal, supplyProposal, tokenAmount, tokenRaw, withdrawAllProposal, YIELD_ALLOWLIST, YIELD_PREFIX, YieldProposalError } from "../src/yield-proposals.ts";
 import { councilAccounts, isYieldProposal, parsePositions, type YieldLive } from "../src/yield-read.ts";
 import { renderYield, yieldActions, yieldState } from "../src/yield-view.ts";
 
@@ -16,6 +16,11 @@ const call = (p: ReturnType<typeof registerProposal>) => {
   const a = fc.actions[0]!;
   return { receiver: fc.receiver_id, method: a.method_name, deposit: a.deposit, args: JSON.parse(Buffer.from(a.args, "base64").toString()) as Record<string, unknown> };
 };
+const SUPPLY_KIND = supplyProposal("testnet", USDC, "1000000", "20000000").proposal.kind as Record<string, unknown>;
+const b64 = (v: unknown) => Buffer.from(JSON.stringify(v)).toString("base64");
+const fcKind = (receiver: string, method: string, args: unknown, deposit = "1") => ({
+  FunctionCall: { receiver_id: receiver, actions: [{ method_name: method, args: b64(args), deposit, gas: "150000000000000" }] },
+});
 const problem = (code: string) => (e: unknown) => e instanceof YieldProposalError && e.code === code;
 
 describe("yield proposal builder", () => {
@@ -113,9 +118,44 @@ function live(network: "testnet" | "mainnet", over: Partial<YieldLive> = {}): Yi
     opportunities: [opportunity(network)], rejected: [], suggestions: [{ opportunity_id: `rhea-lend:${USDC}:supply`, token_id: USDC, max_amount: "20000000" }],
     notes: [], errors: [], limitations: [],
   };
-  const proposals = [{ id: 7, proposer: "alice.testnet", description: `${YIELD_PREFIX} supply 1 USDC (test) to Rhea Lend`, status: "InProgress", kind: {}, approvals: 0, submission_time: null }];
+  const proposals = [{ id: 7, proposer: "alice.testnet", description: `${YIELD_PREFIX} supply 1 USDC (test) to Rhea Lend`, status: "InProgress", kind: SUPPLY_KIND, approvals: 0, submission_time: null }];
   return { report, policy: null, registered: true, positions: [], proposals, ...over };
 }
+
+// Anyone can add a proposal whose description says "[KD-YIELD] supply". Only its kind says where funds go, so the
+// page offers a vote only on the exact calls it builds.
+describe("allowedYieldKind", () => {
+  it("accepts the three calls the builder makes", () => {
+    for (const p of [registerProposal("testnet"), supplyProposal("testnet", USDC, "5", "5"), withdrawAllProposal("testnet", USDC)]) {
+      assert.equal(allowedYieldKind("testnet", p.proposal.kind as Record<string, unknown>), true);
+    }
+  });
+
+  it("rejects calls that would move funds anywhere else", () => {
+    const bad: Array<[string, Record<string, unknown>]> = [
+      ["a transfer", { Transfer: { token_id: "", receiver_id: "bob.testnet", amount: "1" } }],
+      ["a supply to another receiver", fcKind(USDC, "ft_transfer_call", { receiver_id: "bob.testnet", amount: "5", msg: "" })],
+      ["a supply with a msg", fcKind(USDC, "ft_transfer_call", { receiver_id: LEND, amount: "5", msg: "{\"Execute\":{}}" })],
+      ["an off-list token", fcKind("other.testnet", "ft_transfer_call", { receiver_id: LEND, amount: "5", msg: "" })],
+      ["a plain ft_transfer", fcKind(USDC, "ft_transfer", { receiver_id: "bob.testnet", amount: "5" })],
+      ["a big storage deposit", fcKind(LEND, "storage_deposit", {}, "1000000000000000000000000000")],
+      ["a storage deposit for someone else", fcKind(LEND, "storage_deposit", { account_id: "bob.testnet" }, "100000000000000000000000")],
+      ["a borrow", fcKind(LEND, "execute", { actions: [{ Borrow: { token_id: USDC, amount: "5" } }] })],
+      ["a withdraw plus more", fcKind(LEND, "execute", { actions: [{ Withdraw: { token_id: USDC } }, { Borrow: { token_id: USDC } }] })],
+      ["undecodable args", { FunctionCall: { receiver_id: LEND, actions: [{ method_name: "execute", args: "%%%", deposit: "1", gas: "1" }] } }],
+    ];
+    for (const [why, kind] of bad) assert.equal(allowedYieldKind("testnet", kind), false, why);
+    assert.equal(allowedYieldKind("mainnet", SUPPLY_KIND), false, "mainnet is off");
+  });
+
+  it("shows no vote on a prefixed proposal that pays someone else, and names its real call", () => {
+    const hostile = { id: 9, proposer: "mallory.testnet", description: `${YIELD_PREFIX} supply 1 USDC (test) to Rhea Lend`, status: "InProgress", kind: { Transfer: { receiver_id: "mallory.testnet" } }, approvals: 0, submission_time: null };
+    const page = renderYield(live("testnet", { policy: null, proposals: [hostile] }), "testnet").value;
+    assert.doesNotMatch(page, /data-action="yield-vote"/);
+    assert.match(page, /Not a call this page builds \(Transfer\)/);
+    assert.match(renderYield(live("testnet"), "testnet").value, /data-action="yield-vote" data-id="7"/);
+  });
+});
 
 describe("yield page", () => {
   it("labels testnet rates as test data", () => {
