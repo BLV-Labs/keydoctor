@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My Agents · Key Doctor (mockup)</title>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="../../../apps/dashboard/public/theme-init.js"></script>
+<link rel="stylesheet" href="../dashboard/tokens.css">
+<link rel="stylesheet" href="../../../apps/dashboard/public/styles.css">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="container header-inner">
+    <a href="#" class="brand"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z"/><path d="M12 9v6M9 12h6"/></svg><span>Key Doctor</span></a>
+    <nav aria-label="Main" class="main-nav">
+      <a href="#">Key Check</a><a href="MyAgents.html" aria-current="page">My Agents</a><a href="#">Agent Budget</a>
+    </nav>
+    <div class="header-tools">
+      <button type="button" class="icon-btn" aria-label="Alerts"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 003.4 0"/></svg></button>
+      <button type="button" class="icon-btn theme-toggle" data-mock="theme" aria-label="Dark theme" aria-pressed="false">
+        <span class="theme-moon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg></span><span class="theme-sun"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></span>
+      </button>
+      <span class="btn btn-secondary wallet-chip">owner.kd-demo.testnet</span>
+    </div>
+  </div>
+</header>
+
+<main id="main" tabindex="-1" class="container page">
+  <section class="stack-xs">
+    <h1 class="h1">My Agents</h1>
+    <p class="muted budget-lead">Every agent working for a DAO you sit on. Payment agents spend within your Budget rules. Yield agents suggest where idle stablecoins could earn, and the council votes on every move.</p>
+  </section>
+
+  <section class="budget-top" aria-label="Scope">
+    <div class="budget-name"><span class="small muted">Found from <span class="mono">owner.kd-demo.testnet</span> in 3 DAOs</span><span class="tag">testnet</span></div>
+    <div class="actions">
+      <button type="button" class="btn btn-secondary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>Rescan</button>
+      <details class="mk-menu">
+        <summary class="btn btn-primary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New agent</summary>
+        <div class="mk-pop card">
+          <a class="mk-pop-item" href="#"><span class="strong">Payment agent</span><span class="small muted">Spends from an Agent Budget within your rules. Needs 2 signatures.</span></a>
+          <a class="mk-pop-item" href="Yield.html"><span class="strong">Yield agent</span><span class="small muted">Watches Rhea Lend for a DAO's idle stablecoins. Suggests only, the council votes.</span></a>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <section class="tiles" aria-label="Summary">
+    <div class="card tile"><span class="tile-label">Agents</span><span class="tile-value">5</span><span class="tile-note">3 payment · 2 yield</span></div>
+    <div class="card tile"><span class="tile-label">Waiting for your approval</span><span class="tile-value">1</span><span class="tile-note">On payroll-1, expires in 61 hours</span></div>
+    <div class="card tile"><span class="tile-label">Spent by agents in last 24h</span><span class="tile-value">0.1 NEAR</span><span class="tile-note">Across 2 Budgets</span></div>
+    <div class="card tile"><span class="tile-label">Supplied on Rhea Lend</span><span class="tile-value">100 <span class="tile-unit">USDC (test)</span></span><span class="tile-note">From 1 DAO · test data, not real yield</span></div>
+  </section>
+
+  <section class="card" aria-labelledby="ma-list">
+    <div class="b-head">
+      <div><h2 id="ma-list" class="b-h">Agents</h2><p class="small muted">Sorted by what needs you first.</p></div>
+    </div>
+    <div class="filter-chips" role="group" aria-label="Filter agents">
+      <button type="button" class="filter-chip" aria-pressed="true">All 5</button>
+      <button type="button" class="filter-chip" aria-pressed="false">Needs you 2</button>
+      <button type="button" class="filter-chip" aria-pressed="false">Payment 3</button>
+      <button type="button" class="filter-chip" aria-pressed="false">Yield 2</button>
+      <button type="button" class="filter-chip" aria-pressed="false">Off 1</button>
+    </div>
+    <div class="table-scroll">
+      <table class="key-table mk-agents">
+        <thead><tr><th>Agent</th><th>Type</th><th>DAO</th><th>Status</th><th>Latest</th><th class="num">Last 24h</th><th><span class="sr-only">Open</span></th></tr></thead>
+        <tbody>
+          <tr class="row-new" data-tone="cleanup">
+            <td><div class="mk-who"><span class="avatar av-3" aria-hidden="true">A1</span><span class="mk-who-text"><span class="strong">a1</span><span class="small muted mono wrap">a1.payroll-1.keydoctor-guards-v2.testnet</span></span></div></td>
+            <td><span class="tag">Payment</span></td>
+            <td class="small" title="payroll-1.sputnik-v2.testnet"><span class="mono strong">payroll-1</span><span class="mono muted mk-block">sputnik-v2.testnet</span></td>
+            <td><span class="pill pill-cleanup"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></svg>Key not saved</span></td>
+            <td class="small">Nobody holds this agent's key, so it cannot ask to pay. Add a new agent.</td>
+            <td class="num">0 NEAR</td>
+            <td><a class="btn btn-secondary btn-sm" href="#">Open</a></td>
+          </tr>
+          <tr class="row-new" data-tone="cleanup">
+            <td><div class="mk-who"><span class="avatar av-0" aria-hidden="true">OB</span><span class="mk-who-text"><span class="strong">Ops bot</span><span class="small muted mono wrap">a2.payroll-1.keydoctor-guards-v2.testnet</span></span></div></td>
+            <td><span class="tag">Payment</span></td>
+            <td class="small" title="payroll-1.sputnik-v2.testnet"><span class="mono strong">payroll-1</span><span class="mono muted mk-block">sputnik-v2.testnet</span></td>
+            <td><span class="pill pill-cleanup"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>1 waits for you</span></td>
+            <td class="small">Asked to pay <span class="mono">kdoncall-p.testnet</span> 0.2 NEAR. Recipient is not on your list.</td>
+            <td class="num">0 NEAR</td>
+            <td><a class="btn btn-primary btn-sm" href="#">Review</a></td>
+          </tr>
+          <tr>
+            <td><div class="mk-who"><span class="avatar av-2" aria-hidden="true">YA</span><span class="mk-who-text"><span class="strong">Yield agent</span><span class="small muted">Rhea Lend · checks every 15 min</span></span></div></td>
+            <td><span class="tag mk-tag-yield">Yield</span></td>
+            <td class="small" title="payroll-2.sputnik-v2.testnet"><span class="mono strong">payroll-2</span><span class="mono muted mk-block">sputnik-v2.testnet</span></td>
+            <td><span class="pill pill-ok"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>Farming</span></td>
+            <td class="small">100 USDC (test) supplied at 10.41% APR. Next idea: supply 100 more.</td>
+            <td class="num">—</td>
+            <td><a class="btn btn-secondary btn-sm" href="Yield.html">Open</a></td>
+          </tr>
+          <tr>
+            <td><div class="mk-who"><span class="avatar av-1" aria-hidden="true">IP</span><span class="mk-who-text"><span class="strong">Invoice payer</span><span class="small muted mono wrap">a1.payroll-2.keydoctor-guards-v2.testnet</span></span></div></td>
+            <td><span class="tag">Payment</span></td>
+            <td class="small" title="payroll-2.sputnik-v2.testnet"><span class="mono strong">payroll-2</span><span class="mono muted mk-block">sputnik-v2.testnet</span></td>
+            <td><span class="pill pill-ok"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>On</span></td>
+            <td class="small">Paid <span class="mono">test1.duonghb3.testnet</span> 0.1 NEAR, auto-approved · 13 hours ago</td>
+            <td class="num">0.1 NEAR</td>
+            <td><a class="btn btn-secondary btn-sm" href="#">Open</a></td>
+          </tr>
+          <tr>
+            <td><div class="mk-who"><span class="avatar av-2" aria-hidden="true">YA</span><span class="mk-who-text"><span class="strong">Yield agent</span><span class="small muted">Rhea Lend · checks every 15 min</span></span></div></td>
+            <td><span class="tag mk-tag-yield">Yield</span></td>
+            <td class="small" title="kdoncall.sputnik-v2.testnet"><span class="mono strong">kdoncall</span><span class="mono muted mk-block">sputnik-v2.testnet</span></td>
+            <td><span class="pill pill-note">Idle</span></td>
+            <td class="small">The DAO holds no eligible token, so there is no suggestion.</td>
+            <td class="num">—</td>
+            <td><a class="btn btn-secondary btn-sm" href="Yield.html">Open</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="small muted pad footnote">A payment agent shows here when its Guard lists it. A yield agent shows here for a DAO you sit on once its Yield page was opened or <span class="mono">/yield_watch</span> was sent in Telegram. Key Doctor never holds an agent's key.</p>
+  </section>
+
+  <section class="card" aria-labelledby="ma-daos">
+    <div class="b-head"><div><h2 id="ma-daos" class="b-h">Your DAOs</h2><p class="small muted">Where your wallet is a council member.</p></div></div>
+    <ul class="plain-list">
+      <li class="mk-dao-row"><span class="mono wrap">payroll-1.sputnik-v2.testnet</span><span class="small muted">Budget · 2 agents</span><span class="mk-dao-actions"><a href="#" class="btn btn-ghost btn-sm">Budget</a><a href="Yield.html" class="btn btn-ghost btn-sm">Add yield agent</a></span></li>
+      <li class="mk-dao-row"><span class="mono wrap">payroll-2.sputnik-v2.testnet</span><span class="small muted">Budget · 1 agent · Yield on</span><span class="mk-dao-actions"><a href="#" class="btn btn-ghost btn-sm">Budget</a><a href="Yield.html" class="btn btn-ghost btn-sm">Yield</a></span></li>
+      <li class="mk-dao-row"><span class="mono wrap">kdoncall.sputnik-v2.testnet</span><span class="small muted">No Budget · Yield on</span><span class="mk-dao-actions"><a href="#" class="btn btn-ghost btn-sm">Set up a Budget</a><a href="Yield.html" class="btn btn-ghost btn-sm">Yield</a></span></li>
+    </ul>
+  </section>
+
+  <!-- Other states, shown side by side for the review. The live page shows one of them in place of the list. -->
+  <section aria-labelledby="ma-states" class="stack-xs mk-states">
+    <h2 id="ma-states" class="eyebrow">Other states (mockup only)</h2>
+    <div class="grid-3">
+      <div class="card pad stack-xs">
+        <p class="strong">Wallet not connected</p>
+        <p class="small muted">Connect the wallet you use on your DAO council to see its agents. Key Doctor only reads; your wallet signs.</p>
+        <button type="button" class="btn btn-primary btn-start">Connect wallet</button>
+        <p class="small"><a href="#">Or open one DAO by name</a></p>
+      </div>
+      <div class="card pad stack-xs">
+        <p class="strong">No agents yet</p>
+        <p class="small muted">You sit on 1 DAO and it has no agent. Start with a payment agent or a yield agent.</p>
+        <div class="actions"><a class="btn btn-secondary" href="#">Payment agent</a><a class="btn btn-secondary" href="Yield.html">Yield agent</a></div>
+      </div>
+      <div class="card pad stack-xs">
+        <p class="strong">One DAO could not be read</p>
+        <p class="check-line small"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l10 18H2L12 3z"/><path d="M12 10v4M12 17.5v.01"/></svg><span>Could not read <span class="mono">payroll-1.sputnik-v2.testnet</span> right now. Its agents are unknown, not absent.</span></p>
+        <button type="button" class="btn btn-secondary btn-start">Try again</button>
+      </div>
+    </div>
+  </section>
+</main>
+<footer class="site-footer"><div class="container footer-inner"><span>Testnet. Contracts are unaudited.</span><span>Mockup · data is sample testnet data</span></div></footer>
+<script src="mockup.js"></script>
+</body>
+</html>
