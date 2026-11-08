@@ -160,8 +160,9 @@ export function filterCandidates(
     if (token !== undefined && r.network === "mainnet") {
       if (r.price_usd === null) reasons.push("PRICE_UNKNOWN");
       else if (Math.abs(r.price_usd - 1) > L.max_price_gap) reasons.push("PRICE_GAP");
-      if (r.tvl_usd !== null && r.tvl_usd < L.min_tvl_usd) reasons.push("TVL_LOW");
-      if (r.liquidity_usd !== null && r.liquidity_usd < L.min_liquidity_usd) reasons.push("LIQUIDITY_LOW");
+      // With a price, an unknown TVL or liquidity (unreadable balances) fails the floor: never pass unchecked.
+      if (r.price_usd !== null && (r.tvl_usd === null || r.tvl_usd < L.min_tvl_usd)) reasons.push("TVL_LOW");
+      if (r.price_usd !== null && (r.liquidity_usd === null || r.liquidity_usd < L.min_liquidity_usd)) reasons.push("LIQUIDITY_LOW");
       if (r.sources.length < 2) reasons.push("SOURCE_MISSING");
       else {
         const aprs = r.sources.map((s) => s.apr);

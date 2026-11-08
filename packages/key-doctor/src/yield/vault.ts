@@ -45,11 +45,43 @@ function parseLastId(raw: unknown): number {
   throw fail("RPC_ERROR", { retryable: false });
 }
 
+/** NEP-141 methods that move the DAO's tokens out when a FunctionCall proposal on the token executes. */
+const FT_OUT_METHODS = new Set(["ft_transfer", "ft_transfer_call"]);
+
+function decodeArgs(b64: unknown): unknown {
+  if (typeof b64 !== "string") throw fail("RPC_ERROR");
+  try {
+    return JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)))) as unknown;
+  } catch {
+    throw fail("RPC_ERROR");
+  }
+}
+
+/** Amounts a FunctionCall proposal on a yield token would send out (a pending supply is one). */
+function functionCallOut(fc: unknown): string[] {
+  if (!isRecord(fc) || !Array.isArray(fc.actions)) throw fail("RPC_ERROR");
+  const out: string[] = [];
+  for (const a of fc.actions) {
+    if (!isRecord(a) || typeof a.method_name !== "string") throw fail("RPC_ERROR");
+    if (!FT_OUT_METHODS.has(a.method_name)) continue;
+    const args = decodeArgs(a.args);
+    if (!isRecord(args) || !isDigits(args.amount)) throw fail("RPC_ERROR");
+    out.push(args.amount);
+  }
+  return out;
+}
+
 /**
- * Open (InProgress) fungible-token Transfers among the newest YIELD_PROPOSAL_SCAN proposals.
- * Any Transfer we cannot read throws, so the caller fails closed instead of over-counting what is free.
+ * Money already promised by open (InProgress) proposals among the newest YIELD_PROPOSAL_SCAN: token Transfers,
+ * and ft_transfer / ft_transfer_call FunctionCalls on a yield token (such as a supply still being voted on).
+ * Any such proposal we cannot read throws, so the caller fails closed instead of over-counting what is free.
  */
-async function readOpenTransfers(rpc: Rpc, dao: string, height: number): Promise<{ transfers: OpenTransfer[]; partial: boolean }> {
+async function readOpenTransfers(
+  rpc: Rpc,
+  dao: string,
+  height: number,
+  tokenIds: ReadonlySet<string>,
+): Promise<{ transfers: OpenTransfer[]; partial: boolean }> {
   const last = parseLastId(await rpc.callFunction(dao, height, "get_last_proposal_id", {}));
   const from = Math.max(0, last - YIELD_PROPOSAL_SCAN);
   if (last === 0) return { transfers: [], partial: false };
@@ -57,7 +89,15 @@ async function readOpenTransfers(rpc: Rpc, dao: string, height: number): Promise
   if (!Array.isArray(raw)) throw fail("RPC_ERROR");
   const transfers: OpenTransfer[] = [];
   for (const p of raw) {
-    if (!isRecord(p) || !isRecord(p.kind) || !("Transfer" in p.kind) || p.status !== "InProgress") continue;
+    if (!isRecord(p) || !isRecord(p.kind) || p.status !== "InProgress") continue;
+    if ("FunctionCall" in p.kind) {
+      const fc = p.kind.FunctionCall;
+      if (!isRecord(fc) || typeof fc.receiver_id !== "string" || !Number.isSafeInteger(p.id)) throw fail("RPC_ERROR");
+      if (!tokenIds.has(fc.receiver_id)) continue;
+      for (const amount of functionCallOut(fc)) transfers.push({ proposal_id: p.id as number, token_id: fc.receiver_id, amount });
+      continue;
+    }
+    if (!("Transfer" in p.kind)) continue;
     const t = p.kind.Transfer;
     if (!isRecord(t) || typeof t.token_id !== "string" || !isDigits(t.amount) || !Number.isSafeInteger(p.id)) {
       throw fail("RPC_ERROR");
@@ -86,7 +126,7 @@ export async function scanVault(daoId: string, opts: ScanVaultOptions = {}): Pro
 
   let transfers: OpenTransfer[] | null = null;
   try {
-    const read = await readOpenTransfers(rpc, target.id, head.height);
+    const read = await readOpenTransfers(rpc, target.id, head.height, new Set(YIELD_TOKENS[network].map((t) => t.token_id)));
     transfers = read.transfers;
     if (read.partial) {
       limitations.push(`Only the newest ${YIELD_PROPOSAL_SCAN} proposals were read for open transfers; an older open one is not counted.`);

@@ -120,6 +120,10 @@ describe("filterCandidates: Y8 floors keep a council away from thin, unpegged or
     assert.deepEqual(reasonsOf(row({ can_withdraw: false })), ["WITHDRAW_CLOSED"]);
   });
 
+  it("with a price but unreadable balances, unknown TVL and liquidity fail the floors (never pass unchecked)", () => {
+    assert.deepEqual(reasonsOf(row({ tvl_usd: null, liquidity_usd: null })), ["TVL_LOW", "LIQUIDITY_LOW"]);
+  });
+
   it("values exactly at a limit still pass (floors are strict)", () => {
     const L = YIELD_LIMITS;
     assert.deepEqual(reasonsOf(row({ tvl_usd: L.min_tvl_usd, liquidity_usd: L.min_liquidity_usd })), []);
@@ -254,6 +258,28 @@ describe("scanVault (testnet DAO, mainnet reference)", () => {
     assert.deepEqual(r.suggestions, []);
     assert.deepEqual(r.errors, ["proposals: RPC_ERROR"]);
     assert.ok(!r.notes.includes(NO_SUGGESTION_NOTE));
+  });
+
+  it("a supply still being voted on (ft_transfer_call on the token) reserves its amount too", async (t) => {
+    const args = btoa(JSON.stringify({ receiver_id: RHEA_LEND_CONTRACT.testnet, amount: "4000000", msg: "" }));
+    const supply = {
+      id: 7,
+      status: "InProgress",
+      kind: { FunctionCall: { receiver_id: USDC_T, actions: [{ method_name: "ft_transfer_call", args, deposit: "1", gas: "150000000000000" }] } },
+    };
+    installYield(t, { proposals: bytes([...fixture("yield/get_proposals.vault.json"), supply]) });
+    const r = await scanVault(DAO, { referenceMainnet: false });
+    assert.deepEqual(r.holdings[0]?.open_transfers.map((x) => x.proposal_id), [1, 4, 7]);
+    assert.equal(r.holdings[0]?.available, "12500000");
+    assert.equal(r.suggestions[0]?.max_amount, "12500000");
+  });
+
+  it("a FunctionCall on the token with unreadable args fails closed", async (t) => {
+    const bad = [{ id: 7, status: "InProgress", kind: { FunctionCall: { receiver_id: USDC_T, actions: [{ method_name: "ft_transfer", args: "!!" }] } } }];
+    installYield(t, { proposals: bytes(bad) });
+    const r = await scanVault(DAO, { referenceMainnet: false });
+    assert.equal(r.holdings[0]?.available, null);
+    assert.deepEqual(r.suggestions, []);
   });
 
   it("an open Transfer it cannot parse also fails closed", async (t) => {
