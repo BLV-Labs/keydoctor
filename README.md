@@ -255,7 +255,7 @@ pnpm --silent --filter near-ai-agent start "Pay 0.1 NEAR to bob.testnet for invo
 # → stderr shows each guard_* call and the Guard's kd.guard_result.v1; stdout is the model's answer
 ```
 
-Status: unit-tested with a scripted model and a stub MCP server (`pnpm --filter near-ai-agent test`); not yet run against NEAR AI Cloud and a live Budget. It does not verify the TEE attestation of the model.
+Status: unit-tested with a scripted model and a stub MCP server (`pnpm --filter near-ai-agent test`); run live once on 2026-11-08 against NEAR AI Cloud (`Qwen/Qwen3.8-27B`) and a testnet Budget: the model read the policy, asked for 0.1 NEAR to a whitelisted receiver, and the Guard auto-approved it (DAO proposal 5 Approved, tx `czwT4i49Pd9KhZgCookaVmwLapsFBC5wXrmLSDtupDd`). It does not verify the TEE attestation of the model.
 
 ### Agent Guard page (dashboard, factory on testnet)
 
