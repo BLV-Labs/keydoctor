@@ -398,11 +398,14 @@ describe("nav and the alerts / MCP pages", () => {
     assert.match(out.value, /href="https:\/\/t\.me\/KeyDoctorOnCallBot"/);
   });
 
-  it("Agents shows the endpoint with copy commands, all five tools, and falls back to self-host without a Worker URL", () => {
+  it("Agents shows the endpoint with copy commands, all seven tools the hosted server lists, and falls back to self-host without a Worker URL", () => {
     const withUrl = renderAgents("https://kd.example.workers.dev").value;
     assert.match(withUrl, /data-command="claude mcp add --transport http key-doctor https:\/\/kd\.example\.workers\.dev\/mcp"/);
     assert.match(withUrl, /data-command="https:\/\/kd\.example\.workers\.dev\/mcp"/);
-    for (const tool of ["diagnose", "list_keys", "list_proposals", "compare", "watch"]) assert.ok(withUrl.includes(tool), tool);
+    // Same seven names as the Worker's tools/list: an agent reading this page must see every tool it can call.
+    for (const tool of ["diagnose", "list_keys", "list_proposals", "compare", "watch", "preflight", "yield_suggestions"]) {
+      assert.ok(withUrl.includes(`<code class="mono">${tool}</code>`), tool);
+    }
     const none = text(renderAgents(""));
     assert.match(none, /Self-host: see the README/);
     assert.ok(!none.includes("claude mcp add"));

@@ -144,6 +144,8 @@ const AGENT_TOOLS: ReadonlyArray<readonly [string, string]> = [
   ["list_proposals", "A DAO's proposals with votes and who still has to vote. Read-only."],
   ["compare", "Diff against the stored baseline (kd.diff.v1). Moves the baseline only with update_baseline: true."],
   ["watch", "Two one-time Telegram links that subscribe a chat (kd.watch_link.v1)."],
+  ["preflight", "Verdict allow, review or block for the account an agent is about to sign or pay from (kd.preflight.v1). Block means a full-access key was added in the last 48 hours. Read-only."],
+  ["yield_suggestions", "A DAO's idle tokens and Rhea Lend rates, with suggestions capped at the free balance (kd.yield.v1). Data, not financial advice. Read-only."],
 ];
 
 const AGENT_PROMPTS = [
