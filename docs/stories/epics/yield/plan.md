@@ -1,6 +1,6 @@
 # Yield agent (plan)
 
-Status: 2026-11-04, plan only. Nothing is built. Owner answered Y1–Y15 on 2026-11-04. YD0 is the go/no-go gate.
+Status: 2026-11-08, plan only. Nothing is built. Owner answered Y1–Y15 on 2026-11-04, deferred the agent the same day (B-Q9), and revived it on 2026-11-08 (Y17–Y20). YD0 is the go/no-go gate.
 
 Goal: an agent reads a DAO's treasury (the "vault"), compares it with live APR/APY from several sources, and sends the council suggestions for where stablecoins could earn yield. The council then moves the money from the DAO to Rhea and back through normal Sputnik proposals. Start with Rhea Lend on NEAR. Other chains come later.
 
@@ -40,6 +40,10 @@ All answered by the owner on 2026-11-04.
 | Y14 | Priority? | Behind Guard GĐ20–22 and GĐ14. First to cut |
 | Y15 | Cross-chain? | Research only, in `docs/yield-crosschain-feasibility.md`. It runs in parallel and does not block YD0 |
 | Y16 | Can a relayer broadcast for cross-chain? | Yes. It only sends a tx the council already signed through `sign`, holds no key and cannot change the tx, so Y4 still holds. Applies only if cross-chain leaves Roadmap |
+| Y17 | Build it for the hackathon? (2026-11-08, reopens B-Q9) | Yes. V1 is an alert plus a council proposal. V2, where the agent supplies funds itself, stays Roadmap (Y4): Rhea protocol risk sits on large sums, and today's Budget role cannot run a `call` plan |
+| Y18 | LLM? (2026-11-08) | Yes, ADR 0004 as written (§2). Not cut to the rule-only list |
+| Y19 | Network? (2026-11-08) | Y3 stands: alerts show mainnet Rhea Lend rates, the proposal runs on testnet with `usdc.fakes.testnet` |
+| Y20 | How often? (2026-11-08, replaces the daily push in Y11) | Code reads Rhea Lend every 15 minutes on its own cron offset, so it does not share CPU with the proposal job or the keeper. A push goes to opted-in chats only when the top candidate changes or its APR moves past a threshold that YD1 sets. The model runs only on such a change, never on a quiet cycle, so the key is not spent 96 times a day. DefiLlama is not read in the Worker: its response (~16k pools) would not parse within the 10 ms CPU limit |
 
 ## 2. LLM boundary
 
@@ -96,20 +100,20 @@ Known gaps:
 
 ## 4. Phases
 
-Dates assume YD0 starts on 5/11. Guard GĐ20–22 and GĐ14 go first if they compete for time.
+Dates were reset on 2026-11-08 and assume YD0 starts on 9/11. Guard GĐ20–22 and GĐ14 go first if they compete for time.
 
 | YD | Dates | Who | Done when |
 |---|---|---|---|
-| 0 spike | 5/11 | Claude writes, owner signs | A testnet DAO supplies and withdraws on Rhea through proposals, tx hashes recorded |
-| 1 library | 5–6/11 | Claude | `scanVault`, collectors and rule filter pass fixture tests |
-| 2 LLM step | 6–7/11 | Claude, owner sets the key | Validator and fallback tests pass with a fake model, then live calls and one verifier run |
-| 3 surfaces | 7–8/11 | Claude | `/yield` and MCP `yield_suggestions` return the same report, and opt-in push works |
-| 4 proposal builder | 8–9/11 | Claude | A dashboard proposal passes on testnet and funds return |
+| 0 spike | 9/11 | Claude writes, owner signs | A testnet DAO supplies and withdraws on Rhea through proposals, tx hashes recorded |
+| 1 library | 9–10/11 | Claude | `scanVault`, collectors and rule filter pass fixture tests |
+| 2 LLM step | 10–11/11 | Claude, owner sets the key | Validator and fallback tests pass with a fake model, then live calls and one verifier run |
+| 3 surfaces | 11/11 | Claude | `/yield` and MCP `yield_suggestions` return the same report, and opt-in push works |
+| 4 proposal builder | 12/11 | Claude | A dashboard proposal passes on testnet and funds return |
 | 4b mainnet builder | after 4 | Claude builds, owner signs | A tiny mainnet supply and withdraw through proposals succeed, with no DAO name in the repo |
-| 5 README | 9–10/11 | Claude | README steps reproduce, Limitations updated |
+| 5 README | 13/11 | Claude | README steps reproduce, Limitations updated |
 | XC cross-chain research | parallel | Claude | `docs/yield-crosschain-feasibility.md` gives go or no-go per protocol |
 
-Cuts: YD0 not passing by 6/11 drops YD4 and YD4b, and suggestions stay read-only. YD2 not passing by 8/11 ships the rule-ordered list.
+Cuts: YD0 not passing by 10/11 drops YD4 and YD4b, and suggestions stay read-only. YD2 not passing by 11/11 ships the rule-ordered list. YD4b (mainnet builder) is not expected before 14/11.
 
 ### YD0: spike
 

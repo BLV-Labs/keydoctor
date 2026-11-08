@@ -1,7 +1,7 @@
 # 0004 — LLM in the yield agent only
 
 - **Date**: 2026-11-04
-- **Status**: Deferred 2026-11-04 (accepted earlier the same day). The owner put the yield agent aside for the hackathon (`docs/final-idea.md` §16, B-Q9). Nothing in this ADR is built; the no-LLM rule applies everywhere until it is revived.
+- **Status**: Accepted again 2026-11-08. It was accepted on 2026-11-04 and deferred the same day (`docs/final-idea.md` §16, B-Q9). On 2026-11-08 the owner revived the yield agent for the hackathon with an LLM step, a proposal builder, mainnet rates read and testnet execution, and a 15-minute check (yield plan Y17–Y20). Nothing in this ADR is built yet. Until YD2 ships, the no-LLM rule still holds in practice.
 - **Deciders**: owner, 2026-11-04 (will use an LLM for the yield agent)
 - **Story**: [yield agent plan](../stories/epics/yield/plan.md)
 
