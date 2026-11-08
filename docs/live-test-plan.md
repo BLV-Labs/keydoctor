@@ -20,42 +20,47 @@ Record each result in [TEST_MATRIX.md](TEST_MATRIX.md) (Evidence Format) or the 
 
 | # | Do | See | Last result |
 |---|---|---|---|
-| A1 | `pnpm test` | 5 packages, fail 0 | 2026-11-09: 896 tests, fail 0 |
-| A2 | `pnpm typecheck` | no errors | run with A1 |
-| A3 | `pnpm test:guard` | Guard 130 unit + 24 sandbox, factory 18 unit + 12 sandbox, all pass | 2026-11-09: pass |
-| A4 | `pnpm --filter dashboard build` | `dist/` builds with no error | run before each Pages deploy |
+| A1 | `pnpm test` | 5 packages, fail 0 | 2026-11-09: 896 tests (key-doctor 453, dashboard 252, worker 141, guard-mcp 42, near-ai-agent 8), fail 0, skip 0 |
+| A2 | `pnpm typecheck` | no errors | 2026-11-09: exit 0 |
+| A3 | `pnpm test:guard` | Guard 130 unit + 24 sandbox, factory 18 unit + 12 sandbox, all pass | 2026-11-09: pass (Guard 130 + 24, factory 18 + 12) |
+| A4 | `pnpm --filter dashboard build` | `dist/` builds with no error | 2026-11-09: builds with no error |
 
 ## 2. Hosted MCP (Claude, read only, no secret)
 
 Call `https://key-doctor.duonghb53.workers.dev/mcp` with a JSON-RPC body (node `fetch`, not curl through rtk). The limit is 30 calls a minute per IP.
 
-| # | Tool | Do | See |
-|---|---|---|---|
-| M1 | `initialize`, `tools/list` | list the tools | 7 tools: `diagnose`, `compare`, `list_keys`, `list_proposals`, `watch`, `preflight`, `yield_suggestions` |
-| M2 | `diagnose` | `kdoncall.sputnik-v2.testnet`, summary, then full report | `kd.report_summary.v1`, then `kd.report.v1` with ruleset `2026-11-03`. D1 is not written |
-| M3 | `diagnose` | an account that does not exist | `isError` with `kd.error.v1` `NOT_FOUND` |
-| M4 | `compare` | the same target twice | the first call stores a baseline. The second gives the same `changes`, and the baseline does not move |
-| M5 | `list_keys` | `kdoncall-p.testnet` | its keys, each with its age from the nonce |
-| M6 | `list_proposals` | `kdoncall.sputnik-v2.testnet` | the latest proposals with their kind and status |
-| M7 | `preflight` | `kdoncall-p.testnet` | `allow` or `warn` with reasons. A `block` case is L2 |
-| M8 | `watch` | a bad target | refused without writing. A real `watch` writes a subscription, so it belongs to the owner in B6 |
-| M9 | `yield_suggestions` | a DAO with no token | an empty list with its reason, ruleset `2026-11-08` |
-| M10 | rate limit | 31 calls in one minute | the 31st is refused with `RATE_LIMITED` |
-| M11 | Codex as a client | owner adds the MCP URL to Codex and asks for `diagnose` | the same report as M2 (still open) |
+| # | Tool | Do | See | Result (2026-11-09) |
+|---|---|---|---|---|
+| M1 | `initialize`, `tools/list` | list the tools | 7 tools: `diagnose`, `compare`, `list_keys`, `list_proposals`, `watch`, `preflight`, `yield_suggestions` | pass: `key-doctor` 0.1.0, protocol `2025-03-26`, the 7 tools |
+| M2 | `diagnose` | `kdoncall.sputnik-v2.testnet`, summary, then full report | `kd.report_summary.v1`, then `kd.report.v1` with ruleset `2026-11-03`. D1 is not written | pass: summary, then full report, ruleset `2026-11-03`, 12 members, 0 member errors |
+| M3 | `diagnose` | an account that does not exist | `isError` with `kd.error.v1` `NOT_FOUND` | pass: `isError`, `NOT_FOUND` |
+| M4 | `compare` | the same target twice | the first call stores a baseline. The second gives the same `changes`, and the baseline does not move | pass: both calls `from` block 276712263, 0 changes, baseline unchanged |
+| M5 | `list_keys` | `kdoncall-p.testnet` | its keys, each with its age from the nonce | pass: 5 keys with ages |
+| M6 | `list_proposals` | `kdoncall.sputnik-v2.testnet` | the latest proposals with their kind and status | pass: latest #15, Approved |
+| M7 | `preflight` | `kdoncall-p.testnet` | `allow` or `review` with reasons. A `block` case is L2 | pass: `review`, reasons FA_MULTIPLE, KEY_UNUSED ×4, FC_ANY_METHOD ×2 (all cleanup) |
+| M8 | `watch` | a bad target | refused without writing. A real `watch` writes a subscription, so it belongs to the owner in B6 | pass: `INVALID_TARGET`, nothing written |
+| M9 | `yield_suggestions` | a DAO with no token | an empty list with its reason, ruleset `2026-11-08` | pass on `payroll-2`: 0 suggestions, 5 notes, `errors: []`, ruleset `2026-11-08` |
+| M10 | rate limit | 31 calls in one minute | the 31st is refused with `RATE_LIMITED` | pass: calls 1–30 → 200, 31–33 → 429 `RATE_LIMITED`, `retryable: true` |
+| M11 | Codex as a client | owner adds the MCP URL to Codex and asks for `diagnose` | the same report as M2 (still open) | not run (owner) |
 
 ## 3. Dashboard, read only (Claude, built-in browser)
 
 `https://key-doctor-dashboard.pages.dev`. At 1280 px and 375 px, check for no horizontal scroll and no console errors.
 
-| # | Page | Do | See |
-|---|---|---|---|
-| D1 | check | `?target=kdoncall.sputnik-v2.testnet` | members sorted high → cleanup → note → ok, each linking to `?target=<id>&from=<dao>`, and a `/watch` hint |
-| D2 | check | `?target=kdoncall-p.testnet` | its keys and the cleanup plan (UC8 order) |
-| D3 | mcp | open it | the URL and the 7 tools, matching M1 |
-| D4 | guard | `?page=guard&dao=kdg1793607117.sputnik-v2.testnet` | the Guard card or the create form; bad input refused field by field (guard-test-guide T2) |
-| D5 | budget | open it with no wallet | the Cautious and Balanced presets and their funding minimum |
-| D6 | my-agents, yield | open them with no wallet | "connect a wallet" and nothing written |
-| D7 | old links | `?page=oncall`, `?page=agents`, `?page=guard` with no `dao` | check with the alerts drawer open; budget with add-agent; budget |
+| # | Page | Do | See | Result (2026-11-09) |
+|---|---|---|---|---|
+| D1 | check | `?target=kdoncall.sputnik-v2.testnet` | members sorted high → cleanup → note → ok, each linking to `?target=<id>&from=<dao>`, and a `/watch` hint | pass: 12 members (all ok), 10 per page, `?target=<id>&from=<dao>` links, the Telegram alerts button, 16 proposals |
+| D2 | check | `?target=kdoncall-p.testnet` | its keys and the cleanup plan (UC8 order) | pass: 3 full-access and 2 app keys, 4 never used; the cleanup plan and the key table |
+| D3 | mcp | open it | the URL and the 7 tools, matching M1 | **fail on live**: 5 tools listed (no `preflight`, `yield_suggestions`). Fixed in PR #59, needs a Pages deploy |
+| D4 | guard | `?page=guard&dao=kdg1793607117.sputnik-v2.testnet` | the Guard card or the create form; bad input refused field by field (guard-test-guide T2) | pass: create form (no Guard yet). Each T2 bad input refused next to its field, Preview not shown. Messages are English only, while T2 asks for vi + en. A stale error stays above the preview after a fix (see notes) |
+| D5 | budget | open it with no wallet | the Cautious and Balanced presets and their funding minimum | pass with a note: no wallet shows the intro and Connect wallet. Cautious (1 / 5 NEAR) and Balanced (5 / 20 NEAR) are in the form that opens after connecting (read from the hidden DOM, not seen with a wallet). No funding minimum is shown before that |
+| D6 | my-agents, yield | open them with no wallet | "connect a wallet" and nothing written | pass: My Agents says "Wallet not connected"; yield opens read-only; no Worker request |
+| D7 | old links | `?page=oncall`, `?page=agents`, `?page=guard` with no `dao` | check with the alerts drawer open; budget with add-agent; budget | pass: `oncall` → check page with the alerts drawer open; `agents` → budget with "This link needs a Budget"; `guard` → budget |
+
+Notes from the 2026-11-09 run:
+
+- D4: after a refused submit, a valid one shows the preview, but the old "Fix the fields marked below." and the field error stay (`submitGuardCreate` re-renders the form only on failure). The Budget form was not checked for this.
+- D4: a whitelist cap above `max_per_tx` is accepted. T2 does not list it, so it is not counted as a failure.
 
 ## 4. Live flows (owner signs, Claude reads the chain and records)
 
@@ -78,12 +83,12 @@ Call `https://key-doctor.duonghb53.workers.dev/mcp` with a JSON-RPC body (node `
 
 | # | Job | See | Status |
 |---|---|---|---|
-| W1 | `GET /` with no token | `ok` (text/plain) | Claude can run it |
+| W1 | `GET /` with no token | `ok` (text/plain) | 2026-11-09: pass, 200 `ok` |
 | W2 | `proposals` twice | the first run sends any new alert. The second sends nothing | done in the demo run of 2026-10-30 |
 | W3 | `daily` | a diff for each watched target. Also watch the cron at 02:00 UTC (09:00 in Vietnam) once | **cron firing open** |
 | W4 | `keeper` | `errors: []` | runs every 15 min. No step executed yet (K below) |
 | W5 | `yield` | a push to chats from B7 | **open** |
-| W6 | `run-check` without the token | 401 | Claude can run it |
+| W6 | `run-check` without the token | 401 | 2026-11-09: pass, 401 `UNAUTHORIZED` (no token and a wrong token) |
 
 ### Attack demo (main scene, `scripts/demo-testnet/demo.sh`)
 
@@ -118,8 +123,8 @@ Call `https://key-doctor.duonghb53.workers.dev/mcp` with a JSON-RPC body (node `
 
 | # | Do | See | Status |
 |---|---|---|---|
-| Y1 | [yield spike](yield-spike-2026-11-09.md): `check`, `dao`, `fund`, register, supply, withdraw | each proposal Approved. The DAO gets its tokens back, and Rhea Lend shows no supply | **open, fill the results table** |
-| Y2 | `yield_suggestions` (M9) and the dashboard yield page on the Y1 DAO | code-built candidates with their numbers | **open** |
+| Y1 | [yield spike](yield-spike-2026-11-09.md): `check`, `dao`, `fund`, register, supply, withdraw | each proposal Approved. The DAO gets its tokens back, and Rhea Lend shows no supply | done 2026-11-09 on `kdy1794161239.sputnik-v2.testnet` (PR #58) |
+| Y2 | `yield_suggestions` (M9) and the dashboard yield page on the Y1 DAO | code-built candidates with their numbers | done 2026-11-09: MCP and the page agree (one candidate, 10.55% APR). The page's Rhea API read was blocked by the CSP, fixed in PR #59 |
 | Y3 | dashboard yield page: supply and withdraw signed by the owner | the proposals pass, as in Y1 | **open** |
 | Y4 | vote on a yield proposal from the page | only for a kind the page builds | **open** |
 | Y5 | a Worker model call on the Y1 DAO | reasons from the TEE model. Every number matches the code-built candidate | **open** |
