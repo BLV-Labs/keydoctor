@@ -51,15 +51,15 @@ Call `https://key-doctor.duonghb53.workers.dev/mcp` with a JSON-RPC body (node `
 |---|---|---|---|---|
 | D1 | check | `?target=kdoncall.sputnik-v2.testnet` | members sorted high → cleanup → note → ok, each linking to `?target=<id>&from=<dao>`, and a `/watch` hint | pass: 12 members (all ok), 10 per page, `?target=<id>&from=<dao>` links, the Telegram alerts button, 16 proposals |
 | D2 | check | `?target=kdoncall-p.testnet` | its keys and the cleanup plan (UC8 order) | pass: 3 full-access and 2 app keys, 4 never used; the cleanup plan and the key table |
-| D3 | mcp | open it | the URL and the 7 tools, matching M1 | **fail on live**: 5 tools listed (no `preflight`, `yield_suggestions`). Fixed in PR #59, needs a Pages deploy |
-| D4 | guard | `?page=guard&dao=kdg1793607117.sputnik-v2.testnet` | the Guard card or the create form; bad input refused field by field (guard-test-guide T2) | pass: create form (no Guard yet). Each T2 bad input refused next to its field, Preview not shown. Messages are English only, while T2 asks for vi + en. A stale error stays above the preview after a fix (see notes) |
+| D3 | mcp | open it | the URL and the 7 tools, matching M1 | **fail on live**: 5 tools listed (no `preflight`, `yield_suggestions`). Fixed in PR #59 (merged), live after the next Pages deploy |
+| D4 | guard | `?page=guard&dao=kdg1793607117.sputnik-v2.testnet` | the Guard card or the create form; bad input refused field by field (guard-test-guide T2) | pass: create form (no Guard yet). Each T2 bad input refused next to its field, Preview not shown. Messages are English only, while T2 asks for vi + en. A stale error stayed above the preview after a fix, fixed in PR #59 (see notes) |
 | D5 | budget | open it with no wallet | the Cautious and Balanced presets and their funding minimum | pass with a note: no wallet shows the intro and Connect wallet. Cautious (1 / 5 NEAR) and Balanced (5 / 20 NEAR) are in the form that opens after connecting (read from the hidden DOM, not seen with a wallet). No funding minimum is shown before that |
 | D6 | my-agents, yield | open them with no wallet | "connect a wallet" and nothing written | pass: My Agents says "Wallet not connected"; yield opens read-only; no Worker request |
 | D7 | old links | `?page=oncall`, `?page=agents`, `?page=guard` with no `dao` | check with the alerts drawer open; budget with add-agent; budget | pass: `oncall` → check page with the alerts drawer open; `agents` → budget with "This link needs a Budget"; `guard` → budget |
 
 Notes from the 2026-11-09 run:
 
-- D4: after a refused submit, a valid one shows the preview, but the old "Fix the fields marked below." and the field error stay (`submitGuardCreate` re-renders the form only on failure). The Budget form was not checked for this.
+- D4: after a refused submit, a valid one shows the preview, but the old "Fix the fields marked below." and the field error stay (`submitGuardCreate` re-rendered the form only on failure), and an invalid submit after a valid one kept the old preview and its Sign button. Both fixed in PR #59 (merged 2026-11-09, live after the next Pages deploy). The Budget form already repaints on every submit.
 - D4: a whitelist cap above `max_per_tx` is accepted. T2 does not list it, so it is not counted as a failure.
 
 ## 4. Live flows (owner signs, Claude reads the chain and records)
