@@ -345,13 +345,14 @@ describe("YD2 /yield with the model step", () => {
     assert.match(text, /AI-assisted order/);
   });
 
-  it("goes to the next TEE model when one fails, and never to a model off the TEE list", async (t) => {
+  it("when Qwen fails it goes to the rule order, never to a model off the chain, not even another TEE model (Y5)", async (t) => {
     ownMinute(t);
     const { env, chain } = setup(t, KEY);
     chain.aiReply = (body) => (body.model === QWEN ? new Response("busy", { status: 503 }) : chat(order("Fine.")));
     await say(env, `/yield ${DAO}`, newChat());
-    assert.deepEqual(chain.ai.map((x) => x.body.model), [QWEN, GLM]);
-    assert.match(lastText(chain), new RegExp(`\\(${GLM} in a NEAR AI TEE`));
+    assert.deepEqual(chain.ai.map((x) => x.body.model), [QWEN], `${GLM} answered in 18-23 s in the live compare, past the timeout`);
+    assert.deepEqual(chain.ai[0]?.body.chat_template_kwargs, { enable_thinking: false }, "with thinking on, Qwen spent max_tokens on reasoning");
+    assert.match(lastText(chain), /Ordered by rules: highest APR first\./);
   });
 
   it("falls back to the rule order, marked, when every model fails, and caches nothing", async (t) => {
@@ -364,7 +365,7 @@ describe("YD2 /yield with the model step", () => {
       assert.match(text, /Supply USDC \(test\) on Rhea Lend: 10\.53% APR, up to 16\.50/, "the suggestion itself never depends on the model");
       assert.match(text, /Ordered by rules: highest APR first\./);
       assert.doesNotMatch(text, /AI-assisted/);
-      assert.deepEqual(chain.ai.map((x) => x.body.model), [QWEN, GLM]);
+      assert.deepEqual(chain.ai.map((x) => x.body.model), [QWEN]);
       assert.equal(rows(db, "SELECT * FROM yield_advice").length, 0, "a fallback is not cached: the next call may reach the model");
     }
   });

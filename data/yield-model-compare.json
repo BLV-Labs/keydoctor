@@ -1,0 +1,392 @@
+{
+  "run_at": "2026-11-08T16:08:34.755Z",
+  "runs": 3,
+  "candidates": [
+    {
+      "opportunity_id": "rhea-lend:wrap.testnet:supply",
+      "symbol": "wNEAR (test)",
+      "network": "testnet",
+      "test_data": true,
+      "apr_pct": 14.12,
+      "reward_apy_pct": null,
+      "tvl_usd": 410000,
+      "liquidity_usd": 52000,
+      "price_usd": 2.71,
+      "warnings": [
+        "APR_HIGH"
+      ],
+      "dao_balance": 400,
+      "dao_free": 400,
+      "open_transfers": 0
+    },
+    {
+      "opportunity_id": "rhea-lend:usdc.fakes.testnet:supply",
+      "symbol": "USDC (test)",
+      "network": "testnet",
+      "test_data": true,
+      "apr_pct": 8.96,
+      "reward_apy_pct": null,
+      "tvl_usd": 12800000,
+      "liquidity_usd": 1860000,
+      "price_usd": 0.9998,
+      "warnings": [],
+      "dao_balance": 30000,
+      "dao_free": 25000,
+      "open_transfers": 1
+    },
+    {
+      "opportunity_id": "rhea-lend:usdt.fakes.testnet:supply",
+      "symbol": "USDT (test)",
+      "network": "testnet",
+      "test_data": true,
+      "apr_pct": 7.28,
+      "reward_apy_pct": null,
+      "tvl_usd": 12600000,
+      "liquidity_usd": 1980000,
+      "price_usd": 1.0001,
+      "warnings": [],
+      "dao_balance": 1250,
+      "dao_free": 1250,
+      "open_transfers": 0
+    }
+  ],
+  "results": [
+    {
+      "variant": {
+        "label": "Qwen/Qwen3.6-35B-A3B-FP8",
+        "model": {
+          "id": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "structured": true
+        }
+      },
+      "runs": [
+        {
+          "status": 200,
+          "latency_ms": 6569,
+          "in_worker_timeout": true,
+          "valid": false,
+          "order": [],
+          "reasons_kept": 0,
+          "generation_id": "4853bc405abe4ccd91ae1e48d7a308c2",
+          "completion_tokens": 1200,
+          "items": null
+        },
+        {
+          "status": 200,
+          "latency_ms": 5412,
+          "in_worker_timeout": true,
+          "valid": false,
+          "order": [],
+          "reasons_kept": 0,
+          "generation_id": "dd7135014ead4d60973e604e0b60b189",
+          "completion_tokens": 1200,
+          "items": null
+        },
+        {
+          "status": 200,
+          "latency_ms": 5750,
+          "in_worker_timeout": true,
+          "valid": false,
+          "order": [],
+          "reasons_kept": 0,
+          "generation_id": "4fcf63ec137549bb98fee624e2db004e",
+          "completion_tokens": 1200,
+          "items": null
+        }
+      ]
+    },
+    {
+      "variant": {
+        "label": "Qwen/Qwen3.6-35B-A3B-FP8 (enable_thinking=false)",
+        "model": {
+          "id": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "structured": true
+        },
+        "extra": {
+          "chat_template_kwargs": {
+            "enable_thinking": false
+          }
+        }
+      },
+      "runs": [
+        {
+          "status": 200,
+          "latency_ms": 1854,
+          "in_worker_timeout": true,
+          "valid": true,
+          "order": [
+            "rhea-lend:usdc.fakes.testnet:supply",
+            "rhea-lend:usdt.fakes.testnet:supply",
+            "rhea-lend:wrap.testnet:supply"
+          ],
+          "reasons_kept": 3,
+          "generation_id": "8d4799ab2e8c4955b7f86bc0a3d58c2a",
+          "completion_tokens": 291,
+          "items": [
+            {
+              "opportunity_id": "rhea-lend:usdc.fakes.testnet:supply",
+              "reason": {
+                "vi": "TVL cao nhất và thanh khoản dồi dào, tỷ giá ổn định gần 1 USD, phù hợp để giữ lượng vốn lớn của DAO.",
+                "en": "Highest TVL and deep liquidity with a stable 0.9998 peg, making it ideal for holding the DAO's largest balance."
+              }
+            },
+            {
+              "opportunity_id": "rhea-lend:usdt.fakes.testnet:supply",
+              "reason": {
+                "vi": "TVL lớn và tỷ giá 1.0001 rất ổn định, mặc dù thanh khoản thấp hơn USDC nhưng vẫn an toàn cho số vốn nhỏ.",
+                "en": "Large TVL and a stable 1.0001 peg offer safety for the small balance, despite slightly lower liquidity than USDC."
+              }
+            },
+            {
+              "opportunity_id": "rhea-lend:wrap.testnet:supply",
+              "reason": {
+                "vi": "APR cao nhưng có cảnh báo rủi ro và TVL thấp, chỉ phù hợp cho số vốn rất nhỏ do thiếu thanh khoản.",
+                "en": "High APR comes with risk warnings and low TVL, suitable only for the tiny balance due to poor liquidity."
+              }
+            }
+          ]
+        },
+        {
+          "status": 200,
+          "latency_ms": 1938,
+          "in_worker_timeout": true,
+          "valid": true,
+          "order": [
+            "rhea-lend:usdc.fakes.testnet:supply",
+            "rhea-lend:usdt.fakes.testnet:supply",
+            "rhea-lend:wrap.testnet:supply"
+          ],
+          "reasons_kept": 3,
+          "generation_id": "b1d56e6acda94e0fa096b4aa0d3805a4",
+          "completion_tokens": 285,
+          "items": [
+            {
+              "opportunity_id": "rhea-lend:usdc.fakes.testnet:supply",
+              "reason": {
+                "vi": "TVL cao nhất và thanh khoản dồi dào, tỷ giá ổn định gần 1 USD, phù hợp để giữ lượng vốn lớn của DAO.",
+                "en": "Highest TVL and deep liquidity with a stable 0.9998 peg, making it ideal for holding the DAO's largest balance."
+              }
+            },
+            {
+              "opportunity_id": "rhea-lend:usdt.fakes.testnet:supply",
+              "reason": {
+                "vi": "TVL lớn và thanh khoản tốt, tỷ giá 1.0001 ổn định, phù hợp cho số vốn nhỏ hơn với rủi ro thấp.",
+                "en": "Large TVL and good liquidity with a stable 1.0001 peg, suitable for smaller balances with low risk."
+              }
+            },
+            {
+              "opportunity_id": "rhea-lend:wrap.testnet:supply",
+              "reason": {
+                "vi": "APR cao nhưng cảnh báo rủi ro và TVL thấp, chỉ phù hợp cho số vốn rất nhỏ do biến động giá.",
+                "en": "High APR but flagged with risks and low TVL, only suitable for very small amounts due to price volatility."
+              }
+            }
+          ]
+        },
+        {
+          "status": 200,
+          "latency_ms": 1599,
+          "in_worker_timeout": true,
+          "valid": true,
+          "order": [
+            "rhea-lend:usdc.fakes.testnet:supply",
+            "rhea-lend:usdt.fakes.testnet:supply",
+            "rhea-lend:wrap.testnet:supply"
+          ],
+          "reasons_kept": 3,
+          "generation_id": "2a950fc405764cbd9a8d7bc77641b0ce",
+          "completion_tokens": 267,
+          "items": [
+            {
+              "opportunity_id": "rhea-lend:usdc.fakes.testnet:supply",
+              "reason": {
+                "vi": "TVL cao nhất và thanh khoản dồi dào, tỷ giá ổn định gần 1 USD, phù hợp để bảo toàn vốn.",
+                "en": "Highest TVL and deep liquidity with a stable 0.9998 peg, making it the safest choice for capital preservation."
+              }
+            },
+            {
+              "opportunity_id": "rhea-lend:usdt.fakes.testnet:supply",
+              "reason": {
+                "vi": "TVL lớn và tỷ giá 1.0001 USD ổn định, mặc dù thanh khoản thấp hơn USDC một chút.",
+                "en": "Large TVL and stable 1.0001 USD peg, though liquidity is slightly lower than USDC."
+              }
+            },
+            {
+              "opportunity_id": "rhea-lend:wrap.testnet:supply",
+              "reason": {
+                "vi": "APR cao nhưng cảnh báo rủi ro và TVL thấp, không phù hợp cho kho bạc DAO.",
+                "en": "High APR comes with risk warnings and low TVL, making it unsuitable for the DAO treasury."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "variant": {
+        "label": "z-ai/glm-5.3-flash",
+        "model": {
+          "id": "z-ai/glm-5.3-flash",
+          "structured": true
+        }
+      },
+      "runs": [
+        {
+          "status": 200,
+          "latency_ms": 17916,
+          "in_worker_timeout": false,
+          "valid": true,
+          "order": [
+            "rhea-lend:usdc.fakes.testnet:supply",
+            "rhea-lend:usdt.fakes.testnet:supply",
+            "rhea-lend:wrap.testnet:supply"
+          ],
+          "reasons_kept": 3,
+          "generation_id": "1cb24cdfc3c540faaae8db0bcac86ebb",
+          "completion_tokens": 909,
+          "items": [
+            {
+              "opportunity_id": "rhea-lend:usdc.fakes.testnet:supply",
+              "reason": {
+                "vi": "APR 8,96% với TVL 12.800.000 USD và thanh khoản 1.860.000 USD rất sâu, giá 0,9998 USD gần peg, không cảnh báo; free balance 25.000 USD là mức phù hợp nhất.",
+                "en": "APR 8.96% backed by TVL of 12,800,000 USD and deep liquidity of 1,860,000 USD; price 0.9998 USD is near peg with no warnings, and the 25,000 USD free balance fits well."
+              }
+            },
+            {
+              "opportunity_id": "rhea-lend:usdt.fakes.testnet:supply",
+              "reason": {
+                "vi": "APR 7,28% thấp hơn một chút nhưng TVL 12.600.000 USD và thanh khoản 1.980.000 USD dày, giá 1,0001 USD giữ peg tốt, không cảnh báo; free balance chỉ 1.250 USD.",
+                "en": "APR 7.28% is slightly lower, but TVL of 12,600,000 USD and liquidity of 1,980,000 USD are deep, price 1.0001 USD holds peg with no warnings; free balance is only 1,250 USD."
+              }
+            },
+            {
+              "opportunity_id": "rhea-lend:wrap.testnet:supply",
+              "reason": {
+                "vi": "APR 14,12% hấp dẫn nhất nhưng kèm cảnh báo APR_HIGH; TVL 410.000 USD và thanh khoản 52.000 USD mỏng hơn hẳn, free balance 400 USD nhỏ.",
+                "en": "APR 14.12% is the most attractive but carries an APR_HIGH warning; TVL of 410,000 USD and liquidity of 52,000 USD are far thinner, with a small 400 USD free balance."
+              }
+            }
+          ]
+        },
+        {
+          "status": 200,
+          "latency_ms": 23299,
+          "in_worker_timeout": false,
+          "valid": true,
+          "order": [
+            "rhea-lend:usdc.fakes.testnet:supply",
+            "rhea-lend:usdt.fakes.testnet:supply",
+            "rhea-lend:wrap.testnet:supply"
+          ],
+          "reasons_kept": 3,
+          "generation_id": "aec4a842b35c4104ad237f48ba510b6f",
+          "completion_tokens": 973,
+          "items": [
+            {
+              "opportunity_id": "rhea-lend:usdc.fakes.testnet:supply",
+              "reason": {
+                "vi": "APR 8,96% với TVL 12.800.000 USD và thanh khoản 1.860.000 USD, giá 0,9998 USD gần peg, không cảnh báo; số dư khả dụng 25.000 hỗ trợ phân bổ lớn.",
+                "en": "APR 8.96% backed by TVL of 12,800,000 and liquidity of 1,860,000, price 0.9998 near peg, no warnings; free balance of 25,000 supports a sizable allocation."
+              }
+            },
+            {
+              "opportunity_id": "rhea-lend:usdt.fakes.testnet:supply",
+              "reason": {
+                "vi": "APR 7,28% thấp hơn nhưng TVL 12.600.000 USD, thanh khoản 1.980.000 USD và giá 1,0001 USD ổn định; khả dụng 1.250 nên vai trò thứ yếu.",
+                "en": "APR 7.28% is lower, but TVL of 12,600,000, liquidity of 1,980,000 and a stable 1.0001 price make it solid; free balance of 1,250 keeps it secondary."
+              }
+            },
+            {
+              "opportunity_id": "rhea-lend:wrap.testnet:supply",
+              "reason": {
+                "vi": "APR 14,12% cao nhất nhưng có cảnh báo APR_HIGH, TVL chỉ 410.000 USD và thanh khoản 52.000 USD mỏng; khả dụng 400 nên rủi ro cao, xếp cuối.",
+                "en": "Highest APR at 14.12% but flagged APR_HIGH, with TVL of only 410,000 and thin liquidity of 52,000; free balance of 400 adds concentration risk, so it ranks last."
+              }
+            }
+          ]
+        },
+        {
+          "status": 200,
+          "latency_ms": 23340,
+          "in_worker_timeout": false,
+          "valid": true,
+          "order": [
+            "rhea-lend:usdc.fakes.testnet:supply",
+            "rhea-lend:usdt.fakes.testnet:supply",
+            "rhea-lend:wrap.testnet:supply"
+          ],
+          "reasons_kept": 3,
+          "generation_id": "7f6988194933465c98b1f834cfdfcb9b",
+          "completion_tokens": 1145,
+          "items": [
+            {
+              "opportunity_id": "rhea-lend:usdc.fakes.testnet:supply",
+              "reason": {
+                "vi": "APR 8,96% với TVL 12.800.000 USD và thanh khoản rút 1.860.000 USD rất sâu, giá 0,9998 USD gần peg, không cảnh báo; phù hợp với số dư free 25.000 USD.",
+                "en": "APR 8.96% backed by deep TVL of 12,800,000 USD and withdrawable liquidity of 1,860,000 USD; price 0.9998 USD holds peg with no warnings, fitting the 25,000 USD free balance."
+              }
+            },
+            {
+              "opportunity_id": "rhea-lend:usdt.fakes.testnet:supply",
+              "reason": {
+                "vi": "APR 7,28% thấp hơn nhưng TVL 12.600.000 USD và thanh khoản 1.980.000 USD dày, giá 1,0001 USD ổn định, không cảnh báo; rủi ro thấp dù free balance chỉ 1.250.",
+                "en": "APR 7.28% is lower, but TVL of 12,600,000 USD and liquidity of 1,980,000 USD are deep and the 1.0001 USD price is stable with no warnings; low risk despite only 1,250 free."
+              }
+            },
+            {
+              "opportunity_id": "rhea-lend:wrap.testnet:supply",
+              "reason": {
+                "vi": "APR 14,12% cao nhất nhưng kèm cảnh báo APR_HIGH, TVL chỉ 410.000 USD và thanh khoản 52.000 USD mỏng; tài sản không peg nên rủi ro cao hơn.",
+                "en": "Highest APR at 14.12% but flagged APR_HIGH, with only 410,000 USD TVL and thin 52,000 USD liquidity; the non-pegged asset carries more risk, so it ranks last."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "variant": {
+        "label": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        "model": {
+          "id": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+          "structured": false
+        }
+      },
+      "runs": [
+        {
+          "status": 200,
+          "latency_ms": 19690,
+          "in_worker_timeout": false,
+          "valid": false,
+          "order": [],
+          "reasons_kept": 0,
+          "generation_id": "chatcmpl-809b8bb0-249e-43e0-9b96-7960562050ce",
+          "completion_tokens": 1200,
+          "items": null
+        },
+        {
+          "status": 200,
+          "latency_ms": 21670,
+          "in_worker_timeout": false,
+          "valid": false,
+          "order": [],
+          "reasons_kept": 0,
+          "generation_id": "chatcmpl-86b9851f-6fb2-4573-89e6-4ce10b361d9b",
+          "completion_tokens": 1200,
+          "items": null
+        },
+        {
+          "status": 200,
+          "latency_ms": 20719,
+          "in_worker_timeout": false,
+          "valid": false,
+          "order": [],
+          "reasons_kept": 0,
+          "generation_id": "chatcmpl-1790043b-2476-476d-bdd7-193557353442",
+          "completion_tokens": 1200,
+          "items": null
+        }
+      ]
+    }
+  ]
+}

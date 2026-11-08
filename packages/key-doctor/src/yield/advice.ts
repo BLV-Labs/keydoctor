@@ -101,6 +101,7 @@ export function advicePrompt(candidates: readonly AdviceCandidate[]): { role: "s
  */
 export function adviceRequest(model: TeeModel, candidates: readonly AdviceCandidate[]): Record<string, unknown> {
   return {
+    ...model.params,
     model: model.id,
     messages: advicePrompt(candidates),
     temperature: 0,

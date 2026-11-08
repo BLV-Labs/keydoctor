@@ -36,13 +36,12 @@ if (!Number.isInteger(runs) || runs < 1 || runs > 10) die("--runs must be 1..10"
 interface Variant {
   label: string;
   model: TeeModel;
-  extra?: Record<string, unknown>;
 }
 
 const VARIANTS: Variant[] = YIELD_TEE_MODELS.flatMap((m) => {
-  const base: Variant = { label: m.id, model: m };
-  // Open question from YD2: does Qwen answer faster or cleaner with its thinking turned off?
-  return m.id.startsWith("Qwen/") ? [base, { ...base, label: `${m.id} (enable_thinking=false)`, extra: { chat_template_kwargs: { enable_thinking: false } } }] : [base];
+  const base: Variant = { label: m.params ? `${m.id} (with ${JSON.stringify(m.params)})` : m.id, model: m };
+  // Keep the run without the model's params, so a rerun still shows why they are there.
+  return m.params ? [base, { label: `${m.id} (no params)`, model: { id: m.id, structured: m.structured } }] : [base];
 });
 
 interface Run {
@@ -70,7 +69,7 @@ async function once(v: Variant): Promise<Run> {
     const res = await fetch(CHAT_URL, {
       method: "POST",
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-      body: JSON.stringify({ ...adviceRequest(v.model, candidates), ...v.extra }),
+      body: JSON.stringify(adviceRequest(v.model, candidates)),
       signal: AbortSignal.timeout(SCRIPT_TIMEOUT_MS),
     });
     if (!res.ok) return fail(res.status);

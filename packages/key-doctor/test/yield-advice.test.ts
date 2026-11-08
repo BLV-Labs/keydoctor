@@ -103,6 +103,17 @@ describe("YD2: what the model sees", () => {
     for (const body of [structured, free]) for (const k of ["tools", "tool_choice", "functions"]) assert.ok(!(k in body), k);
   });
 
+  it("Qwen is sent with thinking off: with it on, the reasoning used up max_tokens and no answer came back (Y5)", () => {
+    const qwen = YIELD_TEE_MODELS.find((m) => m.id === YIELD_MODEL_CHAIN[0])!;
+    const body = adviceRequest(qwen, adviceCandidates(report()));
+    assert.deepEqual(body.chat_template_kwargs, { enable_thinking: false });
+    assert.equal(body.model, qwen.id, "params never override the fixed fields");
+  });
+
+  it("only models that answered inside the Worker timeout in the live compare are on the chain (Y5)", () => {
+    assert.deepEqual([...YIELD_MODEL_CHAIN], ["Qwen/Qwen3.6-35B-A3B-FP8"]);
+  });
+
   it("only TEE models are on the chain (plan §2: never a non-TEE model)", () => {
     assert.ok(YIELD_MODEL_CHAIN.length > 0);
     for (const id of YIELD_MODEL_CHAIN) assert.ok(isTeeModel(id), id);

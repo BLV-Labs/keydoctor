@@ -28,7 +28,7 @@ All answered by the owner on 2026-11-04.
 | Y2 | Who and what before 14 Nov? | Sputnik DAO councils. Rhea Lend gets the full flow: suggestion plus proposal. Aave, Compound, Morpho and Curve appear for comparison only |
 | Y3 | Network? | Testnet runs the full flow: a DAO farms test tokens on testnet Rhea, and the demo uses `usdc.fakes.testnet`. Mainnet rates are read for comparison. Intents has no testnet (HACKATHON Q-007), so `dry: true` quotes only |
 | Y4 | Can the agent execute? | No. Every move is a council vote. This plan does not extend the Guard. A self-running version inside Agent Budget is Roadmap: it would use a `PlanAction` `call` plan (ADR 0006) and needs a new owner decision |
-| Y5 | Which model? | TEE models on NEAR AI only. Start with `Qwen/Qwen3.6-35B-A3B-FP8`, then `z-ai/glm-5.3-flash`, then the rule-ordered list. Never a non-TEE model. The first live test compares `deepseek-ai/DeepSeek-V4.1-Flash-1017`, which moves to first place if every run returns valid JSON and its Vietnamese is better |
+| Y5 | Which model? | TEE models on NEAR AI only. Start with `Qwen/Qwen3.6-35B-A3B-FP8`, then `z-ai/glm-5.3-flash`, then the rule-ordered list. Never a non-TEE model. The first live test compares `deepseek-ai/DeepSeek-V4.1-Flash-1017`, which moves to first place if every run returns valid JSON and its Vietnamese is better. **Settled 2026-11-08 by the live compare:** Qwen with thinking off, then the rule order (YD2 note) |
 | Y6 | Who pays for inference? | One project key, Worker secret `NEAR_AI_API_KEY`, used only by the paths in §2 |
 | Y7 | Which assets? | One stablecoin at a time. Mainnet: native USDC and USDt only. Bridged USDC.e and USDT.e and DAI are out because they add bridge risk. Testnet has its own allowlist. No LP, looping or LST |
 | Y8 | Candidate floors? | Mainnet: TVL at least $1M, withdrawable liquidity at least $250k, price within 1% of $1, sources within 1 percentage point. APR above 30% warns but stays. The numbers are proposals, and YD1 checks them on real data |
@@ -181,11 +181,21 @@ export function validateAdvice(raw: unknown, candidates: YieldOpportunity[]): Yi
 
 **Built 2026-11-08, live run pending** (library `src/yield/advice.ts`, `src/yield/models.ts`, kd.yield_advice.v1 in `types.ts`; Worker `src/yield/agent.ts`, `migrations/0004_yield_advice.sql`; scripts `packages/key-doctor/scripts/compare-yield-models.ts` (`pnpm yield-models`) and `scripts/yield-setup/verify-tee.sh`; tests in `test/yield-advice.test.ts` and `apps/worker/test/yield.test.ts` with a fake model). Changes against the text above:
 - The cache table is `yield_advice`, not `yield_suggestions`, so it does not share a name with the MCP tool. One row per DAO and network, model answers only; a fallback is never cached, so the next allowed caller tries again. Cached advice is reused while it is under a day old and the suggestions, amounts and APRs (within the push delta) still match.
-- The model sees `adviceCandidates` (code facts in token units), gets no tools, and the body comes from one builder, `adviceRequest`, shared by the Worker and both scripts. The chain is `YIELD_MODEL_CHAIN` (Qwen, then GLM), checked against `YIELD_TEE_MODELS`.
+- The model sees `adviceCandidates` (code facts in token units), gets no tools, and the body comes from one builder, `adviceRequest`, shared by the Worker and both scripts. The chain is `YIELD_MODEL_CHAIN`, checked against `YIELD_TEE_MODELS`; a model's extra request fields (`params`) live on its `YIELD_TEE_MODELS` entry.
 - `validateAdvice` also drops reasons that carry a link, a handle, an account name or control characters, and accepts the number formats people write (8,96 in Vietnamese, 25k, $12.8M), each checked against that candidate's own evidence.
 - Who may spend the key: the push job (only on a push, Y20) and bot `/yield` / `/yield_watch`, capped at `YIELD_MODEL_PER_MIN` = 6 model calls per minute per isolate. MCP `yield_suggestions` returns `advice` from the cache only, never calling the model. The rule order is marked with why: `NO_KEY` (no secret: no model call and no D1 read, same as YD3), `MODEL_FAILED`, `BUSY` (over the cap), `NO_CACHE` (MCP, nothing cached).
 - Telegram shows the model's reason under each suggestion, plus one line naming the model, the TEE and the generation id, and saying every number comes from code.
-- Not done yet: the live Y5 compare and the verifier run (owner runs both with the key; the Worker secret is not readable locally), and the testnet deploy with `0004_yield_advice.sql`.
+- Y5 settled by the live compare on 2026-11-08 (`data/yield-model-compare.md`, 3 runs each on the synthetic testnet report). The chain is Qwen with `enable_thinking: false`, then the rule order:
+
+  | Model | Valid | Latency | Why |
+  |---|---|---|---|
+  | Qwen 3.6, thinking off | 3/3 | ~1.9 s | Chosen |
+  | Qwen 3.6, thinking on | 0/3 | ~5.8 s | Reasoning used all 1,200 tokens, no answer |
+  | GLM 5.3 Flash | 3/3 | 18-23 s | Past the 9 s per-call timeout: on the chain it only delays the fallback |
+  | DeepSeek V4.1 Flash 1017 | 0/3 | ~20 s | Same token cut as Qwen with thinking on, and slow |
+
+  GLM and DeepSeek stay on `YIELD_TEE_MODELS`, so the verifier script can still check them.
+- Not done yet: the verifier run (owner runs it with the key; the Worker secret is not readable locally) and the testnet deploy with `0004_yield_advice.sql`.
 
 ### YD3: surfaces
 
