@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { agentKeyFile, budgetCheckFailures, budgetPolicy, firstSignatureProblem, planBudget, secondSignatureCalls, sputnikCreateArgs, type BudgetChain, type BudgetPlan } from "../src/budget-create.ts";
+import { agentKeyFile, agentKeyUnsaved, budgetCheckFailures, budgetPolicy, firstSignatureProblem, planBudget, secondSignatureCalls, sputnikCreateArgs, type BudgetChain, type BudgetPlan } from "../src/budget-create.ts";
 import type { RawPolicy } from "../src/guard-proposals.ts";
 
 const FACTORY = "guards.testnet";
@@ -143,5 +143,21 @@ describe("budgetCheckFailures", () => {
 describe("agentKeyFile", () => {
   it("is the JSON guard-mcp reads", () => {
     assert.deepEqual(JSON.parse(agentKeyFile("a1.g.testnet", { publicKey: "ed25519:p", privateKey: "ed25519:s" })), { account_id: "a1.g.testnet", public_key: "ed25519:p", private_key: "ed25519:s" });
+  });
+});
+
+describe("agentKeyUnsaved", () => {
+  // The page holds the agent key only in memory: on the first live run the owner left before downloading and lost the agent.
+  const key = { publicKey: KEY };
+  it("warns while a key exists that was never downloaded", () => {
+    assert.equal(agentKeyUnsaved(key, null), true);
+  });
+  it("lets the owner leave once that key is downloaded, or when there is no key", () => {
+    assert.equal(agentKeyUnsaved(key, KEY), false);
+    assert.equal(agentKeyUnsaved(null, null), false);
+    assert.equal(agentKeyUnsaved(undefined, KEY), false);
+  });
+  it("warns again for a new agent's key: an earlier download does not save it", () => {
+    assert.equal(agentKeyUnsaved({ publicKey: "ed25519:otherkey" }, KEY), true);
   });
 });

@@ -162,3 +162,15 @@ export function budgetCheckFailures(plan: BudgetPlan, agentPublicKey: string, ch
 export function agentKeyFile(accountId: string, key: { publicKey: string; privateKey: string }): string {
   return `${JSON.stringify({ account_id: accountId, public_key: key.publicKey, private_key: key.privateKey }, null, 2)}\n`;
 }
+
+/** What the page asks before it lets the owner leave with an agent key that only exists in memory. */
+export const UNSAVED_KEY_QUESTION = "Your agent's key is not saved yet. If you leave this page, the key is lost and the agent can never sign. Leave anyway?";
+
+/**
+ * True while the page holds an agent key that was never downloaded. The page keeps the key only in memory,
+ * so leaving loses it for good: on the first live run the owner left before downloading and lost the agent.
+ * A new key after an earlier download counts as unsaved again: only the downloaded public key is safe.
+ */
+export function agentKeyUnsaved(key: { publicKey: string } | null | undefined, savedPublicKey: string | null): boolean {
+  return key != null && key.publicKey !== savedPublicKey;
+}

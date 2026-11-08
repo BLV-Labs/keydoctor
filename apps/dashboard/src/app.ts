@@ -13,7 +13,7 @@ import { budgetHref, guardHref, homeHref, parseRoute, resolveInput, routeHref, s
 import { renderAgentGuide } from "./agent-guide.ts";
 import { yoctoToNear } from "./format.ts";
 import { formToInput, validateGuardForm, type GuardFormError } from "./guard-form.ts";
-import { agentKeyFile, agentKeyProblem, budgetCheckFailures, firstSignatureProblem, planBudget, secondSignatureCalls, sputnikCreateArgs, SPUTNIK_FACTORY, type BudgetChain, type BudgetPlan } from "./budget-create.ts";
+import { agentKeyFile, agentKeyProblem, agentKeyUnsaved, budgetCheckFailures, firstSignatureProblem, planBudget, secondSignatureCalls, sputnikCreateArgs, SPUTNIK_FACTORY, UNSAVED_KEY_QUESTION, type BudgetChain, type BudgetPlan } from "./budget-create.ts";
 import {
   actProposalArgs,
   addAgentProblem,
@@ -97,6 +97,14 @@ let budgetSign2: { account: string; walletId: WalletId; confirmed: ConfirmedProp
 let budgetNewAgent: NewAgent | null = null;
 /** A Budget being created. `key` exists from sign 2 on, and only here: leaving the page loses it. */
 let budgetCreation: { plan: BudgetPlan; account: string; walletId: WalletId; key: { publicKey: string; privateKey: string } | null } | null = null;
+/** The public key of the last agent key the owner downloaded: any other key in memory is still at risk. */
+let savedAgentKey: string | null = null;
+/** Where the page stood when it took an agent key, so Back can be undone if the owner stays. */
+let agentKeyHref: string | null = null;
+
+const agentKeyAtRisk = (): boolean => agentKeyUnsaved(budgetNewAgent?.key ?? budgetCreation?.key, savedAgentKey);
+/** Asks before anything drops an agent key that was never downloaded. True means go ahead. */
+const mayDropAgentKey = (): boolean => !agentKeyAtRisk() || window.confirm(UNSAVED_KEY_QUESTION);
 
 const root = document.getElementById("app") as HTMLElement;
 let scanSeq = 0;
@@ -460,6 +468,7 @@ function signSecondSignature(button: HTMLButtonElement): void {
   button.disabled = true;
   // Before the wallet opens: an answer lost on the way back must not lose the key of an agent that now exists.
   budgetNewAgent = agent;
+  agentKeyHref = location.href;
   status.textContent = `Waiting for ${walletLabel(walletId)}. Signature 2 of 2: check the transaction there before you approve.`;
   import("./wallet.ts")
     .then((w) => w.signActProposal(account, budgetNetwork(), state.dao.dao, actProposalArgs(confirmed, "VoteApprove"), walletId, (t) => (status.textContent = t)))
@@ -974,6 +983,7 @@ async function signBudgetGuard(button: HTMLButtonElement): Promise<void> {
   }
   // Before the wallet opens: an answer lost on the way back must not lose the key of an agent that now exists.
   creation.key = key;
+  agentKeyHref = location.href;
   status.textContent = `Waiting for ${walletLabel(walletId)}. Signature 2 of 2: check the transaction there before you approve.`;
   let signError: unknown = null;
   try {
@@ -1006,6 +1016,7 @@ function downloadAgentKey(): void {
   const account = budgetNewAgent?.account ?? creation?.plan.args.agents[0]?.account_id;
   const key = budgetNewAgent?.key ?? creation?.key;
   if (!key || account === undefined) return;
+  savedAgentKey = key.publicKey;
   const url = URL.createObjectURL(new Blob([agentKeyFile(account, key)], { type: "application/json" }));
   const link = document.createElement("a");
   link.href = url;
@@ -1239,6 +1250,7 @@ function changePage(link: HTMLAnchorElement): void {
 }
 
 function navigate(href: string): void {
+  if (!mayDropAgentKey()) return;
   history.pushState(null, "", href);
   window.scrollTo(0, 0);
   void render(true);
@@ -1672,7 +1684,20 @@ root.addEventListener("submit", (event) => {
   }
 });
 
-window.addEventListener("popstate", () => void render(true, false));
+window.addEventListener("popstate", () => {
+  // The URL has already moved: staying means putting the key's page back on top.
+  if (!mayDropAgentKey()) {
+    if (agentKeyHref !== null) history.pushState(null, "", agentKeyHref);
+    return;
+  }
+  void render(true, false);
+});
+// Reload, closing the tab or typing a new address: the browser shows its own wording for this.
+window.addEventListener("beforeunload", (event) => {
+  if (!agentKeyAtRisk()) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
 
 let resizeTimer: ReturnType<typeof setTimeout> | undefined;
 window.addEventListener("resize", () => {
