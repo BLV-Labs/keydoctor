@@ -6,3 +6,5 @@ TELEGRAM_WEBHOOK_SECRET=change-me-webhook
 KEEPER_ACCOUNT_ID=
 KEEPER_PRIVATE_KEY=
 KEEPER_ALERT_CHAT_ID=
+# Yield advice (YD2, ADR 0004): a NEAR AI Cloud key. Leave empty to keep the rule order and make no model call.
+NEAR_AI_API_KEY=

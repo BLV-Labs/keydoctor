@@ -195,7 +195,7 @@ export function validateAdvice(raw: unknown, candidates: YieldOpportunity[]): Yi
   | DeepSeek V4.1 Flash 1017 | 0/3 | ~20 s | Same token cut as Qwen with thinking on, and slow |
 
   GLM and DeepSeek stay on `YIELD_TEE_MODELS`, so the verifier script can still check them.
-- Not done yet: the verifier run (owner runs it with the key; the Worker secret is not readable locally) and the testnet deploy with `0004_yield_advice.sql`.
+- Deployed to testnet 2026-11-08 (Worker `37397e17`, `0004_yield_advice.sql` on remote D1). Not done yet: the verifier run (owner runs it with the key; the Worker secret is not readable locally) and a live model call from the Worker, which needs a DAO with a suggestion (YD0 funds one).
 
 ### YD3: surfaces
 

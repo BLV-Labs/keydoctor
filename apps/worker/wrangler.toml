@@ -1,5 +1,6 @@
 # Key Doctor Worker. Secrets are not in this file: set them with `wrangler secret put <NAME>`
-# (RUN_CHECK_TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, KEEPER_PRIVATE_KEY, KEEPER_ALERT_CHAT_ID). Local dev reads .dev.vars.
+# (RUN_CHECK_TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, KEEPER_PRIVATE_KEY, KEEPER_ALERT_CHAT_ID, NEAR_AI_API_KEY).
+# Local dev reads .dev.vars.
 name = "key-doctor"
 main = "src/index.ts"
 compatibility_date = "2026-10-01"
