@@ -185,6 +185,14 @@ export function validateAdvice(raw: unknown, candidates: YieldOpportunity[]): Yi
 
 **Why.** A proposal is only as safe as the council that votes on it, which is what ties this feature to Key Doctor. Security subscribers must not get yield messages they never asked for.
 
+**Built 2026-11-08** (`apps/worker`: `src/jobs/yield.ts`, `src/store/yield.ts`, `migrations/0003_yield.sql`, `yieldCheck` in `src/core.ts`, `renderYield` in `src/telegram/render.ts`; tests in `test/yield.test.ts`). Changes against the text above:
+- The push has its own cron, `11,26,41,56 * * * *` (Y20, every 15 minutes), not the `0 2 * * *` daily job. It pushes when the top suggestion changes or its APR moves by `YIELD_PUSH_APR_DELTA`. Any read error skips the push and keeps the state, so a long Rhea API outage also blocks pushes.
+- MCP `yield_suggestions` runs a fresh, rule-ordered scan: no model, no D1, no key spent (`/mcp` is open, ADR 0003). The cached model advice comes with YD2.
+- Subrequest budget: one DAO costs about 10 subrequests, plus a council scan and one send per chat on a push. `MAX_YIELD_DAOS_PER_RUN` defaults to 1 (at most 3) and watched DAOs take turns, least recently checked first. With N watched DAOs, each one is checked every N × 15 minutes.
+- `deleteChat` and `moveChat` now run as one D1 batch (one subrequest, atomic) and cover `yield_watches` as well as `subscriptions`.
+- `/yield` and `/yield_watch` are rate-limited to 3 per chat per minute. `/yield` never writes D1. `/yield_watch` records the starting top only from a report with no read error.
+- Not built: the dashboard Yield panel (moved to YD4, with the proposal builder). README lines wait for YD5.
+
 ### YD4: proposal builder
 
 **What.** `apps/dashboard/src/yield-proposals.ts` builds supply and withdraw proposals, reusing the base64 args helper in `guard-proposals.ts`. Allowlist per network: Rhea contract, known tokens, the methods proved in YD0. The existing proposal job watches the result.

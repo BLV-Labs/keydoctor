@@ -7,7 +7,7 @@ import { renderBudgetAlert } from "../telegram/render.ts";
 import { alertLang, alertMessage, deliver, renderFor } from "./deliver.ts";
 
 export interface JobResult {
-  job: "proposals" | "daily" | "keeper";
+  job: "proposals" | "daily" | "keeper" | "yield";
   targets_checked: number;
   alerts_sent: number;
   alerts: string[];

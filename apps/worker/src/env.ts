@@ -13,6 +13,8 @@ export interface D1PreparedStatement {
 
 export interface D1Database {
   prepare(query: string): D1PreparedStatement;
+  /** Runs the statements in one transaction, as one subrequest. */
+  batch(statements: D1PreparedStatement[]): Promise<unknown[]>;
 }
 
 export interface ExecutionContext {
@@ -58,4 +60,9 @@ export interface Env {
   /** Limits per cycle, to stay inside the 50 subrequests of the free plan (default 3 and 3). */
   KEEPER_MAX_GUARDS_PER_RUN?: string;
   KEEPER_MAX_STEPS_PER_RUN?: string;
+  /**
+   * Yield push (YD3): DAOs read per cycle (default 1, at most 3). One DAO costs about 10 subrequests, a push adds
+   * a council scan and one send per chat, so 1 keeps a cycle well under the free plan's 50. Watched DAOs take turns.
+   */
+  MAX_YIELD_DAOS_PER_RUN?: string;
 }

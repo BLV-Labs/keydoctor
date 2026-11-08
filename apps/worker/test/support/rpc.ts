@@ -34,6 +34,8 @@ export interface Chain {
   head: number;
   /** Per-call Telegram answer; overrides telegramStatus when it returns a value. */
   telegramReply?: (method: string, body: any) => { status: number; json: unknown } | undefined;
+  /** Answers plain GET requests (the Rhea API); without it a GET fails with 500. */
+  get?: (url: string) => Response;
 }
 
 export function installChain(t: TestContext): Chain {
@@ -62,6 +64,7 @@ export function installChain(t: TestContext): Chain {
       const ok = chain.telegramStatus === 200;
       return new Response(JSON.stringify(ok ? { ok: true, result: {} } : { ok: false, description: "Forbidden: bot was blocked by the user" }), { status: chain.telegramStatus });
     }
+    if (init?.method === "GET") return chain.get?.(String(url)) ?? new Response("{}", { status: 500 });
     const body = JSON.parse(String(init?.body)) as { method: string; params: Record<string, any> };
     chain.calls.push({ method: body.method, ...body.params });
     const p = body.params;

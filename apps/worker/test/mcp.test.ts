@@ -66,7 +66,7 @@ describe("GĐ3 Worker: routes and auth", () => {
     const { env } = setup(t);
     const list = await rpc(env, "tools/list");
     assert.equal(list.status, 200);
-    assert.equal(list.body.result.tools.length, 6);
+    assert.equal(list.body.result.tools.length, 7);
   });
 
   it("unknown paths are 404", async () => {
@@ -94,7 +94,7 @@ describe("GĐ3 MCP protocol", () => {
     assert.deepEqual((await rpc(env, "ping")).body.result, {});
 
     const list = await rpc(env, "tools/list");
-    assert.deepEqual(list.body.result.tools.map((x: any) => x.name), ["diagnose", "compare", "list_keys", "list_proposals", "watch", "preflight"]);
+    assert.deepEqual(list.body.result.tools.map((x: any) => x.name), ["diagnose", "compare", "list_keys", "list_proposals", "watch", "preflight", "yield_suggestions"]);
     assert.match(TOOLS[1]!.description, /Only set update_baseline=true when explicitly asked; by default the baseline does not move\./);
     assert.equal((await rpc(env, "nope")).body.error.code, -32601);
   });

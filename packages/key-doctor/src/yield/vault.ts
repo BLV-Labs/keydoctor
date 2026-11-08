@@ -3,7 +3,7 @@ import { toIsoSeconds } from "../age.ts";
 import { fail, isKdError } from "../errors.ts";
 import { isDigits, isRecord, parsePolicy, resolveTarget } from "../parse.ts";
 import { createRpc, DEFAULT_RPC_URLS, type Rpc } from "../rpc.ts";
-import { NO_SUGGESTION_NOTE, PAYROLL_NOTE, REFERENCE_NOTE, TEST_DATA_NOTE } from "./messages.ts";
+import { NO_SUGGESTION_NOTE, NOT_ADVICE_NOTE, PAYROLL_NOTE, REFERENCE_NOTE, TEST_DATA_NOTE } from "./messages.ts";
 import { filterCandidates, readRheaLend, type RheaRow } from "./rhea.ts";
 import { YIELD_PROPOSAL_SCAN, YIELD_PUSH_APR_DELTA, YIELD_RULESET_VERSION, YIELD_TOKENS } from "./thresholds.ts";
 
@@ -182,7 +182,7 @@ export async function scanVault(daoId: string, opts: ScanVaultOptions = {}): Pro
     suggestions.push({ opportunity_id: o.id, token_id: o.token_id, max_amount: h.available });
   }
 
-  const notes = [PAYROLL_NOTE];
+  const notes = [PAYROLL_NOTE, NOT_ADVICE_NOTE];
   if (opportunities.some((o) => o.test_data)) notes.push(TEST_DATA_NOTE);
   if (reference) notes.push(REFERENCE_NOTE);
   const holdsFree = holdings.some((h) => h.available !== null && BigInt(h.available) > 0n);

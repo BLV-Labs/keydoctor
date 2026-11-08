@@ -51,8 +51,12 @@ export async function countSubscriptions(db: D1Database, chatId: string): Promis
   return row?.n ?? 0;
 }
 
+/** A chat that blocked or removed the bot loses its key subscriptions and its yield watches (one subrequest). */
 export async function deleteChat(db: D1Database, chatId: string): Promise<void> {
-  await db.prepare("DELETE FROM subscriptions WHERE chat_id = ?").bind(chatId).run();
+  await db.batch([
+    db.prepare("DELETE FROM subscriptions WHERE chat_id = ?").bind(chatId),
+    db.prepare("DELETE FROM yield_watches WHERE chat_id = ?").bind(chatId),
+  ]);
 }
 
 export async function chatsFor(db: D1Database, target: string, network: Network): Promise<string[]> {
@@ -63,8 +67,12 @@ export async function chatsFor(db: D1Database, target: string, network: Network)
   return results.map((r) => r.chat_id);
 }
 
-/** A group upgraded to a supergroup gets a new chat id; its subscriptions follow it. */
+/** A group upgraded to a supergroup gets a new chat id; its subscriptions and yield watches follow it. */
 export async function moveChat(db: D1Database, from: string, to: string): Promise<void> {
-  await db.prepare("UPDATE OR IGNORE subscriptions SET chat_id = ?, chat_type = 'supergroup' WHERE chat_id = ?").bind(to, from).run();
-  await db.prepare("DELETE FROM subscriptions WHERE chat_id = ?").bind(from).run();
+  await db.batch(
+    ["subscriptions", "yield_watches"].flatMap((table) => [
+      db.prepare(`UPDATE OR IGNORE ${table} SET chat_id = ?, chat_type = 'supergroup' WHERE chat_id = ?`).bind(to, from),
+      db.prepare(`DELETE FROM ${table} WHERE chat_id = ?`).bind(from),
+    ]),
+  );
 }

@@ -1,7 +1,10 @@
 // Bot commands (§8.2). /check and /changes share core.ts with the MCP tools.
 import { checkProposals, isKdError, type KdError, type Network } from "key-doctor";
 import type { Env } from "../env.ts";
-import { compare, resolve, scan } from "../core.ts";
+import { compare, resolve, scan, yieldCheck } from "../core.ts";
+import { isComplete, topOf } from "../jobs/yield.ts";
+import { checkRate } from "../mcp/rate-limit.ts";
+import { addYieldWatch, countYieldWatches, getYieldTop, removeYieldWatch, saveYieldTop } from "../store/yield.ts";
 import { getProposalState, saveProposalState } from "../store/proposal-state.ts";
 import { latestSnapshot, saveSnapshot } from "../store/snapshots.ts";
 import {
@@ -12,14 +15,16 @@ import {
   removeSubscription,
 } from "../store/subscriptions.ts";
 import { sendMessage, sendTyping, TelegramError, type Outgoing } from "./api.ts";
-import { langOf, renderChanges, renderCheck, renderHelp, TEXT, type Lang } from "./render.ts";
+import { langOf, renderChanges, renderCheck, renderHelp, renderYield, TEXT, type Lang } from "./render.ts";
 import { takePending } from "../store/pending.ts";
 import { isCode } from "../watch-link.ts";
 
 export const MAX_SUBS_PER_CHAT = 20;
+/** /yield and /yield_watch per chat per minute: each one reads two networks and scans the council. */
+export const YIELD_PER_CHAT_PER_MIN = 3;
 
 export type Command =
-  | { name: "check" | "changes" | "watch" | "unwatch"; target: string | null }
+  | { name: "check" | "changes" | "watch" | "unwatch" | "yield" | "yield_watch" | "yield_unwatch"; target: string | null }
   | { name: "start"; code: string }
   | { name: "list" | "help" }
   | { name: "ignore" };
@@ -49,6 +54,9 @@ export function parseCommand(text: string, isGroup: boolean): Command {
     case "changes":
     case "watch":
     case "unwatch":
+    case "yield":
+    case "yield_watch":
+    case "yield_unwatch":
       return { name: cmd, target: arg };
     case "list":
       return { name: "list" };
@@ -100,8 +108,12 @@ async function run(cmd: Command, inc: Incoming, env: Env, typing: () => void): P
       return watchTarget(p.id, p.network, p.rpcUrl, inc, env, typing);
     }
   }
-  if (cmd.target === null) return TEXT.usage(lang, cmd.name);
+  if (cmd.target === null) return cmd.name.startsWith("yield") ? TEXT.yieldUsage(lang, cmd.name) : TEXT.usage(lang, cmd.name);
   const t = resolve({ target: cmd.target }, env);
+  if (cmd.name === "yield" || cmd.name === "yield_watch") {
+    const wait = checkRate(`yield:${chatId}`, YIELD_PER_CHAT_PER_MIN);
+    if (wait > 0) return TEXT.rateLimited(lang, wait);
+  }
 
   switch (cmd.name) {
     case "check":
@@ -114,7 +126,36 @@ async function run(cmd: Command, inc: Incoming, env: Env, typing: () => void): P
       return (await removeSubscription(env.DB, t.id, t.network, chatId)) ? TEXT.unwatched(lang, t.id) : TEXT.notWatched(lang, t.id);
     case "watch":
       return watchTarget(t.id, t.network, t.rpcUrl, inc, env, typing);
+    case "yield": {
+      // Read-only: never writes D1 (the push state belongs to /yield_watch and the job).
+      typing();
+      const { report, council } = await yieldCheck({ target: t.id, network: t.network }, env);
+      return renderYield(lang, report, council, { ...(env.DASHBOARD_URL && { dashboardUrl: env.DASHBOARD_URL }) });
+    }
+    case "yield_unwatch":
+      return (await removeYieldWatch(env.DB, t.id, t.network, chatId)) ? TEXT.yieldUnwatched(lang, t.id) : TEXT.yieldNotWatched(lang, t.id);
+    case "yield_watch":
+      return yieldWatch(t.id, t.network, inc, env, typing);
   }
+}
+
+/**
+ * Opts this chat in to yield messages, in yield_watches only: key subscribers never get yield messages they did
+ * not ask for. The reply is the report itself, so the chat sees the starting point the job compares against.
+ */
+async function yieldWatch(id: string, network: Network, inc: Incoming, env: Env, typing: () => void): Promise<Outgoing> {
+  const { lang, chatId } = inc;
+  if ((await countYieldWatches(env.DB, chatId)) >= MAX_SUBS_PER_CHAT) return TEXT.tooMany(lang, MAX_SUBS_PER_CHAT);
+  typing();
+  // Validates the DAO before anything is stored: an account or a non-DAO throws here.
+  const { report, council } = await yieldCheck({ target: id, network }, env);
+  if (!(await addYieldWatch(env.DB, id, network, chatId, inc.chatType))) return TEXT.yieldAlreadyWatched(lang, id);
+  // First watcher of this DAO: record the current top so the job pushes only a later change. A report with a
+  // read error is not a starting point; the job records the first complete one.
+  if (isComplete(report) && (await getYieldTop(env.DB, id, network)) === undefined) await saveYieldTop(env.DB, id, network, topOf(report));
+  const watched = TEXT.yieldWatched(lang, id);
+  const shown = renderYield(lang, report, council, { watching: true, ...(env.DASHBOARD_URL && { dashboardUrl: env.DASHBOARD_URL }) });
+  return { text: `${watched.text}\n\n${shown.text.split("\n").slice(1).join("\n")}`, buttons: shown.buttons ?? [] };
 }
 
 /** UC4 and the /start deep link: subscribe this chat, write the first baseline and, for a DAO, the proposal state. */

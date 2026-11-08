@@ -45,3 +45,9 @@ export const REFERENCE_NOTE: Text = {
   vi: "Lãi suất mainnet chỉ để tham khảo; đề xuất chỉ dùng mạng của DAO.",
   en: "Mainnet rates are for reference only; suggestions use the DAO's own network.",
 };
+
+/** Always shown: the report filters data, it does not advise (plan §2). */
+export const NOT_ADVICE_NOTE: Text = {
+  vi: "Đây là dữ liệu đã lọc, không phải lời khuyên tài chính. Council tự quyết và tự ký.",
+  en: "This is filtered data, not financial advice. The council decides and signs.",
+};

@@ -8,7 +8,9 @@ import {
   listProposals as listDaoProposals,
   resolveTarget,
   scanTarget,
+  scanVault,
   toSummary,
+  type KdYieldReport,
   type Flag,
   type KdDiff,
   type KdPreflight,
@@ -47,6 +49,31 @@ export function resolve(args: TargetArgs, env: Env): { id: string; network: Netw
 export function scan(args: TargetArgs, env: Env): Promise<KdReport> {
   const t = resolve(args, env);
   return scanTarget(t.id, { network: t.network, ...(t.rpcUrl && { rpcUrl: t.rpcUrl }) });
+}
+
+/** kd.yield.v1 for one DAO, rule-ordered. Reads RPC only: no model, no D1. Throws NOT_A_DAO for an account. */
+export function scanYield(args: TargetArgs, env: Env): Promise<KdYieldReport> {
+  const t = resolve(args, env);
+  const mainnet = rpcUrlsFor(env, "mainnet");
+  return scanVault(t.id, { network: t.network, ...(t.rpcUrl && { rpcUrl: t.rpcUrl }), ...(mainnet && { mainnetRpcUrl: mainnet }) });
+}
+
+/** The council's key status, or null when it could not be read (risk unknown, not low). */
+export async function councilStatus(args: TargetArgs, env: Env): Promise<KdReport["summary"] | null> {
+  try {
+    return (await scan(args, env)).summary;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The yield report plus the council's key status (YD3): a proposal is only as safe as the council that votes on it.
+ * Bot `/yield` and MCP `yield_suggestions` both call this, so they return the same report. Never touches D1.
+ */
+export async function yieldCheck(args: TargetArgs, env: Env): Promise<{ report: KdYieldReport; council: KdReport["summary"] | null }> {
+  const report = await scanYield(args, env);
+  return { report, council: await councilStatus({ target: report.dao, network: report.chain.network }, env) };
 }
 
 /** UC2: never reads or writes D1. */

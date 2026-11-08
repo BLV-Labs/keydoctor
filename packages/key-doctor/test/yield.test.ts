@@ -10,7 +10,7 @@ import {
   YIELD_RULESET_VERSION,
   type RheaRow,
 } from "../src/index.ts";
-import { NO_SUGGESTION_NOTE, PAYROLL_NOTE, REFERENCE_NOTE, TEST_DATA_NOTE } from "../src/yield/messages.ts";
+import { NO_SUGGESTION_NOTE, NOT_ADVICE_NOTE, PAYROLL_NOTE, REFERENCE_NOTE, TEST_DATA_NOTE } from "../src/yield/messages.ts";
 import { RHEA_API_URL, RHEA_LEND_CONTRACT } from "../src/yield/thresholds.ts";
 import { blockBody, fixture, ok, rpcErr } from "./support/stub.ts";
 import { MAINNET_API, MAINNET_ASSETS } from "./yield-data.ts";
@@ -236,7 +236,7 @@ describe("scanVault (testnet DAO, mainnet reference)", () => {
     assert.deepEqual(r.suggestions, [{ opportunity_id: `rhea-lend:${USDC_T}:supply`, token_id: USDC_T, max_amount: "16500000" }]);
     assert.ok(r.opportunities.some((o) => o.network === "mainnet" && !o.executable));
     assert.ok(r.opportunities.filter((o) => o.executable).every((o) => o.network === "testnet" && o.test_data));
-    assert.deepEqual(r.notes, [PAYROLL_NOTE, TEST_DATA_NOTE, REFERENCE_NOTE]);
+    assert.deepEqual(r.notes, [PAYROLL_NOTE, NOT_ADVICE_NOTE, TEST_DATA_NOTE, REFERENCE_NOTE]);
     assert.deepEqual(r.errors, []);
     // The DAO-network rates are pinned to the scan block.
     const testnetRates = calls.find((c) => c.account === RHEA_LEND_CONTRACT.testnet)!;
@@ -248,7 +248,7 @@ describe("scanVault (testnet DAO, mainnet reference)", () => {
     installYield(t, { balance: bytes("0") });
     const r = await scanVault(DAO, { referenceMainnet: false });
     assert.deepEqual(r.suggestions, []);
-    assert.deepEqual(r.notes, [PAYROLL_NOTE, TEST_DATA_NOTE, NO_SUGGESTION_NOTE]);
+    assert.deepEqual(r.notes, [PAYROLL_NOTE, NOT_ADVICE_NOTE, TEST_DATA_NOTE, NO_SUGGESTION_NOTE]);
   });
 
   it("unreadable proposals fail closed: nothing is free, nothing is suggested", async (t) => {
