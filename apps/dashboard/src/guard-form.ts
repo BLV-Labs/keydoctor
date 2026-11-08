@@ -6,6 +6,8 @@ import { nearToYocto } from "./format.ts";
 
 export const MAX_AGENTS = 10;
 export const MAX_WHITELIST = 50;
+/** The keeper signs for every Budget and holds no right in any (ADR 0005 K1), so it is never a recipient. */
+export const KEEPER_ACCOUNT = "keydoctor-keeper.testnet";
 export const MAX_GUARDIANS = 5;
 export const MAX_LABEL_CHARS = 64;
 export const MAX_NAME_LEN = 32;
@@ -30,7 +32,8 @@ export interface GuardFormInput {
 export interface GuardCreateArgs {
   name: string;
   policy: { max_per_tx: string; max_per_day: string; max_pending_per_agent: number; min_reserve: string };
-  agents: { account_id: string; label: string }[];
+  /** With `public_key` the Guard also creates the agent's account, holding that one key. */
+  agents: { account_id: string; label: string; public_key?: string }[];
   whitelist: { account_id: string; label: string; max_per_tx: string | null }[];
   guardians: string[];
 }
@@ -42,11 +45,13 @@ export type GuardFormCode =
   | "INVALID_PENDING"
   | "FUNDING_TOO_LOW"
   | "FUNDING_BELOW_RESERVE"
+  | "FUNDING_UNDER_MINIMUM"
   | "NO_AGENTS"
   | "TOO_MANY_AGENTS"
   | "TOO_MANY_WHITELIST"
   | "TOO_MANY_GUARDIANS"
   | "INVALID_ACCOUNT"
+  | "KEEPER_RECIPIENT"
   | "LABEL_TOO_LONG";
 
 export interface GuardFormError {
@@ -62,16 +67,21 @@ export const GUARD_FORM_TEXT: Record<GuardFormCode, { vi: string; en: string }> 
   INVALID_PENDING: { vi: "Nhập số nguyên từ 1 đến 100.", en: "Enter a whole number from 1 to 100." },
   FUNDING_TOO_LOW: { vi: "Factory cần ít nhất 0.5 NEAR cho Guard.", en: "The factory needs at least 0.5 NEAR for the Guard." },
   FUNDING_BELOW_RESERVE: { vi: "Số nạp thấp hơn mức dự trữ: Guard sẽ từ chối mọi yêu cầu.", en: "Funding is below the reserve: the Guard would refuse every request." },
+  FUNDING_UNDER_MINIMUM: {
+    vi: "Số nạp phải đủ cho bond của mọi yêu cầu chờ, gas của agent, mức dự trữ và 0.5 NEAR cho Guard.",
+    en: "Funding must cover every waiting request's bond, the agent's gas, the reserve and 0.5 NEAR for the Guard.",
+  },
   NO_AGENTS: { vi: "Thêm ít nhất một agent.", en: "Add at least one agent." },
   TOO_MANY_AGENTS: { vi: `Tối đa ${MAX_AGENTS} agent.`, en: `At most ${MAX_AGENTS} agents.` },
   TOO_MANY_WHITELIST: { vi: `Tối đa ${MAX_WHITELIST} người nhận.`, en: `At most ${MAX_WHITELIST} receivers.` },
   TOO_MANY_GUARDIANS: { vi: `Tối đa ${MAX_GUARDIANS} guardian.`, en: `At most ${MAX_GUARDIANS} guardians.` },
   INVALID_ACCOUNT: { vi: "Không phải account id NEAR hợp lệ.", en: "Not a valid NEAR account id." },
+  KEEPER_RECIPIENT: { vi: "Keeper không được là người nhận.", en: "The Key Doctor keeper cannot be a recipient." },
   LABEL_TOO_LONG: { vi: `Nhãn tối đa ${MAX_LABEL_CHARS} ký tự.`, en: `Labels are at most ${MAX_LABEL_CHARS} characters.` },
 };
 
 /** An account id exactly as typed: no case folding, no trimming, so what the council sees is what the chain gets. */
-function isAccountId(id: string): boolean {
+export function isAccountId(id: string): boolean {
   try {
     return resolveTarget(id).id === id;
   } catch {
@@ -127,6 +137,7 @@ export function validateGuardForm(input: GuardFormInput, factory: string, codeSt
   input.agents.forEach((a, i) => entry("agents", i, a));
   const whitelist = input.whitelist.map((w, i) => {
     entry("whitelist", i, w);
+    if (w.account_id === KEEPER_ACCOUNT) err(`whitelist.${i}.account_id`, "KEEPER_RECIPIENT");
     if (w.max_per_tx.trim() === "") return { account_id: w.account_id, label: w.label, max_per_tx: null };
     const cap = nearToYocto(w.max_per_tx);
     if (cap === null || BigInt(cap) === 0n) err(`whitelist.${i}.max_per_tx`, "INVALID_AMOUNT");

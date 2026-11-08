@@ -26,6 +26,14 @@ export const icon = {
   sun: () => svg(18, '<circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>'),
   moon: () => svg(18, '<path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"></path>'),
   alert: () => svg(22, '<path d="M12 3l10 18H2L12 3z"></path><path d="M12 10v4M12 17.5v.01"></path>'),
+  alertSmall: () => svg(12, '<path d="M12 3l10 18H2L12 3z"></path><path d="M12 10v4M12 17.5v.01"></path>'),
+  bellNav: () => svg(20, '<path d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.9 1.9 0 003.4 0"></path>'),
+  wallet: () => svg(16, '<rect x="3" y="6" width="18" height="14" rx="2"></rect><path d="M3 10h18M16 15h.01"></path>'),
+  clock: () => svg(12, '<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path>'),
+  pause: () => svg(16, '<path d="M9 5v14M15 5v14"></path>'),
+  play: () => svg(16, '<path d="M7 4l13 8-13 8V4z"></path>'),
+  plus: () => svg(16, '<path d="M12 5v14M5 12h14"></path>'),
+  chevronRight: () => svg(16, '<path d="M9 6l6 6-6 6"></path>'),
 };
 
 const STATUS_ICON: Record<Status, string> = {

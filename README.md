@@ -144,7 +144,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 | GĐ10 | Network stats script | Built; numbers pending a live run |
 | GĐ12 | One-tap watch links: `POST /api/watch-link`, MCP `watch`, `/start <code>`, dashboard "Create links" | Deployed with the Worker; MCP `watch` is in `tools/list`, a link has not been opened live yet |
 | GĐ11, GĐ13 | History backtest, NearBlocks key dates | Not built (Roadmap) |
-| GĐ15–GĐ17 | Agent Guard contract (`contracts/guard`) | Built; 65 unit tests and 9 sandbox tests against the real Sputnik v2 wasm. A spike version paid a transfer on testnet (2026-11-02) |
+| GĐ15–GĐ17 | Agent Guard contract (`contracts/guard`) | Built; 91 unit tests and 18 sandbox tests against the real Sputnik v2 wasm. A spike version paid a transfer on testnet (2026-11-02) |
 | GĐ18 | Guard testnet setup script (`scripts/guard-setup/setup.sh`) | Ran end to end on testnet (2026-11-02): full Guard 1.0.0 deployed, role added, funded and locked; `setup.sh verify` passes |
 | GĐ19 | Guard MCP (`apps/guard-mcp`) and demo invoices (`demo/invoices/`) | Built; 42 tests with a mocked chain. All four invoices run live on testnet (2026-11-02): `inv-001`..`003` `auto_approved`, the DAO paid each receiver in the same tx (15.2 Tgas each); `inv-004` (500 NEAR to `attacker.testnet`) became proposal 5, `pending` with `NOT_WHITELISTED`, `OVER_PER_TX`, `OVER_DAILY_LIMIT`, nothing paid (8.4 Tgas) |
 
@@ -200,7 +200,7 @@ apps/worker           one Cloudflare Worker + D1
 | `PQ_NONE` | note | No ML-DSA (post-quantum) key |
 | `COUNCIL_SMALL` | note | Council of 2 or fewer |
 
-Proposal watch (`checkProposals`): a voter with a full-access key added in the last 48 hours raises a high alert. So does a new `add_member_to_role`, `remove_member_from_role`, `policy*` or `config` proposal (governance), and a new `upgrade_self` or `upgrade_remote` proposal (code upgrade). A transfer proposal from the DAO's [Agent Guard](#agent-guard-contract) raises a high alert when the Guard left it to the council (with the agent, the Guard's reasons and the agent's memo) and a note when the Guard paid it within its limits, so the council sees every Guard payment. Key Doctor treats a proposer as a Guard only when it holds a DAO role and its `kd_guard_info` names this DAO.
+Proposal watch (`checkProposals`): a voter with a full-access key added in the last 48 hours raises a high alert. So does a new `add_member_to_role`, `remove_member_from_role`, `policy*` or `config` proposal (governance), and a new `upgrade_self`, `upgrade_remote` or function-call `upgrade` proposal (code upgrade). A transfer proposal from the DAO's [Agent Guard](#agent-guard-contract) raises a high alert when the Guard left it to the council (with the agent, the Guard's reasons and the agent's memo) and a note when the Guard paid it within its limits, so the council sees every Guard payment. Key Doctor treats a proposer as a Guard only when it holds a DAO role and its `kd_guard_info` names this DAO.
 
 On post-quantum keys: no quantum computer breaks these keys today. The reason to start now is that moving keys takes years, and every public key on NEAR is already public.
 
@@ -244,12 +244,25 @@ claude mcp add guard -e NEAR_NETWORK=testnet -e GUARD_CONTRACT_ID=<prefix>-guard
 
 The tool descriptions and messages tell the agent not to send a pending payment again and not to split it into smaller ones: over the limit is the council's call. When the outcome of a transaction is not known (`UNKNOWN_OUTCOME`), the result carries the tx hash and the agent must check the status instead of retrying.
 
+### Example agent on NEAR AI Cloud (not part of Key Doctor)
+
+`examples/near-ai-agent` is the agent being guarded, not a Key Doctor feature: Key Doctor itself has no LLM. A model on NEAR AI Cloud (default `Qwen/Qwen3.8-27B`, a private TEE model with tool calls; `NEAR_AI_MODEL` picks another) decides, and `guard-mcp`, started as a child process over stdio, is its only way to pay. The agent key stays on your machine; NEAR AI sees only the conversation, and `guard-mcp` never gets the NEAR AI key. The model sees only the tools `guard-mcp` lists, and a run stops after 8 model turns.
+
+```bash
+NEAR_AI_API_KEY=<from cloud.near.ai> NEAR_NETWORK=testnet GUARD_CONTRACT_ID=<budget>.keydoctor-guards-v2.testnet \
+AGENT_ACCOUNT_ID=<agent>.<budget>.keydoctor-guards-v2.testnet AGENT_KEY_PATH=$HOME/.config/key-doctor/<agent>.json \
+pnpm --silent --filter near-ai-agent start "Pay 0.1 NEAR to bob.testnet for invoice 7"
+# → stderr shows each guard_* call and the Guard's kd.guard_result.v1; stdout is the model's answer
+```
+
+Status: unit-tested with a scripted model and a stub MCP server (`pnpm --filter near-ai-agent test`); not yet run against NEAR AI Cloud and a live Budget. It does not verify the TEE attestation of the model.
+
 ### Agent Guard page (dashboard, factory on testnet)
 
 The dashboard's **Agent Guard** page (`?page=guard&dao=<dao>`) lets a council member set up a Guard without the CLI, through a Guard factory (`contracts/guard-factory`):
 
 - It reads the DAO policy and the DAO's Guards from the factory, and shows each Guard's limits, 24-hour window and the agent owner's two commands (the function-call key and the `claude mcp add guard` line).
-- The create form builds two `add_proposal` calls, signed in one transaction by the member's wallet: P1 calls `factory.create` (deposit = funding + the Guard's code storage, about 2.5 NEAR, + 0.01 NEAR for the registry record), P2 adds the Guard to role `agent-guard`. The page checks the member may add both kinds before the wallet opens.
+- The create form builds two `add_proposal` calls, signed in one transaction by the member's wallet: P1 calls `factory.create` (deposit = funding + the Guard's code storage as the factory reports it, about 2.5 NEAR on `keydoctor-guards.testnet`, + 0.01 NEAR for the registry record), P2 adds the Guard to role `agent-guard`. The page checks the member may add both kinds before the wallet opens.
 - "Propose a change" builds a DAO → Guard FunctionCall proposal (`set_policy`, `add_agent`, `add_whitelist`, `unpause`, ...).
 - "Pause now (guardian)" lets a guardian's wallet sign `pause` on the Guard directly, no vote; only a DAO `unpause` proposal restarts it. "Propose retire" builds the ChangePolicy that removes the Guard from role `agent-guard` (a Guard cannot be deleted). Both are render- and unit-tested only; neither has been signed on testnet yet.
 - The council votes in its usual DAO UI. Key Doctor signs nothing and stores nothing.
@@ -262,7 +275,7 @@ KD_GUARD_FACTORY=keydoctor-guards.testnet pnpm --filter dashboard dev
 # → the create form; "Preview proposals" shows P1 (create + deposit) and P2 (role agent-guard)
 ```
 
-To deploy your own factory (the factory account needs about 6 NEAR, see Limitations):
+To deploy your own factory (the factory account needs about 8 NEAR, see Limitations):
 
 ```bash
 KD_GUARD_PREFIX=<prefix> KD_GUARD_FUNDER=<rich>.testnet scripts/guard-setup/setup.sh factory
@@ -283,7 +296,7 @@ Invoice demo: put the four invoices in `demo/invoices/` (see its README for anot
 - Four Sputnik v2 facts that `checkProposals` relies on (proposal-id semantics, proposal JSON, status values, kind labels) were taken from the contract source. A live check on a testnet DAO (2026-10-29) confirmed the first two; the other two are only partly confirmed (`packages/key-doctor/fixtures/README.md`).
 - Revoke and Delete work one key at a time. The wallet does not say which key it signs with, so the dashboard keeps two full-access keys. There is no bulk delete.
 - Cron messages are bilingual by default (`ALERT_LANG`), because subscriptions do not store a language.
-- Guard factory: the factory keeps the Guard code (about 4.3 NEAR of storage with its own code, locked, not burned), so its account needs about 6 NEAR. Each Guard deploys its own copy, so every DAO pays about 2.5 NEAR of code storage in its create deposit; that NEAR stays locked on the Guard, which has no key and cannot be deleted. When a `create` fails after the DAO check, the factory refunds the DAO from its own balance, which may run before NEAR returns the failed account's funding to it; keep spare NEAR on the factory, or a large refund can fail and stay on the factory. At most 10 Guards per DAO; that limit is unit-tested only.
+- Guard factory: the factory keeps the Guard code (about 5.3 NEAR of storage with its own code when built from this repo, locked, not burned), so its account needs about 8 NEAR. Each Guard deploys its own copy, so every DAO pays for its code storage in its create deposit (about 3.3 NEAR from this repo, about 2.5 NEAR on the older `keydoctor-guards.testnet`); that NEAR stays locked on the Guard, which has no key and cannot be deleted. When a `create` fails after the DAO check, the factory refunds the DAO from its own balance, which may run before NEAR returns the failed account's funding to it; keep spare NEAR on the factory, or a large refund can fail and stay on the factory. At most 10 Guards per DAO; that limit is unit-tested only.
 - Agent Guard page: it creates proposals only; voting happens in the DAO's own UI. It reads a Guard's views at one block and cannot show requests or pending proposals per agent beyond the counts the Guard returns.
 - Trezu treasuries are Sputnik DAOs. A one-off read-only scan of a public mainnet treasury parsed correctly. Trezu has no testnet, so this is not part of the demo and is not reproducible here ([`docs/trezu-integration.md`](docs/trezu-integration.md)).
 - Agent Guard: the 24-hour window restarts at the first request after it ends (`docs/final-idea.md` §11.5.7), so an agent can spend up to twice `max_per_day` without the council across a reset. Each request record is stored at the Guard's cost and never deleted; requests stop with `INSUFFICIENT_GUARD_BALANCE` once the balance no longer covers the bond plus that storage (or `min_reserve`, if higher).
@@ -294,6 +307,7 @@ Invoice demo: put the four invoices in `demo/invoices/` (see its README for anot
 - Backtest the proposal rules on 12 months of history (`kd.backtest.v1`), using NearBlocks for keys added and later removed.
 - Exact key creation dates from NearBlocks, and more rules.
 - **Agent Guard:** Guard checks in the council report (`/check`).
+- **Agent Budget keeper (GĐ29):** a Worker job that calls due plan steps with an unprivileged testnet key and reports each run in Telegram (ADR 0005). The code and its tests are in `apps/worker`. It has been deployed on testnet since 2026-11-06 and cycles every 15 minutes, but no Budget exists yet, so it has never executed a step. See [`apps/worker/README.md`](apps/worker/README.md).
 - **Hosted Guard agent (after the hackathon):** each DAO adds its own Telegram bot; a separate Worker turns allowed members' chat into Guard `request_transfer` calls through a model on NEAR AI Cloud. Secrets encrypted per DAO, council-signed registration, the Guard limits and the council vote still decide every payment. It would put an LLM and agent keys in a hosted service, which Key Doctor avoids today, so it is a plan only: `docs/stories/epics/guard/hosted-agent-plan.md`.
 - Link a Telegram user to a NEAR account by signature to mention voters by name. Discord and email alerts. Near-real-time watching through an indexer.
 - Add ML-DSA keys in the dashboard when wallet-selector supports them. Integration with wallets and treasury tools.
@@ -319,7 +333,7 @@ After the first setup (steps 1 to 5), every later release is one command: `pnpm 
 
 ## Libraries, AI-written code and prepared data
 
-- **Runtime:** the library and the Worker have no dependencies and use only web platform APIs (`fetch`, `crypto.subtle`). The dashboard uses `@near-wallet-selector/core`, `meteor-wallet`, `here-wallet` and `hot-wallet` 10.1.4, `near-api-js` 6.5.1 and `@near-js/crypto` 2.5.1 for wallet signing. The Guard MCP uses only Node built-ins: its borsh encoding and ed25519 signing (`node:crypto`) are written in the repo, checked against bytes from `@near-js/transactions` 2.5.1 in its tests.
+- **Runtime:** the library and the Worker have no dependencies and use only web platform APIs (`fetch`, `crypto.subtle`). The dashboard uses `@near-wallet-selector/core`, `meteor-wallet`, `here-wallet` and `hot-wallet` 10.1.4, `near-api-js` 6.5.1 and `@near-js/crypto` 2.5.1 for wallet signing. The example NEAR AI agent (`examples/near-ai-agent`) uses only `fetch` and Node built-ins. The Guard MCP uses only Node built-ins: its borsh encoding and ed25519 signing (`node:crypto`) are written in the repo, checked against bytes from `@near-js/transactions` 2.5.1 in its tests.
 - **Fonts:** Fira Sans and Fira Code from Google Fonts.
 - **Build and dev tools:**
   - TypeScript

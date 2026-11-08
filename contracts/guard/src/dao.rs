@@ -1,5 +1,5 @@
 // The Sputnik v2 calls the Guard makes (docs/final-idea.md §11.3) and the parts of their results it reads.
-use near_sdk::json_types::{U128, U64};
+use near_sdk::json_types::{Base64VecU8, U128, U64};
 use near_sdk::serde_json::{json, Value};
 use near_sdk::{ext_contract, near, AccountId};
 
@@ -30,4 +30,11 @@ pub struct ProposalView {
 /// `ProposalKind::Transfer` as Sputnik v2 expects it; `token_id = ""` means NEAR (§11.3 #8).
 pub fn transfer_kind(receiver_id: &AccountId, amount: U128) -> Value {
     json!({ "Transfer": { "token_id": "", "receiver_id": receiver_id, "amount": amount, "msg": null } })
+}
+
+/// `ProposalKind::FunctionCall` with one action. The Guard's role needs `call:AddProposal` and `call:VoteApprove`.
+pub fn function_call_kind(target: &AccountId, method: &str, args: &Base64VecU8, deposit: U128, gas: U64) -> Value {
+    json!({ "FunctionCall": { "receiver_id": target, "actions": [{
+        "method_name": method, "args": args, "deposit": deposit, "gas": gas,
+    }]}})
 }

@@ -1,17 +1,58 @@
 // Browser entry: routing, scanning and DOM events. Rendering lives in pure modules that tests run in Node.
-import { isKdError, listProposals, scanAccount, scanTarget, type KdError, type KdReport, type ListProposalsResult, type Network } from "key-doctor";
+import { isKdError, listProposals, scanAccount, scanTarget, type KdError, type KdReport, type ListProposalsResult, type Network, type Rpc } from "key-doctor";
 import { revealClampToggles, toggleClamp } from "./clamp.ts";
-import type { Html } from "./html.ts";
-import { renderAgents, renderError, renderHome, renderLayout, renderOnCall, renderScanning } from "./pages.ts";
+import { html, type Html } from "./html.ts";
+import { renderAgents, renderAlertsDrawer, renderError, renderHome, renderLayout, renderScanning } from "./pages.ts";
 import { buildDeletePlan, GUARD_TEXT, METEOR_INSTALL_URL, type DeletePlan } from "./cleanup.ts";
 import { renderCleanup } from "./cleanup-view.ts";
 import { PAGE_SIZE, pageOf, parsePaging, type Paging } from "./paging.ts";
 import { renderKeyDetail } from "./key-detail.ts";
 import { PROPOSALS_ID, PROPOSALS_LIST, renderProposals } from "./proposals-view.ts";
 import { renderAccount, renderCouncil } from "./report.ts";
-import { guardHref, homeHref, parseRoute, resolveInput, routeHref, suffixNetwork, type Page, type Route } from "./route.ts";
+import { budgetHref, guardHref, homeHref, parseRoute, resolveInput, routeHref, settledHref, suffixNetwork, type Page, type Route, type RouteLink } from "./route.ts";
+import { renderAgentGuide } from "./agent-guide.ts";
 import { yoctoToNear } from "./format.ts";
-import { formToInput, validateGuardForm } from "./guard-form.ts";
+import { formToInput, validateGuardForm, type GuardFormError } from "./guard-form.ts";
+import { agentKeyFile, agentKeyProblem, agentKeyUnsaved, budgetCheckFailures, firstSignatureProblem, planBudget, secondSignatureCalls, sputnikCreateArgs, SPUTNIK_FACTORY, UNSAVED_KEY_QUESTION, type BudgetChain, type BudgetPlan } from "./budget-create.ts";
+import {
+  actProposalArgs,
+  addAgentProblem,
+  addAgentProposal,
+  addRecipientProposal,
+  agentProposal,
+  amountFromForm,
+  BudgetFlowError,
+  confirmFirstSignature,
+  confirmProposal,
+  freshAgentAccount,
+  rulesProposal,
+  voteResultText,
+  withdrawProposal,
+  type ConfirmedProposal,
+  type VoteAction,
+} from "./budget-flow.ts";
+import { budgetRpc, proposalLabel, readBalance, readBudget, readProposal, topUpBlocks, TOP_UP_TEXT, type BudgetLive } from "./budget-read.ts";
+import {
+  BALANCED_RULES,
+  CAUTIOUS_RULES,
+  balanceAfter,
+  BUDGET_FACTORY_NAME,
+  describeKind,
+  renderBudget,
+  renderAgentAdded,
+  renderBudgetActivity,
+  renderBudgetAgent,
+  renderBudgetApprove,
+  renderBudgetCreate,
+  renderBudgetKey,
+  renderBudgetLoading,
+  renderBudgetNext,
+  renderBudgetPanel,
+  renderBudgetSetup,
+  renderBudgetStart,
+  renderRecipients,
+  type BudgetPanel,
+} from "./budget-view.ts";
 import {
   addGuardRoleProposal,
   createGuardProposal,
@@ -19,9 +60,12 @@ import {
   isGuardMethod,
   missingProposePermissions,
   removeGuardRoleProposal,
+  type AddProposalArgs,
+  type RawPolicy,
 } from "./guard-proposals.ts";
 import { readGuardDao, type GuardDao } from "./guard-read.ts";
 import { renderGuardCreate, renderGuardDao, renderGuardLoading, renderGuardPreview, renderGuardStart, renderGuardSubmitted, type GuardPreview } from "./guard-view.ts";
+import { avatar } from "./ui.ts";
 import { renderWatchDialog, renderWatchLinks } from "./watch.ts";
 import { isWalletId, walletLabel, type WalletId } from "./wallets.ts";
 import { connectedAccount, forgetConnected, lockedNotice, rememberConnected, viewerRole, walletBar, type Role } from "./session.ts";
@@ -35,6 +79,32 @@ const GUARD_FACTORY = typeof __KD_GUARD_FACTORY__ === "string" ? __KD_GUARD_FACT
 /** The Agent Guard page's last read, and the proposals its preview would sign. */
 let guardState: GuardDao | null = null;
 let guardPreview: (GuardPreview & { labels: string[] }) | null = null;
+declare const __KD_BUDGET_FACTORY__: string;
+/** Set at build time (KD_BUDGET_FACTORY); empty means Agent Budgets cannot be created from this build. */
+const BUDGET_FACTORY = typeof __KD_BUDGET_FACTORY__ === "string" ? __KD_BUDGET_FACTORY__ : "";
+/** Budgets are read from the Budget factory when set, else from the Guard factory. */
+const BUDGET_READ_FACTORY = BUDGET_FACTORY || GUARD_FACTORY;
+/** The Agent Budget page's last read, and the proposal that is between sign 1 and sign 2. */
+let budgetState: BudgetLive | null = null;
+/** An agent being added: its account and the key made for it. */
+interface NewAgent {
+  account: string;
+  key: { publicKey: string; privateKey: string };
+}
+
+let budgetSign2: { account: string; walletId: WalletId; confirmed: ConfirmedProposal; description: string; agent: NewAgent | null } | null = null;
+/** An agent whose last signature has started. Its private key exists only here: leaving the page loses it. */
+let budgetNewAgent: NewAgent | null = null;
+/** A Budget being created. `key` exists from sign 2 on, and only here: leaving the page loses it. */
+let budgetCreation: { plan: BudgetPlan; account: string; walletId: WalletId; key: { publicKey: string; privateKey: string } | null } | null = null;
+/** The public key of the last agent key the owner downloaded: any other key in memory is still at risk. */
+let savedAgentKey: string | null = null;
+/** Where the page stood when it took an agent key, so Back can be undone if the owner stays. */
+let agentKeyHref: string | null = null;
+
+const agentKeyAtRisk = (): boolean => agentKeyUnsaved(budgetNewAgent?.key ?? budgetCreation?.key, savedAgentKey);
+/** Asks before anything drops an agent key that was never downloaded. True means go ahead. */
+const mayDropAgentKey = (): boolean => !agentKeyAtRisk() || window.confirm(UNSAVED_KEY_QUESTION);
 
 const root = document.getElementById("app") as HTMLElement;
 let scanSeq = 0;
@@ -142,7 +212,7 @@ function paintReport(report: KdReport, route: Route, paging: Paging, seq: number
 const currentNetwork = (): Network => parseRoute(location.search).network ?? lastReport?.chain.network ?? storedNetwork();
 
 /** The wallet Connect Wallet last connected and the accounts it holds; Revoke and Delete sign with it. */
-let connected: { walletId: WalletId; accounts: string[]; iconUrl?: string } | null = null;
+let connected: { walletId: WalletId; accounts: string[] } | null = null;
 /** Display state restored from a past visit; the wallet is asked again whenever something is signed. */
 let restoredFor: Network | null = null;
 
@@ -179,17 +249,8 @@ function syncWallet(): void {
       continue;
     }
     el.title = walletLabel(connected.walletId);
-    const name = document.createElement("span");
-    name.textContent = connected.accounts.join(", ") || "no account";
-    if (connected.iconUrl === undefined) {
-      el.replaceChildren(name);
-      continue;
-    }
-    const img = document.createElement("img");
-    img.src = connected.iconUrl;
-    img.alt = "";
-    img.width = img.height = 16;
-    el.replaceChildren(img, name);
+    const account = connected.accounts[0] ?? "";
+    el.innerHTML = html`${account === "" ? "" : avatar(account)}<span class="wallet-name">${connected.accounts.join(", ") || "no account"}</span>`.value;
   }
 }
 
@@ -198,6 +259,8 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
   const route = parseRoute(location.search);
   const paging = parsePaging(location.search);
   const seq = ++scanSeq;
+  // A link opens its drawer once: a rescan or a reload lands on the plain page.
+  if (route.link !== null) history.replaceState(history.state, "", settledHref(route));
   if (!rescan && route.target !== null && lastReport !== null && scanKey(route) === lastScanKey) {
     paintReport(lastReport, route, paging, seq);
     // Back/forward between pages of one report: keep the scroll position the browser restores.
@@ -208,15 +271,19 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
     await renderGuard(route.dao, focusMain, seq);
     return;
   }
-  if (route.target === null && route.page !== "check") {
-    const network = route.network ?? storedNetwork();
-    if (route.page === "oncall") paint(renderOnCall(), "On Call · Key Doctor", focusMain, network, "oncall");
-    else paint(renderAgents(WORKER_URL), "Agents · Key Doctor", focusMain, network, "agents");
+  if (route.target === null && route.page === "budget") {
+    await renderBudgetPage(route.dao, focusMain, seq, route.link, route.help);
+    return;
+  }
+  if (route.target === null && route.page === "mcp") {
+    paint(renderAgents(WORKER_URL), "For AI agents · Key Doctor", focusMain, route.network ?? storedNetwork(), "mcp");
     return;
   }
   if (route.target === null) {
     const error = route.invalid === null ? null : "Invalid target. Enter a valid .near or .testnet account name.";
     paintHome(route.invalid ?? "", error, route.network ?? storedNetwork(), focusMain);
+    const bell = document.querySelector<HTMLElement>('[data-action="alerts-open"]');
+    if (route.link?.kind === "alerts" && bell !== null) openAlerts(bell);
     return;
   }
   const target = route.target;
@@ -234,6 +301,728 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
     if (!isKdError(e)) console.error("scan failed", { target, error: e });
     paint(renderError(target, route.from, isKdError(e) ? e.kd : UNKNOWN_ERROR, network), `${target} · Key Doctor`, false, network);
   }
+}
+
+const budgetNetwork = (): Network => suffixNetwork(BUDGET_READ_FACTORY) ?? "testnet";
+
+/** The Agent Budget page: the DAO form, or the DAO's Budget read live from the chain. Nothing here is sample data. */
+async function renderBudgetPage(dao: string | null, focusMain: boolean, seq: number, link: RouteLink | null, help: boolean): Promise<void> {
+  const network = budgetNetwork();
+  const title = "Agent Budget · Key Doctor";
+  budgetState = null;
+  budgetSign2 = null;
+  budgetCreation = null;
+  budgetNewAgent = null;
+  if (help) {
+    paint(renderAgentGuide(dao), "How your agent works · Key Doctor", focusMain, network, "budget");
+    return;
+  }
+  const start = (value: string, error: string | null) => {
+    const read =
+      BUDGET_READ_FACTORY === ""
+        ? "Reading a Budget needs the Guard factory set when this site is built (KD_GUARD_FACTORY). It is not set here."
+        : `Budgets are read from ${BUDGET_READ_FACTORY} on ${network}.`;
+    const note = link === null ? read : `This link needs a Budget: open yours here, then do it from the page. ${read}`;
+    const open = renderBudgetStart(value, error, note);
+    const create = renderBudgetCreate(renderBudgetSetup(BUDGET_FACTORY !== ""));
+    paint(error === null ? html`${create}${open}` : html`${open}${create}`, title, focusMain, network, "budget");
+  };
+  if (dao === null || BUDGET_READ_FACTORY === "") {
+    start(dao ?? "", null);
+    return;
+  }
+  if (suffixNetwork(dao) !== network) {
+    start(dao, `The Budget factory is on ${network}: enter a ${network} DAO.`);
+    return;
+  }
+  paint(renderBudgetLoading(dao), title, focusMain, network, "budget");
+  try {
+    const state = await readBudget(dao, BUDGET_READ_FACTORY, network);
+    if (seq !== scanSeq) return;
+    budgetState = state;
+    paint(renderBudget(state, network, renderBudgetSetup(BUDGET_FACTORY !== "")), `${dao} · Agent Budget`, false, network, "budget");
+    if (link !== null && state.guard !== null) followBudgetLink(link, state);
+  } catch (e) {
+    if (seq !== scanSeq) return;
+    if (!isKdError(e)) console.error("budget read failed", { dao, error: e });
+    const why =
+      e instanceof Error && e.message === "FACTORY_UNREADABLE"
+        ? `Could not read the Budget factory ${BUDGET_READ_FACTORY}. Try again later.`
+        : isKdError(e)
+          ? `${dao}: ${e.kd.message.en}`
+          : `${dao} is not an Agent Budget account.`;
+    start(dao, why);
+  }
+}
+
+const budgetStatus = (): HTMLElement | null => document.getElementById("budget-status");
+
+/** §10.5. A link never signs anything: it opens the drawer, or finds the card, and the owner goes on from there. */
+function followBudgetLink(link: RouteLink, state: BudgetLive): void {
+  const main = document.getElementById("main");
+  if (main === null) return;
+  if (link.kind === "add-agent") openBudgetPanel("add-agent", main);
+  if (link.kind === "topup") {
+    const error = link.token === "near" ? null : `This page tops up NEAR only, so nothing is filled in for ${link.token}.`;
+    const values: Record<string, string> = budgetPanelTo();
+    if (error === null && link.amount !== null) values.amount = link.amount;
+    showBudgetDrawer(renderBudgetPanel("topup", state, error, values), main);
+  }
+  if (link.kind === "approve") {
+    const row = document.querySelector<HTMLElement>(`[data-action="budget-approve"][data-id="${link.id}"]`);
+    if (row !== null) {
+      row.scrollIntoView({ block: "center" });
+      row.focus({ preventScroll: true });
+    } else {
+      const status = budgetStatus();
+      if (status !== null) status.textContent = `Request ${link.id} is no longer waiting for you.`;
+    }
+  }
+}
+
+/** Puts a button into a status line, next to its text. */
+function statusWithButton(status: HTMLElement, text: string, action: string, label: string): void {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "btn btn-tint";
+  btn.dataset.action = action;
+  btn.textContent = label;
+  status.replaceChildren(`${text} `, btn);
+}
+
+/** The connected owner account that may run an action, or null after saying why in the status line. */
+function budgetSigner(status: HTMLElement, labels: string[]): { account: string; walletId: WalletId; state: BudgetLive; guardId: string } | null {
+  const state = budgetState;
+  const guardId = state?.guard?.guard_id;
+  if (state === null || guardId === undefined) return null;
+  if (connected === null) {
+    statusWithButton(status, "Connect the owner's wallet first.", "open-wallet", "Connect Wallet");
+    return null;
+  }
+  const account = connected.accounts.find((a) => missingProposePermissions(state.dao.policy, a, labels).length === 0);
+  if (account === undefined) {
+    const shown = connected.accounts[0] ?? "no account";
+    status.textContent = `${shown} may not change ${state.dao.dao}. Switch to the owner's account.`;
+    return null;
+  }
+  return { account, walletId: connected.walletId, state, guardId };
+}
+
+const notDone = (status: HTMLElement, e: unknown): void => {
+  status.textContent = `Not done: ${e instanceof Error ? e.message : "the wallet did not sign."}`;
+};
+
+/** Sign 1 outcome to a matched proposal. The chain can lag the wallet's answer, so an unreadable proposal is retried. */
+async function confirmAfterSign1(built: AddProposalArgs["proposal"], outcome: unknown, dao: string, network: Network): Promise<ConfirmedProposal> {
+  const rpc = budgetRpc(network);
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await confirmFirstSignature(built, outcome, (id) => readProposal(rpc, dao, id));
+    } catch (e) {
+      if (!(e instanceof BudgetFlowError && e.code === "PROPOSAL_UNREADABLE") || attempt >= 3) throw e;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  }
+}
+
+/**
+ * Sign 1 of an owner action: add the proposal, take its id from the transaction outcome, read it back and compare.
+ * Only a match shows the button for sign 2. If sign 1 went through but this stops, the proposal waits under "Needs you".
+ */
+function startTwoSignatures(args: AddProposalArgs, agent: NewAgent | null = null): void {
+  const status = budgetStatus();
+  if (status === null) return;
+  const signer = budgetSigner(status, [proposalLabel(args.proposal.kind)]);
+  if (signer === null) return;
+  const { account, walletId, state } = signer;
+  const network = budgetNetwork();
+  budgetSign2 = null;
+  const next = document.getElementById("budget-next");
+  if (next) next.innerHTML = "";
+  status.textContent = `Waiting for ${walletLabel(walletId)}. Signature 1 of 2: check the transaction there before you approve.`;
+  import("./wallet.ts")
+    .then((w) => w.signAddProposalOutcome(account, network, state.dao.dao, state.dao.policy.proposal_bond, args, walletId, (t) => (status.textContent = t)))
+    .then(async (outcome) => {
+      status.textContent = "Signature 1 done. Reading the request back from the chain…";
+      try {
+        const confirmed = await confirmAfterSign1(args.proposal, outcome, state.dao.dao, network);
+        budgetSign2 = { account, walletId, confirmed, description: args.proposal.description, agent };
+        status.textContent = "Signature 1 of 2 done and checked against the chain.";
+        if (next) next.innerHTML = renderBudgetNext(confirmed.id, args.proposal.description).value;
+        next?.querySelector("button")?.focus();
+      } catch (e) {
+        const why = e instanceof BudgetFlowError ? e.message : "The request could not be checked.";
+        statusWithButton(status, `Signature 1 is done, but signature 2 is not offered: ${why} Reload, then approve or reject it under "Needs you".`, "rescan", "Reload");
+      }
+    })
+    .catch((e: unknown) => notDone(status, e));
+}
+
+/** Sign 2: `act_proposal(id, "VoteApprove", proposal)` for the proposal this page just matched. */
+function signSecondSignature(button: HTMLButtonElement): void {
+  const status = budgetStatus();
+  const pending = budgetSign2;
+  const state = budgetState;
+  if (status === null || pending === null || state === null) return;
+  const { account, walletId, confirmed, agent } = pending;
+  button.disabled = true;
+  // Before the wallet opens: an answer lost on the way back must not lose the key of an agent that now exists.
+  budgetNewAgent = agent;
+  agentKeyHref = location.href;
+  status.textContent = `Waiting for ${walletLabel(walletId)}. Signature 2 of 2: check the transaction there before you approve.`;
+  import("./wallet.ts")
+    .then((w) => w.signActProposal(account, budgetNetwork(), state.dao.dao, actProposalArgs(confirmed, "VoteApprove"), walletId, (t) => (status.textContent = t)))
+    .then(() => statusAfterVote(budgetNetwork(), state.dao.dao, confirmed.id))
+    .then(async (after) => {
+      budgetSign2 = null;
+      const next = document.getElementById("budget-next");
+      if (next) next.innerHTML = "";
+      if (agent === null) return statusWithButton(status, voteResultText(confirmed.id, "VoteApprove", confirmed.kind, after), "rescan", "Reload");
+      status.textContent = "Checking the chain…";
+      showAgentAdded(status, state, agent, await readAgentProblem(state, agent, 5));
+    })
+    .catch(async (e: unknown) => {
+      if (agent !== null && (await readAgentProblem(state, agent, 2)) === null) {
+        budgetSign2 = null;
+        const next = document.getElementById("budget-next");
+        if (next) next.innerHTML = "";
+        showAgentAdded(status, state, agent, null);
+        return;
+      }
+      button.disabled = false;
+      notDone(status, e);
+    });
+}
+
+/** Sputnik shows a failed call as Approved, so only the agent's own keys say it exists. Reads lag, so a miss is read again. */
+async function readAgentProblem(state: BudgetLive, agent: NewAgent, tries: number): Promise<string | null> {
+  const guardId = state.guard?.guard_id ?? "";
+  const rpc = budgetRpc(budgetNetwork());
+  let problem: string | null = null;
+  for (let attempt = 0; attempt < tries; attempt += 1) {
+    if (attempt > 0) await sleep(2000);
+    const keys = await rpc.block().then(({ height }) => rpc.viewAccessKeyList(agent.account, height)).catch(() => null);
+    problem = agentKeyProblem(guardId, agent.key.publicKey, keys);
+    if (problem === null) break;
+  }
+  return problem;
+}
+
+function showAgentAdded(status: HTMLElement, state: BudgetLive, agent: NewAgent, problem: string | null): void {
+  const next = document.getElementById("budget-next");
+  status.textContent = "";
+  if (next) next.innerHTML = renderAgentAdded(agent.account, state.guard?.guard_id ?? "", state.dao.dao, budgetNetwork(), problem).value;
+  next?.querySelector("button")?.focus();
+}
+
+/** The proposal's status after a vote, null when unreadable. Reads lag at the final block, so an open one is read again. */
+async function statusAfterVote(network: Network, dao: string, id: number): Promise<unknown> {
+  let status: unknown = null;
+  for (let tries = 0; tries < 4; tries += 1) {
+    if (tries > 0) await new Promise((done) => setTimeout(done, 1500));
+    const raw: unknown = await readProposal(budgetRpc(network), dao, id).catch(() => null);
+    status = typeof raw === "object" && raw !== null ? (raw as { status?: unknown }).status ?? null : null;
+    if (status !== null && status !== "InProgress") break;
+  }
+  return status;
+}
+
+/** Approve or Reject a pending proposal: re-read it first and stop if it is no longer what the page showed. */
+function actOnPending(button: HTMLButtonElement): void {
+  const status = budgetStatus();
+  const state = budgetState;
+  const id = Number(button.dataset.id);
+  const action: VoteAction = button.dataset.vote === "VoteReject" ? "VoteReject" : "VoteApprove";
+  const shown = state?.proposals?.find((p) => p.id === id);
+  if (status === null || state === null || shown === undefined || state.guard === null) return;
+  if (connected === null) {
+    statusWithButton(status, "Connect the owner's wallet first.", "open-wallet", "Connect Wallet");
+    return;
+  }
+  const guardId = state.guard.guard_id;
+  const registry = state.dao.guards.map((g) => g.guard_id);
+  const account = connected.accounts.find((a) => !topUpBlocks(state.dao.policy, a, guardId, registry).includes("NOT_COUNCIL"));
+  if (account === undefined) {
+    status.textContent = TOP_UP_TEXT.NOT_COUNCIL;
+    return;
+  }
+  const { walletId } = connected;
+  const network = budgetNetwork();
+  button.disabled = true;
+  status.textContent = "Checking the request on the chain…";
+  confirmProposal({ description: shown.description, kind: shown.kind }, id, (n) => readProposal(budgetRpc(network), state.dao.dao, n))
+    .then((confirmed) => {
+      status.textContent = `Waiting for ${walletLabel(walletId)}. ${action === "VoteApprove" ? "Approve" : "Reject"} request #${id}: ${describeKind(confirmed.kind)}.`;
+      return import("./wallet.ts")
+        .then((w) => w.signActProposal(account, network, state.dao.dao, actProposalArgs(confirmed, action), walletId, (t) => (status.textContent = t)))
+        .then(() => statusAfterVote(network, state.dao.dao, id))
+        .then((after) => statusWithButton(status, voteResultText(id, action, confirmed.kind, after), "rescan", "Reload"));
+    })
+    .catch((e: unknown) => {
+      button.disabled = false;
+      notDone(status, e);
+    });
+}
+
+/** The guardian's emergency stop on the Budget page: one direct `pause` call on the Guard. */
+function pauseBudget(button: HTMLButtonElement): void {
+  const status = budgetStatus();
+  const guard = budgetState?.guard;
+  if (status === null || !guard) return;
+  if (connected === null) {
+    statusWithButton(status, "Connect a guardian's wallet first.", "open-wallet", "Connect Wallet");
+    return;
+  }
+  const guardians = guard.config?.guardians ?? [];
+  const account = connected.accounts.find((a) => guardians.includes(a));
+  if (account === undefined) {
+    status.textContent = `${connected.accounts[0] ?? "This account"} may not pause this Budget. Accounts that may: ${guardians.join(", ")}.`;
+    return;
+  }
+  const { walletId } = connected;
+  button.disabled = true;
+  status.textContent = `Waiting for ${walletLabel(walletId)}. Check the transaction there before you approve.`;
+  import("./wallet.ts")
+    .then((w) => w.signGuardPause(account, budgetNetwork(), guard.guard_id, walletId, (t) => (status.textContent = t)))
+    .then(() => statusWithButton(status, "Paused. Every payment your agents ask for is rejected until you resume.", "rescan", "Reload"))
+    .catch((e: unknown) => {
+      button.disabled = false;
+      notDone(status, e);
+    });
+}
+
+function openAlerts(trigger: HTMLElement): void {
+  const drawer = document.getElementById("alerts-drawer") as HTMLDialogElement | null;
+  if (drawer === null) return;
+  drawer.innerHTML = renderAlertsDrawer(alertsTarget()).value;
+  dialogTrigger = trigger;
+  drawer.showModal();
+}
+
+function openBudgetPanel(panel: BudgetPanel, trigger: HTMLElement): void {
+  if (budgetState === null) return;
+  showBudgetDrawer(renderBudgetPanel(panel, budgetState, null, budgetPanelTo()), trigger);
+  document.querySelector<HTMLElement>("#budget-panel-form input")?.focus();
+}
+
+/** Opens the Budget drawer with `content`. */
+function showBudgetDrawer(content: Html, trigger: HTMLElement): void {
+  const box = document.getElementById("budget-action") as HTMLDialogElement | null;
+  if (box === null) return;
+  box.innerHTML = content.value;
+  dialogTrigger = trigger;
+  if (!box.open) box.showModal();
+}
+
+/** Status lines live on the page, so the drawer closes before signing starts. */
+const closeBudgetDrawer = (): void => (document.getElementById("budget-action") as HTMLDialogElement | null)?.close();
+
+const budgetPanelTo = (): Record<string, string> => (connected?.accounts[0] === undefined ? {} : { to: connected.accounts[0] });
+
+function openBudgetApprove(button: HTMLElement): void {
+  const state = budgetState;
+  const proposal = state?.proposals?.find((p) => p.id === Number(button.dataset.id));
+  if (state === null || proposal === undefined) return;
+  showBudgetDrawer(renderBudgetApprove(proposal, state), button);
+}
+
+function openBudgetAgent(button: HTMLElement): void {
+  const state = budgetState;
+  const agent = state?.guard?.agents?.find((a) => a.account_id === button.dataset.agent);
+  if (state === null || agent === undefined) return;
+  showBudgetDrawer(renderBudgetAgent(agent, state), button);
+}
+
+/** Repaints Activity with one chip pressed. A summary tile also brings it into view. */
+function filterBudgetActivity(el: HTMLElement): void {
+  const box = document.getElementById("budget-activity");
+  const filter = el.dataset.filter;
+  if (box === null || budgetState === null || !(filter === "all" || filter === "waiting" || filter === "auto" || filter === "rejected")) return;
+  const fromTile = el.classList.contains("tile");
+  box.outerHTML = renderBudgetActivity(budgetState, filter).value;
+  const next = document.getElementById("budget-activity");
+  if (fromTile) next?.scrollIntoView({ block: "nearest" });
+  else next?.querySelector<HTMLElement>(`[data-filter="${filter}"]`)?.focus();
+}
+
+function syncBudgetAfter(): void {
+  const input = document.getElementById("bp-amount") as HTMLInputElement | null;
+  const after = document.getElementById("bp-after");
+  const panel = input?.form?.dataset.panel;
+  if (input === null || after === null || budgetState === null || !(panel === "topup" || panel === "withdraw")) return;
+  after.textContent = balanceAfter(budgetState, panel, input.value);
+}
+
+/** Resume is `unpause`, which only the DAO may call: a Guard change proposal, two signatures. */
+function resumeBudget(): void {
+  const guardId = budgetState?.guard?.guard_id;
+  if (guardId !== undefined) startTwoSignatures(guardChangeProposal(guardId, "unpause", {}));
+}
+
+/** Cautious and Balanced reset the rule fields to their numbers; Custom shows them. */
+function chooseBudgetPreset(button: HTMLElement): void {
+  const form = button.closest("form");
+  const chosen = button.dataset.preset ?? "balanced";
+  const custom = chosen === "custom";
+  if (form === null) return;
+  const preset = form.elements.namedItem("preset") as HTMLInputElement | null;
+  if (preset !== null) preset.value = chosen;
+  for (const b of form.querySelectorAll<HTMLElement>('[data-action="budget-preset"]')) b.setAttribute("aria-pressed", String(b === button));
+  const fields = document.getElementById("bs-custom");
+  if (fields !== null) fields.hidden = !custom;
+  if (custom) return;
+  for (const [name, value] of Object.entries(chosen === "cautious" ? CAUTIOUS_RULES : BALANCED_RULES)) {
+    const input = form.elements.namedItem(name) as HTMLInputElement | null;
+    if (input !== null) input.value = value;
+  }
+}
+
+/** Applies `change` to the recipient lines held in the form's hidden whitelist field and repaints the list. */
+function changeBudgetRecipients(change: (lines: string[]) => string[]): void {
+  const field = document.querySelector<HTMLTextAreaElement>('#budget-setup-form textarea[name="whitelist"]');
+  const list = document.getElementById("bs-recipients");
+  if (field === null || list === null) return;
+  field.value = change(field.value.split("\n").filter((l) => l.trim() !== "")).join("\n");
+  list.innerHTML = renderRecipients(field.value).value;
+}
+
+function addBudgetRecipient(): void {
+  const input = document.getElementById("bs-recipient") as HTMLInputElement | null;
+  const account = input?.value.trim() ?? "";
+  if (input === null || account === "") return;
+  changeBudgetRecipients((lines) => [...lines, account]);
+  input.value = "";
+  input.focus();
+}
+
+/** Says whether the typed Budget name is free. Anything but a clear answer from the chain says nothing. */
+async function checkBudgetName(input: HTMLInputElement): Promise<void> {
+  const message = document.getElementById("b-name-msg");
+  const name = input.value.trim();
+  if (message === null) return;
+  message.textContent = "";
+  message.className = "small";
+  if (!/^[a-z0-9]+([-_][a-z0-9]+)*$/.test(name)) return;
+  const rpc = budgetRpc(budgetNetwork());
+  try {
+    const { height } = await rpc.block();
+    const taken = await accountExists(rpc, `${name}.${SPUTNIK_FACTORY}`, height);
+    if (input.value.trim() !== name) return;
+    message.textContent = taken ? "This name is taken" : "Name is free";
+    message.classList.add(taken ? "text-high" : "text-ok");
+  } catch {
+    // Unknown stays unsaid; the check before signature 1 still runs.
+  }
+}
+
+const isBudgetPanel = (v: unknown): v is BudgetPanel => v === "topup" || v === "withdraw" || v === "rules" || v === "add-agent" || v === "recipients";
+
+/** The owner-action form: validates, then starts the one-signature Top up or the two-signature flow. */
+function submitBudgetPanel(form: HTMLFormElement): void {
+  const state = budgetState;
+  const panel = form.dataset.panel;
+  const status = budgetStatus();
+  if (state === null || state.guard === null || status === null || !isBudgetPanel(panel)) return;
+  const values = Object.fromEntries([...new FormData(form).entries()].map(([k, v]) => [k, String(v)]));
+  const reject = (error: string) => {
+    form.outerHTML = renderBudgetPanel(panel, state, error, { ...values, ...budgetPanelTo() }).value;
+    document.querySelector<HTMLElement>("#budget-panel-form input")?.focus();
+  };
+  const guardId = state.guard.guard_id;
+  if (panel === "add-agent") {
+    void addBudgetAgent(state, guardId, (values.label ?? "").trim(), reject);
+    return;
+  }
+  if (panel === "rules") {
+    const result = rulesProposal(guardId, values);
+    if (!result.ok) return reject(result.error);
+    closeBudgetDrawer();
+    startTwoSignatures(result.value);
+    return;
+  }
+  if (panel === "recipients") {
+    const result = addRecipientProposal(guardId, values, (state.guard.whitelist ?? []).map((w) => w.account_id));
+    if (!result.ok) return reject(result.error);
+    closeBudgetDrawer();
+    startTwoSignatures(result.value);
+    return;
+  }
+  const amount = amountFromForm(values.amount ?? "", panel === "withdraw" ? state.withdrawable : null);
+  if (!amount.ok) return reject(amount.error);
+  closeBudgetDrawer();
+  if (panel === "withdraw") {
+    if (connected === null) return statusWithButton(status, "Connect the owner's wallet first.", "open-wallet", "Connect Wallet");
+    const to = connected.accounts.find((a) => missingProposePermissions(state.dao.policy, a, ["transfer"]).length === 0);
+    if (to === undefined) {
+      status.textContent = `${connected.accounts[0] ?? "This account"} may not withdraw from ${state.dao.dao}. Switch to the owner's account.`;
+      return;
+    }
+    startTwoSignatures({ proposal: withdrawProposal(to, amount.value.yocto, amount.value.near) });
+    return;
+  }
+  void topUpBudget(state, guardId, amount.value, status);
+}
+
+/** One plain transfer, only after the roles as they are now, not at page load, show one owner and the DAO's own Guard (§11.10.4). */
+async function topUpBudget(state: BudgetLive, guardId: string, amount: { yocto: string; near: string }, status: HTMLElement): Promise<void> {
+  if (connected === null) return statusWithButton(status, "Connect your wallet first.", "open-wallet", "Connect Wallet");
+  const { accounts, walletId } = connected;
+  const network = budgetNetwork();
+  const registry = state.dao.guards.map((g) => g.guard_id);
+  status.textContent = "Checking who controls this Budget on the chain…";
+  try {
+    const { policy } = await readNewDao(state.dao.dao, network);
+    const sender = accounts.find((a) => topUpBlocks(policy, a, guardId, registry).length === 0);
+    if (sender === undefined) {
+      status.textContent = topUpBlocks(policy, accounts[0] ?? "", guardId, registry).map((b) => TOP_UP_TEXT[b]).join(" ");
+      return;
+    }
+    status.textContent = `Waiting for ${walletLabel(walletId)}. Check the transfer there before you approve.`;
+    const wallet = await import("./wallet.ts");
+    await wallet.signTopUp(sender, network, state.dao.dao, amount.yocto, walletId, (t) => (status.textContent = t));
+    statusWithButton(status, `Done: ${amount.near} NEAR sent to ${state.dao.dao}.`, "rescan", "Reload");
+  } catch (e) {
+    notDone(status, e);
+  }
+}
+
+/** Add an agent. Its account and key come first, because the proposal carries the public key. */
+async function addBudgetAgent(state: BudgetLive, guardId: string, label: string, reject: (error: string) => void): Promise<void> {
+  const problem = addAgentProblem(label, (state.guard?.agents ?? []).map((a) => a.account_id), state.withdrawable);
+  if (problem !== null) return reject(problem);
+  const rpc = budgetRpc(budgetNetwork());
+  try {
+    const { height } = await rpc.block();
+    const account = await freshAgentAccount(guardId, (id) => accountExists(rpc, id, height));
+    if (account === null) return reject("No free agent name is left for this Budget.");
+    const key = (await import("./wallet.ts")).newAgentKey();
+    closeBudgetDrawer();
+    startTwoSignatures(addAgentProposal(guardId, account, label, key.publicKey), { account, key });
+  } catch {
+    reject("Could not read the chain. Try again.");
+  }
+}
+
+/** Enable, disable or remove an agent: a Guard change proposal, two signatures. */
+function changeBudgetAgent(button: HTMLButtonElement): void {
+  const guardId = budgetState?.guard?.guard_id;
+  if (guardId === undefined) return;
+  const proposal = agentProposal(guardId, button.dataset.op ?? "", button.dataset.agent ?? "");
+  if (proposal !== null) startTwoSignatures(proposal);
+}
+
+function dropBudgetRecipient(account: string): void {
+  const guardId = budgetState?.guard?.guard_id;
+  if (guardId !== undefined && account !== "") startTwoSignatures(guardChangeProposal(guardId, "remove_whitelist", { account_id: account }));
+}
+
+const budgetSetupStatus = (): HTMLElement | null => document.getElementById("budget-setup-status");
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** False only when the chain says the account does not exist; any other failure is not an answer. */
+async function accountExists(rpc: Rpc, id: string, height: number): Promise<boolean> {
+  try {
+    await rpc.viewAccount(id, height);
+    return true;
+  } catch (e) {
+    if (isKdError(e) && e.kd.code === "NOT_FOUND") return false;
+    throw e;
+  }
+}
+
+/** The DAO's policy and proposal count, for `firstSignatureProblem`. */
+async function readNewDao(dao: string, network: Network): Promise<{ policy: RawPolicy; last: number }> {
+  const rpc = budgetRpc(network);
+  const { height } = await rpc.block();
+  const [policy, last] = await Promise.all([rpc.callFunction(dao, height, "get_policy", {}), rpc.callFunction(dao, height, "get_last_proposal_id", {})]);
+  return { policy: policy as RawPolicy, last: Number(last) };
+}
+
+/** What sign 2 left on the chain. A read that fails stays null, which `budgetCheckFailures` counts as not passed. */
+async function readBudgetChain(plan: BudgetPlan, network: Network): Promise<BudgetChain> {
+  const rpc = budgetRpc(network);
+  const quiet = <T>(read: Promise<T>): Promise<T | null> => read.catch(() => null);
+  const head = await quiet(rpc.block());
+  if (head === null) return { guardDao: null, guardKeys: null, agentKeys: null, policy: null };
+  const agent = plan.args.agents[0]?.account_id ?? "";
+  const [info, guardKeys, agentKeys, policy] = await Promise.all([
+    quiet(rpc.callFunction(plan.guardId, head.height, "kd_guard_info", {})),
+    quiet(rpc.viewAccessKeyList(plan.guardId, head.height)),
+    quiet(rpc.viewAccessKeyList(agent, head.height)),
+    quiet(rpc.callFunction(plan.dao, head.height, "get_policy", {})),
+  ]);
+  return { guardDao: (info as { dao_id?: string } | null)?.dao_id ?? null, guardKeys, agentKeys, policy: policy as RawPolicy | null };
+}
+
+/** Checks the form, then what the chain already holds, and offers the signature that comes next. */
+async function submitBudgetSetup(form: HTMLFormElement): Promise<void> {
+  // After sign 2 the status line holds the only copy of the agent key: nothing may repaint it.
+  if (budgetCreation?.key) return;
+  budgetCreation = null;
+  const data = new FormData(form);
+  const get = (name: string) => String(data.get(name) ?? "");
+  const values = Object.fromEntries([...data.entries()].map(([k, v]) => [k, String(v)]));
+  const repaint = (errors: GuardFormError[], result: string | null): void => {
+    const current = document.getElementById("budget-setup-form");
+    if (current) current.outerHTML = renderBudgetSetup(BUDGET_FACTORY !== "", values, errors, result).value;
+    document.querySelector<HTMLElement>('#budget-setup-form [aria-invalid="true"]')?.focus();
+  };
+  // Code storage is the factory's to report; before reading it the funding check covers the minimum only.
+  const rules = planBudget(get, null, BUDGET_FACTORY || BUDGET_FACTORY_NAME, "0");
+  if (!rules.ok) {
+    repaint(rules.errors, null);
+    return;
+  }
+  if (BUDGET_FACTORY === "") {
+    repaint([], `Your rules are valid. Creating the budget is not available yet: ${BUDGET_FACTORY_NAME} is not deployed.`);
+    return;
+  }
+  repaint([], null);
+  const status = budgetSetupStatus();
+  if (status === null) return;
+  const wallet = connected;
+  const account = wallet?.accounts[0];
+  if (wallet === null || account === undefined) {
+    statusWithButton(status, "Your rules are valid. Connect the wallet that will own this budget.", "open-wallet", "Connect Wallet");
+    return;
+  }
+  status.textContent = "Reading the chain…";
+  try {
+    const network = budgetNetwork();
+    const rpc = budgetRpc(network);
+    const { height } = await rpc.block();
+    const factory = (await rpc.callFunction(BUDGET_FACTORY, height, "kd_factory_metadata", {})) as { guard_code_storage: string };
+    const planned = planBudget(get, account, BUDGET_FACTORY, factory.guard_code_storage);
+    if (!planned.ok) {
+      repaint(planned.errors, null);
+      return;
+    }
+    const { plan } = planned;
+    if (await accountExists(rpc, plan.guardId, height)) {
+      status.textContent = `The name ${plan.name} is taken: ${plan.guardId} already exists. Choose another name.`;
+      return;
+    }
+    const resume = await accountExists(rpc, plan.dao, height);
+    if (resume) {
+      const dao = await readNewDao(plan.dao, network);
+      const problem = firstSignatureProblem(dao.policy, dao.last, account);
+      if (problem !== null) {
+        status.textContent = `The name ${plan.name} is taken by ${plan.dao}. ${problem}`;
+        return;
+      }
+      const held = await readBalance(plan.dao, height, network);
+      if (held === null || BigInt(held.withdrawable) < BigInt(plan.guardDepositYocto)) {
+        status.textContent = `${plan.dao} needs ${yoctoToNear(plan.guardDepositYocto)} NEAR free to finish the Budget and ${held === null ? "its balance could not be read" : `has ${yoctoToNear(held.withdrawable)} NEAR`}. Lower the funding, or send it more.`;
+        return;
+      }
+    }
+    budgetCreation = { plan, account, walletId: wallet.walletId, key: null };
+    const waits = plan.args.whitelist.length === 0 ? " With no allowed receivers, every request waits for your approval." : "";
+    if (resume) statusWithButton(status, `${plan.dao} is already yours and not finished yet. Signature 2 attaches 0.2 NEAR of bonds, which come back.${waits}`, "budget-guard", "Sign signature 2 of 2");
+    else statusWithButton(status, `Your rules are valid. Signature 1 sends ${yoctoToNear(plan.firstDepositYocto)} NEAR to your new Budget, ${plan.dao}. Signature 2 attaches 0.2 NEAR of bonds, which come back.${waits}`, "budget-create", "Sign signature 1 of 2");
+  } catch (e) {
+    if (!isKdError(e)) console.error("budget setup read failed", { error: e });
+    status.textContent = `Not done: could not read the chain. ${isKdError(e) ? e.kd.message.en : "Try again later."}`;
+  }
+}
+
+/** Sign 1: the DAO. It holds the money from here on, so nothing is offered until the chain shows it is the owner's alone. */
+async function signBudgetCreate(button: HTMLButtonElement): Promise<void> {
+  const creation = budgetCreation;
+  const status = budgetSetupStatus();
+  if (creation === null || status === null) return;
+  const { plan, account, walletId } = creation;
+  const network = budgetNetwork();
+  button.disabled = true;
+  status.textContent = `Waiting for ${walletLabel(walletId)}. Signature 1 of 2: check the transaction there before you approve.`;
+  try {
+    const { signBudgetDao } = await import("./wallet.ts");
+    await signBudgetDao(account, network, SPUTNIK_FACTORY, sputnikCreateArgs(plan.name, account), plan.firstDepositYocto, walletId, (step) => (status.textContent = step));
+  } catch (e) {
+    notDone(status, e);
+    return;
+  }
+  status.textContent = "Checking the new Budget…";
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const dao = await readNewDao(plan.dao, network).catch(() => null);
+    if (budgetCreation !== creation) return;
+    if (dao !== null) {
+      const problem = firstSignatureProblem(dao.policy, dao.last, account);
+      if (problem !== null) status.textContent = `Stopped before signature 2: ${problem}`;
+      else statusWithButton(status, `${plan.dao} is created and only your account controls it.`, "budget-guard", "Sign signature 2 of 2");
+      return;
+    }
+    await sleep(1500);
+  }
+  status.textContent = `Signature 1 was sent, but ${plan.dao} cannot be read yet. Press Create Agent Budget to continue from where it stopped.`;
+}
+
+/** Sign 2: the Guard, the agent and the role. Only the chain can say it worked, because Sputnik shows a failed call as Approved. */
+async function signBudgetGuard(button: HTMLButtonElement): Promise<void> {
+  const creation = budgetCreation;
+  const status = budgetSetupStatus();
+  if (creation === null || status === null) return;
+  const { plan, account, walletId } = creation;
+  const network = budgetNetwork();
+  button.disabled = true;
+  status.textContent = "Reading the Budget again…";
+  let signBudgetCalls: typeof import("./wallet.ts").signBudgetCalls;
+  let key: { publicKey: string; privateKey: string };
+  let calls: ReturnType<typeof secondSignatureCalls>;
+  try {
+    const dao = await readNewDao(plan.dao, network);
+    const problem = firstSignatureProblem(dao.policy, dao.last, account);
+    if (problem !== null) throw new Error(problem);
+    const wallet = await import("./wallet.ts");
+    signBudgetCalls = wallet.signBudgetCalls;
+    key = wallet.newAgentKey();
+    calls = secondSignatureCalls(plan, BUDGET_FACTORY, dao.policy, key.publicKey);
+  } catch (e) {
+    notDone(status, e);
+    return;
+  }
+  // Before the wallet opens: an answer lost on the way back must not lose the key of an agent that now exists.
+  creation.key = key;
+  agentKeyHref = location.href;
+  status.textContent = `Waiting for ${walletLabel(walletId)}. Signature 2 of 2: check the transaction there before you approve.`;
+  let signError: unknown = null;
+  try {
+    await signBudgetCalls(account, network, plan.dao, calls, walletId, (step) => (status.textContent = step));
+  } catch (e) {
+    signError = e instanceof Error ? e : new Error("the wallet did not sign.");
+  }
+  status.textContent = "Checking the chain…";
+  let chain = await readBudgetChain(plan, network);
+  let failures = budgetCheckFailures(plan, key.publicKey, chain);
+  for (let attempt = 0; failures.length > 0 && attempt < (signError === null ? 5 : 2); attempt += 1) {
+    await sleep(2000);
+    chain = await readBudgetChain(plan, network);
+    failures = budgetCheckFailures(plan, key.publicKey, chain);
+  }
+  if (budgetCreation !== creation) return;
+  if (signError !== null && !chain.agentKeys?.some((k) => k.publicKey === key.publicKey)) {
+    creation.key = null;
+    notDone(status, signError);
+    return;
+  }
+  const agent = plan.args.agents[0]?.account_id ?? "";
+  status.innerHTML = renderBudgetKey(agent, plan.guardId, plan.dao, network, failures.length === 0 ? null : failures.join("; ")).value;
+  document.querySelector<HTMLButtonElement>('#budget-setup-form button[type="submit"]')?.setAttribute("disabled", "");
+}
+
+/** Saves the agent's key as a file. It is never shown: a file goes straight to where the agent runs. */
+function downloadAgentKey(): void {
+  const creation = budgetCreation;
+  const account = budgetNewAgent?.account ?? creation?.plan.args.agents[0]?.account_id;
+  const key = budgetNewAgent?.key ?? creation?.key;
+  if (!key || account === undefined) return;
+  savedAgentKey = key.publicKey;
+  const url = URL.createObjectURL(new Blob([agentKeyFile(account, key)], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${account}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 /** The Agent Guard page: the DAO form, or the DAO's Guards read live. Guards exist only on the factory's network. */
@@ -461,9 +1250,16 @@ function changePage(link: HTMLAnchorElement): void {
 }
 
 function navigate(href: string): void {
+  if (!mayDropAgentKey()) return;
   history.pushState(null, "", href);
   window.scrollTo(0, 0);
   void render(true);
+}
+
+/** What the bell's /watch line names: the report or Budget on screen, else null. */
+function alertsTarget(): string | null {
+  const route = parseRoute(location.search);
+  return route.target ?? route.dao;
 }
 
 function closeDialog(dialog: HTMLDialogElement): void {
@@ -579,15 +1375,6 @@ function connectWallet(status: HTMLElement, walletId: WalletId): void {
       status.textContent =
         target === undefined || accounts.includes(target) ? "" : `${walletLabel(walletId)} holds ${accounts.join(", ") || "no account"}, not ${target}. Revoke and Delete stay off.`;
       syncWallet();
-      // The icon the wallet's own SDK module declares; the chip shows the name alone if it cannot be read.
-      void import("./wallet.ts")
-        .then((w) => w.walletMetadata(currentNetwork()))
-        .then((meta) => {
-          if (connected?.walletId !== walletId) return;
-          connected.iconUrl = meta[walletId]?.iconUrl;
-          syncWallet();
-        })
-        .catch(() => {});
     })
     .catch((e: unknown) => {
       const msg = e instanceof Error ? e.message : "";
@@ -690,6 +1477,66 @@ root.addEventListener("click", (event) => {
     case "guard-retire":
       previewGuardRetire(el.dataset.guard ?? "");
       break;
+    case "budget-open":
+      if (isBudgetPanel(el.dataset.panel)) openBudgetPanel(el.dataset.panel, el);
+      break;
+    case "budget-approve":
+      openBudgetApprove(el);
+      break;
+    case "budget-agent-open":
+      openBudgetAgent(el);
+      break;
+    case "budget-filter":
+      filterBudgetActivity(el);
+      break;
+    case "budget-resume":
+      resumeBudget();
+      break;
+    case "budget-preset":
+      chooseBudgetPreset(el);
+      break;
+    case "budget-recipient-add":
+      addBudgetRecipient();
+      break;
+    case "budget-recipient-remove":
+      changeBudgetRecipients((lines) => lines.filter((_, i) => i !== Number(el.dataset.line)));
+      break;
+    case "budget-full": {
+      const input = document.getElementById("bp-amount") as HTMLInputElement | null;
+      if (input !== null) input.value = el.dataset.amount ?? "";
+      syncBudgetAfter();
+      break;
+    }
+    case "budget-act":
+      closeBudgetDrawer();
+      actOnPending(el as HTMLButtonElement);
+      break;
+    case "budget-agent":
+      closeBudgetDrawer();
+      changeBudgetAgent(el as HTMLButtonElement);
+      break;
+    case "budget-recipient-drop":
+      closeBudgetDrawer();
+      dropBudgetRecipient(el.dataset.account ?? "");
+      break;
+    case "budget-sign2":
+      signSecondSignature(el as HTMLButtonElement);
+      break;
+    case "budget-create":
+      void signBudgetCreate(el as HTMLButtonElement);
+      break;
+    case "budget-guard":
+      void signBudgetGuard(el as HTMLButtonElement);
+      break;
+    case "budget-key":
+      downloadAgentKey();
+      break;
+    case "budget-pause":
+      pauseBudget(el as HTMLButtonElement);
+      break;
+    case "alerts-open":
+      openAlerts(el);
+      break;
     case "theme":
       setTheme(currentTheme() === "dark" ? "light" : "dark", true);
       break;
@@ -753,6 +1600,9 @@ root.addEventListener("click", (event) => {
 root.addEventListener("click", (event) => {
   const t = event.target;
   if (t instanceof HTMLDialogElement && t.open) closeDialog(t);
+  // The account menu is a <details>: it closes on any click outside it.
+  const menu = root.querySelector<HTMLDetailsElement>(".wallet-menu[open]");
+  if (menu !== null && !(t instanceof Node && menu.contains(t))) menu.open = false;
 });
 root.addEventListener(
   "close",
@@ -763,12 +1613,50 @@ root.addEventListener(
   true,
 );
 
+root.addEventListener("input", (event) => {
+  const el = event.target as HTMLElement;
+  if (el.id === "bp-amount") syncBudgetAfter();
+  if (el.id === "approve-check") {
+    const input = el as HTMLInputElement;
+    const confirm = input.closest("dialog")?.querySelector<HTMLButtonElement>('[data-vote="VoteApprove"]');
+    if (confirm) confirm.disabled = input.value.trim() !== input.dataset.expect;
+  }
+});
+
+root.addEventListener("change", (event) => {
+  const el = event.target as HTMLElement;
+  if (el.id === "bs-name") void checkBudgetName(el as HTMLInputElement);
+});
+
+root.addEventListener("keydown", (event) => {
+  // Enter in the recipient box adds the line instead of submitting the whole form.
+  if (event.key === "Enter" && (event.target as HTMLElement).id === "bs-recipient") {
+    event.preventDefault();
+    addBudgetRecipient();
+  }
+});
+
 root.addEventListener("submit", (event) => {
   const form = event.target as HTMLFormElement;
   if (form.id === "guard-dao-form") {
     event.preventDefault();
     const raw = String(new FormData(form).get("dao") ?? "").trim();
     navigate(guardHref(raw));
+    return;
+  }
+  if (form.id === "budget-dao-form") {
+    event.preventDefault();
+    navigate(budgetHref(String(new FormData(form).get("dao") ?? "").trim()));
+    return;
+  }
+  if (form.id === "budget-panel-form") {
+    event.preventDefault();
+    submitBudgetPanel(form);
+    return;
+  }
+  if (form.id === "budget-setup-form") {
+    event.preventDefault();
+    void submitBudgetSetup(form);
     return;
   }
   if (form.id === "guard-create-form") {
@@ -796,7 +1684,20 @@ root.addEventListener("submit", (event) => {
   }
 });
 
-window.addEventListener("popstate", () => void render(true, false));
+window.addEventListener("popstate", () => {
+  // The URL has already moved: staying means putting the key's page back on top.
+  if (!mayDropAgentKey()) {
+    if (agentKeyHref !== null) history.pushState(null, "", agentKeyHref);
+    return;
+  }
+  void render(true, false);
+});
+// Reload, closing the tab or typing a new address: the browser shows its own wording for this.
+window.addEventListener("beforeunload", (event) => {
+  if (!agentKeyAtRisk()) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
 
 let resizeTimer: ReturnType<typeof setTimeout> | undefined;
 window.addEventListener("resize", () => {

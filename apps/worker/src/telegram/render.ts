@@ -1,5 +1,5 @@
 // Telegram message templates (§9). Pure: report/diff/alert in, plain text out. Rule texts come from `messages`.
-import type { Flag, KdAlert, KdDiff, KdReport, Member, Severity, Status } from "key-doctor";
+import type { Flag, KdAlert, KdBudgetAlert, KdDiff, KdReport, Member, Severity, Status } from "key-doctor";
 import type { Button, Outgoing } from "./api.ts";
 
 export type Lang = "vi" | "en";
@@ -153,6 +153,17 @@ export function renderAlert(lang: Lang, a: KdAlert, dashboardUrl?: string): Outg
   if (p?.ui_url) buttons.push({ text: lang === "vi" ? "Mở đề xuất" : "Open proposal", url: p.ui_url });
   buttons.push(...dashboardButton(lang, dashboardUrl, a.target));
   return { text: lines.join("\n"), buttons };
+}
+
+/** One plan message (§9.5). The texts come whole from `budgetAlerts`. */
+export function renderBudgetAlert(lang: Lang, a: KdBudgetAlert): Outgoing {
+  const m = a.messages[lang];
+  const short = a.plan?.pause_reason === "insufficient_balance" || a.plan?.pause_reason === "guard_low_near";
+  const buttons: Button[] = [];
+  if (a.links.tx) buttons.push({ text: lang === "vi" ? "Xem giao dịch" : "View transaction", url: a.links.tx });
+  const open = a.links.dashboard.includes("/?target=") ? (lang === "vi" ? "Mở Key Check cho tài khoản này" : "Open Key Check for this account") : lang === "vi" ? "Mở Agent Budget" : "Open Agent Budget";
+  if (a.links.dashboard) buttons.push({ text: short ? "Top up" : open, url: a.links.dashboard });
+  return { text: [`Key Doctor · ${m.title}`, m.body, ...(m.action ? [m.action] : [])].join("\n"), buttons };
 }
 
 export function renderHelp(lang: Lang): Outgoing {

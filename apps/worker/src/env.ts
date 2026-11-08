@@ -44,4 +44,18 @@ export interface Env {
   /** One RPC URL or a comma-separated list, tried in order on rate limits and transport failures. */
   RPC_URL_TESTNET?: string;
   RPC_URL_MAINNET?: string;
+  /** Keeper (ADR 0005). The job stays off until the account, the key and the factory are all set. */
+  KEEPER_ACCOUNT_ID?: string;
+  /** Secret. The only key the Worker holds; it may sign only `execute_plan_step` and `sync_request` (K3). */
+  KEEPER_PRIVATE_KEY?: string;
+  /** Guard factory the keeper lists Guards from. */
+  KEEPER_FACTORY_ID?: string;
+  /** In NEAR. Below the minimum or above the maximum the team is told once a day (K4; default 1 and 5). */
+  KEEPER_MIN_BALANCE?: string;
+  KEEPER_MAX_BALANCE?: string;
+  /** Telegram chat of the team, for balance warnings. */
+  KEEPER_ALERT_CHAT_ID?: string;
+  /** Limits per cycle, to stay inside the 50 subrequests of the free plan (default 3 and 3). */
+  KEEPER_MAX_GUARDS_PER_RUN?: string;
+  KEEPER_MAX_STEPS_PER_RUN?: string;
 }

@@ -6,8 +6,8 @@ export const GUARD_ROLE = "agent-guard";
 /** The role of docs/guard-integration.md step 2: the Guard alone adds and approves transfers, nothing else. */
 export const GUARD_PERMISSIONS = ["transfer:AddProposal", "transfer:VoteApprove"];
 const GUARD_VOTE_POLICY = { transfer: { weight_kind: "RoleWeight", quorum: "0", threshold: "1" } };
-/** Gas on the factory call: `create` refuses less than 120 Tgas, and the sandbox test runs on this. */
-export const CREATE_GAS = "150000000000000";
+/** Gas on the factory call: `create` refuses less than 215 Tgas, and the sandbox test runs on this. */
+export const CREATE_GAS = "220000000000000";
 const GUARD_CALL_GAS = "50000000000000";
 
 export interface AddProposalArgs {
@@ -28,7 +28,7 @@ export interface RawPolicy {
 }
 
 /** Sputnik takes FunctionCall args as base64 of the JSON bytes; labels may be any UTF-8. */
-function base64Json(value: unknown): string {
+export function base64Json(value: unknown): string {
   let binary = "";
   for (const byte of new TextEncoder().encode(JSON.stringify(value))) binary += String.fromCharCode(byte);
   return btoa(binary);
@@ -109,10 +109,13 @@ export const isGuardMethod = (m: unknown): m is GuardMethod => (GUARD_METHODS as
 /** Methods that add an entry: the Guard refuses them without a deposit for the storage and refunds the rest to the DAO. */
 const STORAGE_METHODS: readonly GuardMethod[] = ["add_agent", "add_whitelist", "add_guardian"];
 export const GUARD_STORAGE_DEPOSIT = "10000000000000000000000";
+/** `AGENT_GAS_FUND` in contracts/guard: what the Guard gives a new agent account. */
+export const AGENT_GAS_FUND_YOCTO = 5n * 10n ** 23n;
+/** `add_agent` with a key: the entry's storage, and the fund. What is not used goes back to the DAO. */
+export const NEW_AGENT_DEPOSIT = (BigInt(GUARD_STORAGE_DEPOSIT) + AGENT_GAS_FUND_YOCTO).toString();
 
 /** A FunctionCall proposal DAO → Guard, the only way to change a locked Guard. */
-export function guardChangeProposal(guardId: string, method: GuardMethod, args: object): AddProposalArgs {
-  const deposit = STORAGE_METHODS.includes(method) ? GUARD_STORAGE_DEPOSIT : "0";
+export function guardChangeProposal(guardId: string, method: GuardMethod, args: object, deposit: string = STORAGE_METHODS.includes(method) ? GUARD_STORAGE_DEPOSIT : "0"): AddProposalArgs {
   return {
     proposal: {
       description: `Agent Guard ${guardId}: ${method}`,

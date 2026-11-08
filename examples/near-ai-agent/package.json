@@ -1,0 +1,17 @@
+{
+  "name": "near-ai-agent",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Example agent, not part of Key Doctor: a model on NEAR AI Cloud pays through Guard MCP, so the Guard's limits bind it.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "start": "node --no-warnings=ExperimentalWarning src/index.ts",
+    "test": "node --test --no-warnings=ExperimentalWarning \"test/**/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "@types/node": "22.19.1"
+  }
+}

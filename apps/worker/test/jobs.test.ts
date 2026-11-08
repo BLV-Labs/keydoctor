@@ -3,6 +3,8 @@ import { describe, it, type TestContext } from "node:test";
 import worker, { DAILY_CRON, PROPOSAL_CRON } from "../src/index.ts";
 import type { Env } from "../src/env.ts";
 import { handleUpdate } from "../src/telegram/commands.ts";
+import { saveProposalState } from "../src/store/proposal-state.ts";
+import { addSubscription } from "../src/store/subscriptions.ts";
 import { testD1, type TestD1 } from "./support/d1.ts";
 import { DAO, addKey, bytes, fixture, installChain, type Chain } from "./support/rpc.ts";
 
@@ -191,6 +193,66 @@ describe("GĐ6 proposal watch (demo scenario)", () => {
     const text = sends(chain).at(-1)!.body.text as string;
     assert.match(text, /ĐỔI QUYỀN DAO/);
     assert.match(text, /— English —\nGOVERNANCE CHANGE/);
+  });
+});
+
+describe("GĐ28 owner action on an Agent Budget", () => {
+  const OWNER = "owner.kd-demo.testnet";
+  const FACTORY = "kd-guards.testnet";
+  const budget = (chain: Chain) => {
+    chain.views.get_last_proposal_id = () => bytes(6);
+    chain.views.get_guards_for_dao = () => bytes([{ guard_id: "budget.kd-guards.testnet", dao_id: DAO, name: "x", created_at: "0", ready: true }]);
+    chain.views.get_proposal = (args: { id: number }) =>
+      bytes({
+        id: args.id,
+        proposer: OWNER,
+        description: "x",
+        kind: { Transfer: { token_id: "", receiver_id: "cold.kd-demo.testnet", amount: "40000000000000000000000000", msg: null } },
+        status: "Approved",
+        vote_counts: {},
+        votes: { [OWNER]: "Approve" },
+        submission_time: "0",
+      });
+  };
+  const open = { KEEPER_FACTORY_ID: FACTORY, DASHBOARD_URL: "https://dash.test" };
+
+  it("a withdrawal reaches the Budget's chat in one cycle, with the button that checks the account (GĐ28 done-when)", async (t) => {
+    const { env, chain } = setup(t, open);
+    await watch(env, DAO);
+    chain.telegram.length = 0;
+    budget(chain);
+    const r = await runCheck(env, { job: "proposals" });
+    assert.ok(r.body.alerts.includes(`testnet:${DAO}:budget_owner_action:4:1`));
+    const told = sends(chain).find((m) => /Just withdrew 40 NEAR to cold/.test(m.body.text));
+    assert.match(told!.body.text, /your account may have been taken over/);
+    assert.deepEqual(told!.body.reply_markup.inline_keyboard.flat(), [{ text: "Open Key Check for this account", url: `https://dash.test/?target=${OWNER}` }]);
+  });
+
+  it("a failed send keeps the proposal state and tells it next run, once", async (t) => {
+    const { env, chain, db } = setup(t, open);
+    await watch(env, DAO);
+    const before = rows(db, "SELECT * FROM proposal_state");
+    chain.telegram.length = 0;
+    budget(chain);
+    chain.telegramStatus = 500;
+    await runCheck(env, { job: "proposals" });
+    assert.deepEqual(rows(db, "SELECT * FROM proposal_state"), before);
+    chain.telegramStatus = 200;
+    chain.telegram.length = 0;
+    await runCheck(env, { job: "proposals" });
+    await runCheck(env, { job: "proposals" });
+    assert.equal(sends(chain).filter((m) => /Just withdrew/.test(m.body.text)).length, 2, "proposals 4 and 5, each once");
+  });
+
+  it("does not ask the testnet factory about a mainnet DAO: it would answer no, and a wrong answer would be silence", async (t) => {
+    const { env, chain, db } = setup(t, open);
+    await addSubscription(db, { target: "fake.sputnik-dao.near", network: "mainnet", target_type: "dao", chat_id: String(GROUP), chat_type: "group", created_at: "2026-11-01T00:00:00.000Z" });
+    await saveProposalState(db, "fake.sputnik-dao.near", "mainnet", { last_proposal_id: 4, pending: {} });
+    budget(chain);
+    let asked = 0;
+    chain.views.get_guards_for_dao = () => (asked++, bytes([]));
+    await runCheck(env, { job: "proposals" });
+    assert.equal(asked, 0);
   });
 });
 

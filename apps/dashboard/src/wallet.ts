@@ -1,12 +1,14 @@
 // Browser-only: signs DeleteKey, DAO add_proposal and guardian pause transactions through Meteor, Here or HOT Wallet (wallet-selector). Key Doctor never holds keys;
 // the wallet shows the transaction and signs it. Sign-in carries no contractId, so no function-call key is added.
-import { PublicKey } from "@near-js/crypto";
+import { KeyPair, PublicKey } from "@near-js/crypto";
 import { actionCreators, setupWalletSelector } from "@near-wallet-selector/core";
 import { setupHereWallet } from "@near-wallet-selector/here-wallet";
 import { setupHotWallet } from "@near-wallet-selector/hot-wallet";
 import { setupMeteorWallet } from "@near-wallet-selector/meteor-wallet";
 import type { Network } from "key-doctor";
+import { outcomeFailed } from "./budget-flow.ts";
 import type { DeletePlan } from "./cleanup.ts";
+import type { BudgetCall } from "./budget-create.ts";
 import type { AddProposalArgs } from "./guard-proposals.ts";
 import { walletLabel, type WalletId } from "./wallets.ts";
 
@@ -91,6 +93,106 @@ export async function signAddProposals(
       },
     ],
   });
+}
+
+/**
+ * Sign 1 of an Agent Budget owner action: one `add_proposal`. Returns what the wallet returned (the transaction
+ * outcome when it gives one) so the page can read the proposal id from it; a wallet that returns nothing gives none.
+ */
+export async function signAddProposalOutcome(
+  accountId: string,
+  network: Network,
+  dao: string,
+  bond: string,
+  proposal: AddProposalArgs,
+  walletId: WalletId,
+  onStep: (text: string) => void = () => {},
+): Promise<unknown> {
+  const wallet = await walletFor(accountId, network, walletId, onStep);
+  onStep(`Step 3/3: approve the add_proposal transaction in ${walletLabel(walletId)}.`);
+  return wallet.signAndSendTransactions({
+    transactions: [{ signerId: accountId, receiverId: dao, actions: [actionCreators.functionCall("add_proposal", proposal, ADD_PROPOSAL_GAS, BigInt(bond))] }],
+  });
+}
+
+/** `act_proposal` runs the proposal in the same transaction, and a Guard `create` alone takes 220 Tgas: give it all. */
+const ACT_PROPOSAL_GAS = 300_000_000_000_000n;
+
+/** Approve or reject one DAO proposal: `act_proposal(id, action, proposal)`, always with `proposal`. */
+export async function signActProposal(
+  accountId: string,
+  network: Network,
+  dao: string,
+  args: { id: number; action: "VoteApprove" | "VoteReject"; proposal: Record<string, unknown> },
+  walletId: WalletId,
+  onStep: (text: string) => void = () => {},
+): Promise<void> {
+  const wallet = await walletFor(accountId, network, walletId, onStep);
+  onStep(`Step 3/3: approve the ${args.action === "VoteApprove" ? "approval" : "rejection"} of proposal ${args.id} in ${walletLabel(walletId)}.`);
+  const outcome: unknown = await wallet.signAndSendTransactions({
+    transactions: [{ signerId: accountId, receiverId: dao, actions: [actionCreators.functionCall("act_proposal", args, ACT_PROPOSAL_GAS, 0n)] }],
+  });
+  if (outcomeFailed(outcome)) throw new Error(`The transaction for proposal ${args.id} failed on the chain.`);
+}
+
+/** Top up: a plain NEAR transfer from the owner's account to the DAO. */
+export async function signTopUp(
+  accountId: string,
+  network: Network,
+  dao: string,
+  yocto: string,
+  walletId: WalletId,
+  onStep: (text: string) => void = () => {},
+): Promise<void> {
+  const wallet = await walletFor(accountId, network, walletId, onStep);
+  onStep(`Step 3/3: approve the transfer in ${walletLabel(walletId)}.`);
+  await wallet.signAndSendTransactions({
+    transactions: [{ signerId: accountId, receiverId: dao, actions: [actionCreators.transfer(BigInt(yocto))] }],
+  });
+}
+
+/** Sputnik's `create` deploys the DAO and passes the rest of the gas on; what it leaves is refunded. */
+const BUDGET_DAO_GAS = 300_000_000_000_000n;
+
+/** Sign 1 of a new Budget: one `create` on the Sputnik factory. */
+export async function signBudgetDao(
+  accountId: string,
+  network: Network,
+  factory: string,
+  args: { name: string; args: string },
+  depositYocto: string,
+  walletId: WalletId,
+  onStep: (text: string) => void = () => {},
+): Promise<void> {
+  const wallet = await walletFor(accountId, network, walletId, onStep);
+  onStep(`Step 3/3: approve creating the DAO in ${walletLabel(walletId)}.`);
+  const outcome: unknown = await wallet.signAndSendTransactions({
+    transactions: [{ signerId: accountId, receiverId: factory, actions: [actionCreators.functionCall("create", args, BUDGET_DAO_GAS, BigInt(depositYocto))] }],
+  });
+  if (outcomeFailed(outcome)) throw new Error("The transaction that creates the DAO failed on the chain.");
+}
+
+/** Sign 2 of a new Budget: its four calls as one transaction, so the wallet shows one approval. */
+export async function signBudgetCalls(
+  accountId: string,
+  network: Network,
+  dao: string,
+  calls: BudgetCall[],
+  walletId: WalletId,
+  onStep: (text: string) => void = () => {},
+): Promise<void> {
+  const wallet = await walletFor(accountId, network, walletId, onStep);
+  onStep(`Step 3/3: approve the transaction of ${calls.length} calls in ${walletLabel(walletId)}.`);
+  const outcome: unknown = await wallet.signAndSendTransactions({
+    transactions: [{ signerId: accountId, receiverId: dao, actions: calls.map((c) => actionCreators.functionCall(c.method, c.args, c.gas, c.deposit)) }],
+  });
+  if (outcomeFailed(outcome)) throw new Error("The transaction that creates the Guard failed on the chain.");
+}
+
+/** The agent's key pair, made in this browser. The private half goes only into the file the owner downloads. */
+export function newAgentKey(): { publicKey: string; privateKey: string } {
+  const pair = KeyPair.fromRandom("ed25519");
+  return { publicKey: pair.getPublicKey().toString(), privateKey: pair.toString() };
 }
 
 /** `pause` only flips a flag; 30 Tgas leaves room to spare. */

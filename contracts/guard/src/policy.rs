@@ -1,9 +1,18 @@
 // Pure Guard rules (docs/final-idea.md §11.5.4, §11.5.6, §11.5.7): no storage, no promises, so every rule is
 // unit-tested without a chain.
-use crate::types::{Decision, GuardPolicy, RequestStatus, WhitelistEntry};
+use crate::types::{Decision, GuardPolicy, PlanAction, PlanInput, RequestStatus, WhitelistEntry};
+use near_sdk::AccountId;
 
 pub const DAY_NS: u64 = 86_400 * 1_000_000_000;
 pub const MEMO_MAX_CHARS: usize = 200;
+/// Ids of plan steps start with this, so no agent can take the id of a step that is still to come.
+pub const PLAN_REQUEST_PREFIX: &str = "plan-";
+/// Longer than a step takes from first receipt to last callback, so a run in flight cannot overlap the next one.
+pub const MIN_PLAN_INTERVAL_SEC: u32 = 60;
+pub const MAX_STRATEGY_ID_CHARS: usize = 64;
+pub const MAX_PLAN_ARGS_BYTES: usize = 2048;
+/// Inside `act_proposal`'s 80 Tgas, with room for the DAO's own work.
+pub const MAX_PLAN_CALL_GAS: u64 = 50_000_000_000_000;
 
 /// Auto when every condition holds, otherwise Pending with the full list of reasons, in spec order.
 pub fn decide(p: &GuardPolicy, wl: Option<&WhitelistEntry>, spent: u128, amount: u128) -> (Decision, Vec<String>) {
@@ -35,9 +44,12 @@ pub fn roll_window(start: u64, spent: u128, now: u64) -> (u64, u128) {
     }
 }
 
-/// 8 to 64 chars of `[A-Za-z0-9_-]`. The id goes into the proposal description, so it cannot hold spaces.
+/// 8 to 64 chars of `[A-Za-z0-9_-]`, outside the prefix plan steps use. The id goes into the proposal description,
+/// so it cannot hold spaces.
 pub fn valid_request_id(id: &str) -> bool {
-    (8..=64).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    (8..=64).contains(&id.len())
+        && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        && !id.starts_with(PLAN_REQUEST_PREFIX)
 }
 
 /// At most 200 chars on one line, so the description stays one parseable line.
@@ -67,6 +79,62 @@ pub fn final_status(dao_status: &str, submission_time: u64, period: u64, now: u6
         "InProgress" if period > 0 && now >= submission_time.saturating_add(period) => Some(RequestStatus::Expired),
         _ => None,
     }
+}
+
+/// The shape of a plan, apart from the limits (`plan_reasons`). The factory is the Guard's parent account. A `call`
+/// on the Guard, its DAO or its factory could change the rules, so no plan may hold one (§11.11.2).
+pub fn check_plan(plan: &PlanInput, guard: &AccountId, dao: &AccountId, factory: Option<&str>) -> Result<(), &'static str> {
+    if plan.amount_per_run.0 == 0 {
+        return Err("INVALID_AMOUNT");
+    }
+    if plan.runs_total == 0 {
+        return Err("INVALID_RUNS");
+    }
+    if plan.interval_sec < MIN_PLAN_INTERVAL_SEC {
+        return Err("INTERVAL_TOO_SHORT");
+    }
+    if !plan.token_in.is_empty() {
+        return Err("TOKEN_NOT_SUPPORTED");
+    }
+    if plan.strategy_id.chars().count() > MAX_STRATEGY_ID_CHARS {
+        return Err("STRATEGY_ID_TOO_LONG");
+    }
+    if let PlanAction::Call { target, method, args_base64, deposit, gas } = &plan.action {
+        if target == guard || target == dao || factory == Some(target.as_str()) {
+            return Err("PLAN_TARGET_FORBIDDEN");
+        }
+        if method.is_empty() || method.len() > MAX_STRATEGY_ID_CHARS {
+            return Err("INVALID_METHOD");
+        }
+        if args_base64.0.len() > MAX_PLAN_ARGS_BYTES {
+            return Err("CALL_ARGS_TOO_LONG");
+        }
+        // The daily limit counts `amount_per_run`, so more NEAR than that must not leave.
+        if deposit.0 > plan.amount_per_run.0 {
+            return Err("CALL_DEPOSIT_OVER_AMOUNT");
+        }
+        if gas.0 == 0 || gas.0 > MAX_PLAN_CALL_GAS {
+            return Err("INVALID_CALL_GAS");
+        }
+    }
+    Ok(())
+}
+
+/// The agent limits, which hold for a plan too. A `call` has no receiver to whitelist.
+pub fn plan_reasons(p: &GuardPolicy, action: &PlanAction, wl: Option<&WhitelistEntry>, spent: u128, amount: u128) -> Vec<String> {
+    let (_, mut reasons) = decide(p, wl, spent, amount);
+    if matches!(action, PlanAction::Call { .. }) {
+        reasons.retain(|r| r != "NOT_WHITELISTED");
+    }
+    reasons
+}
+
+/// The first slot after `now` on the plan's grid. A late step jumps past the slots it missed: they do not run in a
+/// burst, and the plan ends later instead.
+pub fn next_run(due: u64, interval_sec: u32, now: u64) -> u64 {
+    let interval = interval_sec as u64 * 1_000_000_000;
+    let slots = now.saturating_sub(due) / interval + 1;
+    due.saturating_add(slots.saturating_mul(interval))
 }
 
 #[cfg(test)]
@@ -181,5 +249,112 @@ mod tests {
         // Otherwise an ignored proposal holds the agent's pending slot forever.
         assert_eq!(final_status("InProgress", 100, 10, 110), Some(RequestStatus::Expired));
         assert_eq!(final_status("InProgress", 100, 0, u64::MAX), None, "unknown period: never guess expiry");
+    }
+
+    fn plan(action: PlanAction) -> PlanInput {
+        PlanInput {
+            action,
+            strategy_id: "dca".into(),
+            token_in: "".into(),
+            amount_per_run: U128(NEAR),
+            interval_sec: 60,
+            runs_total: 3,
+            start_at: near_sdk::json_types::U64(0),
+        }
+    }
+
+    fn call_to(target: &str) -> PlanAction {
+        PlanAction::Call {
+            target: target.parse().unwrap(),
+            method: "deposit".into(),
+            args_base64: vec![].into(),
+            deposit: U128(0),
+            gas: near_sdk::json_types::U64(MAX_PLAN_CALL_GAS),
+        }
+    }
+
+    fn check(p: &PlanInput) -> Result<(), &'static str> {
+        let (guard, dao) = ("g.factory.testnet".parse().unwrap(), "dao.testnet".parse().unwrap());
+        check_plan(p, &guard, &dao, Some("factory.testnet"))
+    }
+
+    #[test]
+    fn a_plan_cannot_call_what_sets_its_own_rules() {
+        // A `call` on these three could lift the limits or replace the Guard, with no owner vote on the step.
+        for target in ["g.factory.testnet", "dao.testnet", "factory.testnet"] {
+            assert_eq!(check(&plan(call_to(target))), Err("PLAN_TARGET_FORBIDDEN"), "{target}");
+        }
+        assert_eq!(check(&plan(call_to("pool.testnet"))), Ok(()));
+    }
+
+    #[test]
+    fn a_call_cannot_send_more_than_the_limit_counts() {
+        // The daily limit adds `amount_per_run`: a bigger deposit would leave the DAO uncounted.
+        let mut action = call_to("pool.testnet");
+        let PlanAction::Call { deposit, .. } = &mut action else { unreachable!() };
+        *deposit = U128(NEAR + 1);
+        assert_eq!(check(&plan(action)), Err("CALL_DEPOSIT_OVER_AMOUNT"));
+    }
+
+    #[test]
+    fn a_call_must_fit_the_gas_of_the_guards_vote() {
+        // It runs inside act_proposal: more gas than that holds could never succeed, and would fail every run.
+        for bad in [0, MAX_PLAN_CALL_GAS + 1] {
+            let mut action = call_to("pool.testnet");
+            let PlanAction::Call { gas, .. } = &mut action else { unreachable!() };
+            *gas = near_sdk::json_types::U64(bad);
+            assert_eq!(check(&plan(action)), Err("INVALID_CALL_GAS"));
+        }
+    }
+
+    #[test]
+    fn plan_shape_is_refused_with_its_own_code() {
+        let transfer = PlanAction::Transfer { receiver_id: "vendor.testnet".parse().unwrap() };
+        let with = |f: fn(&mut PlanInput)| {
+            let mut p = plan(transfer.clone());
+            f(&mut p);
+            check(&p)
+        };
+        assert_eq!(with(|_| ()), Ok(()));
+        assert_eq!(with(|p| p.amount_per_run = U128(0)), Err("INVALID_AMOUNT"));
+        assert_eq!(with(|p| p.runs_total = 0), Err("INVALID_RUNS"));
+        assert_eq!(with(|p| p.interval_sec = MIN_PLAN_INTERVAL_SEC - 1), Err("INTERVAL_TOO_SHORT"));
+        // Tokens wait for GĐ23: the limits are in NEAR, so a token amount would be counted as NEAR.
+        assert_eq!(with(|p| p.token_in = "usdc.testnet".into()), Err("TOKEN_NOT_SUPPORTED"));
+        assert_eq!(with(|p| p.strategy_id = "x".repeat(65)), Err("STRATEGY_ID_TOO_LONG"));
+
+        let mut long = plan(call_to("pool.testnet"));
+        let PlanAction::Call { args_base64, .. } = &mut long.action else { unreachable!() };
+        *args_base64 = vec![0; MAX_PLAN_ARGS_BYTES + 1].into();
+        assert_eq!(check(&long), Err("CALL_ARGS_TOO_LONG"));
+        let mut no_method = plan(call_to("pool.testnet"));
+        let PlanAction::Call { method: m, .. } = &mut no_method.action else { unreachable!() };
+        m.clear();
+        assert_eq!(check(&no_method), Err("INVALID_METHOD"));
+    }
+
+    #[test]
+    fn a_call_has_no_receiver_to_whitelist_but_keeps_every_other_limit() {
+        let call = call_to("pool.testnet");
+        assert!(plan_reasons(&policy(), &call, None, 0, NEAR).is_empty());
+        assert_eq!(plan_reasons(&policy(), &call, None, 0, 6 * NEAR), ["OVER_PER_TX"]);
+        let transfer = PlanAction::Transfer { receiver_id: "vendor.testnet".parse().unwrap() };
+        assert_eq!(plan_reasons(&policy(), &transfer, None, 0, NEAR), ["NOT_WHITELISTED"]);
+    }
+
+    #[test]
+    fn a_late_step_does_not_leave_a_backlog_of_slots() {
+        // Runs in a burst would spend a week of budget in one cron cycle after an outage.
+        const MIN: u64 = 60_000_000_000;
+        assert_eq!(next_run(10 * MIN, 60, 10 * MIN), 11 * MIN, "on time: the next slot");
+        assert_eq!(next_run(10 * MIN, 60, 15 * MIN + 1), 16 * MIN, "late: stays on the grid, past now");
+        assert_eq!(next_run(10 * MIN, 60, 12 * MIN), 13 * MIN, "exactly on a slot: that slot is the one being run");
+    }
+
+    #[test]
+    fn an_agent_cannot_take_the_id_of_a_plan_step() {
+        // The ids are predictable, and a step's insert would overwrite the agent's record.
+        assert!(!valid_request_id("plan-0-1800000000000000000"));
+        assert!(valid_request_id("planned-payment"));
     }
 }

@@ -9,6 +9,8 @@ const DAO = "kd-demo.sputnik-dao.testnet";
 const A = "a.kd-demo.testnet";
 const B = "b.kd-demo.testnet";
 const C = "c.kd-demo.testnet";
+const FACTORY = "kd-guards.testnet";
+const GUARD = "budget.kd-guards.testnet";
 
 const bytes = (v: unknown) => ok({ result: Array.from(new TextEncoder().encode(JSON.stringify(v))), logs: [], block_height: 1, block_hash: "h" });
 const policyRaw = () => fixture("sputnik/get_policy.json");
@@ -27,6 +29,8 @@ interface World {
   policy?: unknown;
   /** account -> kd_guard_info reply. An account not listed fails at the transport level (HTTP 500). */
   guardInfo?: Record<string, unknown>;
+  /** The Guards the factory lists for the DAO. "down" fails at the transport level. */
+  guards?: string[] | "down";
 }
 
 function world(t: TestContext, w: World): Req[] {
@@ -44,6 +48,10 @@ function world(t: TestContext, w: World): Req[] {
         const found = w.proposals?.[id];
         return found === undefined ? ok({ error: "wasm execution failed: ERR_NO_PROPOSAL", logs: [] }) : found;
       }
+    }
+    if (p.request_type === "call_function" && p.account_id === FACTORY && p.method_name === "get_guards_for_dao") {
+      if (w.guards === "down") return new Response("{}", { status: 500 });
+      return bytes((w.guards ?? []).map((guard_id) => ({ guard_id, dao_id: DAO, name: "x", created_at: "0", ready: true })));
     }
     if (p.request_type === "call_function" && p.method_name === "kd_guard_info") {
       const reply = w.guardInfo?.[String(p.account_id)];
@@ -64,7 +72,7 @@ describe("GĐ5 checkProposals: first call and steady state", () => {
   it("prev = null records the proposal count, returns no alerts and reads nothing else", async (t) => {
     const calls = demo(t);
     const r = await checkProposals(DAO, null);
-    assert.deepEqual(r, { alerts: [], state: { last_proposal_id: 4, pending: {} }, errors: [] });
+    assert.deepEqual(r, { alerts: [], budget_alerts: [], state: { last_proposal_id: 4, pending: {} }, errors: [] });
     assert.deepEqual(queries(calls), ["block", "call_function:get_last_proposal_id"]);
   });
 
@@ -158,6 +166,21 @@ describe("GĐ5 checkProposals: kinds", () => {
     assert.equal(r.alerts[0]?.messages.en.title, `CODE UPGRADE: ${DAO}`);
     assert.deepEqual(Object.keys(r.state.pending), ["4"]);
     assert.equal(r.state.last_proposal_id, 7);
+  });
+
+  // A Guard is upgraded by a plain FunctionCall, so a label check alone would let its code change without an alert.
+  it("a function call to upgrade alerts as code_upgrade_proposal; other calls stay quiet", async (t) => {
+    const base = { proposer: B, description: "x", status: "InProgress", votes: {}, vote_counts: {}, submission_time: "1" };
+    const call = (method_name: string) => ({
+      FunctionCall: { receiver_id: "budget.keydoctor-guards-v2.testnet", actions: [{ method_name, args: "e30=", deposit: "0", gas: "150000000000000" }] },
+    });
+    demo(t, {
+      last: bytes(6),
+      proposals: { 4: bytes({ ...base, id: 4, kind: call("upgrade") }), 5: bytes({ ...base, id: 5, kind: call("set_policy") }) },
+    });
+    const r = await checkProposals(DAO, { last_proposal_id: 4, pending: {} });
+    assert.deepEqual(kinds(r.alerts), ["testnet:kd-demo.sputnik-dao.testnet:code_upgrade_proposal:4:-"]);
+    assert.equal(r.alerts[0]?.messages.en.title, `CODE UPGRADE: ${DAO}`);
   });
 
   it("label groups follow the Sputnik v2 labels", () => {
@@ -458,5 +481,174 @@ describe("Guard alerts (§5.4, D9)", () => {
     assert.deepEqual(tally(policy, p, new Set([G])).pending_voters, [A, B, C]);
     const auto = tally(policy, parseProposal(guardAuto4())!, new Set([G]));
     assert.deepEqual(auto, { approvals_needed: 1, approvals_have: 1, pending_voters: [] });
+  });
+});
+
+describe("GĐ28 owner actions on an Agent Budget (§9.5)", () => {
+  const OWNER = "owner.kd-demo.testnet";
+  const prev: ProposalWatchState = { last_proposal_id: 2, pending: {} };
+  const opts = { budgetFactoryId: FACTORY, dashboardUrl: "https://dash.test/" };
+  const proposal = (id: number, kind: unknown, status = "Approved", proposer = OWNER) =>
+    bytes({ id, proposer, description: "x", kind, status, vote_counts: {}, votes: { [OWNER]: "Approve" }, submission_time: "0" });
+  const withdraw = { Transfer: { token_id: "", receiver_id: "cold.kd-demo.testnet", amount: "40000000000000000000000000", msg: null } };
+  const b64 = (v: unknown) => Buffer.from(JSON.stringify(v)).toString("base64");
+  const call = (receiver_id: string, ...actions: [string, unknown][]) => ({
+    FunctionCall: { receiver_id, actions: actions.map(([method_name, args]) => ({ method_name, args: b64(args), deposit: "1", gas: "1" })) },
+  });
+  /** Proposal 2 alone on the chain, with no voter to scan. */
+  const one = (t: TestContext, kind: unknown, extra: Partial<World> = {}) => world(t, { last: bytes(3), guards: [GUARD], proposals: { 2: proposal(2, kind) }, ...extra });
+
+  it("tells a withdrawal only once it went through, so 'just withdrew' is true, and tells it high and unmuteable", async (t) => {
+    const open = demo(t, { last: bytes(3), guards: [GUARD], proposals: { 2: proposal(2, withdraw, "InProgress") } });
+    const first = await checkProposals(DAO, prev, opts);
+    assert.deepEqual(first.budget_alerts, []);
+    assert.ok(!queries(open).includes("call_function:get_guards_for_dao"), "an open proposal costs no factory read");
+    assert.deepEqual(Object.keys(first.state.pending), ["2"]);
+
+    t.mock.restoreAll();
+    one(t, withdraw);
+    const { budget_alerts: [a, ...rest] } = await checkProposals(DAO, first.state, opts);
+    assert.deepEqual(rest, []);
+    assert.equal(a?.alert_id, `testnet:${DAO}:budget_owner_action:2:1`);
+    assert.equal(a?.severity, "high");
+    assert.equal(a?.muteable, false);
+    assert.deepEqual(a?.budget, { dao_id: DAO, guard_id: GUARD });
+    assert.deepEqual(a?.owner_action, { action: "withdraw", proposal_id: 2, summary: "withdrew 40 NEAR to cold.kd-demo.testnet" });
+    assert.equal(a?.messages.vi.title, `Agent Budget ${DAO}`);
+    assert.equal(a?.messages.vi.body, "Vừa rút 40 NEAR về cold.kd-demo.testnet.");
+    assert.equal(a?.messages.vi.action, "Nếu không phải bạn: tài khoản của bạn có thể đã bị chiếm. Kiểm tra key ngay.");
+    assert.equal(a?.links.dashboard, `https://dash.test/?target=${OWNER}`, "the button checks the account that acted");
+  });
+
+  it("says nothing about a proposal that did not go through", async (t) => {
+    for (const status of ["Rejected", "Removed", "Expired", "Failed"]) {
+      one(t, withdraw, { proposals: { 2: proposal(2, withdraw, status) } });
+      assert.deepEqual((await checkProposals(DAO, prev, opts)).budget_alerts, [], status);
+      t.mock.restoreAll();
+    }
+  });
+
+  it("leaves a Guard's own payments alone: an agent spending inside its limit is not the owner acting", async (t) => {
+    one(t, withdraw, { proposals: { 2: proposal(2, withdraw, "Approved", GUARD) } });
+    assert.deepEqual((await checkProposals(DAO, prev, opts)).budget_alerts, []);
+  });
+
+  it("stays silent on a DAO that is no Budget, and reads the factory once per check however many proposals passed", async (t) => {
+    const calls = one(t, withdraw, { last: bytes(4), guards: [], proposals: { 2: proposal(2, withdraw), 3: proposal(3, withdraw) } });
+    assert.deepEqual((await checkProposals(DAO, prev, opts)).budget_alerts, []);
+    assert.equal(queries(calls).filter((q) => q === "call_function:get_guards_for_dao").length, 1);
+  });
+
+  it("does nothing on a network without a factory", async (t) => {
+    const calls = one(t, withdraw);
+    assert.deepEqual((await checkProposals(DAO, prev)).budget_alerts, []);
+    assert.ok(!queries(calls).includes("call_function:get_guards_for_dao"));
+  });
+
+  it("a factory read that fails loses no alert: the proposal stays to be read again", async (t) => {
+    one(t, withdraw, { guards: "down" });
+    const failed = await checkProposals(DAO, prev, opts);
+    assert.deepEqual(failed.budget_alerts, []);
+    assert.deepEqual(failed.errors, ["proposal 2: budget check RPC_ERROR"]);
+    assert.equal(failed.state.last_proposal_id, 2);
+
+    t.mock.restoreAll();
+    one(t, withdraw);
+    const again = await checkProposals(DAO, failed.state, opts);
+    assert.equal(again.budget_alerts.length, 1);
+    assert.equal(again.state.last_proposal_id, 3);
+  });
+
+  it("a failed read of a tracked proposal keeps it tracked", async (t) => {
+    const seen = { 2: { kind_label: "transfer", votes_seen: {}, first_seen_at: "2026-11-03T00:00:00Z" } };
+    one(t, withdraw, { guards: "down" });
+    const r = await checkProposals(DAO, { last_proposal_id: 3, pending: seen }, opts);
+    assert.deepEqual(r.state.pending, seen);
+  });
+
+  it("names every Guard change the owner must hear about", async (t) => {
+    const cases: [string, unknown, string, string][] = [
+      ["set_policy", {}, "edit_rules", "changed the spending rules"],
+      ["add_whitelist", { account_id: "x.kd-demo.testnet" }, "edit_rules", "added x.kd-demo.testnet to the receivers"],
+      ["remove_guardian", { account_id: "x.kd-demo.testnet" }, "edit_rules", "removed the guardian x.kd-demo.testnet"],
+      ["add_agent", { account_id: "x.kd-demo.testnet" }, "add_agent", "added the agent x.kd-demo.testnet"],
+      ["remove_agent", { account_id: "x.kd-demo.testnet" }, "remove_agent", "removed the agent x.kd-demo.testnet"],
+      ["set_agent_enabled", { account_id: "x.kd-demo.testnet", enabled: false }, "disable_agent", "disabled the agent x.kd-demo.testnet"],
+      ["set_agent_enabled", { account_id: "x.kd-demo.testnet", enabled: true }, "add_agent", "enabled the agent x.kd-demo.testnet again"],
+      ["create_plan", {}, "create_plan", "created a plan"],
+      ["cancel_plan", { plan_id: 7 }, "cancel_plan", "cancelled plan 7"],
+      ["unpause", {}, "pause_agents", "resumed every agent"],
+      ["upgrade", {}, "upgrade_guard", "upgraded the Guard's code"],
+    ];
+    for (const [method, args, action, summary] of cases) {
+      one(t, call(GUARD, [method, args]));
+      const { budget_alerts: [a] } = await checkProposals(DAO, prev, opts);
+      assert.deepEqual(a?.owner_action, { action, proposal_id: 2, summary }, method);
+      t.mock.restoreAll();
+    }
+  });
+
+  it("claims only the vote for a call: Sputnik marks it Approved before the Guard's answer is known", async (t) => {
+    one(t, call(GUARD, ["set_policy", {}]));
+    const { budget_alerts: [a] } = await checkProposals(DAO, prev, opts);
+    assert.equal(a?.messages.en.body, "Proposal #2 was just approved: changed the spending rules.");
+    assert.equal(a?.messages.vi.body, "Vừa duyệt đề xuất #2: đổi luật chi tiêu.");
+  });
+
+  it("a harmless first action cannot hide a dangerous second one", async (t) => {
+    one(t, call(GUARD, ["refresh_bond", {}], ["add_agent", { account_id: "x.kd-demo.testnet" }], ["set_policy", {}]));
+    const { budget_alerts } = await checkProposals(DAO, prev, opts);
+    assert.equal(budget_alerts.length, 1);
+    assert.equal(budget_alerts[0]?.owner_action?.summary, "added the agent x.kd-demo.testnet; changed the spending rules");
+  });
+
+  it("tells tokens leaving by a hand-written call, on any contract", async (t) => {
+    one(t, call("usdc.kd-demo.testnet", ["ft_transfer", { receiver_id: "cold.kd-demo.testnet", amount: "5000000" }]));
+    const { budget_alerts: [a] } = await checkProposals(DAO, prev, opts);
+    assert.equal(a?.owner_action?.action, "withdraw");
+    assert.equal(a?.owner_action?.summary, "withdrew 5000000 raw units of usdc.kd-demo.testnet to cold.kd-demo.testnet");
+    assert.equal(a?.budget.guard_id, GUARD);
+  });
+
+  it("tells a code upgrade of the Guard, not of another contract", async (t) => {
+    one(t, { UpgradeRemote: { receiver_id: GUARD, method_name: "upgrade", hash: "h" } });
+    assert.equal((await checkProposals(DAO, prev, opts)).budget_alerts[0]?.owner_action?.action, "upgrade_guard");
+    t.mock.restoreAll();
+    one(t, { UpgradeRemote: { receiver_id: "other.kd-demo.testnet", method_name: "upgrade", hash: "h" } });
+    assert.deepEqual((await checkProposals(DAO, prev, opts)).budget_alerts, []);
+  });
+
+  it("money cannot leave unseen through a method nobody listed: stolen keys choose the method and the deposit", async (t) => {
+    const paid = (receiver_id: string, method_name: string, deposit: string) => ({ FunctionCall: { receiver_id, actions: [{ method_name, args: b64({}), deposit, gas: "1" }] } });
+    const told = async (kind: unknown) => {
+      one(t, kind);
+      const alert = (await checkProposals(DAO, prev, opts)).budget_alerts[0];
+      t.mock.restoreAll();
+      return alert;
+    };
+    const drained = await told(paid("drain.kd-demo.testnet", "buy", "9000000000000000000000000"));
+    assert.equal(drained?.owner_action?.action, "withdraw");
+    assert.equal(drained?.owner_action?.summary, "called buy on drain.kd-demo.testnet with 9 NEAR attached");
+    assert.equal(drained?.severity, "high");
+    assert.equal((await told(paid("art.kd-demo.testnet", "nft_transfer", "1")))?.owner_action?.summary, "called nft_transfer on art.kd-demo.testnet");
+    // The name of a harmless call must not buy silence for a large deposit.
+    assert.equal((await told(paid("drain.kd-demo.testnet", "storage_deposit", "9000000000000000000000000")))?.owner_action?.summary, "called storage_deposit on drain.kd-demo.testnet with 9 NEAR attached");
+    assert.equal((await told(paid(GUARD, "new_method", "0")))?.owner_action?.summary, `called new_method on ${GUARD}`);
+    // A known Guard method, or a quiet one, must not hide a large deposit either.
+    assert.equal((await told(paid(GUARD, "add_guardian", "9000000000000000000000000")))?.owner_action?.summary, `made ? a guardian; called add_guardian on ${GUARD} with 9 NEAR attached`);
+    assert.equal((await told(paid(GUARD, "refresh_bond", "9000000000000000000000000")))?.owner_action?.summary, `called refresh_bond on ${GUARD} with 9 NEAR attached`);
+    assert.equal((await told(paid(GUARD, "new_method", "9000000000000000000000000")))?.owner_action?.summary, `called new_method on ${GUARD} with 9 NEAR attached`, "told once, not twice");
+    assert.equal((await told(paid("drain.kd-demo.testnet", "<b>x</b>\nclick", "0")))?.owner_action?.summary, "called ? on drain.kd-demo.testnet", "chain text stays out of the message");
+  });
+
+  it("stays quiet on housekeeping calls, and arguments that do not decode cannot break the check", async (t) => {
+    for (const kind of [call(GUARD, ["refresh_bond", {}]), call(GUARD, ["withdraw_excess", {}]), call("usdc.kd-demo.testnet", ["storage_deposit", {}])]) {
+      one(t, kind);
+      assert.deepEqual((await checkProposals(DAO, prev, opts)).budget_alerts, []);
+      t.mock.restoreAll();
+    }
+    one(t, { FunctionCall: { receiver_id: GUARD, actions: [{ method_name: "add_agent", args: "%%%", deposit: "1", gas: "1" }] } });
+    const r = await checkProposals(DAO, prev, opts);
+    assert.equal(r.budget_alerts[0]?.owner_action?.summary, "added the agent ?");
   });
 });

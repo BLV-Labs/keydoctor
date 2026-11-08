@@ -448,7 +448,7 @@ sequenceDiagram
 |---|---|
 | `transfer`, `call` | Chi tiền / hành động |
 | `add_member_to_role`, `remove_member_from_role`, `policy`, `policy_*`, `config` | Thay đổi quyền → cảnh báo `governance_change_proposal` ngay khi xuất hiện |
-| `upgrade_self`, `upgrade_remote` | Thay đổi code → cảnh báo `code_upgrade_proposal` |
+| `upgrade_self`, `upgrade_remote`, `FunctionCall` gọi `upgrade` | Thay đổi code → cảnh báo `code_upgrade_proposal` |
 | Còn lại | Bỏ qua |
 
 4. Tìm phiếu mới so với `votes_seen`. Sputnik không lưu thời điểm bỏ phiếu; sai số tối đa bằng chu kỳ cron.
@@ -1004,7 +1004,7 @@ sequenceDiagram
 
 ## UC16. Hành động của chủ Budget
 
-**Mục đích:** chủ kiểm soát hoàn toàn Budget, mỗi việc một lần ký, và luôn được báo.
+**Mục đích:** chủ kiểm soát hoàn toàn Budget, tối đa hai lần ký mỗi việc thường ngày, và luôn được báo.
 **Kích hoạt:** các nút trên trang Agent Budget, hoặc link từ Telegram.
 **Mức:** Bắt buộc. **Giai đoạn:** GĐ26 (giao dịch), GĐ27 (giao diện), GĐ28 (thông báo).
 
@@ -1020,7 +1020,8 @@ sequenceDiagram
 
   U->>D: Withdraw 40 NEAR
   D->>DAO: get_last_proposal_id → id dự đoán = N
-  D->>W: Một giao dịch: add_proposal(Transfer) + act_proposal(N, VoteApprove, proposal)
+  D->>W: Ký 1: add_proposal(Transfer), đọc số trả về, đối chiếu nội dung
+  D->>W: Ký 2: act_proposal(id, VoteApprove, proposal)
   Note over D,DAO: proposal không khớp đề xuất N (vd agent vừa chen vào) → cả giao dịch thất bại, không duyệt nhầm
   W->>DAO: Giao dịch
   DAO-->>U: Tiền về ví
@@ -1037,10 +1038,10 @@ sequenceDiagram
 | Nút | Giao dịch | Thông báo |
 |---|---|---|
 | Top up | Kiểm policy DAO, rồi chuyển vào DAO | Không |
-| Withdraw | `add_proposal(Transfer)` + `act_proposal(N, VoteApprove, proposal)` một giao dịch | **Có** |
+| Withdraw | Hai giao dịch: `add_proposal(Transfer)`, rồi `act_proposal(id, VoteApprove, proposal)` | **Có** |
 | Approve / Reject khoản chờ | `act_proposal(id, ..., proposal)` với `proposal` lấy từ đề xuất đang hiển thị | Không (đã có tin khoản chờ) |
 | Pause agents / Resume | `guard.pause()` / đề xuất `unpause` | **Có** |
-| Edit rules | `add_proposal(FunctionCall guard.set_policy / add_whitelist / remove_whitelist)` + `act_proposal(N, VoteApprove, proposal)` | **Có** |
+| Edit rules | Hai giao dịch: `add_proposal(FunctionCall guard.set_policy / add_whitelist / remove_whitelist)`, rồi `act_proposal(id, VoteApprove, proposal)` | **Có** |
 | Add / tắt / gỡ agent | Như trên với `add_agent` (kèm public key, Guard tạo account agent), `set_agent_enabled`, `remove_agent` | **Có** |
 | Enable USDC | Đề xuất `storage_deposit` + tự duyệt | Không |
 
@@ -1048,14 +1049,13 @@ Mọi thay đổi luật có hiệu lực ngay (không có luật chờ 24 giờ
 
 ### Ngoại lệ
 
-- **Mọi `act_proposal` bắt buộc kèm tham số `proposal`** (mục 11.10.5 của `final-idea.md`). Guard liên tục tạo đề xuất trên cùng DAO, nên số đoán trước có thể trùng với khoản agent vừa xin; kèm `proposal` thì lệnh của chủ thất bại toàn bộ thay vì duyệt nhầm, dashboard đọc lại số và cho ký lại.
-- Nếu code Sputnik của DAO không kiểm tham số `proposal` (B-Q7): không gộp; tách thành hai giao dịch.
-- Ví không gửi được nhiều action trong một giao dịch (B-Q6, kiểm với Meteor, HERE, HOT): không dùng ví đó cho Agent Budget; dashboard báo và gợi ý ví đã đạt.
+- **Không gộp đề xuất và duyệt với số đoán trước** (mục 11.10.5 của `final-idea.md`). Guard liên tục tạo đề xuất trên cùng DAO, nên số đoán trước có thể trùng với khoản agent vừa xin, và Sputnik testnet không kiểm tham số `proposal` (B-Q7). Dashboard lấy số từ giá trị trả về của `add_proposal`, đối chiếu nội dung, rồi mới cho ký duyệt.
+- Ví không gửi được nhiều action trong một giao dịch (B-Q6, kiểm với Meteor, HERE, HOT; cần cho ký 2 khi tạo Budget): không dùng ví đó để tạo Budget; dashboard báo và gợi ý ví đã đạt.
 - Approve khoản có người nhận lạ: phải gõ lại số tiền để xác nhận.
 
 ### Xong khi
 
-- Mỗi hành động trong bảng là một lần ký.
+- Approve, Reject, Pause, Top up là một lần ký; hành động cần tạo đề xuất là hai lần ký.
 - Rút tiền thử: Telegram nhận tin `budget_owner_action` trong một chu kỳ.
 - Test chèn đề xuất: agent tạo khoản chờ đúng lúc chủ gửi Withdraw; giao dịch của chủ thất bại, khoản của agent vẫn chờ, không có đề xuất mồ côi.
 
@@ -1083,7 +1083,7 @@ sequenceDiagram
     D-->>U: Giữ nguyên cấu hình, chuyển điều kiện kế tiếp
   end
   U->>D: Start (tùy chọn: Notify me on Telegram after each run)
-  D->>W: add_proposal(FunctionCall G.create_plan) + act_proposal(N, VoteApprove, proposal), một giao dịch
+  D->>W: Ký 1: add_proposal(FunctionCall G.create_plan). Ký 2: act_proposal(id, VoteApprove, proposal)
   W->>DAO: Giao dịch
   DAO->>G: create_plan (predecessor = DAO)
   G-->>D: plan_id

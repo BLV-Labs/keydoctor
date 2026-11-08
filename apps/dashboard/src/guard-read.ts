@@ -14,7 +14,10 @@ export interface GuardLive {
   policy: { max_per_tx: string; max_per_day: string; max_pending_per_agent: number; min_reserve: string } | null;
   /** `resets_at` is ISO 8601 UTC; the contract's `get_window` returns nanoseconds. */
   window: { spent_in_window: string; remaining: string; resets_at: string } | null;
-  agents: { account_id: string; label: string; enabled: boolean; pending: number }[] | null;
+  /** `spent_24h` is missing on a Guard from the first factory, whose code cannot change. */
+  agents: { account_id: string; label: string; enabled: boolean; pending: number; spent_24h?: string }[] | null;
+  /** `max_per_tx` is the recipient's own cap, on top of the policy's. */
+  whitelist: { account_id: string; label: string; max_per_tx: string | null }[] | null;
 }
 
 export interface GuardDao {
@@ -45,13 +48,14 @@ function windowToIso(w: GuardLive["window"]): GuardLive["window"] {
 async function readGuard(rpc: Rpc, height: number, g: { guard_id: string; name: string; ready: boolean }, members: string[]): Promise<GuardLive> {
   const view = <T>(method: string): Promise<T | null> =>
     g.ready ? (rpc.callFunction(g.guard_id, height, method, {}) as Promise<T>).catch(() => null) : Promise.resolve(null);
-  const [config, policy, window, agents] = await Promise.all([
+  const [config, policy, window, agents, whitelist] = await Promise.all([
     view<GuardLive["config"]>("get_config"),
     view<GuardLive["policy"]>("get_policy"),
     view<GuardLive["window"]>("get_window").then(windowToIso),
     view<GuardLive["agents"]>("get_agents"),
+    view<GuardLive["whitelist"]>("get_whitelist"),
   ]);
-  return { guard_id: g.guard_id, name: g.name, ready: g.ready, in_role: members.includes(g.guard_id), config, policy, window, agents };
+  return { guard_id: g.guard_id, name: g.name, ready: g.ready, in_role: members.includes(g.guard_id), config, policy, window, agents, whitelist };
 }
 
 /** Throws a KdError from the DAO read, `NOT_A_DAO`, or `FACTORY_UNREADABLE` when a factory view fails. */

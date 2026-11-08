@@ -1,12 +1,12 @@
 // Key Doctor Guard (docs/final-idea.md §11.5): a Sputnik v2 DAO member with role `agent-guard`. A registered
 // agent asks for a NEAR transfer; the Guard always creates the proposal and approves it itself only when the
 // request is within its limits. Everything else waits for the council. Only the DAO changes the configuration.
-use near_sdk::json_types::{U128, U64};
+use near_sdk::json_types::{Base58CryptoHash, U128, U64};
 use near_sdk::serde_json::{json, Value};
 use near_sdk::store::{IterableMap, IterableSet, LookupMap, Vector};
 use near_sdk::{
-    env, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault, Promise, PromiseError,
-    PromiseOrValue,
+    env, near, require, AccountId, Allowance, BorshStorageKey, CryptoHash, Gas, NearToken, PanicOnDefault, Promise,
+    PromiseError, PromiseOrValue, PublicKey,
 };
 
 mod dao;
@@ -14,7 +14,7 @@ mod events;
 mod policy;
 mod types;
 
-use dao::{ext_dao, transfer_kind, DaoPolicyView, ProposalView};
+use dao::{ext_dao, function_call_kind, transfer_kind, DaoPolicyView, ProposalView};
 use events::emit;
 pub use types::*;
 
@@ -25,6 +25,17 @@ const GAS_ACT_PROPOSAL: Gas = Gas::from_tgas(80);
 const GAS_ON_VOTED: Gas = Gas::from_tgas(10);
 const GAS_VIEW: Gas = Gas::from_tgas(10);
 const GAS_ON_VIEW: Gas = Gas::from_tgas(15);
+const GAS_ON_AGENT_CREATED: Gas = Gas::from_tgas(5);
+// Fixed, so it caps the code size: 30 Tgas stopped at about 340 KB, and the Guard is 333 KB.
+const GAS_GET_CODE: Gas = Gas::from_tgas(60);
+const GAS_ON_CODE: Gas = Gas::from_tgas(60);
+const GAS_MIGRATE: Gas = Gas::from_tgas(20);
+// NEAR's limit on one contract's code.
+const MAX_CODE_BYTES: usize = 4 * 1024 * 1024;
+
+// §11.10.2. What a Guard-made agent account starts with; its balance is the cap on the gas it can burn.
+const AGENT_GAS_FUND: NearToken = NearToken::from_millinear(500);
+const AGENT_KEY_METHODS: &str = "request_transfer,sync_request";
 
 // §11.5.10
 const MAX_WHITELIST: u32 = 50;
@@ -42,6 +53,7 @@ enum StorageKey {
     Requests,
     ByProposal,
     Recent,
+    Plans,
 }
 
 #[near(contract_state)]
@@ -67,6 +79,8 @@ pub struct Guard {
     /// Ring of the last `MAX_RECENT` request ids; slot `recent_total % MAX_RECENT` is the next to overwrite.
     recent: Vector<String>,
     recent_total: u64,
+    /// `plan_id` is the index. A plan is never removed, so a request can always find its plan.
+    plans: Vector<Plan>,
 }
 
 #[near]
@@ -98,10 +112,14 @@ impl Guard {
             by_proposal: LookupMap::new(StorageKey::ByProposal),
             recent: Vector::new(StorageKey::Recent),
             recent_total: 0,
+            plans: Vector::new(StorageKey::Plans),
         };
         for a in agents {
             assert_label(&a.label);
-            guard.agents.insert(a.account_id, AgentInfo { label: a.label, enabled: true, pending: 0 });
+            if let Some(key) = a.public_key {
+                create_agent_account(&a.account_id, key).detach();
+            }
+            guard.agents.insert(a.account_id, AgentInfo { label: a.label, enabled: true, creating: false, pending: 0, spent: U128(0), spent_window: U64(0) });
         }
         for w in whitelist {
             assert_label(&w.label);
@@ -126,7 +144,7 @@ impl Guard {
         require!(!self.paused, "PAUSED");
         let agent = env::predecessor_account_id();
         let (enabled, pending) = match self.agents.get(&agent) {
-            Some(a) => (a.enabled, a.pending),
+            Some(a) => (a.enabled && !a.creating, a.pending),
             None => env::panic_str("UNKNOWN_AGENT"),
         };
         require!(enabled, "AGENT_DISABLED");
@@ -144,10 +162,15 @@ impl Guard {
         let (decision, reasons) =
             policy::decide(&self.policy, self.whitelist.get(&receiver_id), self.spent_in_window, amount.0);
         let counted = decision == Decision::Auto;
+        let window = self.window_start;
+        let a = self.agents.get_mut(&agent).unwrap();
+        a.pending += 1;
         if counted {
+            let so_far = if a.spent_window.0 == window { a.spent.0 } else { 0 };
+            a.spent = U128(so_far.saturating_add(amount.0));
+            a.spent_window = U64(window);
             self.spent_in_window = self.spent_in_window.saturating_add(amount.0);
         }
-        self.agents.get_mut(&agent).unwrap().pending += 1;
 
         let memo = policy::clean_memo(memo.as_deref().unwrap_or(""));
         let description = policy::description(&request_id, agent.as_str(), decision, &reasons, &memo);
@@ -164,6 +187,7 @@ impl Guard {
             created_at: U64(now),
             updated_at: U64(now),
             counted_in_window: counted,
+            plan_id: None,
         };
         let kind = transfer_kind(&record.receiver_id, amount);
         emit("request_submitted", record_event(&record));
@@ -198,7 +222,10 @@ impl Guard {
             emit("request_pending", record_event(&r));
             return PromiseOrValue::Value(self.save(r));
         }
-        let kind = transfer_kind(&r.receiver_id, r.amount);
+        let kind = match r.plan_id {
+            Some(plan_id) => plan_kind(&self.plan(plan_id)),
+            None => transfer_kind(&r.receiver_id, r.amount),
+        };
         self.save(r);
         PromiseOrValue::Promise(
             ext_dao::ext(self.dao_id.clone())
@@ -265,6 +292,153 @@ impl Guard {
         self.save(r)
     }
 
+    // ---- plans (§11.11): the DAO writes them, anyone runs the step that is due (ADR 0005, K2).
+
+    /// Refused when a run could never pass the limits as they stand, so a plan cannot start out over them.
+    #[payable]
+    pub fn create_plan(&mut self, plan: PlanInput) -> u32 {
+        self.assert_dao();
+        let guard = env::current_account_id();
+        let factory = guard.get_parent_account_id().map(|f| f.as_str().to_string());
+        if let Err(code) = policy::check_plan(&plan, &guard, &self.dao_id, factory.as_deref()) {
+            env::panic_str(code);
+        }
+        if let Some(reason) = self.plan_limit_failure(&plan.action, plan.amount_per_run.0) {
+            env::panic_str(&reason);
+        }
+        let before = env::storage_usage();
+        let plan_id = self.plans.len();
+        let plan = Plan {
+            plan_id,
+            action: plan.action,
+            strategy_id: plan.strategy_id,
+            token_in: plan.token_in,
+            amount_per_run: plan.amount_per_run,
+            interval_sec: plan.interval_sec,
+            runs_total: plan.runs_total,
+            runs_done: 0,
+            start_at: plan.start_at,
+            next_run_at: Some(plan.start_at),
+            status: PlanStatus::Active,
+            pause_reason: None,
+        };
+        emit("plan_created", json!({ "plan": plan }));
+        self.plans.push(plan);
+        self.plans.flush();
+        charge_storage(before);
+        plan_id
+    }
+
+    #[payable]
+    pub fn pause_plan(&mut self, plan_id: u32) {
+        self.assert_dao();
+        let mut plan = self.plan(plan_id);
+        require!(plan.status == PlanStatus::Active, "PLAN_NOT_ACTIVE");
+        self.halt_plan(&mut plan, PlanPauseReason::Owner, "owner");
+        self.plans.set(plan_id, plan);
+        refund_deposit(0);
+    }
+
+    /// A step that came due while paused runs at the next call, once.
+    #[payable]
+    pub fn resume_plan(&mut self, plan_id: u32) {
+        self.assert_dao();
+        let mut plan = self.plan(plan_id);
+        require!(plan.status == PlanStatus::Paused, "PLAN_NOT_PAUSED");
+        plan.status = PlanStatus::Active;
+        plan.pause_reason = None;
+        emit("plan_resumed", json!({ "plan_id": plan_id }));
+        self.plans.set(plan_id, plan);
+        refund_deposit(0);
+    }
+
+    #[payable]
+    pub fn cancel_plan(&mut self, plan_id: u32) {
+        self.assert_dao();
+        let mut plan = self.plan(plan_id);
+        require!(matches!(plan.status, PlanStatus::Active | PlanStatus::Paused), "PLAN_ENDED");
+        plan.status = PlanStatus::Cancelled;
+        plan.pause_reason = None;
+        plan.next_run_at = None;
+        emit("plan_cancelled", json!({ "plan_id": plan_id }));
+        self.plans.set(plan_id, plan);
+        refund_deposit(0);
+    }
+
+    /// Anyone may call, with no deposit: the caller only pays gas and passes nothing but the id. A skip or a pause
+    /// is a normal result, not a failed transaction, so that it is saved; it returns `null`, and a run returns the
+    /// step's request. The slot moves on in this first receipt, which is what stops a second call from running the
+    /// same step. All promise gas is static, so too little gas fails here and leaves the plan as it was.
+    pub fn execute_plan_step(&mut self, plan_id: u32) -> PromiseOrValue<Option<RequestRecord>> {
+        require!(!self.paused, "PAUSED");
+        let mut plan = self.plan(plan_id);
+        require!(plan.status == PlanStatus::Active, "PLAN_NOT_ACTIVE");
+        let now = env::block_timestamp();
+        let due = plan.next_run_at.unwrap_or_else(|| env::panic_str("PLAN_NOT_ACTIVE")).0;
+        require!(now >= due, "PLAN_NOT_DUE");
+        let run = plan.runs_done + 1;
+        let amount = plan.amount_per_run;
+        self.roll_window(now);
+
+        // The rules changed since `create_plan`, and only the owner can settle that.
+        if let Some(reason) = self.plan_limit_failure(&plan.action, amount.0) {
+            self.halt_plan(&mut plan, PlanPauseReason::Failures, &reason);
+            self.plans.set(plan_id, plan);
+            return PromiseOrValue::Value(None);
+        }
+        if self.spent_in_window.saturating_add(amount.0) > self.policy.max_per_day.0 {
+            plan.next_run_at = Some(U64(policy::next_run(due, plan.interval_sec, now)));
+            emit("plan_step_skipped", json!({ "plan_id": plan_id, "run": run, "reason": "OVER_DAILY_LIMIT", "due": U64(due) }));
+            self.plans.set(plan_id, plan);
+            return PromiseOrValue::Value(None);
+        }
+        if env::account_balance().as_yoctonear() < self.proposal_bond.saturating_add(self.reserve()) {
+            self.halt_plan(&mut plan, PlanPauseReason::GuardLowNear, "INSUFFICIENT_GUARD_BALANCE");
+            self.plans.set(plan_id, plan);
+            return PromiseOrValue::Value(None);
+        }
+
+        plan.next_run_at = Some(U64(policy::next_run(due, plan.interval_sec, now)));
+        self.spent_in_window = self.spent_in_window.saturating_add(amount.0);
+        let guard = env::current_account_id();
+        // The slot, not the run: a run that failed is tried again under a new id, and its old record stays.
+        let request_id = format!("{}{plan_id}-{due}", policy::PLAN_REQUEST_PREFIX);
+        let memo = format!("plan {plan_id} run {run}");
+        let description = policy::description(&request_id, guard.as_str(), Decision::Auto, &[], &memo);
+        let receiver_id = match &plan.action {
+            PlanAction::Transfer { receiver_id } => receiver_id.clone(),
+            PlanAction::Call { target, .. } => target.clone(),
+        };
+        let record = RequestRecord {
+            request_id: request_id.clone(),
+            agent: guard.clone(),
+            receiver_id,
+            amount,
+            memo,
+            decision: Decision::Auto,
+            reasons: vec![],
+            proposal_id: None,
+            status: RequestStatus::Submitted,
+            created_at: U64(now),
+            updated_at: U64(now),
+            counted_in_window: true,
+            plan_id: Some(plan_id),
+        };
+        let kind = plan_kind(&plan);
+        emit("request_submitted", record_event(&record));
+        self.requests.insert(request_id.clone(), record);
+        self.push_recent(request_id.clone());
+        self.plans.set(plan_id, plan);
+
+        PromiseOrValue::Promise(
+            ext_dao::ext(self.dao_id.clone())
+                .with_attached_deposit(NearToken::from_yoctonear(self.proposal_bond))
+                .with_static_gas(GAS_ADD_PROPOSAL)
+                .add_proposal(json!({ "description": description, "kind": kind }))
+                .then(Self::ext(guard).with_static_gas(GAS_ON_ADDED).on_proposal_added(request_id)),
+        )
+    }
+
     // ---- configuration: DAO only (a FunctionCall proposal). Methods that add data take a storage deposit.
 
     #[payable]
@@ -275,26 +449,62 @@ impl Guard {
         refund_deposit(0);
     }
 
+    /// With `public_key` the Guard also creates the agent's account, so the deposit covers `AGENT_GAS_FUND` too.
     #[payable]
-    pub fn add_agent(&mut self, account_id: AccountId, label: String) {
+    pub fn add_agent(&mut self, account_id: AccountId, label: String, public_key: Option<PublicKey>) {
         self.assert_dao();
         assert_label(&label);
         let before = env::storage_usage();
         match self.agents.get_mut(&account_id) {
-            Some(a) => a.label = label,
+            Some(a) => {
+                require!(public_key.is_none(), "AGENT_EXISTS");
+                a.label = label;
+            }
             None => {
                 require!(self.agents.len() < MAX_AGENTS, "TOO_MANY_AGENTS");
-                self.agents.insert(account_id.clone(), AgentInfo { label, enabled: true, pending: 0 });
+                // The account of a removed agent stays with its key, so that key must never pass as this agent:
+                // a Guard subaccount needs a new key, and a keyed agent waits until its account is confirmed.
+                require!(public_key.is_some() || !account_id.is_sub_account_of(&env::current_account_id()), "AGENT_KEY_REQUIRED");
+                let creating = public_key.is_some();
+                self.agents.insert(account_id.clone(), AgentInfo { label, enabled: true, creating, pending: 0, spent: U128(0), spent_window: U64(0) });
             }
         }
         self.agents.flush();
-        charge_storage(before);
+        let fund = if public_key.is_some() { AGENT_GAS_FUND.as_yoctonear() } else { 0 };
+        charge_storage_and(before, fund);
         emit("agent_updated", json!({ "account_id": account_id, "action": "added" }));
+        if let Some(key) = public_key {
+            create_agent_account(&account_id, key)
+                .then(Self::ext(env::current_account_id()).with_static_gas(GAS_ON_AGENT_CREATED).on_agent_created(account_id))
+                .detach();
+        }
+    }
+
+    /// The account of a removed agent stays, so reusing its name fails here: the agent must not stay registered
+    /// with a key its owner does not hold. If this callback never runs, the agent stays unable to request. It
+    /// touches only an entry still `creating`, and `remove_agent` waits for it, so that entry is the one it was for.
+    #[private]
+    pub fn on_agent_created(&mut self, account_id: AccountId, #[callback_result] created: Result<(), PromiseError>) {
+        let creating = self.agents.get(&account_id).is_some_and(|a| a.creating);
+        if created.is_err() {
+            if creating {
+                self.agents.remove(&account_id);
+            }
+            Promise::new(self.dao_id.clone()).transfer(AGENT_GAS_FUND).detach();
+            emit("agent_updated", json!({ "account_id": account_id, "action": "create_failed" }));
+        } else if creating {
+            let a = self.agents.get_mut(&account_id).unwrap_or_else(|| env::panic_str("UNKNOWN_AGENT"));
+            a.creating = false;
+            emit("agent_updated", json!({ "account_id": account_id, "action": "created" }));
+        }
     }
 
     #[payable]
     pub fn remove_agent(&mut self, account_id: AccountId) {
         self.assert_dao();
+        // Removing and re-adding in these few blocks would let the first callback confirm the second entry, whose
+        // key never reaches the account: the removed key would pass as the new agent. A `creating` agent cannot request.
+        require!(!self.agents.get(&account_id).is_some_and(|a| a.creating), "AGENT_CREATING");
         self.agents.remove(&account_id);
         emit("agent_updated", json!({ "account_id": account_id, "action": "removed" }));
         refund_deposit(0);
@@ -416,10 +626,15 @@ impl Guard {
             .collect()
     }
 
+    /// `spent_24h` is the agent's part of `get_window`'s `spent_in_window`, so it resets with that window.
     pub fn get_agents(&self) -> Vec<Value> {
+        let (window, _) = policy::roll_window(self.window_start, self.spent_in_window, env::block_timestamp());
         self.agents
             .iter()
-            .map(|(id, a)| json!({ "account_id": id, "label": a.label, "enabled": a.enabled, "pending": a.pending }))
+            .map(|(id, a)| {
+                let spent = if a.spent_window.0 == window { a.spent } else { U128(0) };
+                json!({ "account_id": id, "label": a.label, "enabled": a.enabled && !a.creating, "pending": a.pending, "spent_24h": spent })
+            })
             .collect()
     }
 
@@ -456,9 +671,50 @@ impl Guard {
             .collect()
     }
 
+    pub fn get_plan(&self, plan_id: u32) -> Option<Plan> {
+        self.plans.get(plan_id).cloned()
+    }
+
+    /// In `plan_id` order. `from` is the first id; `limit` is at most 50.
+    pub fn get_plans(&self, from: Option<u32>, limit: Option<u32>) -> Vec<Plan> {
+        self.plans.iter().skip(from.unwrap_or(0) as usize).take(limit.unwrap_or(20).min(50) as usize).cloned().collect()
+    }
+
     /// Key Doctor reads this to recognise a DAO member as a Guard (§5.3).
     pub fn kd_guard_info(&self) -> Value {
-        json!({ "standard": "kd_guard", "version": "1.0.0", "dao_id": self.dao_id })
+        json!({ "standard": "kd_guard", "version": "1.2.0", "dao_id": self.dao_id })
+    }
+
+    // ---- upgrade (§11.5.12, ADR 0006)
+
+    /// Fetches the code from `code_source` and deploys it only if it hashes to `code_hash`, so the source needs no
+    /// trust: the DAO votes on the hash. Not a DAO `UpgradeRemote`: the installed Sputnik runs out of gas on any
+    /// wasm over about 150 KB (B-Q10). The Guard has no key, so this is the only way its code changes.
+    pub fn upgrade(&self, code_source: AccountId, code_hash: Base58CryptoHash) -> Promise {
+        self.assert_dao();
+        Promise::new(code_source).function_call("get_guard_code", Vec::new(), NearToken::from_near(0), GAS_GET_CODE).then(
+            Self::ext(env::current_account_id()).with_static_gas(GAS_ON_CODE).on_code(code_hash),
+        )
+    }
+
+    /// Deploy and `migrate` share one receipt: if `migrate` fails, the old code stays.
+    #[private]
+    pub fn on_code(&self, code_hash: Base58CryptoHash) -> Promise {
+        let code = env::promise_result_checked(0, MAX_CODE_BYTES).unwrap_or_else(|_| env::panic_str("CODE_UNAVAILABLE"));
+        require!(env::sha256_array(&code) == CryptoHash::from(code_hash), "CODE_HASH_MISMATCH");
+        Promise::new(env::current_account_id()).deploy_contract(code).function_call(
+            "migrate",
+            Vec::new(),
+            NearToken::from_near(0),
+            GAS_MIGRATE,
+        )
+    }
+
+    /// Reads the state the previous code wrote. A release that changes `Guard` reads the old layout here.
+    #[private]
+    #[init(ignore_state)]
+    pub fn migrate() -> Self {
+        env::state_read().unwrap_or_else(|| env::panic_str("NO_STATE"))
     }
 }
 
@@ -487,9 +743,77 @@ impl Guard {
         (self.window_start, self.spent_in_window) = policy::roll_window(self.window_start, self.spent_in_window, now);
     }
 
+    fn plan(&self, plan_id: u32) -> Plan {
+        self.plans.get(plan_id).cloned().unwrap_or_else(|| env::panic_str("UNKNOWN_PLAN"))
+    }
+
+    /// The first limit a run of this size breaks even in an empty window, so waiting for the window will not help.
+    fn plan_limit_failure(&self, action: &PlanAction, amount: u128) -> Option<String> {
+        let wl = match action {
+            PlanAction::Transfer { receiver_id } => self.whitelist.get(receiver_id),
+            PlanAction::Call { .. } => None,
+        };
+        policy::plan_reasons(&self.policy, action, wl, 0, amount).into_iter().next()
+    }
+
+    /// Reopens a completed plan when its last run turns out to have failed. A plan the owner paused or cancelled
+    /// stays as the owner left it.
+    fn halt_plan(&self, plan: &mut Plan, reason: PlanPauseReason, code: &str) {
+        if !matches!(plan.status, PlanStatus::Active | PlanStatus::Completed) {
+            return;
+        }
+        plan.status = PlanStatus::Paused;
+        plan.pause_reason = Some(reason);
+        plan.next_run_at = plan.next_run_at.or(Some(U64(env::block_timestamp())));
+        emit("plan_paused", json!({ "plan_id": plan.plan_id, "reason": reason, "code": code }));
+    }
+
+    /// Keeps `runs_done` true to the moves of a step's request. `r` still holds the old status. Only the Guard's
+    /// vote counts a run; a DAO short of NEAR shows as a failed vote, because the payment fails with it.
+    fn move_plan(&mut self, r: &RequestRecord, plan_id: u32, status: RequestStatus) {
+        if r.status.is_final() {
+            return;
+        }
+        let approved = |s| matches!(s, RequestStatus::AutoApproved | RequestStatus::Executed);
+        let mut plan = self.plan(plan_id);
+        match (approved(r.status), approved(status)) {
+            (false, true) => {
+                plan.runs_done += 1;
+                emit("plan_step_executed", json!({ "plan_id": plan_id, "run": plan.runs_done, "request_id": r.request_id, "proposal_id": r.proposal_id }));
+                if plan.runs_done >= plan.runs_total && plan.status != PlanStatus::Cancelled {
+                    plan.status = PlanStatus::Completed;
+                    plan.pause_reason = None;
+                    plan.next_run_at = None;
+                    emit("plan_completed", json!({ "plan_id": plan_id, "runs": plan.runs_done }));
+                }
+            }
+            (true, false) => {
+                plan.runs_done = plan.runs_done.saturating_sub(1);
+                self.halt_plan(&mut plan, PlanPauseReason::Failures, "PROPOSAL_FAILED");
+            }
+            (false, false) if status.is_final() && r.proposal_id.is_none() => {
+                self.halt_plan(&mut plan, PlanPauseReason::Failures, "ADD_PROPOSAL_FAILED");
+            }
+            (false, false) if status.is_final() => {
+                // A failed callback carries no cause. A `call` can also fail for a role without `call:VoteApprove`,
+                // and a top-up would not help that.
+                let reason = match plan.action {
+                    PlanAction::Transfer { .. } => PlanPauseReason::InsufficientBalance,
+                    PlanAction::Call { .. } => PlanPauseReason::Failures,
+                };
+                self.halt_plan(&mut plan, reason, "VOTE_FAILED");
+            }
+            _ => return,
+        }
+        self.plans.set(plan_id, plan);
+    }
+
     /// Moves a request to `status`: frees the agent's pending slot when the request stops waiting on the DAO, and
     /// gives the daily limit back when counted money did not leave, if the request is still in the same window.
     fn finish(&mut self, r: &mut RequestRecord, status: RequestStatus, now: u64) {
+        if let Some(plan_id) = r.plan_id {
+            self.move_plan(r, plan_id, status);
+        }
         if r.status.holds_pending() && !status.holds_pending() {
             if let Some(a) = self.agents.get_mut(&r.agent) {
                 a.pending = a.pending.saturating_sub(1);
@@ -500,6 +824,10 @@ impl Guard {
             if r.created_at.0 >= self.window_start {
                 self.spent_in_window = self.spent_in_window.saturating_sub(r.amount.0);
                 r.counted_in_window = false;
+                // `created_at` is in this window, so the agent's amount is too; a re-added agent has none to lose.
+                if let Some(a) = self.agents.get_mut(&r.agent) {
+                    a.spent = U128(a.spent.0.saturating_sub(r.amount.0));
+                }
             }
         }
         r.status = status;
@@ -528,9 +856,25 @@ fn assert_label(label: &str) {
 }
 
 /// Requires the attached deposit to cover the storage added since `before`, and returns the rest.
+/// The only place that gives an agent account a key, so the key's receiver and methods never come from outside.
+fn create_agent_account(account_id: &AccountId, public_key: PublicKey) -> Promise {
+    let guard = env::current_account_id();
+    require!(account_id.is_sub_account_of(&guard), "AGENT_NOT_SUBACCOUNT");
+    Promise::new(account_id.clone()).create_account().transfer(AGENT_GAS_FUND).add_access_key_allowance(
+        public_key,
+        Allowance::Unlimited,
+        guard,
+        AGENT_KEY_METHODS,
+    )
+}
+
 fn charge_storage(before: u64) {
+    charge_storage_and(before, 0);
+}
+
+fn charge_storage_and(before: u64, extra: u128) {
     let added = env::storage_usage().saturating_sub(before) as u128;
-    let cost = env::storage_byte_cost().as_yoctonear() * added;
+    let cost = env::storage_byte_cost().as_yoctonear() * added + extra;
     require!(env::attached_deposit().as_yoctonear() >= cost, "INSUFFICIENT_STORAGE_DEPOSIT");
     refund_deposit(cost);
 }
@@ -539,6 +883,15 @@ fn refund_deposit(cost: u128) {
     let rest = env::attached_deposit().as_yoctonear().saturating_sub(cost);
     if rest > 0 {
         Promise::new(env::predecessor_account_id()).transfer(NearToken::from_yoctonear(rest)).detach();
+    }
+}
+
+fn plan_kind(plan: &Plan) -> Value {
+    match &plan.action {
+        PlanAction::Transfer { receiver_id } => transfer_kind(receiver_id, plan.amount_per_run),
+        PlanAction::Call { target, method, args_base64, deposit, gas } => {
+            function_call_kind(target, method, args_base64, *deposit, *gas)
+        }
     }
 }
 
