@@ -18,8 +18,11 @@ Network-wide numbers come from one reproducible command (`pnpm stats`, see below
 | On Call | A warning before the final vote when a voter has a new full-access key. Warnings for proposals that change members, policy or contract code. A daily key-change message | Telegram bot (cron every 15 minutes and at 02:00 UTC) |
 | Clean up | A step-by-step plan in a safe order, ticked from chain data when you rescan. Revoke or Delete one key at a time | Dashboard (`view=cleanup`), each change signed by you in Meteor, Here or HOT Wallet (your pick) |
 | Compare | What changed since the last baseline | Telegram `/changes`, MCP `compare` |
+| Yield | Rhea Lend supply rates for a DAO's stablecoins, capped at the free balance (balance minus open transfer proposals), next to the council's key status. Data for the council, not financial advice: the council decides and signs | Telegram `/yield`, opt-in push `/yield_watch` (every 15 minutes), MCP `yield_suggestions` |
 
-Fixed rules make every conclusion. **No AI is used in the product**, and Key Doctor **never signs transactions or holds keys**. The one exception is the optional Guard MCP (`apps/guard-mcp`), which runs on the agent owner's machine and signs only Guard requests with the agent's limited function-call key.
+Fixed rules make every conclusion. Key Doctor **never signs transactions or holds keys**. The one exception is the optional Guard MCP (`apps/guard-mcp`), which runs on the agent owner's machine and signs only Guard requests with the agent's limited function-call key.
+
+**AI in the product: one optional step, in the yield agent only** ([ADR 0004](docs/decisions/0004-llm-in-yield-agent.md)). When the Worker has a `NEAR_AI_API_KEY`, the Telegram `/yield` reply and the yield push ask one Private TEE model on NEAR AI Cloud (`Qwen/Qwen3.6-35B-A3B-FP8`) to order the suggestions that code already built and to write a short reason for each. The model gets no tools and no raw report. Code checks its answer (known ids only, every number in a reason must match that suggestion's data, no links or account names) and falls back to the rule order on any failure, never to another model. Scans, rules, alerts, `compare`, `preflight` and every other command use no AI. MCP `yield_suggestions` never calls the model; it returns the last cached model order, or the rule order.
 
 ## Live demo (testnet)
 
@@ -126,6 +129,25 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 
    The first command builds both wasm files and runs the Guard's and the Guard factory's unit and sandbox tests against the real Sputnik v2 contract in a local `near-workspaces` sandbox. The second prints the gas and allowance lines (`GAS ...`) quoted in [Agent Guard](#agent-guard-contract).
 
+9. **Yield suggestions for a DAO treasury** (see [Yield agent](#yield-agent))
+
+   ```bash
+   curl -s https://key-doctor.duonghb53.workers.dev/mcp -H 'content-type: application/json' \
+     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"yield_suggestions","arguments":{"target":"kdoncall.sputnik-v2.testnet"}}}'
+   ```
+
+   You get `{ report, council, advice }`. `report` is `kd.yield.v1`: the DAO's holdings of the allowlisted token, the allowlisted Rhea Lend rates (mainnet USDC and USDt, read only, plus `usdc.fakes.testnet`, the only one marked `executable`), every rejected market with its reason (`NOT_ALLOWLISTED`, ...), and `suggestions`. On 2026-11-08 this DAO returned 3 opportunities (11.17%, 10.97% and 10.54% APR), 32 rejected markets and 0 suggestions, because it holds no `usdc.fakes.testnet`. `council` is the council's key status from the same rules as `diagnose`. `advice` is `null` when there is nothing to order.
+
+   In Telegram: `/yield <dao>` shows the same report, `/yield_watch <dao>` opts the chat in to a message when the top suggestion changes, `/yield_unwatch <dao>` stops it.
+
+   To compare the TEE models yourself (needs your own NEAR AI Cloud key, one small call per model and run):
+
+   ```bash
+   NEAR_AI_API_KEY=... pnpm yield-models --runs 3
+   ```
+
+   It sends the same synthetic testnet candidates the Worker would send to each model on the TEE list, checks each answer with the Worker's own check, and writes [`data/yield-model-compare.md`](data/yield-model-compare.md) (latency, valid answers, the reasons in vi and en).
+
 ## Status
 
 | Phase | What | State |
@@ -146,11 +168,14 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 | GĐ11, GĐ13 | History backtest, NearBlocks key dates | Not built (Roadmap) |
 | GĐ15–GĐ17 | Agent Guard contract (`contracts/guard`) | Built; 91 unit tests and 18 sandbox tests against the real Sputnik v2 wasm. A spike version paid a transfer on testnet (2026-11-02) |
 | GĐ18 | Guard testnet setup script (`scripts/guard-setup/setup.sh`) | Ran end to end on testnet (2026-11-02): full Guard 1.0.0 deployed, role added, funded and locked; `setup.sh verify` passes |
+| YD1 | Yield library: `scanVault` reads DAO balances, open transfers and Rhea Lend rates (on-chain and the Rhea API on mainnet), allowlist and floor filters, `kd.yield.v1` | Built; fixture tests, and live reads through the deployed Worker (2026-11-08) |
+| YD2 | TEE model step: `adviceRequest`, `validateAdvice`, cached advice in D1 (`yield_advice`), rule-order fallback | Deployed 2026-11-08. Model picked by a live compare of three TEE models ([`data/yield-model-compare.md`](data/yield-model-compare.md)). No model call from the Worker seen live yet: no test DAO holds the token, so there is nothing to order |
+| YD3 | Bot `/yield`, `/yield_watch`, `/yield_unwatch`, 15-minute yield push, MCP `yield_suggestions` | Deployed 2026-11-08; a live MCP call returns `kd.yield.v1`. The bot commands and the push not yet checked on the live bot |
 | GĐ19 | Guard MCP (`apps/guard-mcp`) and demo invoices (`demo/invoices/`) | Built; 42 tests with a mocked chain. All four invoices run live on testnet (2026-11-02): `inv-001`..`003` `auto_approved`, the DAO paid each receiver in the same tx (15.2 Tgas each); `inv-004` (500 NEAR to `attacker.testnet`) became proposal 5, `pending` with `NOT_WHITELISTED`, `OVER_PER_TX`, `OVER_DAILY_LIMIT`, nothing paid (8.4 Tgas) |
 
 ## Agents
 
-The Worker serves MCP over Streamable HTTP at `https://key-doctor.duonghb53.workers.dev/mcp`. There is no auth for now, so anyone can call every tool. `diagnose`, `list_keys`, `list_proposals` and `preflight` are read-only. `compare` and `watch` write to D1 (`compare` moves the baseline only with `update_baseline: true`). Each client IP is limited to 30 `tools/call` per minute (`429 RATE_LIMITED`); the counter lives in each Worker isolate's memory, so it is a soft limit. The dashboard shows the same commands on its **Agents** page.
+The Worker serves MCP over Streamable HTTP at `https://key-doctor.duonghb53.workers.dev/mcp`. There is no auth for now, so anyone can call every tool. `diagnose`, `list_keys`, `list_proposals`, `preflight` and `yield_suggestions` are read-only. `compare` and `watch` write to D1 (`compare` moves the baseline only with `update_baseline: true`). Each client IP is limited to 30 `tools/call` per minute (`429 RATE_LIMITED`); the counter lives in each Worker isolate's memory, so it is a soft limit. The dashboard shows the same commands on its **Agents** page.
 
 ```bash
 claude mcp add --transport http key-doctor https://key-doctor.duonghb53.workers.dev/mcp
@@ -171,7 +196,7 @@ apps/worker           one Cloudflare Worker + D1
   POST /telegram      bot webhook, secret-token header, 200 at once + waitUntil
   POST /run-check     runs a cron job now, Bearer RUN_CHECK_TOKEN
   POST /api/watch-link  one-time /start links, CORS only for DASHBOARD_ORIGIN
-  crons               */15 proposal watch, 0 2 * * * daily key diff
+  crons               */15 proposal watch, 0 2 * * * daily key diff, 11,26,41,56 * * * * yield push
 ```
 
 - **One block per scan.** Every RPC query in a scan is pinned to the same block height.
@@ -246,7 +271,7 @@ The tool descriptions and messages tell the agent not to send a pending payment 
 
 ### Example agent on NEAR AI Cloud (not part of Key Doctor)
 
-`examples/near-ai-agent` is the agent being guarded, not a Key Doctor feature: Key Doctor itself has no LLM. A model on NEAR AI Cloud (default `Qwen/Qwen3.8-27B`, a private TEE model with tool calls; `NEAR_AI_MODEL` picks another) decides, and `guard-mcp`, started as a child process over stdio, is its only way to pay. The agent key stays on your machine; NEAR AI sees only the conversation, and `guard-mcp` never gets the NEAR AI key. The model sees only the tools `guard-mcp` lists, and a run stops after 8 model turns.
+`examples/near-ai-agent` is the agent being guarded, not a Key Doctor feature: no Key Doctor check uses an LLM (the one model step is in the [yield agent](#yield-agent)). A model on NEAR AI Cloud (default `Qwen/Qwen3.8-27B`, a private TEE model with tool calls; `NEAR_AI_MODEL` picks another) decides, and `guard-mcp`, started as a child process over stdio, is its only way to pay. The agent key stays on your machine; NEAR AI sees only the conversation, and `guard-mcp` never gets the NEAR AI key. The model sees only the tools `guard-mcp` lists, and a run stops after 8 model turns.
 
 ```bash
 NEAR_AI_API_KEY=<from cloud.near.ai> NEAR_NETWORK=testnet GUARD_CONTRACT_ID=<budget>.keydoctor-guards-v2.testnet \
@@ -284,6 +309,16 @@ KD_GUARD_FACTORY=<prefix>-guards.testnet pnpm --filter dashboard build
 
 Invoice demo: put the four invoices in `demo/invoices/` (see its README for another prefix) and ask the agent "Submit every invoice in demo/invoices/ to the guard tool. The Guard and the DAO council decide what gets paid." Expected: the first three are paid at once, the fourth (500 NEAR to `attacker.testnet`, with a prompt injection) becomes a pending proposal for the council.
 
+## Yield agent
+
+V1 alerts and suggests; it never moves funds. The plan is in [`docs/stories/epics/yield/plan.md`](docs/stories/epics/yield/plan.md).
+
+- **What it reads.** `scanVault` (`packages/key-doctor/src/yield/`) reads, at one block, the DAO's balance of each allowlisted stablecoin and its open transfer proposals, then the Rhea Lend (Burrow) markets. Mainnet rates (native USDC and USDt) come from the Rhea Lend contract and are cross-checked with the Rhea API; they are shown for reference only. On testnet only `usdc.fakes.testnet` is allowlisted and marked `executable`.
+- **What it suggests.** Code filters markets by allowlist and floors (mainnet only: at least $1M TVL and $250k liquidity, price within 1% of $1, and the two APR sources within 1 point of each other), then builds one suggestion per held token, capped at the free balance. Thresholds are in `packages/key-doctor/src/yield/thresholds.ts` with their own `yield_ruleset_version`.
+- **Council first.** Every reply carries the council's key status, so a council with a `high` flag sees that before any rate.
+- **Model step (optional).** See [AI in the product](#what-it-does). The answer is cached in D1 for a day, or until a rate moves by 0.5 points or the free amount changes. The Telegram message shows the model id and its NEAR AI generation id, which can be looked up at NEAR AI's `/v1/signature/{id}`. Model calls from `/yield` and `/yield_watch` are capped at 6 per minute per Worker isolate (and the commands at 3 per chat per minute); past that, the rule order shows. `scripts/yield-setup/verify-tee.sh` checks one call against NEAR AI's attestation verifier ([`docs/yield-tee-verify.md`](docs/yield-tee-verify.md)); it has not been run yet.
+- **Push.** `/yield_watch` stores the chat in its own table (`yield_watches`), apart from the security `subscriptions`, so key subscribers never get yield messages they did not ask for. The push cron reads one watched DAO per run (oldest first) and sends only when the top suggestion changes or its APR moves by 0.5 points. Send first, record after; a report with any read error never decides a push. `POST /run-check {"job":"yield"}` runs it now.
+
 ## Limitations
 
 - ML-DSA keys can be added only in Meteor Wallet (its PQ screen). Key Doctor reads any ML-DSA key on chain but does not add one, and Here and HOT are not claimed to support it.
@@ -299,6 +334,9 @@ Invoice demo: put the four invoices in `demo/invoices/` (see its README for anot
 - Guard factory: the factory keeps the Guard code (about 5.3 NEAR of storage with its own code when built from this repo, locked, not burned), so its account needs about 8 NEAR. Each Guard deploys its own copy, so every DAO pays for its code storage in its create deposit (about 3.3 NEAR from this repo, about 2.5 NEAR on the older `keydoctor-guards.testnet`); that NEAR stays locked on the Guard, which has no key and cannot be deleted. When a `create` fails after the DAO check, the factory refunds the DAO from its own balance, which may run before NEAR returns the failed account's funding to it; keep spare NEAR on the factory, or a large refund can fail and stay on the factory. At most 10 Guards per DAO; that limit is unit-tested only.
 - Agent Guard page: it creates proposals only; voting happens in the DAO's own UI. It reads a Guard's views at one block and cannot show requests or pending proposals per agent beyond the counts the Guard returns.
 - Trezu treasuries are Sputnik DAOs. A one-off read-only scan of a public mainnet treasury parsed correctly. Trezu has no testnet, so this is not part of the demo and is not reproducible here ([`docs/trezu-integration.md`](docs/trezu-integration.md)).
+- Yield agent: suggestions only. Nothing builds or signs a supply proposal yet, and the testnet supply-and-withdraw path through DAO proposals has not been run (yield plan YD0). Mainnet rates are read for reference; nothing is suggested for execution on mainnet.
+- Yield agent: the TEE claim rests on NEAR AI's "Private TEE" model list (`owned_by: "nearai"`). Key Doctor does not verify the attestation on each call, and the one-call check (`verify-tee.sh`) has not been run. No model call from the deployed Worker has been seen yet, because no test DAO holds the allowlisted token. The model can be slow or down; then the rule order shows, marked as such.
+- Yield agent: rates move, and a past APR says nothing about the next one. Rhea Lend contract and oracle risk are not scored. The push checks each watched DAO in turn, so with N watched DAOs each is checked every N × 15 minutes. A long Rhea API outage blocks pushes.
 - Agent Guard: the 24-hour window restarts at the first request after it ends (`docs/final-idea.md` §11.5.7), so an agent can spend up to twice `max_per_day` without the council across a reset. Each request record is stored at the Guard's cost and never deleted; requests stop with `INSUFFICIENT_GUARD_BALANCE` once the balance no longer covers the bond plus that storage (or `min_reserve`, if higher).
 
 ## Roadmap
@@ -309,6 +347,7 @@ Invoice demo: put the four invoices in `demo/invoices/` (see its README for anot
 - **Agent Guard:** Guard checks in the council report (`/check`).
 - **Agent Budget keeper (GĐ29):** a Worker job that calls due plan steps with an unprivileged testnet key and reports each run in Telegram (ADR 0005). The code and its tests are in `apps/worker`. It has been deployed on testnet since 2026-11-06 and cycles every 15 minutes, but no Budget exists yet, so it has never executed a step. See [`apps/worker/README.md`](apps/worker/README.md).
 - **Hosted Guard agent (after the hackathon):** each DAO adds its own Telegram bot; a separate Worker turns allowed members' chat into Guard `request_transfer` calls through a model on NEAR AI Cloud. Secrets encrypted per DAO, council-signed registration, the Guard limits and the council vote still decide every payment. It would put an LLM and agent keys in a hosted service, which Key Doctor avoids today, so it is a plan only: `docs/stories/epics/guard/hosted-agent-plan.md`.
+- **Yield agent:** a dashboard Yield panel with a proposal builder (supply and withdraw as DAO `FunctionCall` proposals the council's wallet signs), first on testnet, then a tiny mainnet run. Later (V2), the agent supplies within council-set limits by itself, through a Guard-style contract. Other protocols and chains (Chain Signatures) after a feasibility check.
 - Link a Telegram user to a NEAR account by signature to mention voters by name. Discord and email alerts. Near-real-time watching through an indexer.
 - Add ML-DSA keys in the dashboard when wallet-selector supports them. Integration with wallets and treasury tools.
 
@@ -318,7 +357,7 @@ Invoice demo: put the four invoices in `demo/invoices/` (see its README for anot
 
 1. `pnpm --filter worker exec wrangler d1 create key-doctor` and put the id into `apps/worker/wrangler.toml`.
 2. `pnpm --filter worker db:migrate:remote`.
-3. `pnpm --filter worker exec wrangler secret put <NAME>` for `RUN_CHECK_TOKEN`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET`.
+3. `pnpm --filter worker exec wrangler secret put <NAME>` for `RUN_CHECK_TOKEN`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET`. `NEAR_AI_API_KEY` is optional: without it the yield agent shows the rule order.
 4. `pnpm --filter worker run deploy` (`run` is needed: bare `deploy` is a built-in pnpm command).
 5. Register the bot webhook:
 
@@ -334,6 +373,7 @@ After the first setup (steps 1 to 5), every later release is one command: `pnpm 
 ## Libraries, AI-written code and prepared data
 
 - **Runtime:** the library and the Worker have no dependencies and use only web platform APIs (`fetch`, `crypto.subtle`). The dashboard uses `@near-wallet-selector/core`, `meteor-wallet`, `here-wallet` and `hot-wallet` 10.1.4, `near-api-js` 6.5.1 and `@near-js/crypto` 2.5.1 for wallet signing. The example NEAR AI agent (`examples/near-ai-agent`) uses only `fetch` and Node built-ins. The Guard MCP uses only Node built-ins: its borsh encoding and ed25519 signing (`node:crypto`) are written in the repo, checked against bytes from `@near-js/transactions` 2.5.1 in its tests.
+- **AI at runtime:** the yield agent's optional model step calls NEAR AI Cloud (`cloud-api.near.ai`, OpenAI-compatible chat completions over `fetch`, no SDK) with a Private TEE model, `Qwen/Qwen3.6-35B-A3B-FP8`. Nothing else in the product calls a model.
 - **Fonts:** Fira Sans and Fira Code from Google Fonts.
 - **Build and dev tools:**
   - TypeScript
@@ -352,7 +392,7 @@ After the first setup (steps 1 to 5), every later release is one command: `pnpm 
 |---|---|
 | Build window (Q-001, Q-003, Q-004) | New project. The first commit is from 2026-10-29, after the 2026-10-19 announcement, so the whole history counts and there is no earlier baseline to separate |
 | Other chains (Q-002) | None. NEAR only |
-| Networks (Q-007, Q-010) | The demo, contracts and examples run on testnet. Scans can also read mainnet. NEAR Intents is not used |
+| Networks (Q-007, Q-010) | The demo, contracts and examples run on testnet. Scans can also read mainnet. The yield agent reads mainnet Rhea Lend rates for reference only. NEAR Intents is not used |
 | Libraries and AI-written code (Q-005) | See the section above |
 | License (Q-014) | MIT, in `LICENSE` |
 
@@ -364,7 +404,7 @@ Track hints used (Q-011 says they are optional):
 | `security` | Function-call keys | The `FC_*` rules. The Guard agent's key may call only `request_transfer` and `sync_request` |
 | `security` | Agent security | MCP `preflight`. Agent Guard's whitelist, per-tx, per-recipient and 24-hour limits |
 
-Not used: TEE attestation. Trezu is not a feature (see Limitations).
+NEAR AI Cloud: the yield agent's optional model step uses a Private TEE model; Key Doctor does not verify the attestation per call (see Limitations). Trezu is not a feature (see Limitations).
 
 Where NEAR fits: every account's access keys and their permissions are public on chain, and a key's nonce gives the block it was added. Sputnik DAO keeps policy, proposals and votes on chain too. So Key Doctor can connect a new key to a vote with no indexer and no access to anyone's wallet.
 

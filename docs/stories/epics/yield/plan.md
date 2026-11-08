@@ -211,6 +211,10 @@ export function validateAdvice(raw: unknown, candidates: YieldOpportunity[]): Yi
 - `/yield` and `/yield_watch` are rate-limited to 3 per chat per minute. `/yield` never writes D1. `/yield_watch` records the starting top only from a report with no read error.
 - Not built: the dashboard Yield panel (moved to YD4, with the proposal builder). README lines wait for YD5.
 
+### YD5: README
+
+**Done 2026-11-08** for what is built (YD1–YD3). README: a Yield row in "What it does", an "AI in the product" paragraph that replaces "No AI is used in the product", step 9 (MCP `yield_suggestions` curl, checked live on `kdoncall.sputnik-v2.testnet`, and `pnpm yield-models`), Status rows YD1–YD3, a "Yield agent" section, three Limitations entries (suggestions only, TEE not verified per call and `verify-tee.sh` not run, rate and protocol risk), a Roadmap entry (YD4 panel and builder, YD4b, V2 self-farming), the optional `NEAR_AI_API_KEY` in Deploy, and the disclosure lines. To redo when YD0 or YD4 lands: step 9 (a DAO with a suggestion and a model order) and the Limitations entry on execution.
+
 ### YD4: proposal builder
 
 **What.** `apps/dashboard/src/yield-proposals.ts` builds supply and withdraw proposals, reusing the base64 args helper in `guard-proposals.ts`. Allowlist per network: Rhea contract, known tokens, the methods proved in YD0. The existing proposal job watches the result.
