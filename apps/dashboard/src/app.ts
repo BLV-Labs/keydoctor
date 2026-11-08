@@ -1263,9 +1263,13 @@ function submitGuardCreate(form: HTMLFormElement): void {
   const data = new FormData(form);
   const get = (name: string) => String(data.get(name) ?? "");
   const result = validateGuardForm(formToInput(get), guardState.factory, guardState.code_storage);
+  const values = Object.fromEntries([...data.entries()].map(([k, v]) => [k, String(v)]));
+  // Repaint on every submit: a valid one must drop the last errors, an invalid one must drop the last preview,
+  // or its Sign button would sign values the form no longer holds.
+  form.outerHTML = renderGuardCreate(guardState.factory, values, result.ok ? [] : result.errors).value;
   if (!result.ok) {
-    const values = Object.fromEntries([...data.entries()].map(([k, v]) => [k, String(v)]));
-    form.outerHTML = renderGuardCreate(guardState.factory, values, result.errors).value;
+    guardPreview = null;
+    document.getElementById("guard-preview")?.replaceChildren();
     document.querySelector<HTMLElement>('#guard-create-form [aria-invalid="true"]')?.focus();
     return;
   }
