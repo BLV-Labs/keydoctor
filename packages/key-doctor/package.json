@@ -14,7 +14,8 @@
     "typecheck": "tsc -p tsconfig.src.json && tsc -p tsconfig.json",
     "stats": "node scripts/network-stats.ts",
     "bench": "node scripts/bench-sources.ts",
-    "find-dao": "node scripts/find-dao.ts"
+    "find-dao": "node scripts/find-dao.ts",
+    "yield-models": "node scripts/compare-yield-models.ts"
   },
   "devDependencies": {
     "typescript": "6.0.3",

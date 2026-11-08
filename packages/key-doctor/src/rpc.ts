@@ -28,6 +28,33 @@ export interface Rpc {
   callFunction(accountId: string, blockId: number, methodName: string, args: unknown): Promise<unknown>;
 }
 
+/**
+ * GET a small JSON document from a non-RPC source (the yield agent's Rhea API). One endpoint, no retry.
+ * Same timeout and fixed error text as RPC calls: never the URL or the body.
+ */
+export async function getJson(url: string, fetchImpl?: FetchLike): Promise<unknown> {
+  const doFetch: FetchLike = fetchImpl ?? ((...a) => globalThis.fetch(...a));
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), RPC_TIMEOUT_MS);
+  try {
+    let res: Response;
+    try {
+      res = await doFetch(url, { method: "GET", headers: { accept: "application/json" }, signal: ctl.signal });
+    } catch {
+      throw fail("RPC_ERROR");
+    }
+    if (res.status === 429) throw fail("RATE_LIMITED");
+    if (res.status < 200 || res.status >= 300) throw fail("RPC_ERROR", { retryable: res.status >= 500 });
+    try {
+      return (await res.json()) as unknown;
+    } catch {
+      throw fail("RPC_ERROR");
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Error text is fixed per code: never the URL, the body, `error.data` or `error.message`. */
 function unwrap(body: unknown, blockPinnedByCaller: boolean, contractFailureIsNotADao: boolean): Record<string, unknown> {
   if (!isRecord(body)) throw fail("RPC_ERROR");

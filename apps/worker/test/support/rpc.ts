@@ -34,6 +34,12 @@ export interface Chain {
   head: number;
   /** Per-call Telegram answer; overrides telegramStatus when it returns a value. */
   telegramReply?: (method: string, body: any) => { status: number; json: unknown } | undefined;
+  /** Answers plain GET requests (the Rhea API); without it a GET fails with 500. */
+  get?: (url: string) => Response;
+  /** NEAR AI chat requests: JSON body and whether a bearer key was sent. */
+  ai: { body: any; bearer: boolean }[];
+  /** Answers NEAR AI chat requests; without it they fail with 500. A throw stands for a network failure or timeout. */
+  aiReply?: (body: any) => Response;
 }
 
 export function installChain(t: TestContext): Chain {
@@ -44,6 +50,7 @@ export function installChain(t: TestContext): Chain {
       "c.kd-demo.testnet": fixture("rpc/view_access_key_list.c.json"),
     },
     calls: [],
+    ai: [],
     views: { get_last_proposal_id: () => bytes(4) },
     telegram: [],
     telegramStatus: 200,
@@ -62,6 +69,13 @@ export function installChain(t: TestContext): Chain {
       const ok = chain.telegramStatus === 200;
       return new Response(JSON.stringify(ok ? { ok: true, result: {} } : { ok: false, description: "Forbidden: bot was blocked by the user" }), { status: chain.telegramStatus });
     }
+    if (String(url).startsWith("https://cloud-api.near.ai/")) {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      const sent = JSON.parse(String(init?.body));
+      chain.ai.push({ body: sent, bearer: /^Bearer \S+$/.test(headers.authorization ?? "") });
+      return chain.aiReply?.(sent) ?? new Response("{}", { status: 500 });
+    }
+    if (init?.method === "GET") return chain.get?.(String(url)) ?? new Response("{}", { status: 500 });
     const body = JSON.parse(String(init?.body)) as { method: string; params: Record<string, any> };
     chain.calls.push({ method: body.method, ...body.params });
     const p = body.params;

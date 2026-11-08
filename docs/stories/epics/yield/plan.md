@@ -1,6 +1,6 @@
 # Yield agent (plan)
 
-Status: 2026-11-04, plan only. Nothing is built. Owner answered Y1–Y15 on 2026-11-04. YD0 is the go/no-go gate.
+Status: 2026-11-08, plan only. Nothing is built. Owner answered Y1–Y15 on 2026-11-04, deferred the agent the same day (B-Q9), and revived it on 2026-11-08 (Y17–Y20). YD0 is the go/no-go gate.
 
 Goal: an agent reads a DAO's treasury (the "vault"), compares it with live APR/APY from several sources, and sends the council suggestions for where stablecoins could earn yield. The council then moves the money from the DAO to Rhea and back through normal Sputnik proposals. Start with Rhea Lend on NEAR. Other chains come later.
 
@@ -28,7 +28,7 @@ All answered by the owner on 2026-11-04.
 | Y2 | Who and what before 14 Nov? | Sputnik DAO councils. Rhea Lend gets the full flow: suggestion plus proposal. Aave, Compound, Morpho and Curve appear for comparison only |
 | Y3 | Network? | Testnet runs the full flow: a DAO farms test tokens on testnet Rhea, and the demo uses `usdc.fakes.testnet`. Mainnet rates are read for comparison. Intents has no testnet (HACKATHON Q-007), so `dry: true` quotes only |
 | Y4 | Can the agent execute? | No. Every move is a council vote. This plan does not extend the Guard. A self-running version inside Agent Budget is Roadmap: it would use a `PlanAction` `call` plan (ADR 0006) and needs a new owner decision |
-| Y5 | Which model? | TEE models on NEAR AI only. Start with `Qwen/Qwen3.6-35B-A3B-FP8`, then `z-ai/glm-5.3-flash`, then the rule-ordered list. Never a non-TEE model. The first live test compares `deepseek-ai/DeepSeek-V4.1-Flash-1017`, which moves to first place if every run returns valid JSON and its Vietnamese is better |
+| Y5 | Which model? | TEE models on NEAR AI only. Start with `Qwen/Qwen3.6-35B-A3B-FP8`, then `z-ai/glm-5.3-flash`, then the rule-ordered list. Never a non-TEE model. The first live test compares `deepseek-ai/DeepSeek-V4.1-Flash-1017`, which moves to first place if every run returns valid JSON and its Vietnamese is better. **Settled 2026-11-08 by the live compare:** Qwen with thinking off, then the rule order (YD2 note) |
 | Y6 | Who pays for inference? | One project key, Worker secret `NEAR_AI_API_KEY`, used only by the paths in §2 |
 | Y7 | Which assets? | One stablecoin at a time. Mainnet: native USDC and USDt only. Bridged USDC.e and USDT.e and DAI are out because they add bridge risk. Testnet has its own allowlist. No LP, looping or LST |
 | Y8 | Candidate floors? | Mainnet: TVL at least $1M, withdrawable liquidity at least $250k, price within 1% of $1, sources within 1 percentage point. APR above 30% warns but stays. The numbers are proposals, and YD1 checks them on real data |
@@ -40,6 +40,10 @@ All answered by the owner on 2026-11-04.
 | Y14 | Priority? | Behind Guard GĐ20–22 and GĐ14. First to cut |
 | Y15 | Cross-chain? | Research only, in `docs/yield-crosschain-feasibility.md`. It runs in parallel and does not block YD0 |
 | Y16 | Can a relayer broadcast for cross-chain? | Yes. It only sends a tx the council already signed through `sign`, holds no key and cannot change the tx, so Y4 still holds. Applies only if cross-chain leaves Roadmap |
+| Y17 | Build it for the hackathon? (2026-11-08, reopens B-Q9) | Yes. V1 is an alert plus a council proposal. V2, where the agent supplies funds itself, stays Roadmap (Y4): Rhea protocol risk sits on large sums, and today's Budget role cannot run a `call` plan |
+| Y18 | LLM? (2026-11-08) | Yes, ADR 0004 as written (§2). Not cut to the rule-only list |
+| Y19 | Network? (2026-11-08) | Y3 stands: alerts show mainnet Rhea Lend rates, the proposal runs on testnet with `usdc.fakes.testnet` |
+| Y20 | How often? (2026-11-08, replaces the daily push in Y11) | Code reads Rhea Lend every 15 minutes on its own cron offset, so it does not share CPU with the proposal job or the keeper. A push goes to opted-in chats only when the top candidate changes or its APR moves past a threshold that YD1 sets. The model runs only on such a change, never on a quiet cycle, so the key is not spent 96 times a day. DefiLlama is not read in the Worker: its response (~16k pools) would not parse within the 10 ms CPU limit |
 
 ## 2. LLM boundary
 
@@ -96,20 +100,20 @@ Known gaps:
 
 ## 4. Phases
 
-Dates assume YD0 starts on 5/11. Guard GĐ20–22 and GĐ14 go first if they compete for time.
+Dates were reset on 2026-11-08 and assume YD0 starts on 9/11. Guard GĐ20–22 and GĐ14 go first if they compete for time.
 
 | YD | Dates | Who | Done when |
 |---|---|---|---|
-| 0 spike | 5/11 | Claude writes, owner signs | A testnet DAO supplies and withdraws on Rhea through proposals, tx hashes recorded |
-| 1 library | 5–6/11 | Claude | `scanVault`, collectors and rule filter pass fixture tests |
-| 2 LLM step | 6–7/11 | Claude, owner sets the key | Validator and fallback tests pass with a fake model, then live calls and one verifier run |
-| 3 surfaces | 7–8/11 | Claude | `/yield` and MCP `yield_suggestions` return the same report, and opt-in push works |
-| 4 proposal builder | 8–9/11 | Claude | A dashboard proposal passes on testnet and funds return |
+| 0 spike | 9/11 | Claude writes, owner signs | A testnet DAO supplies and withdraws on Rhea through proposals, tx hashes recorded |
+| 1 library | 9–10/11 | Claude | `scanVault`, collectors and rule filter pass fixture tests |
+| 2 LLM step | 10–11/11 | Claude, owner sets the key | Validator and fallback tests pass with a fake model, then live calls and one verifier run |
+| 3 surfaces | 11/11 | Claude | `/yield` and MCP `yield_suggestions` return the same report, and opt-in push works |
+| 4 proposal builder | 12/11 | Claude | A dashboard proposal passes on testnet and funds return |
 | 4b mainnet builder | after 4 | Claude builds, owner signs | A tiny mainnet supply and withdraw through proposals succeed, with no DAO name in the repo |
-| 5 README | 9–10/11 | Claude | README steps reproduce, Limitations updated |
+| 5 README | 13/11 | Claude | README steps reproduce, Limitations updated |
 | XC cross-chain research | parallel | Claude | `docs/yield-crosschain-feasibility.md` gives go or no-go per protocol |
 
-Cuts: YD0 not passing by 6/11 drops YD4 and YD4b, and suggestions stay read-only. YD2 not passing by 8/11 ships the rule-ordered list.
+Cuts: YD0 not passing by 10/11 drops YD4 and YD4b, and suggestions stay read-only. YD2 not passing by 11/11 ships the rule-ordered list. YD4b (mainnet builder) is not expected before 14/11.
 
 ### YD0: spike
 
@@ -153,6 +157,13 @@ export function availableAmount(balance: string, openTransfers: string[]): strin
 }
 ```
 
+**Built 2026-11-08** (`src/yield/`: `rhea.ts`, `vault.ts`, `thresholds.ts`, `messages.ts`; tests in `test/yield.test.ts`). Changes against the sketch above:
+- `readDefiLlama` is not built. Y20 keeps DefiLlama out of the Worker, so the second source is the Rhea API (`api.burrow.finance/list_token_data`, ~9 KB). It also gives the price: the on-chain Pyth prices for USDC and USDt were months old on 2026-11-08, and `priceoracle.near` returned none.
+- The floors held on live data: native USDC TVL $12.8M, liquidity $1.86M, price 0.9998, APR 8.96% on both sources; USDt $12.6M, $1.98M, 0.9986, 7.28%. Liquidity is supplied minus borrowed and ignores the reserve, which is conservative.
+- `YIELD_PUSH_APR_DELTA` = 0.005 (0.5 percentage point) for `shouldPushYield`.
+- Open Transfers come from the newest 40 proposals (a limitation says so when there are more). A failed or unparseable read leaves `available` null and suggests nothing.
+- Mainnet captures sit in `test/yield-data.ts`, not `fixtures/`, because `fixtures/` holds testnet names only.
+
 ### YD2: LLM step
 
 **What.** `apps/worker/src/yield/agent.ts` calls NEAR AI with a JSON schema, then `validateAdvice` applies §2. A new D1 table `yield_suggestions` caches one report per DAO per day. It does not touch `snapshots` or `subscriptions`. The first live test runs the same candidates through Qwen and DeepSeek and settles Y5. `scripts/yield-setup/verify-tee.sh` runs `nearai-cloud-verifier` on one real call and writes `docs/yield-tee-verify.md`, so a judge can rerun it.
@@ -168,11 +179,41 @@ export function validateAdvice(raw: unknown, candidates: YieldOpportunity[]): Yi
 }
 ```
 
+**Built 2026-11-08, live run pending** (library `src/yield/advice.ts`, `src/yield/models.ts`, kd.yield_advice.v1 in `types.ts`; Worker `src/yield/agent.ts`, `migrations/0004_yield_advice.sql`; scripts `packages/key-doctor/scripts/compare-yield-models.ts` (`pnpm yield-models`) and `scripts/yield-setup/verify-tee.sh`; tests in `test/yield-advice.test.ts` and `apps/worker/test/yield.test.ts` with a fake model). Changes against the text above:
+- The cache table is `yield_advice`, not `yield_suggestions`, so it does not share a name with the MCP tool. One row per DAO and network, model answers only; a fallback is never cached, so the next allowed caller tries again. Cached advice is reused while it is under a day old and the suggestions, amounts and APRs (within the push delta) still match.
+- The model sees `adviceCandidates` (code facts in token units), gets no tools, and the body comes from one builder, `adviceRequest`, shared by the Worker and both scripts. The chain is `YIELD_MODEL_CHAIN`, checked against `YIELD_TEE_MODELS`; a model's extra request fields (`params`) live on its `YIELD_TEE_MODELS` entry.
+- `validateAdvice` also drops reasons that carry a link, a handle, an account name or control characters, and accepts the number formats people write (8,96 in Vietnamese, 25k, $12.8M), each checked against that candidate's own evidence.
+- Who may spend the key: the push job (only on a push, Y20) and bot `/yield` / `/yield_watch`, capped at `YIELD_MODEL_PER_MIN` = 6 model calls per minute per isolate. MCP `yield_suggestions` returns `advice` from the cache only, never calling the model. The rule order is marked with why: `NO_KEY` (no secret: no model call and no D1 read, same as YD3), `MODEL_FAILED`, `BUSY` (over the cap), `NO_CACHE` (MCP, nothing cached).
+- Telegram shows the model's reason under each suggestion, plus one line naming the model, the TEE and the generation id, and saying every number comes from code.
+- Y5 settled by the live compare on 2026-11-08 (`data/yield-model-compare.md`, 3 runs each on the synthetic testnet report). The chain is Qwen with `enable_thinking: false`, then the rule order:
+
+  | Model | Valid | Latency | Why |
+  |---|---|---|---|
+  | Qwen 3.6, thinking off | 3/3 | ~1.9 s | Chosen |
+  | Qwen 3.6, thinking on | 0/3 | ~5.8 s | Reasoning used all 1,200 tokens, no answer |
+  | GLM 5.3 Flash | 3/3 | 18-23 s | Past the 9 s per-call timeout: on the chain it only delays the fallback |
+  | DeepSeek V4.1 Flash 1017 | 0/3 | ~20 s | Same token cut as Qwen with thinking on, and slow |
+
+  GLM and DeepSeek stay on `YIELD_TEE_MODELS`, so the verifier script can still check them.
+- Deployed to testnet 2026-11-08 (Worker `37397e17`, `0004_yield_advice.sql` on remote D1). Not done yet: the verifier run (owner runs it with the key; the Worker secret is not readable locally) and a live model call from the Worker, which needs a DAO with a suggestion (YD0 funds one).
+
 ### YD3: surfaces
 
 **What.** Bot `/yield <dao>`, rate-limited per chat. `/yield_watch <dao>` opts a chat in to the daily push, stored in a new D1 table `yield_watches`, not in `subscriptions`. The push runs inside the `0 2 * * *` cron and sends only when the top candidate differs from the last sent one. It follows the alert rule: send first, record after, and delete rows for chats that blocked the bot. MCP `yield_suggestions`, read-only and cached. Dashboard Yield panel on the DAO report. If `diagnose` finds a `high` flag on the council, the report leads with that warning.
 
 **Why.** A proposal is only as safe as the council that votes on it, which is what ties this feature to Key Doctor. Security subscribers must not get yield messages they never asked for.
+
+**Built 2026-11-08** (`apps/worker`: `src/jobs/yield.ts`, `src/store/yield.ts`, `migrations/0003_yield.sql`, `yieldCheck` in `src/core.ts`, `renderYield` in `src/telegram/render.ts`; tests in `test/yield.test.ts`). Changes against the text above:
+- The push has its own cron, `11,26,41,56 * * * *` (Y20, every 15 minutes), not the `0 2 * * *` daily job. It pushes when the top suggestion changes or its APR moves by `YIELD_PUSH_APR_DELTA`. Any read error skips the push and keeps the state, so a long Rhea API outage also blocks pushes.
+- MCP `yield_suggestions` runs a fresh, rule-ordered scan: no model, no D1, no key spent (`/mcp` is open, ADR 0003). YD2 adds the cached model advice as an `advice` field; MCP still never calls the model.
+- Subrequest budget: one DAO costs about 10 subrequests, plus a council scan and one send per chat on a push. `MAX_YIELD_DAOS_PER_RUN` defaults to 1 (at most 3) and watched DAOs take turns, least recently checked first. With N watched DAOs, each one is checked every N × 15 minutes.
+- `deleteChat` and `moveChat` now run as one D1 batch (one subrequest, atomic) and cover `yield_watches` as well as `subscriptions`.
+- `/yield` and `/yield_watch` are rate-limited to 3 per chat per minute. `/yield` never writes D1. `/yield_watch` records the starting top only from a report with no read error.
+- Not built: the dashboard Yield panel (moved to YD4, with the proposal builder). README lines wait for YD5.
+
+### YD5: README
+
+**Done 2026-11-08** for what is built (YD1–YD3). README: a Yield row in "What it does", an "AI in the product" paragraph that replaces "No AI is used in the product", step 9 (MCP `yield_suggestions` curl, checked live on `kdoncall.sputnik-v2.testnet`, and `pnpm yield-models`), Status rows YD1–YD3, a "Yield agent" section, three Limitations entries (suggestions only, TEE not verified per call and `verify-tee.sh` not run, rate and protocol risk), a Roadmap entry (YD4 panel and builder, YD4b, V2 self-farming), the optional `NEAR_AI_API_KEY` in Deploy, and the disclosure lines. To redo when YD0 or YD4 lands: step 9 (a DAO with a suggestion and a model order) and the Limitations entry on execution.
 
 ### YD4: proposal builder
 

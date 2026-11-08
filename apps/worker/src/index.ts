@@ -6,6 +6,7 @@ import { json, kdErrorBody, readJson, unauthorized } from "./http.ts";
 import { runDailyJob } from "./jobs/daily.ts";
 import { runKeeperJob } from "./jobs/keeper.ts";
 import { runProposalJob } from "./jobs/proposals.ts";
+import { runYieldJob } from "./jobs/yield.ts";
 import { handleMcp } from "./mcp/server.ts";
 import { handleTelegram } from "./telegram/webhook.ts";
 import { createWatchLink } from "./watch-link.ts";
@@ -14,6 +15,8 @@ export const PROPOSAL_CRON = "*/15 * * * *";
 export const DAILY_CRON = "0 2 * * *";
 /** Its own trigger, off the proposal job's minutes: each invocation gets its own subrequest and CPU limits. */
 export const KEEPER_CRON = "7,22,37,52 * * * *";
+/** Yield push (plan Y20): its own offset again, so it shares CPU with neither the proposal job nor the keeper. */
+export const YIELD_CRON = "11,26,41,56 * * * *";
 
 /** POST /run-check {job, target?} (§8.4): runs the same function as the cron. */
 async function runCheck(request: Request, env: Env): Promise<Response> {
@@ -21,11 +24,12 @@ async function runCheck(request: Request, env: Env): Promise<Response> {
   const body = await readJson(request);
   const job = (body as { job?: unknown } | null)?.job;
   const target = (body as { target?: unknown } | null)?.target;
-  if ((job !== "proposals" && job !== "daily" && job !== "keeper") || (target !== undefined && (typeof target !== "string" || target.length > 100))) {
-    return json(kdErrorBody("INVALID_TARGET", { vi: "Cần {job: \"proposals\" | \"daily\" | \"keeper\", target?}.", en: 'Expected {job: "proposals" | "daily" | "keeper", target?}.' }), 400);
+  if ((job !== "proposals" && job !== "daily" && job !== "keeper" && job !== "yield") || (target !== undefined && (typeof target !== "string" || target.length > 100))) {
+    return json(kdErrorBody("INVALID_TARGET", { vi: "Cần {job: \"proposals\" | \"daily\" | \"keeper\" | \"yield\", target?}.", en: 'Expected {job: "proposals" | "daily" | "keeper" | "yield", target?}.' }), 400);
   }
   try {
     if (job === "keeper") return json(await runKeeperJob(env));
+    if (job === "yield") return json(await runYieldJob(env, target));
     return json(job === "proposals" ? await runProposalJob(env, target) : await runDailyJob(env, target));
   } catch (e) {
     if (isKdError(e)) return json(e.kd, 400);
@@ -71,7 +75,14 @@ export default {
   },
 
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    const job = controller.cron === DAILY_CRON ? runDailyJob(env) : controller.cron === KEEPER_CRON ? runKeeperJob(env) : runProposalJob(env);
+    const job =
+      controller.cron === DAILY_CRON
+        ? runDailyJob(env)
+        : controller.cron === KEEPER_CRON
+          ? runKeeperJob(env)
+          : controller.cron === YIELD_CRON
+            ? runYieldJob(env)
+            : runProposalJob(env);
     ctx.waitUntil(
       job.then(
         (r) => console.log("cron done", { job: r.job, targets: r.targets_checked, sent: r.alerts_sent, errors: r.errors.length }),

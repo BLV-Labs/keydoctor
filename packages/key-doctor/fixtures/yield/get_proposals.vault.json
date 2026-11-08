@@ -1,0 +1,52 @@
+[
+  {
+    "id": 0,
+    "proposer": "a.kd-demo.testnet",
+    "description": "Paid last month",
+    "kind": { "Transfer": { "token_id": "usdc.fakes.testnet", "receiver_id": "contractor.kd-demo.testnet", "amount": "3000000", "msg": null } },
+    "status": "Approved",
+    "vote_counts": { "council": ["2", "0", "0"] },
+    "votes": { "a.kd-demo.testnet": "Approve", "b.kd-demo.testnet": "Approve" },
+    "submission_time": "1793069400000000000"
+  },
+  {
+    "id": 1,
+    "proposer": "b.kd-demo.testnet",
+    "description": "Payroll November",
+    "kind": { "Transfer": { "token_id": "usdc.fakes.testnet", "receiver_id": "contractor.kd-demo.testnet", "amount": "2500000", "msg": null } },
+    "status": "InProgress",
+    "vote_counts": { "council": ["1", "0", "0"] },
+    "votes": { "a.kd-demo.testnet": "Approve" },
+    "submission_time": "1793669400000000000"
+  },
+  {
+    "id": 2,
+    "proposer": "b.kd-demo.testnet",
+    "description": "Pay in NEAR",
+    "kind": { "Transfer": { "token_id": "", "receiver_id": "contractor.kd-demo.testnet", "amount": "50000000000000000000000000", "msg": null } },
+    "status": "InProgress",
+    "vote_counts": {},
+    "votes": {},
+    "submission_time": "1793669400000000000"
+  },
+  {
+    "id": 3,
+    "proposer": "c.kd-demo.testnet",
+    "description": "Call something",
+    "kind": { "FunctionCall": { "receiver_id": "app.kd-demo.testnet", "actions": [{ "method_name": "ping", "args": "e30=", "deposit": "0", "gas": "30000000000000" }] } },
+    "status": "InProgress",
+    "vote_counts": {},
+    "votes": {},
+    "submission_time": "1793669400000000000"
+  },
+  {
+    "id": 4,
+    "proposer": "c.kd-demo.testnet",
+    "description": "Bonus",
+    "kind": { "Transfer": { "token_id": "usdc.fakes.testnet", "receiver_id": "designer.kd-demo.testnet", "amount": "1000000", "msg": null } },
+    "status": "InProgress",
+    "vote_counts": {},
+    "votes": {},
+    "submission_time": "1793669400000000000"
+  }
+]

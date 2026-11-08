@@ -1,0 +1,118 @@
+[
+  {
+    "token_id": "usdt.fakes.testnet",
+    "supplied": {
+      "shares": "26071092317978695726707949607",
+      "balance": "26680414526319287085968602306"
+    },
+    "borrowed": {
+      "shares": "11754096911259858747524222",
+      "balance": "12367089606470701761821450"
+    },
+    "reserved": "129300779586372857176270",
+    "last_update_timestamp": "1794112659148774437",
+    "config": {
+      "extra_decimals": 12,
+      "can_deposit": true,
+      "can_withdraw": true
+    },
+    "supply_apr": "0.000000015502425692250712616",
+    "borrow_apr": "0.000044592668315030978107472",
+    "farms": [
+      {
+        "farm_id": {
+          "Supplied": "usdt.fakes.testnet"
+        },
+        "rewards": {}
+      },
+      {
+        "farm_id": {
+          "Borrowed": "usdt.fakes.testnet"
+        },
+        "rewards": {}
+      }
+    ]
+  },
+  {
+    "token_id": "usdc.fakes.testnet",
+    "supplied": {
+      "shares": "153529296403084491389535",
+      "balance": "468368149549287759714436"
+    },
+    "borrowed": {
+      "shares": "108751434840278583745708",
+      "balance": "446452860959088022124739"
+    },
+    "reserved": "82616345055228866064260",
+    "last_update_timestamp": "1794112659148792659",
+    "config": {
+      "extra_decimals": 12,
+      "can_deposit": true,
+      "can_withdraw": true
+    },
+    "supply_apr": "0.10530425026152265364748556",
+    "borrow_apr": "0.147297840817836163979577596",
+    "farms": [
+      {
+        "farm_id": {
+          "Supplied": "usdc.fakes.testnet"
+        },
+        "rewards": {}
+      },
+      {
+        "farm_id": {
+          "Borrowed": "usdc.fakes.testnet"
+        },
+        "rewards": {}
+      }
+    ]
+  },
+  {
+    "token_id": "wrap.testnet",
+    "supplied": {
+      "shares": "3689201414608316291578524606046",
+      "balance": "807229757604573068059275776164224"
+    },
+    "borrowed": {
+      "shares": "3534229703062637720417551344938",
+      "balance": "1075039812108529321735293581914152"
+    },
+    "reserved": "267811307595582832148809291151798",
+    "last_update_timestamp": "1794112659148027342",
+    "config": {
+      "extra_decimals": 0,
+      "can_deposit": true,
+      "can_withdraw": true
+    },
+    "supply_apr": "2.497034937970831879229146511",
+    "borrow_apr": "2.499976757455942078887657709",
+    "farms": [
+      {
+        "farm_id": {
+          "Supplied": "wrap.testnet"
+        },
+        "rewards": {
+          "test_brrr.1638481328.burrow.testnet": {
+            "reward_per_day": "100000000000000000000",
+            "booster_log_base": "0",
+            "remaining_rewards": "333668641424002873846085",
+            "boosted_shares": "1917116659564277849733971158780"
+          }
+        }
+      },
+      {
+        "farm_id": {
+          "Borrowed": "wrap.testnet"
+        },
+        "rewards": {
+          "test_brrr.1638481328.burrow.testnet": {
+            "reward_per_day": "100000000000000000000",
+            "booster_log_base": "0",
+            "remaining_rewards": "333668654385483228009527",
+            "boosted_shares": "3495352084289946846056467054400"
+          }
+        }
+      }
+    ]
+  }
+]
