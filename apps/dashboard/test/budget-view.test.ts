@@ -54,7 +54,7 @@ const live = (over: Partial<BudgetLive> = {}): BudgetLive => ({
 describe("renderBudget", () => {
   const page = renderBudget(live(), "testnet").value;
   it("shows chain values", () => {
-    assert.match(page, /12 NEAR/);
+    assert.match(page, /11 NEAR/);
     assert.match(page, /bot\.testnet/);
     assert.match(page, /#4/);
   });
@@ -376,11 +376,21 @@ describe("Budget views the owner decides from", () => {
     assert.doesNotMatch(out, /data-action="budget-pause"/);
   });
   it("balance after: follows the panel, never goes below zero, and ignores text that is not an amount", () => {
-    assert.equal(balanceAfter(live(), "topup", "3"), "15 NEAR");
-    assert.equal(balanceAfter(live(), "withdraw", "3"), "9 NEAR");
+    // From the spendable 11 NEAR, not the 12 the account holds: the card shows 11, so the drawer must agree.
+    assert.equal(balanceAfter(live(), "topup", "3"), "14 NEAR");
+    assert.equal(balanceAfter(live(), "withdraw", "3"), "8 NEAR");
     assert.equal(balanceAfter(live(), "withdraw", "99"), "0 NEAR");
-    assert.equal(balanceAfter(live(), "topup", "abc"), "12 NEAR");
-    assert.equal(balanceAfter(live({ balance: null }), "topup", "3"), "unknown");
+    assert.equal(balanceAfter(live(), "topup", "abc"), "11 NEAR");
+    assert.equal(balanceAfter(live({ withdrawable: null }), "topup", "3"), "unknown");
+    assert.match(renderBudgetPanel("topup", live()).value, /Balance now<\/span><span class="sum-value wrap">11 NEAR/);
+  });
+  it("the balance card shows only what can be spent, and names the NEAR kept for storage", () => {
+    // Live on payroll-1: the card said 30 NEAR while 4.7 of it paid for storage, so the owner could plan with NEAR
+    // no transfer can send. The card counts only what can leave; the held part is named, never hidden.
+    const card = (b: BudgetLive) => renderBudget(b, "testnet").value.match(/Budget balance<\/span><span class="tile-value">([^<]*)<\/span><span class="tile-note">([^<]*)</);
+    assert.deepEqual(card(live())?.slice(1), ["11 NEAR", "Plus 1 NEAR kept for account storage, not spendable"]);
+    assert.deepEqual(card(live({ withdrawable: NEAR(12) }))?.slice(1), ["12 NEAR", "Top up or withdraw anytime"]);
+    assert.deepEqual(card(live({ withdrawable: null }))?.slice(1), ["unknown", "Top up or withdraw anytime"]);
   });
   it("Withdraw offers exactly what the chain says can leave, and names the connected wallet", () => {
     const out = renderBudgetPanel("withdraw", live(), null, { to: "owner.testnet" }).value;

@@ -114,11 +114,13 @@ function tiles(b: BudgetLive, now: number): Html {
   const oldest = b.proposals?.at(-1);
   const left = oldest === undefined ? null : hoursLeft(oldest, b, now);
   const off = g?.agents?.filter((a) => !a.enabled).length ?? null;
+  // The account's NEAR that pays for its storage: counted in `balance`, but no transfer can send it.
+  const held = b.balance === null || b.withdrawable === null ? null : BigInt(b.balance) - BigInt(b.withdrawable);
   const tile = (filter: ActivityFilter, label: string, value: string, note: string, extra: Html | "" = "") =>
     html`<button type="button" class="card tile tile-btn" data-action="budget-filter" data-filter="${filter}">
       <span class="tile-label">${label}</span><span class="tile-value">${value}</span>${extra}<span class="tile-note">${note}</span></button>`;
   return html`<section class="tiles" aria-label="Budget summary">
-    ${tile("all", "Budget balance", near(b.balance), "Top up or withdraw anytime")}
+    ${tile("all", "Budget balance", near(b.withdrawable), held === null || held === 0n ? "Top up or withdraw anytime" : `Plus ${near(held.toString())} kept for account storage, not spendable`)}
     ${tile("auto", "Spent in last 24h", w === null ? "unknown" : p === null ? near(w.spent_in_window) : `${yoctoToNear(w.spent_in_window)} / ${near(p.max_per_day)}`,
       w === null ? "" : `${near(w.remaining)} left today`,
       w !== null && p !== null ? html`<progress class="progress" max="100" value="${percent(w.spent_in_window, p.max_per_day)}" aria-label="Share of the daily limit spent"></progress>` : "")}
@@ -344,11 +346,14 @@ const CANCEL = html`<button type="button" class="btn btn-secondary" data-action=
 
 const sumRow = (label: string, value: Html | string) => html`<div class="sum-row"><span class="muted">${label}</span><span class="sum-value wrap">${value}</span></div>`;
 
-/** What the balance becomes after a top up or withdrawal of what is typed; the balance as it is while nothing valid is typed. */
+/**
+ * What the spendable balance becomes after a top up or withdrawal of what is typed; the spendable balance as it is
+ * while nothing valid is typed. Spendable, like the balance card: the NEAR kept for storage is never counted.
+ */
 export function balanceAfter(b: BudgetLive, panel: "topup" | "withdraw", amount: string): string {
-  if (b.balance === null) return "unknown";
+  if (b.withdrawable === null) return "unknown";
   const yocto = BigInt(nearToYocto(amount) ?? 0);
-  const after = panel === "topup" ? BigInt(b.balance) + yocto : BigInt(b.balance) - yocto;
+  const after = panel === "topup" ? BigInt(b.withdrawable) + yocto : BigInt(b.withdrawable) - yocto;
   return near((after > 0n ? after : 0n).toString());
 }
 
@@ -369,7 +374,7 @@ export function renderBudgetPanel(panel: BudgetPanel, b: BudgetLive, error: stri
     case "topup":
       return form("Top up", "From your wallet to this Budget.", html`
         ${field("amount", "Amount", v("amount"), "5", { unit: true })}
-        <div class="sum-box">${sumRow("Balance now", near(b.balance))}${sumRow("Balance after", html`<span id="bp-after">${balanceAfter(b, "topup", v("amount"))}</span>`)}</div>
+        <div class="sum-box">${sumRow("Balance now", near(b.withdrawable))}${sumRow("Balance after", html`<span id="bp-after">${balanceAfter(b, "topup", v("amount"))}</span>`)}</div>
         <p class="small muted">${signatures(1)}: a NEAR transfer from your connected account to <span class="mono">${b.dao.dao}</span>. The page first checks on the chain who controls this Budget.</p>`, "Top up in wallet");
     case "withdraw":
       return form("Withdraw", "Back to your wallet.", html`
