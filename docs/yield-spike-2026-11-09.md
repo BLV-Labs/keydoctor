@@ -48,3 +48,13 @@ Done when: the withdraw proposal is Approved, the DAO's token balance is at leas
 - Does a proposal show `Failed` when Rhea Lend rejects the call? Not answered: every call passed. Sputnik marks a proposal Approved even when the call fails, so the proposal job must not trust the status alone.
 - A big supply moves the APR of this test pool a lot (0.1055 to 0.0023). Suggestions should read the APR at the time of the scan.
 - `spike.sh status` fails on a DAO with no proposal yet: it calls `get_proposal` with id `-1`.
+
+## Suggestions on the funded DAO (live-test-plan Y2, 2026-11-09)
+
+After the withdraw, the DAO holds `2000020009655` test USDC and nothing on Rhea Lend.
+
+| Surface | Result |
+|---|---|
+| MCP `yield_suggestions {target}` on the hosted Worker, block 276812471 | One suggestion: `rhea-lend:usdc.fakes.testnet:supply`, APR 0.1055 (test data), `max_amount` `2000020009655`, which equals the free balance. 32 rows rejected as `NOT_ALLOWLISTED`, 4 vi/en notes, no errors. `advice.by` is `rules` with fallback `NO_CACHE`: the tool never calls the model, so model advice needs the yield cron and a `/yield_watch` chat first (Y5) |
+| Dashboard `?page=yield&dao=kdy1794161239.sputnik-v2.testnet`, block 276812513 | Same numbers: idle and available 2000020.009655, supplied 0, best APR 10.55%, one "Propose" row capped at the free balance. Council votes list proposals #0–#2 as Approved. "Filtered out (34)" is the 32 rejected rows plus the 2 mainnet reference rows. No horizontal scroll at 375 px |
+| Bug found | The browser blocks `https://api.burrow.finance/list_token_data`: the dashboard CSP `connect-src` in `apps/dashboard/public/_headers` does not list it, so the "API" rate column shows "—". The chain rate still shows |
