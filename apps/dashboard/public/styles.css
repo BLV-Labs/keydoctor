@@ -502,3 +502,22 @@ li:last-child > .member-row { border-bottom: 0; }
 .rejected[open] > summary svg { transform: rotate(90deg); }
 .rej { display: flex; flex-wrap: wrap; gap: 2px 12px; padding: 8px 20px; border-top: 1px solid var(--kd-border); }
 .rej > .strong { min-width: 64px; }
+
+/* Your agents (K2): the inbox, then one card per budget or yield agent. */
+.agents-top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 16px; }
+.inbox-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.inbox { border: 1px solid var(--kd-border); border-radius: var(--kd-radius-md); background: var(--kd-surface); }
+.inbox-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 16px; border-top: 1px solid var(--kd-border); }
+.inbox-row:first-child { border-top: 0; }
+.inbox-mark { display: inline-flex; flex: none; color: var(--kd-text-muted); }
+.inbox-text { flex: 1 1 260px; min-width: 0; }
+.agent-cards { display: flex; flex-wrap: wrap; gap: 16px; }
+.agent-card { flex: 1 1 340px; display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--kd-border); border-radius: var(--kd-radius-md); background: var(--kd-surface); color: inherit; text-decoration: none; min-width: 0; }
+a.agent-card:hover { border-color: var(--kd-primary); }
+a.agent-card:focus-visible { outline: 2px solid var(--kd-primary); outline-offset: 2px; }
+.agent-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
+.agent-card-head .avatar { width: 32px; height: 32px; border-radius: var(--kd-radius); flex: none; }
+.agent-card-nums { display: flex; flex-wrap: wrap; gap: 12px 24px; }
+.agent-card-big { margin: 0; font-size: var(--kd-fs-lg); font-weight: 600; }
+.agent-card-failed { border-style: dashed; }
+.agent-card-new { align-items: center; justify-content: center; flex-direction: row; border-style: dashed; color: var(--kd-primary); }

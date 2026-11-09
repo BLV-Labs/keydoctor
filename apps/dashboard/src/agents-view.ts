@@ -1,44 +1,51 @@
-// My Agents, pure: every agent of every DAO where the connected wallet sits on the council (agents-read.ts).
+// Your agents (K2), pure: an inbox of everything that needs the owner across all budgets, then every budget and yield
+// agent as a card, the latest activity and the alerts line. Data: agents-read.ts (the council's budgets and yield agents).
 import type { Network } from "key-doctor";
-import type { AgentRow, AgentStatus, MyAgents } from "./agents-read.ts";
-import { yoctoToNear } from "./format.ts";
+import type { AgentRow, BudgetCard, MyAgents } from "./agents-read.ts";
+import type { BudgetLive, BudgetProposal, BudgetRequest } from "./budget-read.ts";
+import { activityRow, agentName, ago, budgetStatusPill, describeKind, expiryText, hoursLeft, near, percent, reasonText, requestOf } from "./budget-view.ts";
+import { plural, yoctoToNear } from "./format.ts";
 import { html, type Html } from "./html.ts";
 import { icon } from "./icons.ts";
 import { budgetHref, pageHref, yieldHref } from "./route.ts";
 import { avatar } from "./ui.ts";
 import { YIELD_ALLOWLIST, tokenAmount } from "./yield-proposals.ts";
 
-export type AgentFilter = "all" | "needs" | "payment" | "yield" | "off";
-
-const LEAD =
-  "Every agent working for a DAO you sit on. Payment agents spend within your Budget rules. Yield agents suggest where idle stablecoins could earn, and the council votes on every move.";
+/** Waiting rows shown before "Show all". */
+export const NEEDS_SHOWN = 5;
+/** Events in Recent activity. */
+export const ACTIVITY_SHOWN = 5;
 
 /** `data-agents-for` names the accounts this view was read for, so a wallet change re-reads it. */
-function head(accounts: readonly string[]): Html {
-  return html`<section class="stack-xs" data-agents-for="${accounts.join(",")}"><h1 class="h1">My Agents</h1><p class="muted budget-lead">${LEAD}</p></section>`;
+function head(accounts: readonly string[], sub: string | null = null): Html {
+  return html`<section class="stack-xs" data-agents-for="${accounts.join(",")}"><h1 class="h1">Your agents</h1>${sub === null ? "" : html`<p class="muted budget-lead">${sub}</p>`}</section>`;
 }
 
 const NEW_AGENT = html`<details class="menu">
   <summary class="btn btn-primary">${icon.plus()}New agent</summary>
   <div class="pop card">
-    <a class="pop-item" href="${pageHref("budget")}" data-nav><span class="strong">Payment agent</span><span class="small muted">Spends from an Agent Budget within your rules. Needs 2 signatures.</span></a>
-    <a class="pop-item" href="${pageHref("yield")}" data-nav><span class="strong">Yield agent</span><span class="small muted">Watches Rhea Lend for a DAO's idle stablecoins. Suggests only, the council votes.</span></a>
+    <a class="pop-item" href="${pageHref("budget")}" data-nav><span class="strong">Payment agent</span><span class="small muted">Spends from a budget within your limits. Needs 2 signatures.</span></a>
+    <a class="pop-item" href="${pageHref("yield")}" data-nav><span class="strong">Yield agent</span><span class="small muted">Watches Rhea Lend for idle stablecoins and suggests moves. You approve every one.</span></a>
   </div>
 </details>`;
+
+/** Written into by the wallet actions (Reject, Review): the status line and the dialog they use live here. */
+const ACTION_HOST = html`<p id="budget-status" class="small" role="status" aria-live="polite"></p>
+  <dialog id="budget-action" class="drawer" aria-labelledby="bp-title"></dialog>`;
 
 export function renderMyAgentsSignedOut(): Html {
   return html`${head([])}
     <section class="card pad stack-xs budget-narrow">
-      <p class="strong">Wallet not connected</p>
-      <p class="small muted">Connect the wallet you use on your DAO council to see its agents. Keyfence only reads; your wallet signs.</p>
+      <p class="strong">Connect your wallet to see your agents</p>
+      <p class="small muted">Keyfence only reads. Your wallet signs.</p>
       <button type="button" class="btn btn-primary btn-start" data-action="open-wallet">Connect wallet</button>
-      <p class="small"><a href="${pageHref("budget")}" data-nav>Or open one DAO by name</a></p>
+      <p class="small"><a href="${pageHref("budget")}" data-nav>Or open one budget by name</a></p>
     </section>`;
 }
 
 export function renderMyAgentsLoading(accounts: readonly string[]): Html {
   return html`${head(accounts)}
-    <section class="card pad stack-sm" aria-busy="true" aria-label="Loading agents"><p class="meta" role="status">Finding the DAOs where <span class="mono">${accounts.join(", ")}</span> sits on the council…</p></section>`;
+    <section class="card pad stack-sm" aria-busy="true" aria-label="Loading agents"><p class="meta" role="status">Finding the budgets and agents of <span class="mono">${accounts.join(", ")}</span>…</p></section>`;
 }
 
 export function renderMyAgentsError(message: string, accounts: readonly string[]): Html {
@@ -49,141 +56,146 @@ export function renderMyAgentsError(message: string, accounts: readonly string[]
     </section>`;
 }
 
-/** Needs-you rows first, then the read order (DAO by DAO). */
-const RANK: Record<AgentStatus, number> = { waiting: 0, unknown: 1, on: 2, farming: 2, idle: 3, off: 4 };
-
-export function agentMatches(row: AgentRow, filter: AgentFilter): boolean {
-  if (filter === "all") return true;
-  if (filter === "needs") return row.status === "waiting";
-  if (filter === "off") return row.status === "off";
-  return row.kind === filter;
+/** One waiting request of one budget. */
+export interface WaitingItem {
+  dao: string;
+  live: BudgetLive;
+  proposal: BudgetProposal;
+  request: BudgetRequest | null;
+  /** Whole hours left; null when the chain did not say. */
+  left: number | null;
 }
 
-function statusPill(row: AgentRow): Html {
-  switch (row.status) {
-    case "waiting":
-      return html`<span class="pill pill-cleanup">${icon.clock()}${String(row.pending)} ${row.pending === 1 ? "waits" : "wait"} for you</span>`;
-    case "on":
-      return html`<span class="pill pill-ok">${icon.check()}On</span>`;
-    case "farming":
-      return html`<span class="pill pill-ok">${icon.check()}Farming</span>`;
-    case "idle":
-      return html`<span class="pill pill-note">Idle</span>`;
-    case "off":
-      return html`<span class="pill pill-note">Off</span>`;
-    default:
-      return html`<span class="pill pill-cleanup">Unknown</span>`;
+const submitted = (i: WaitingItem): bigint => BigInt(i.proposal.submission_time ?? "0");
+
+/** The waiting requests of every budget that was read, newest first. An expired one is dropped: it shows in Recent activity. */
+export function waitingItems(cards: readonly BudgetCard[], now: number): WaitingItem[] {
+  const items = cards.flatMap(({ dao, live }) =>
+    live === null
+      ? []
+      : (live.proposals ?? []).map((proposal): WaitingItem => ({ dao, live, proposal, request: requestOf(live, proposal), left: hoursLeft(proposal, live, now) })),
+  );
+  return items.filter((i) => i.left !== 0).sort((a, b) => (submitted(a) < submitted(b) ? 1 : submitted(a) > submitted(b) ? -1 : 0));
+}
+
+function waitingRow(i: WaitingItem, hidden: boolean): Html {
+  const g = i.live.guard;
+  const r = i.request;
+  const expiry = expiryText(i.left);
+  const meta = [r === null ? i.proposal.description : r.reasons.map((c) => reasonText(c, g, r.receiver_id)).join(", "), i.dao, expiry === null ? null : expiry.replace("Expires", "expires")]
+    .filter((t) => t !== null && t !== "")
+    .join(" · ");
+  return html`<li class="inbox-row"${hidden ? html` hidden data-inbox-extra` : ""}>
+    <span class="inbox-mark">${icon.clock()}</span>
+    <div class="inbox-text">
+      <p class="strong wrap">${r === null ? describeKind(i.proposal.kind) : html`${agentName(g, r.agent)} wants to pay <span class="nowrap">${near(r.amount)}</span> to <span class="mono">${r.receiver_id}</span>`}</p>
+      <p class="small muted wrap">${meta}</p>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn btn-secondary btn-sm" data-action="budget-act" data-dao="${i.dao}" data-id="${i.proposal.id}" data-vote="VoteReject">Reject</button>
+      <button type="button" class="btn btn-primary btn-sm" data-action="budget-approve" data-dao="${i.dao}" data-id="${i.proposal.id}">Review</button>
+    </div></li>`;
+}
+
+function needsYou(cards: readonly BudgetCard[], now: number): Html {
+  const items = waitingItems(cards, now);
+  const unread = cards.filter((c) => c.live !== null && c.live.proposals === null).length;
+  const pill = items.length === 0 ? "" : html`<span class="pill pill-cleanup">${icon.clock()}${String(items.length)} waiting</span>`;
+  const more = items.length > NEEDS_SHOWN ? html`<button type="button" class="btn btn-ghost btn-link" data-action="agents-show-all">Show all ${String(items.length)}</button>` : "";
+  return html`<section class="stack-xs" aria-labelledby="ma-needs">
+    <div class="inbox-head"><h2 id="ma-needs" class="h2">Needs you</h2>${pill}</div>
+    ${items.length === 0
+      ? html`<p class="muted">Nothing needs you right now.</p>`
+      : html`<p class="small muted">Agents asked for these. They are outside your limits. Approve and Reject each take 1 signature.</p>
+        <ul class="plain-list inbox">${items.map((i, n) => waitingRow(i, n >= NEEDS_SHOWN))}</ul>${more}`}
+    ${unread === 0 ? "" : html`<p class="small muted">${plural(unread, "budget")} could not show what waits. Those items are unknown, not none.</p>`}</section>`;
+}
+
+function budgetCard(card: BudgetCard): Html {
+  const b = card.live;
+  if (b === null) {
+    return html`<div class="agent-card agent-card-failed">
+      <div class="agent-card-head">${avatar(card.dao)}<span class="strong mono wrap">${card.dao}</span></div>
+      <p class="check-line small">${icon.alertSmall()}<span>Could not read this budget</span></p>
+      <div><button type="button" class="btn btn-secondary btn-sm" data-action="agents-retry" data-dao="${card.dao}">Try again</button></div></div>`;
   }
+  const g = b.guard;
+  if (g === null) {
+    return html`<a class="agent-card" href="${budgetHref(card.dao)}" data-nav>
+      <div class="agent-card-head">${avatar(card.dao)}<span class="strong mono wrap">${card.dao}</span><span class="pill pill-cleanup">Setup not finished</span></div>
+      <p class="small muted">No finished budget was found for this account yet.</p></a>`;
+  }
+  const w = g.window;
+  const p = g.policy;
+  const agents = g.agents?.length ?? g.config?.agents ?? null;
+  const recipients = g.whitelist?.length ?? g.config?.whitelist ?? null;
+  const last = (b.requests ?? []).find((r) => r.status === "Executed" && r.created_at !== null);
+  const meta = [agents === null ? null : plural(agents, "agent"), recipients === null ? null : plural(recipients, "recipient"), last === undefined ? null : `last payment ${ago(last.created_at, Date.now()).toLowerCase()}`]
+    .filter((t) => t !== null)
+    .join(" · ");
+  return html`<a class="agent-card" href="${budgetHref(card.dao)}" data-nav>
+    <div class="agent-card-head">${avatar(card.dao)}<span class="strong mono wrap">${card.dao}</span>${budgetStatusPill(g)}</div>
+    <div class="agent-card-nums">
+      <div><p class="small muted">Balance</p><p class="agent-card-big">${near(b.withdrawable)}</p></div>
+      <div class="grow-min"><p class="small muted">Spent today</p>
+        <p class="strong">${w === null ? "unknown" : p === null ? near(w.spent_in_window) : `${yoctoToNear(w.spent_in_window)} of ${near(p.max_per_day)}`}</p>
+        ${w !== null && p !== null ? html`<progress class="progress" max="100" value="${percent(w.spent_in_window, p.max_per_day)}" aria-label="Share of the daily limit spent"></progress>` : ""}</div>
+    </div>
+    ${meta === "" ? "" : html`<p class="small muted">${meta}</p>`}</a>`;
 }
 
-function daoCell(dao: string): Html {
-  const dot = dao.indexOf(".");
-  const [name, rest] = dot < 0 ? [dao, ""] : [dao.slice(0, dot), dao.slice(dot + 1)];
-  return html`<td class="small" title="${dao}"><span class="mono strong">${name}</span><span class="mono muted block">${rest}</span></td>`;
-}
-
-function agentRow(row: AgentRow, network: Network): Html {
+function yieldCard(row: AgentRow, network: Network): Html {
   const token = YIELD_ALLOWLIST[network]?.tokens[0] ?? null;
-  const who =
-    row.kind === "yield"
-      ? html`<div class="who">${avatar(`yield:${row.dao}`)}<span class="who-text"><span class="strong">Yield agent</span><span class="small muted">${
-          row.supplied === null || token === null ? "Rhea Lend" : `Rhea Lend · ${tokenAmount(row.supplied, token.decimals)} ${token.symbol} supplied`
-        }</span></span></div>`
-      : html`<div class="who">${avatar(row.account ?? row.label)}<span class="who-text"><span class="strong">${row.label || row.account}</span><span class="small muted mono wrap">${row.account}</span></span></div>`;
-  const open =
-    row.kind === "yield"
-      ? html`<a class="btn btn-secondary btn-sm" href="${yieldHref(row.dao)}" data-nav>Open</a>`
-      : row.status === "waiting"
-        ? html`<a class="btn btn-primary btn-sm" href="${budgetHref(row.dao)}" data-nav>Review</a>`
-        : html`<a class="btn btn-secondary btn-sm" href="${budgetHref(row.dao)}" data-nav>Open</a>`;
-  const spent = row.kind === "yield" ? "—" : row.spent_24h === null ? "unknown" : `${yoctoToNear(row.spent_24h)} NEAR`;
-  return html`<tr data-agent-kind="${row.kind}" data-agent-status="${row.status}"${row.status === "waiting" ? html` class="row-new" data-tone="cleanup"` : ""}>
-    <td>${who}</td>
-    <td>${row.kind === "yield" ? html`<span class="tag tag-yield">Yield</span>` : html`<span class="tag">Payment</span>`}</td>
-    ${daoCell(row.dao)}
-    <td>${statusPill(row)}</td>
-    <td class="num">${spent}</td>
-    <td>${open}</td>
-  </tr>`;
+  const pill =
+    row.status === "farming"
+      ? html`<span class="pill pill-ok">${icon.check()}Farming</span>`
+      : row.status === "idle"
+        ? html`<span class="pill pill-note">Idle</span>`
+        : html`<span class="pill pill-cleanup">Status unknown</span>`;
+  const supplied = row.supplied === null || token === null ? "unknown" : `${tokenAmount(row.supplied, token.decimals)} ${token.symbol}`;
+  return html`<a class="agent-card" href="${yieldHref(row.dao)}" data-nav>
+    <div class="agent-card-head">${avatar(`yield:${row.dao}`)}<span class="stack-xs grow-min"><span class="strong">Yield agent</span><span class="small muted mono wrap">${row.dao}</span></span>${pill}</div>
+    <div><p class="small muted">Supplied on Rhea Lend</p><p class="agent-card-big">${supplied}</p></div>
+    <p class="small muted">Suggests only. You approve every move.${network === "testnet" ? " Test data, not real yield." : ""}</p></a>`;
 }
 
-const tile = (label: string, value: Html | string, note: string) =>
-  html`<div class="card tile"><span class="tile-label">${label}</span><span class="tile-value">${value}</span><span class="tile-note">${note}</span></div>`;
+const NEW_CARD = html`<a class="agent-card agent-card-new" href="${pageHref("budget")}" data-nav>${icon.plus()}<span class="strong">New agent</span></a>`;
 
-function tiles(data: MyAgents): Html {
-  const payment = data.rows.filter((r) => r.kind === "payment");
+/** The newest events across budgets, each worded by its own budget's agents. */
+function recentActivity(cards: readonly BudgetCard[], now: number): Html {
+  const events = cards
+    .flatMap(({ live }) => (live?.requests ?? []).map((r) => ({ r, g: live?.guard ?? null })))
+    .sort((a, b) => (BigInt(a.r.created_at ?? "0") < BigInt(b.r.created_at ?? "0") ? 1 : BigInt(a.r.created_at ?? "0") > BigInt(b.r.created_at ?? "0") ? -1 : 0))
+    .slice(0, ACTIVITY_SHOWN);
+  return html`<section class="card" aria-labelledby="ma-activity">
+    <div class="b-head"><h2 id="ma-activity" class="b-h">Recent activity</h2></div>
+    ${events.length === 0 ? html`<p class="muted pad-row">No requests yet.</p>` : html`<ul class="plain-list">${events.map((e) => activityRow(e.r, e.g, now))}</ul>`}</section>`;
+}
+
+const ALERTS = html`<section id="alerts" class="card" aria-labelledby="ma-alerts">
+  <div class="b-head"><div><h2 id="ma-alerts" class="b-h">Alerts</h2><p class="small muted">Telegram alerts for risky requests, budget changes and key changes.</p></div>
+  <button type="button" class="btn btn-secondary" data-action="alerts-open">${icon.bell()}Manage alerts</button></div></section>`;
+
+export function renderMyAgents(data: MyAgents, accounts: readonly string[], cards: readonly BudgetCard[], now: number = Date.now()): Html {
   const yields = data.rows.filter((r) => r.kind === "yield");
-  const waiting = payment.reduce((n, r) => n + (r.status === "waiting" ? r.pending : 0), 0);
-  const waitingDaos = new Set(payment.filter((r) => r.status === "waiting").map((r) => r.dao));
-  const spentKnown = payment.filter((r) => r.spent_24h !== null);
-  const spent = spentKnown.reduce((s, r) => s + BigInt(r.spent_24h ?? "0"), 0n);
-  const token = YIELD_ALLOWLIST[data.network]?.tokens[0] ?? null;
-  const farming = yields.filter((r) => r.supplied !== null && r.supplied !== "0");
-  const supplied = yields.reduce((s, r) => s + BigInt(r.supplied ?? "0"), 0n);
-  return html`<section class="tiles" aria-label="Summary">
-    ${tile("Agents", String(data.rows.length), `${String(payment.length)} payment · ${String(yields.length)} yield`)}
-    ${tile("Waiting for your approval", String(waiting), waiting === 0 ? "Nothing waits for you" : `On ${[...waitingDaos].join(", ")}`)}
-    ${tile("Spent by agents in last 24h", `${yoctoToNear(spent.toString())} NEAR`, spentKnown.length === payment.length ? `Across ${String(new Set(payment.map((r) => r.dao)).size)} Budgets` : "Some Guards do not report it")}
-    ${tile(
-      "Supplied on Rhea Lend",
-      token === null ? "—" : html`${tokenAmount(supplied.toString(), token.decimals)} <span class="tile-unit">${token.symbol}</span>`,
-      `From ${String(farming.length)} DAO${farming.length === 1 ? "" : "s"}${data.network === "testnet" ? " · test data, not real yield" : ""}`,
-    )}
-  </section>`;
-}
-
-function chips(rows: AgentRow[]): Html {
-  const filters: [AgentFilter, string][] = [["all", "All"], ["needs", "Needs you"], ["payment", "Payment"], ["yield", "Yield"], ["off", "Off"]];
-  return html`<div class="filter-chips" role="group" aria-label="Filter agents">${filters.map(
-    ([f, label]) =>
-      html`<button type="button" class="filter-chip" data-action="agents-filter" data-filter="${f}" aria-pressed="${f === "all" ? "true" : "false"}">${label} ${String(rows.filter((r) => agentMatches(r, f)).length)}</button>`,
-  )}</div>`;
-}
-
-function daoList(data: MyAgents): Html {
-  const items = data.daos.map((d) => {
-    const pay = data.rows.filter((r) => r.dao === d.dao && r.kind === "payment").length;
-    const hasYield = data.rows.some((r) => r.dao === d.dao && r.kind === "yield");
-    const what = d.error ?? `${pay === 0 ? "No payment agent" : `${String(pay)} payment agent${pay === 1 ? "" : "s"}`}${hasYield ? " · Yield on" : ""}`;
-    return html`<li class="dao-row"><span class="mono wrap">${d.dao}</span><span class="small${d.error === null ? " muted" : ""}">${what}</span><span class="dao-actions">
-      <a href="${budgetHref(d.dao)}" data-nav class="btn btn-ghost btn-sm">Budget</a>
-      <a href="${yieldHref(d.dao)}" data-nav class="btn btn-ghost btn-sm">${hasYield ? "Yield" : "Add yield agent"}</a></span></li>`;
-  });
-  return html`<section class="card" aria-labelledby="ma-daos">
-    <div class="b-head"><div><h2 id="ma-daos" class="b-h">Your DAOs</h2><p class="small muted">Where your wallet is a council member.</p></div></div>
-    <ul class="plain-list">${items}</ul>
-  </section>`;
-}
-
-export function renderMyAgents(data: MyAgents, accounts: readonly string[]): Html {
-  const top = html`<section class="budget-top" aria-label="Scope">
-    <div class="budget-name"><span class="small muted">Found from <span class="mono">${accounts.join(", ")}</span> in ${String(data.daos.length)} DAO${data.daos.length === 1 ? "" : "s"}</span><span class="tag">${data.network}</span></div>
-    <div class="actions"><button type="button" class="btn btn-secondary" data-action="rescan">${icon.rescan()}Rescan</button>${NEW_AGENT}</div>
-  </section>`;
-  const unread = data.unread === 0 ? "" : html`<p class="small muted">${String(data.unread)} DAO${data.unread === 1 ? "" : "s"} on the factory could not be read, so the page cannot tell if you sit on ${data.unread === 1 ? "it" : "them"}.</p>`;
-  const errors = data.daos
-    .filter((d) => d.error !== null)
-    .map((d) => html`<p class="check-line small">${icon.alertSmall()}<span>${d.error} Its agents are unknown, not absent.</span></p>`);
-  if (data.daos.length === 0) {
-    return html`${head(accounts)}${top}${unread}
+  const agents = data.rows.length;
+  if (cards.length === 0 && yields.length === 0) {
+    const note = data.unread === 0 ? "" : html`<p class="small muted">${plural(data.unread, "budget")} could not be read, so this page cannot tell if you sit on ${data.unread === 1 ? "it" : "them"}.</p>`;
+    return html`${head(accounts)}
       <section class="card pad stack-xs budget-narrow">
-        <p class="strong">No DAO found</p>
-        <p class="small muted">None of your connected accounts sits on the council of a DAO with a Guard or a Yield page opened here. Start with a payment agent or a yield agent.</p>
-        <div class="actions"><a class="btn btn-secondary" href="${pageHref("budget")}" data-nav>Payment agent</a><a class="btn btn-secondary" href="${pageHref("yield")}" data-nav>Yield agent</a></div>
+        <p class="strong">No agents yet</p>
+        <p class="small muted">Give your first agent a budget in about 2 minutes.</p>
+        <div class="actions"><a class="btn btn-primary" href="${pageHref("budget")}" data-nav>${icon.plus()}New agent</a></div>
+        ${note}
       </section>`;
   }
-  const rows = [...data.rows].sort((a, b) => RANK[a.status] - RANK[b.status]);
-  const list =
-    rows.length === 0
-      ? html`<p class="pad muted">You sit on ${String(data.daos.length)} DAO${data.daos.length === 1 ? "" : "s"} and ${data.daos.length === 1 ? "it has" : "they have"} no agent yet. Use New agent to start one.</p>`
-      : html`${chips(rows)}<div class="table-scroll"><table class="key-table agents">
-          <thead><tr><th>Agent</th><th>Type</th><th>DAO</th><th>Status</th><th class="num">Last 24h</th><th><span class="sr-only">Open</span></th></tr></thead>
-          <tbody>${rows.map((r) => agentRow(r, data.network))}</tbody></table></div>`;
-  return html`${head(accounts)}${top}${tiles(data)}${errors}${unread}
-    <section class="card" aria-labelledby="ma-list">
-      <div class="b-head"><div><h2 id="ma-list" class="b-h">Agents</h2><p class="small muted">Sorted by what needs you first.</p></div></div>
-      ${list}
-      <p class="small muted pad footnote">A payment agent shows here when its Guard lists it. A yield agent shows here for a DAO you sit on once its Yield page was opened in this browser. Keyfence never holds an agent's key.</p>
-    </section>
-    ${daoList(data)}`;
+  const sub = `${plural(cards.length, "budget")} · ${plural(agents, "agent")} · everything they did in the last 24 hours`;
+  const unread = data.unread === 0 ? "" : html`<p class="small muted">${plural(data.unread, "budget")} could not be read, so this page cannot tell if you sit on ${data.unread === 1 ? "it" : "them"}.</p>`;
+  return html`<div class="agents-top">${head(accounts, sub)}<div class="actions">${NEW_AGENT}</div></div>
+    ${ACTION_HOST}${needsYou(cards, now)}
+    <section class="stack-xs" aria-labelledby="ma-cards">
+      <h2 id="ma-cards" class="h2">Budgets and yield agents</h2>
+      <div class="agent-cards">${cards.map(budgetCard)}${yields.map((r) => yieldCard(r, data.network))}${NEW_CARD}</div>
+      ${unread}</section>
+    ${recentActivity(cards, now)}${ALERTS}`;
 }

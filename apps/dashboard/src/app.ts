@@ -73,8 +73,8 @@ import {
 import { readGuardDao, type GuardDao } from "./guard-read.ts";
 import { renderGuardCreate, renderGuardDao, renderGuardLoading, renderGuardPreview, renderGuardStart, renderGuardSubmitted, type GuardPreview } from "./guard-view.ts";
 import { avatar } from "./ui.ts";
-import { readMyAgents } from "./agents-read.ts";
-import { agentMatches, renderMyAgents, renderMyAgentsError, renderMyAgentsLoading, renderMyAgentsSignedOut, type AgentFilter } from "./agents-view.ts";
+import { readAgentBudgets, readMyAgents, type BudgetCard, type MyAgents } from "./agents-read.ts";
+import { renderMyAgents, renderMyAgentsError, renderMyAgentsLoading, renderMyAgentsSignedOut } from "./agents-view.ts";
 import { allowedYieldKind, registerProposal, supplyProposal, tokenRaw, withdrawAllProposal, YIELD_ALLOWLIST, YieldProposalError } from "./yield-proposals.ts";
 import { councilAccounts, readYield, rememberYieldDao, type YieldLive } from "./yield-read.ts";
 import { renderYield, renderYieldLoading, renderYieldPanel, renderYieldStart, type YieldPanel } from "./yield-view.ts";
@@ -768,11 +768,21 @@ function voteYield(button: HTMLButtonElement): void {
     });
 }
 
-/** My Agents: needs a connected wallet, then reads every council DAO of its accounts. */
+/** The last Your agents read: Review and Reject on that page act on the budget named by the button. */
+let agentsView: { data: MyAgents; accounts: string[]; cards: BudgetCard[] } | null = null;
+
+function paintMyAgents(view: { data: MyAgents; accounts: string[]; cards: BudgetCard[] }, focusMain: boolean): void {
+  agentsView = view;
+  paint(renderMyAgents(view.data, view.accounts, view.cards), "Your agents · Keyfence", focusMain, budgetNetwork(), "my-agents");
+}
+
+/** Your agents: needs a connected wallet, then reads every budget of its accounts, all at once. */
 async function renderMyAgentsPage(focusMain: boolean, seq: number): Promise<void> {
   const network = budgetNetwork();
   const title = "Your agents · Keyfence";
   const accounts = connected?.accounts ?? [];
+  budgetState = null;
+  agentsView = null;
   if (accounts.length === 0) {
     paint(renderMyAgentsSignedOut(), title, focusMain, network, "my-agents");
     return;
@@ -780,28 +790,41 @@ async function renderMyAgentsPage(focusMain: boolean, seq: number): Promise<void
   paint(renderMyAgentsLoading(accounts), title, focusMain, network, "my-agents");
   try {
     const data = await readMyAgents(accounts, BUDGET_READ_FACTORY, network);
+    const cards = await readAgentBudgets(data.budgetDaos, BUDGET_READ_FACTORY, network);
     if (seq !== scanSeq) return;
-    paint(renderMyAgents(data, accounts), title, false, network, "my-agents");
+    paintMyAgents({ data, accounts: [...accounts], cards }, false);
   } catch (e) {
     if (seq !== scanSeq) return;
     console.error("my agents read failed", { error: e });
-    const why =
-      e instanceof Error && e.message === "FACTORY_UNREADABLE"
-        ? `Could not read the Guard factory ${BUDGET_READ_FACTORY} right now.`
-        : "Could not read your DAOs right now.";
-    paint(renderMyAgentsError(why, accounts), title, false, network, "my-agents");
+    paint(renderMyAgentsError("We could not read your budgets right now. Nothing was changed.", accounts), title, false, network, "my-agents");
   }
 }
 
-/** Filter chips hide rows on the page; nothing is read again. */
-function filterAgents(chip: HTMLElement): void {
-  const filter = chip.dataset.filter as AgentFilter | undefined;
-  if (filter === undefined) return;
-  for (const c of document.querySelectorAll<HTMLElement>('[data-action="agents-filter"]')) c.setAttribute("aria-pressed", String(c === chip));
-  for (const tr of document.querySelectorAll<HTMLElement>("tr[data-agent-kind]")) {
-    const row = { kind: tr.dataset.agentKind, status: tr.dataset.agentStatus } as Parameters<typeof agentMatches>[0];
-    tr.hidden = !agentMatches(row, filter);
+/** Reads one budget again after its card failed, then paints the page with the new card. */
+async function retryAgentBudget(button: HTMLElement): Promise<void> {
+  const dao = button.dataset.dao;
+  const view = agentsView;
+  if (dao === undefined || view === null) return;
+  const [card] = await readAgentBudgets([dao], BUDGET_READ_FACTORY, budgetNetwork());
+  if (agentsView !== view || card === undefined) return;
+  if (card.live === null) {
+    const status = document.getElementById("budget-status");
+    if (status !== null) status.textContent = "Still could not read that budget. Try again in a moment.";
+    return;
   }
+  paintMyAgents({ ...view, cards: view.cards.map((c) => (c.dao === dao ? card : c)) }, false);
+}
+
+/** Your agents: points the Approve and Reject flow at the budget of the row that was pressed. */
+function selectAgentBudget(button: HTMLElement): void {
+  const live = agentsView?.cards.find((c) => c.dao === button.dataset.dao)?.live ?? null;
+  if (live !== null) budgetState = live;
+}
+
+/** Shows the waiting rows past the first five. */
+function showAllWaiting(button: HTMLElement): void {
+  for (const row of document.querySelectorAll<HTMLElement>("[data-inbox-extra]")) row.hidden = false;
+  button.remove();
 }
 
 function openAlerts(trigger: HTMLElement): void {
@@ -1752,8 +1775,11 @@ root.addEventListener("click", (event) => {
     case "yield-vote":
       voteYield(el as HTMLButtonElement);
       break;
-    case "agents-filter":
-      filterAgents(el);
+    case "agents-show-all":
+      showAllWaiting(el);
+      break;
+    case "agents-retry":
+      void retryAgentBudget(el);
       break;
     case "guard-sign":
       signGuardProposals(el as HTMLButtonElement);
@@ -1768,6 +1794,7 @@ root.addEventListener("click", (event) => {
       if (isBudgetPanel(el.dataset.panel)) openBudgetPanel(el.dataset.panel, el);
       break;
     case "budget-approve":
+      selectAgentBudget(el);
       openBudgetApprove(el);
       break;
     case "budget-agent-open":
@@ -1813,6 +1840,7 @@ root.addEventListener("click", (event) => {
       break;
     }
     case "budget-act":
+      selectAgentBudget(el);
       closeBudgetDrawer();
       actOnPending(el as HTMLButtonElement);
       break;
