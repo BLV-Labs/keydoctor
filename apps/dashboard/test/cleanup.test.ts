@@ -113,11 +113,15 @@ describe("GĐ8 cleanup page", () => {
   it("shows progress, the urgent new key, ordered key lists and Meteor links", () => {
     const out = renderCleanup(accountReport(0), "kd-demo.sputnik-dao.testnet", "safe");
     const t = text(out);
-    assert.match(t, /0 of 4 steps done · read at block 182,340,111/);
-    assert.match(t, /Delete this key now Full-access key ed25519:zsNx…gFW3 was added about 3 hours ago/);
-    assert.match(t, /1\. Revoke app keys you do not need To do 1 key, in this order:/);
-    assert.match(t, /App key with unlimited allowance · App key can call any method/);
-    assert.match(out.value, /<progress class="progress" aria-labelledby="progress-label" value="0" max="4">/);
+    assert.match(t, /0 of 2 steps done · Checked Nov 3, 2026, 02:00 UTC · Check again/);
+    assert.match(t, /Remove this key now Master key ed25519:zsNx…gFW3 was added about 3 hours ago/);
+    assert.match(t, /1\. Revoke app keys you do not use To do 1 key, in this order:/);
+    assert.match(t, /Use game\.\s?kd-demo\.\s?testnet/);
+    assert.match(t, /Too broad/);
+    // Only the first open step is a full card; the next one is a title and one line.
+    assert.match(t, /2\. Remove old or unused master keys Remove master keys nobody uses/);
+    assert.equal((out.value.match(/class="card pad stack-sm step-card/g) ?? []).length, 3, "step 1 plus the two Going further steps");
+    assert.match(out.value, /<progress class="progress" aria-labelledby="progress-label" value="0" max="2">/);
     // The header (every page) carries Connect Wallet; the page itself has the owner-only wallet bar.
     assert.equal((out.value.match(/data-action="open-wallet"/g) ?? []).length, 1);
     assert.match(out.value, /data-wallet-bar/);
@@ -127,22 +131,26 @@ describe("GĐ8 cleanup page", () => {
     assert.match(layout, /class="wallet-menu" data-wallet-on hidden>[\s\S]*data-action="disconnect-wallet">Disconnect<\/button>/);
     assert.doesNotMatch(out.value, /Open Meteor Wallet<\/button>/);
     // Every listed key gets a View button, and the page carries the dialog they fill.
-    assert.equal((out.value.match(/data-action="view-key"/g) ?? []).length, (out.value.match(/<li class="key-/g) ?? []).length);
+    assert.equal((out.value.match(/data-action="view-key"/g) ?? []).length, (out.value.match(/<span class="actions">/g) ?? []).length);
     assert.match(out.value, /<dialog id="key-dialog"/);
     assert.match(out.value, /aria-pressed="true">Safe cleanup/);
-    assert.doesNotMatch(t, /Delete the remaining Ed25519/);
+    // The post-quantum steps sit in a closed "Going further" section, not in the main list.
+    assert.match(out.value, /<details class="card tech more-checks">\s*<summary>Going further<\/summary>/);
   });
 
   it("the full level adds step 5, blocked until steps 1 to 4 are done", () => {
     const t = text(renderCleanup(accountReport(0), null, "full"));
-    assert.match(t, /0 of 5 steps done/);
+    assert.match(t, /0 of 2 steps done/);
+    assert.match(t, /5\. Delete the remaining Ed25519 full-access keys To do/);
     assert.match(t, /Still needed: finish steps 1 to 4 first\./);
   });
 
   it("a finished account shows done steps", () => {
     const t = text(renderCleanup(accountReport(2), null, "safe"));
-    assert.match(t, /1\. Revoke app keys you do not need Done/);
+    assert.match(t, /1\. Revoke app keys you do not use Done/);
     assert.match(t, /3\. Add an ML-DSA key Done/);
+    assert.match(t, /2 of 2 steps done/);
+    assert.match(t, /All steps are done\./);
   });
 
   it("routes ?view=cleanup&level=full", () => {
@@ -159,7 +167,13 @@ describe("GĐ8 sign buttons", () => {
     assert.doesNotMatch(html, /data-action="delete-keys"/);
     assert.doesNotMatch(html, /these \d+ keys with Meteor/);
     assert.match(html, /data-action="delete-key" data-key="[^"]+" data-status="sign-status-[a-z_]+"[^>]*>Revoke<\/button>/);
-    assert.match(html, /data-action="delete-key" data-key="[^"]+" data-status="sign-status-[a-z_]+"[^>]*>Delete<\/button>/);
+    // Step 2 only opens once step 1 is done: take the app keys off the account to see a master key's Remove.
+    const r = accountReport(0);
+    const m0 = r.members[0] as Member;
+    const noApps = { ...r, members: [{ ...m0, keys: m0.keys.filter((k) => k.permission.type === "full_access") }] };
+    const second = renderCleanup(noApps, null, "safe").value;
+    assert.match(second, /data-action="delete-key" data-key="[^"]+" data-status="sign-status-[a-z_]+"[^>]*>Remove<\/button>/);
+    assert.doesNotMatch(second, />Delete<\/button>/);
     assert.doesNotMatch(renderCleanup(accountReport(2), null, "safe").value, /data-action="delete-key"/);
   });
 

@@ -1,10 +1,11 @@
 // The DAO's proposals (C7), newest first, one page at a time. Loaded after the council report paints, so a slow
 // proposal read never delays it.
-import type { ListProposalsResult, ProposalInfo, Vote } from "key-doctor";
+import type { ListProposalsResult, Member, ProposalInfo, Vote } from "key-doctor";
 import { clamp } from "./clamp.ts";
 import { formatInt, yoctoToNear } from "./format.ts";
 import { html, type Html } from "./html.ts";
 import { statusIcon } from "./icons.ts";
+import { voterKeysLine } from "./key-verdict.ts";
 import { cardHead } from "./ui.ts";
 import { NO_PAGING, PAGE_SIZE, pager, pageWindow, type Paging } from "./paging.ts";
 
@@ -17,16 +18,16 @@ const KIND_TEXT: Record<string, string> = {
   call: "Function call",
   add_member_to_role: "Add member",
   remove_member_from_role: "Remove member",
-  config: "Change config",
-  policy: "Change policy",
-  upgrade_self: "Upgrade DAO",
+  config: "Change settings",
+  policy: "Change voting rules",
+  upgrade_self: "Upgrade treasury",
   upgrade_remote: "Upgrade contract",
 };
 
 /** Kinds that change who controls the DAO or its code: the bot warns the council about these too. */
 const GOVERNANCE = new Set(["add_member_to_role", "remove_member_from_role", "config", "policy", "upgrade_self", "upgrade_remote"]);
 
-const kindText = (label: string): string => KIND_TEXT[label] ?? (label.startsWith("policy_") ? "Change policy" : label.replaceAll("_", " "));
+const kindText = (label: string): string => KIND_TEXT[label] ?? (label.startsWith("policy_") ? "Change voting rules" : label.replaceAll("_", " "));
 const isGovernance = (label: string): boolean => GOVERNANCE.has(label) || label.startsWith("policy_");
 
 /** Sputnik statuses → pill tone and a readable label. Unknown statuses stay neutral. */
@@ -71,50 +72,52 @@ function votersLine(voters: [string, Vote][]): Html {
   );
 }
 
-function row(p: ProposalInfo): Html {
+function row(p: ProposalInfo, members: readonly Member[]): Html {
   const voters = Object.entries(p.votes);
   const governance = isGovernance(p.kind_label);
   return html`<li class="stack-xs pad proposal-row">
     <div class="tags">
       <span class="tag mono">#${String(p.id)}</span>
       ${governance
-        ? html`<span class="tag tag-warn" title="Changes who controls the DAO or its code">${statusIcon("cleanup", 12)}${kindText(p.kind_label)}<span class="sr-only"> (governance change)</span></span>`
+        ? html`<span class="tag tag-warn" title="Changes who controls the treasury or its code">${statusIcon("cleanup", 12)}${kindText(p.kind_label)}<span class="sr-only"> (governance change)</span></span>`
         : html`<span class="tag">${kindText(p.kind_label)}</span>`}
       ${statusPill(p.status)}
     </div>
     ${p.transfer ? transferLine(p.transfer) : ""}
     ${p.description === "" ? "" : clamp(p.description, 3)}
-    <p class="small muted">Proposed by <span class="mono wrap">${p.proposer}</span> · ${votesLine(p)}</p>
+    <p class="small muted">Started by <span class="mono wrap">${p.proposer}</span> · ${votesLine(p)}</p>
     ${voters.length === 0 ? "" : votersLine(voters)}
     ${p.pending_voters.length === 0 || p.status !== "InProgress"
       ? ""
-      : clamp(html`<span class="small muted">Still to vote: <span class="mono">${p.pending_voters.join(", ")}</span></span>`, 2)}
-    ${p.ui_url !== null && /^https:\/\//.test(p.ui_url) ? html`<a class="small strong self-start" href="${p.ui_url}" target="_blank" rel="noopener">Open proposal →</a>` : ""}
+      : html`${clamp(html`<span class="small muted">Still to vote: <span class="mono">${p.pending_voters.join(", ")}</span></span>`, 2)}${
+          voterKeysLine(p.pending_voters, members) === "" ? "" : html`<p class="small muted">Their keys: ${voterKeysLine(p.pending_voters, members)}</p>`
+        }`}
+    ${p.ui_url !== null && /^https:\/\//.test(p.ui_url) ? html`<a class="small strong self-start" href="${p.ui_url}" target="_blank" rel="noopener">Open vote →</a>` : ""}
   </li>`;
 }
 
 const head = (note: string): Html =>
-  cardHead("proposals-h", "Proposals", note);
+  cardHead("proposals-h", "Votes", note);
 
 export function proposalsPlaceholder(): Html {
   return html`<section id="${PROPOSALS_ID}" aria-labelledby="proposals-h" class="card flush" tabindex="-1" data-list-anchor="${PROPOSALS_LIST}">
     ${head("Newest first")}
-    <p class="pad muted" role="status">Loading proposals…</p>
+    <p class="pad muted" role="status">Loading votes…</p>
   </section>`;
 }
 
 /** `result` null = the read failed; the council report above stays valid. `page` is the page that was read. */
-export function renderProposals(result: ListProposalsResult | null, page = 1, paging: Paging = NO_PAGING): Html {
-  if (result === null) return html`${head("Newest first")}<p class="pad muted">Could not read proposals right now. The council report above is not affected.</p>`;
-  if (result.total === 0) return html`${head("Newest first")}<p class="pad muted">This DAO has no proposals yet.</p>`;
+export function renderProposals(result: ListProposalsResult | null, page = 1, paging: Paging = NO_PAGING, members: readonly Member[] = []): Html {
+  if (result === null) return html`${head("Newest first")}<p class="pad muted">Could not read votes right now. The council check above is not affected.</p>`;
+  if (result.total === 0) return html`${head("Newest first")}<p class="pad muted">This treasury has no votes yet.</p>`;
   const w = pageWindow(result.total, page, PAGE_SIZE);
   const body =
     result.proposals.length === 0
-      ? html`<p class="pad muted">No proposal on this page could be read right now.</p>`
-      : html`<ul class="plain divided" role="list">${result.proposals.map(row)}</ul>`;
+      ? html`<p class="pad muted">No vote on this page could be read right now.</p>`
+      : html`<ul class="plain divided" role="list">${result.proposals.map((p) => row(p, members))}</ul>`;
   const unread =
     result.errors.length > 0 && result.proposals.length > 0
-      ? html`<p class="pad small muted">${formatInt(result.errors.length)} proposal(s) on this page could not be read and are not shown.</p>`
+      ? html`<p class="pad small muted">${formatInt(result.errors.length)} vote(s) on this page could not be read and are not shown.</p>`
       : "";
-  return html`${head(`Newest first · ${formatInt(result.total)} in total`)}${body}${unread}${pager(PROPOSALS_LIST, "Proposals", w, paging)}`;
+  return html`${head(`Newest first · ${formatInt(result.total)} in total`)}${body}${unread}${pager(PROPOSALS_LIST, "Votes", w, paging)}`;
 }

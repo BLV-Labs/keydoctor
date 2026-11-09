@@ -38,7 +38,7 @@ describe("compact layout and themes", () => {
   it("account page: the keys card links to the cleanup plan and the Uses column is numeric", () => {
     const r = dao();
     const out = renderAccount({ ...r, target: { type: "account", id: "a.kd-demo.testnet" }, members: [r.members[0] as Member] }, null).value;
-    assert.match(out, /class="head-link"[^>]*view=cleanup[^>]*>Cleanup plan →/);
+    assert.match(out, /class="head-link"[^>]*view=cleanup[^>]*>Clean up keys →/);
     assert.match(out, /<th scope="col" class="num">Uses<\/th>/);
     assert.match(out, /data-label="Uses" class="num"/);
   });

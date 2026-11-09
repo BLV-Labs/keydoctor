@@ -186,28 +186,32 @@ export function renderAgents(workerUrl = ""): Html {
 }
 
 export function renderScanning(target: string, from: string | null): Html {
+  // The bars fade in after 300 ms (CSS), so a fast read never flashes a skeleton.
   const rows = Array.from({ length: 3 }, () => html`<div class="skeleton-row"><span></span><span></span><span></span></div>`);
   return html`${breadcrumb(target, from)}
     <section class="page-head">
       <div class="stack-sm grow">
         <h1 class="h1 mono wrap">${target}</h1>
-        <p class="meta" role="status">Reading keys from NEAR RPC…</p>
+        <p class="meta" role="status">Reading keys from NEAR…</p>
+        <p class="small muted">Usually 2–5 seconds.</p>
       </div>
     </section>
-    <section class="card pad stack-sm" aria-busy="true" aria-label="Loading scan results">${rows}</section>`;
+    <section class="card pad stack-sm skeleton-late" aria-busy="true" aria-label="Loading scan results">${rows}</section>`;
 }
 
 export function renderError(target: string, from: string | null, err: KdError, network: Network = "testnet"): Html {
+  const missing = err.code === "NOT_FOUND";
+  const invalid = err.code === "INVALID_TARGET";
   return html`${breadcrumb(target, from)}
     <section class="page-head"><div class="stack-sm grow"><h1 class="h1 mono wrap">${target}</h1></div></section>
     <section role="alert" class="alert-box">
       ${icon.alert()}
       <div class="stack-sm">
-        <p class="alert-title">${err.code === "NOT_FOUND" ? "Account not found" : err.code === "INVALID_TARGET" ? "Invalid name" : "Scan failed"}</p>
-        <p>${err.message.en}</p>
+        <p class="alert-title">${missing ? html`No account called <span class="mono">${target}</span>` : invalid ? "Invalid name" : "We could not read the chain"}</p>
+        <p>${missing ? "Check the spelling, and whether it ends in .testnet or .near." : invalid ? err.message.en : "The risk is unknown, not low. Nothing was changed."}</p>
         <div class="actions">
-          ${err.retryable ? html`<button type="button" class="btn btn-secondary" data-action="rescan">${icon.rescan()}Try again</button>` : ""}
-          <a href="${homeHref(network)}" data-nav class="btn btn-secondary">Check another account</a>
+          ${err.retryable && !missing ? html`<button type="button" class="btn btn-secondary" data-action="rescan">${icon.rescan()}Try again</button>` : ""}
+          <a href="${homeHref(network)}" data-nav class="btn btn-secondary">Try another name</a>
         </div>
       </div>
     </section>`;

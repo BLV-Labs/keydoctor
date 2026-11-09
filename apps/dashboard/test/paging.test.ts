@@ -73,7 +73,8 @@ describe("paged lists", () => {
     const r = manyKeys(14);
     const total = (r.members[0] as Member).keys.length;
     const out = renderAccount(r, null, parsePaging(`?target=${r.target.id}&keys_page=2`));
-    assert.equal((out.value.match(/data-action="delete-key"/g) ?? []).length, total - 10);
+    // One button per row on this page, plus the banner's "Remove it now" for the new key.
+    assert.equal((out.value.match(/data-action="delete-key"/g) ?? []).length, total - 10 + 1);
     assert.match(text(out), new RegExp(`Showing 11–${total} of ${total}`));
   });
 
@@ -97,18 +98,17 @@ describe("paged lists", () => {
 });
 
 describe("risk colors and long text", () => {
-  it("Delete is red, Revoke is amber; a risky account makes the cleanup plan the one primary action", () => {
+  it("Remove is red, Revoke is amber; the banner offers the urgent Remove it now", () => {
     const out = renderAccount(manyKeys(1), null).value;
+    assert.match(out, /class="btn btn-danger btn-locked self-start"[^>]*>Remove it now</);
     assert.match(out, /class="btn btn-danger btn-locked self-start"[^>]*>Delete</);
     assert.match(out, /class="btn btn-warn btn-locked self-start"[^>]*>Revoke</);
-    assert.match(out, /class="btn btn-primary" href="[^"]*view=cleanup"/);
-    assert.equal((out.match(/btn-primary/g) ?? []).length, 1);
   });
 
   it("only the newly added full-access key row is tinted and labelled", () => {
     const out = renderAccount(manyKeys(1), null).value;
     assert.equal((out.match(/class="row-new"/g) ?? []).length, 1);
-    assert.match(out, /New key<\/span>/);
+    assert.match(out, /New, not you\?<\/span>/);
   });
 
   it("the new key's row tint and its New key pill follow the key's worst flag, so they agree with the reason pill", () => {
@@ -119,7 +119,7 @@ describe("risk colors and long text", () => {
     const out = renderAccount(r, null).value;
     const row = out.match(/<tr class="row-new"[^>]*>[\s\S]*?<\/tr>/)![0];
     assert.equal(row.match(/data-tone="(\w+)"/)?.[1] ?? "high", tone);
-    assert.match(row, new RegExp(`pill pill-sm pill-${tone}">[^]*?New key`));
+    assert.match(row, new RegExp(`pill pill-sm pill-${tone}">[^]*?New, not you\\?`));
   });
 
   it("risk explanations and cleanup instructions are never cut", () => {
@@ -141,7 +141,7 @@ describe("risk colors and long text", () => {
     }).value;
     assert.match(out, /pill-info">In progress/);
     assert.match(out, /pill-ok">Approved/);
-    assert.match(out, /tag tag-warn"[^>]*>.*Upgrade DAO<span class="sr-only"> \(governance change\)/);
+    assert.match(out, /tag tag-warn"[^>]*>.*Upgrade treasury<span class="sr-only"> \(governance change\)/);
     assert.match(out, /vote-high">rejected</);
     assert.doesNotMatch(out, /rejectd/);
   });
