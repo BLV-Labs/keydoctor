@@ -2,6 +2,7 @@
 // Payment agents come from the Guard factory's `list_guards`; Yield agents from the DAOs this browser opened on
 // the Yield page (a Yield agent has no contract to list). One unreadable DAO never hides the others.
 import { createRpc, DEFAULT_RPC_URLS, type Network } from "key-doctor";
+import { readBudget, type BudgetLive } from "./budget-read.ts";
 import { readGuardDao, type GuardDao } from "./guard-read.ts";
 import { suffixNetwork } from "./route.ts";
 import { councilAccounts, parsePolicy, readYieldPositions, seenYieldDaos, type YieldPosition } from "./yield-read.ts";
@@ -35,6 +36,8 @@ export interface MyAgents {
   network: Network;
   daos: CouncilDao[];
   rows: AgentRow[];
+  /** The council DAOs that have a Budget (a Guard), in read order: one card each on the Your agents page. */
+  budgetDaos: string[];
   /** DAOs from the factory whose policy could not be read, so the page cannot tell if they are yours. */
   unread: number;
 }
@@ -85,6 +88,21 @@ export function yieldRow(dao: string, positions: YieldPosition[] | null): AgentR
     spent_24h: null,
     supplied,
   };
+}
+
+/** One budget on the Your agents page. `live` is null when its read failed, so only its card says so. */
+export interface BudgetCard {
+  dao: string;
+  live: BudgetLive | null;
+}
+
+/** Reads every budget in parallel; a failed read leaves `live` null and never touches the others. */
+export async function readAgentBudgets(daos: readonly string[], factory: string, network: Network, read: typeof readBudget = readBudget): Promise<BudgetCard[]> {
+  const settled = await Promise.allSettled(daos.map((dao) => read(dao, factory, network)));
+  return settled.map((r, i): BudgetCard => {
+    if (r.status === "rejected") console.error("budget read failed", { dao: daos[i], error: r.reason });
+    return { dao: daos[i] ?? "", live: r.status === "fulfilled" ? r.value : null };
+  });
 }
 
 /** Throws `FACTORY_UNREADABLE` when `list_guards` fails. An empty factory reads only the Yield DAOs. */
@@ -139,5 +157,6 @@ export async function readMyAgents(accounts: readonly string[], factory: string,
   );
   const order = new Map(all.map((d, i) => [d, i]));
   const byDao = (a: { dao: string }, b: { dao: string }) => (order.get(a.dao) ?? 0) - (order.get(b.dao) ?? 0);
-  return { network, daos: daos.sort(byDao), rows: rows.sort(byDao), unread };
+  const budgetDaos = daos.filter((d) => guarded.has(d.dao)).sort(byDao).map((d) => d.dao);
+  return { network, daos: daos.sort(byDao), rows: rows.sort(byDao), budgetDaos, unread };
 }

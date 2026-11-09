@@ -44,7 +44,7 @@ const summaryOf = (g: GuardLive): string =>
     ? "We could not read the limits. Nothing was changed."
     : fenceSentence(g.agents?.length ?? g.config?.agents ?? null, near(g.policy.max_per_day), near(g.policy.max_per_tx), g.whitelist?.length ?? g.config?.whitelist ?? null);
 
-const near = (yocto: string | null | undefined): string => (yocto === null || yocto === undefined ? "unknown" : `${yoctoToNear(yocto)} NEAR`);
+export const near = (yocto: string | null | undefined): string => (yocto === null || yocto === undefined ? "unknown" : `${yoctoToNear(yocto)} NEAR`);
 
 const LEAD = "A budget your AI agent can spend, within rules you set. Larger payments wait for your approval. Top up or withdraw anytime.";
 
@@ -89,7 +89,7 @@ export function describeKind(kind: Record<string, unknown>): string {
   return other.startsWith("ChangePolicy") ? `Change who controls this Budget (${other})` : other;
 }
 
-function percent(spent: string, limit: string): number {
+export function percent(spent: string, limit: string): number {
   const max = BigInt(limit);
   return max === 0n ? 0 : Math.min(100, Number((BigInt(spent) * 100n) / max));
 }
@@ -103,16 +103,16 @@ function proposalPeriod(b: BudgetLive): bigint | null {
 }
 
 /** Whole hours until a proposal expires, rounded up; 0 once it has; null when the chain did not say. */
-function hoursLeft(p: BudgetProposal, b: BudgetLive, now: number): number | null {
+export function hoursLeft(p: BudgetProposal, b: BudgetLive, now: number): number | null {
   const period = proposalPeriod(b);
   if (p.submission_time === null || period === null) return null;
   const left = Number((BigInt(p.submission_time) + period) / 1_000_000n) - now;
   return left <= 0 ? 0 : Math.ceil(left / 3_600_000);
 }
 
-const expiryText = (left: number | null): string | null => (left === null ? null : left === 0 ? "Expired" : `Expires in ${hours(left)}`);
+export const expiryText = (left: number | null): string | null => (left === null ? null : left === 0 ? "Expired" : `Expires in ${hours(left)}`);
 
-function ago(nanos: string | null, now: number): string {
+export function ago(nanos: string | null, now: number): string {
   if (nanos === null) return "";
   const minutes = Math.floor((now - Number(BigInt(nanos) / 1_000_000n)) / 60_000);
   if (minutes < 1) return "Just now";
@@ -122,7 +122,7 @@ function ago(nanos: string | null, now: number): string {
   return `${days} ${days === 1 ? "day" : "days"} ago`;
 }
 
-const agentName = (g: GuardLive | null, account: string): string => {
+export const agentName = (g: GuardLive | null, account: string): string => {
   // A plan step is recorded with the Guard as its agent: name it for what it is, not by the Guard's account.
   if (g !== null && account === g.guard_id) return "Scheduled payout";
   const label = g?.agents?.find((a) => a.account_id === account)?.label ?? "";
@@ -175,7 +175,7 @@ function tiles(b: BudgetLive, now: number): Html {
 }
 
 /** Why a payment waited, in the owner's words, with the limit it crossed. An unknown code is shown as it is. */
-function reasonText(code: string, g: GuardLive | null, receiver: string | null = null): string {
+export function reasonText(code: string, g: GuardLive | null, receiver: string | null = null): string {
   const p = g?.policy ?? null;
   switch (code) {
     case "NOT_WHITELISTED":
@@ -193,7 +193,7 @@ function reasonText(code: string, g: GuardLive | null, receiver: string | null =
   }
 }
 
-const requestOf = (b: BudgetLive, p: BudgetProposal): BudgetRequest | null => b.requests?.find((r) => r.proposal_id === p.id) ?? null;
+export const requestOf = (b: BudgetLive, p: BudgetProposal): BudgetRequest | null => b.requests?.find((r) => r.proposal_id === p.id) ?? null;
 
 function needsRow(p: BudgetProposal, b: BudgetLive, now: number): Html {
   const g = b.guard;
@@ -250,7 +250,7 @@ function activityGroup(r: BudgetRequest): Exclude<ActivityFilter, "all"> | null 
   return r.status === "Submitted" || r.status === "Pending" ? "waiting" : null;
 }
 
-function activityRow(r: BudgetRequest, g: GuardLive | null, now: number): Html {
+export function activityRow(r: BudgetRequest, g: GuardLive | null, now: number): Html {
   const group = activityGroup(r);
   const tone = group === "rejected" ? "pill-high" : group === "waiting" ? "pill-cleanup" : "pill-ok";
   const mark = group === "rejected" ? icon.alertSmall() : group === "waiting" ? icon.clock() : group === "auto" ? icon.check() : "";
@@ -395,6 +395,13 @@ function technical(b: BudgetLive, g: GuardLive, network: Network): Html {
       <div class="tech-row"><dt>Network</dt><dd>${network}</dd></div></dl></details>`;
 }
 
+/** The state of one budget in a pill: Active, Agents paused, Setup not finished, Status unknown. */
+export function budgetStatusPill(g: GuardLive): Html {
+  if (g.config === null) return html`<span class="pill pill-cleanup">Status unknown</span>`;
+  if (g.config.paused) return html`<span class="pill pill-cleanup">${icon.alertSmall()}Agents paused</span>`;
+  return g.in_role ? html`<span class="pill pill-ok">Active</span>` : html`<span class="pill pill-cleanup">Setup not finished</span>`;
+}
+
 /** The live page for one DAO that has a Guard. */
 export function renderBudget(b: BudgetLive, network: Network, setup: Html | "" = "", now: number = Date.now()): Html {
   const g = b.guard;
@@ -405,7 +412,7 @@ export function renderBudget(b: BudgetLive, network: Network, setup: Html | "" =
       ${setup}`;
   }
   const paused = g.config?.paused === true;
-  const status = g.config === null ? html`<span class="pill pill-cleanup">Status unknown</span>` : paused ? html`<span class="pill pill-cleanup">${icon.alertSmall()}Agents paused</span>` : g.in_role ? html`<span class="pill pill-ok">Active</span>` : html`<span class="pill pill-cleanup">Setup not finished</span>`;
+  const status = budgetStatusPill(g);
   const reserve = g.policy === null || b.withdrawable === null ? null : BigInt(b.withdrawable) < BigInt(g.policy.min_reserve) ? g.policy.min_reserve : null;
   return html`<nav class="breadcrumb" aria-label="Breadcrumb"><a href="${pageHref("my-agents", network)}" data-nav>Your agents</a><span aria-hidden="true">/</span><span aria-current="page" class="wrap">${b.dao.dao}</span></nav>
     <section class="budget-top" aria-label="Budget">
