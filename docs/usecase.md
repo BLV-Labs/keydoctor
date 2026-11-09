@@ -36,7 +36,7 @@ Tài liệu mô tả **19 use case**: ai kích hoạt, các thành phần gọi 
 | DAO của Agent Budget | DAO Sputnik một thành viên, tạo qua factory chính thức của NEAR | GĐ25, GĐ26 |
 | Guard factory | Tạo Guard không key (Guard tạo account agent); **chỉ DAO gọi được cho chính nó** (chốt `predecessor`) | GĐ25 |
 | Keeper | Worker cron gọi `execute_plan_step`, `sync_request`. Worker giữ đúng một key: account keeper **không đặc quyền**, số dư nhỏ chỉ đủ gas (ADR mới, mục 11.11.5 của `final-idea.md`) | GĐ29 |
-| Danh mục chiến lược | Scheduled payouts, DCA NEAR, các chiến lược "Sắp có", Build your own | GĐ30 |
+| Danh mục chiến lược | Scheduled payouts, DCA NEAR → USDT, các chiến lược "Sắp có", Build your own | GĐ30 |
 
 ### 0.2 Sơ đồ tổng thể
 
@@ -1043,7 +1043,7 @@ sequenceDiagram
 | Pause agents / Resume | `guard.pause()` / đề xuất `unpause` | **Có** |
 | Edit rules | Hai giao dịch: `add_proposal(FunctionCall guard.set_policy / add_whitelist / remove_whitelist)`, rồi `act_proposal(id, VoteApprove, proposal)` | **Có** |
 | Add / tắt / gỡ agent | Như trên với `add_agent` (kèm public key, Guard tạo account agent), `set_agent_enabled`, `remove_agent` | **Có** |
-| Enable USDC | Đề xuất `storage_deposit` + tự duyệt | Không |
+| Enable USDT (DCA) | Đề xuất `storage_deposit` trên `wrap.near`, Rhea, USDT + tự duyệt | Không |
 
 Mọi thay đổi luật có hiệu lực ngay (không có luật chờ 24 giờ; lý do ở mục 11.10.6 của `final-idea.md`).
 
@@ -1075,10 +1075,10 @@ sequenceDiagram
   participant DAO as DAO của Budget
   participant G as Guard
 
-  U->>D: Bấm Set up trên thẻ DCA NEAR (hoặc Scheduled payouts)
+  U->>D: Bấm Set up trên thẻ DCA NEAR → USDT (hoặc Scheduled payouts)
   D-->>U: Ngăn kéo: tham số + tóm tắt + danh sách kiểm tra
   loop Mỗi điều kiện chưa đạt
-    D-->>U: Nút chính = việc tiếp theo (Create Budget / Enable USDC / Top up thiếu / Lower amount)
+    D-->>U: Nút chính = việc tiếp theo (Create Budget / Enable USDT / Top up thiếu / Lower amount)
     U->>W: Ký việc đó
     D-->>U: Giữ nguyên cấu hình, chuyển điều kiện kế tiếp
   end
@@ -1095,11 +1095,11 @@ sequenceDiagram
 | Chiến lược | Tham số |
 |---|---|
 | Scheduled payouts | Người nhận (trong danh sách), token, số tiền mỗi lần, tần suất, số lần, bắt đầu |
-| DCA NEAR | Mua bằng USDC, số tiền mỗi lần, tần suất (ngày / tuần), số lần hoặc ngày kết thúc, trượt giá tối đa (0,5 / 1 / 2%), bắt đầu |
+| DCA NEAR → USDT | Số NEAR bán mỗi lần, tần suất (ngày / tuần), số lần hoặc ngày kết thúc, trượt giá tối đa (0,5 / 1 / 2%), bắt đầu |
 
 ### Danh sách kiểm tra và công thức
 
-Theo mục 11.11.4 của `final-idea.md`: Connect wallet → Create Agent Budget → Enable token → Top up `<tổng cần − số dư>` (hoặc nạp một phần k lần) → `amount_per_run` ≤ hạn mức 24 giờ → người nhận trong danh sách (payout) → Guard đủ NEAR → Start. Tính bằng đơn vị nhỏ nhất của token.
+Theo mục 11.11.4 của `final-idea.md`: Connect wallet → Create Agent Budget → Enable USDT (DCA) → Top up `<tổng cần − số dư>` (hoặc nạp một phần k lần) → `amount_per_run` ≤ hạn mức 24 giờ → người nhận trong danh sách (payout) → Guard đủ NEAR → Start. Tính bằng đơn vị nhỏ nhất của token.
 
 ### Thẻ "Sắp có" và "Build your own"
 
@@ -1137,9 +1137,9 @@ sequenceDiagram
     DAO-->>U: Người nhận nhận tiền
   else dca
     G->>R: get_return(pool, amount) → min_out
-    G->>DAO: add_proposal(FunctionCall ft_transfer_call USDC → Rhea, min_out) + VoteApprove
-    DAO->>R: Swap
-    R-->>DAO: wNEAR về DAO
+    G->>DAO: add_proposal(FunctionCall wrap.near: near_deposit + ft_transfer_call → Rhea, min_out) + VoteApprove
+    DAO->>R: Swap wNEAR → USDT
+    R-->>DAO: USDT về DAO
   end
   K->>K: Đọc kết quả giao dịch (log Rhea: số mua được)
   K->>DB: Lưu PlanStepResult
@@ -1170,7 +1170,7 @@ sequenceDiagram
 - Payout 3 lần chạy đủ, 3 tin Telegram, mỗi tin có link giao dịch.
 - Test K2: một account lạ gọi `execute_plan_step` cho kết quả giống keeper; gọi trước hạn bị từ chối; gọi hai lần cùng bước không chạy hai lần.
 - Rút bớt tiền làm thiếu số dư: kế hoạch tạm dừng và tin có nút Top up; nạp lại rồi Resume thì chạy tiếp.
-- DCA (nếu có GĐ31): 2 lần mua, tin hiện đúng số NEAR mua được và giá trung bình.
+- DCA (nếu có GĐ31): 2 lần bán, tin hiện đúng số USDT nhận được và giá trung bình.
 
 ---
 
@@ -1187,11 +1187,11 @@ sequenceDiagram
   participant M as Guard MCP (local)
   participant G as Guard
 
-  U->>A: Có chiến lược nào để mua NEAR đều đặn không?
+  U->>A: Có chiến lược nào để bán NEAR đều đặn lấy USDT không?
   A->>M: strategies_list
   M-->>A: Danh mục + setup_url
-  A-->>U: "DCA NEAR: thiết lập tại ?page=budget&strategy=dca-near"
-  U->>A: Tạo kế hoạch DCA 100 USDC mỗi ngày giúp tôi
+  A-->>U: "DCA NEAR → USDT: thiết lập tại ?page=budget&strategy=dca-near"
+  U->>A: Tạo kế hoạch DCA 5 NEAR sang USDT mỗi ngày giúp tôi
   A-->>U: "Tôi không tạo được kế hoạch; bạn thiết lập và ký ở link trên"
   U->>A: Kế hoạch DCA chạy tới đâu rồi?
   A->>M: plans_status
