@@ -64,6 +64,12 @@ describe("budgetAlerts", () => {
     assert.match(got[2]!.messages.vi.body, /Kế hoạch hoàn tất/);
   });
 
+  it("a DCA plan is titled as a NEAR → USDT sale, not a NEAR buy (owner decision 2026-11-09, §11.11.3)", () => {
+    const [a] = alerts({ plans: [plan({ strategy_id: "dca-near" })], requests: [request(1)] });
+    assert.equal(a!.messages.en.title, "DCA NEAR → USDT (1/3)");
+    assert.equal(a!.messages.vi.title, "DCA NEAR → USDT (1/3)");
+  });
+
   it("only a plain step can be muted, and only a pause is high (§9.5)", () => {
     const [step] = alerts({ requests: [request(1)] });
     assert.equal(step!.muteable, true);
