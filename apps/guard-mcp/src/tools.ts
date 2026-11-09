@@ -1,4 +1,4 @@
-// The three Guard MCP tools (docs/final-idea.md §11.6.2) and the kd.guard_result.v1 mapping (§4.8).
+// The Guard MCP tools (docs/final-idea.md §11.6.2, §11.12.3) and the kd.guard_result.v1 mapping (§4.8).
 // The agent never picks the request_id or the raw yocto amount; descriptions and messages teach it not to
 // resend a Pending request and not to split a payment.
 import { randomUUID } from "node:crypto";
@@ -13,6 +13,10 @@ const ACCOUNT_ID = /^(?=.{2,64}$)(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z
 const REQUEST_ID = /^[A-Za-z0-9_-]{8,64}$/;
 const FINAL = new Set(["Executed", "Rejected", "Expired", "Failed"]);
 const DEFAULT_RPC = { mainnet: "https://rpc.mainnet.fastnear.com", testnet: "https://rpc.testnet.fastnear.com" };
+/** The dashboard where the owner sets up and signs plans; the DAO name fixes the network there. */
+const DASHBOARD_URL = "https://key-doctor-dashboard.pages.dev/";
+const PLAN_PAGE = 50; // get_plans returns at most 50 a call
+const NO_ADVICE = "Prices can change. This is not investment advice.";
 
 export interface Config {
   network: "mainnet" | "testnet";
@@ -78,7 +82,55 @@ export const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   },
+  {
+    name: "strategies_list",
+    title: "List Budget strategies",
+    description:
+      "Read-only. The strategies an owner can run on this Budget (scheduled payouts, DCA, staking and others), each with its status (live, coming_soon, contact) and, when it can be set up, a setup_url on the Key Doctor dashboard. You cannot create, change or stop a plan: send the setup_url to the owner, who sets it up and signs it in their wallet.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: true },
+  },
+  {
+    name: "plans_status",
+    title: "Check scheduled plans",
+    description:
+      "Read-only. The plans on this Budget's Guard: what each pays, runs done of runs total, status (active, paused with the reason, completed, cancelled) and the next run time, with a dashboard link. You cannot pause, resume or cancel a plan: send the link to the owner.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: true },
+  },
 ] as const;
+
+interface PlanView {
+  plan_id: number;
+  action: { type: string; receiver_id?: string };
+  strategy_id: string;
+  amount_per_run: string;
+  interval_sec: number;
+  runs_total: number;
+  runs_done: number;
+  next_run_at: string | null;
+  status: "active" | "paused" | "completed" | "cancelled";
+  pause_reason: string | null;
+}
+
+const PAUSE_TEXT: Record<string, string> = {
+  owner: "Paused by the owner.",
+  insufficient_balance: "Paused: the Budget ran out of NEAR. The owner can top it up and resume.",
+  guard_low_near: "Paused: the Guard needs NEAR for the proposal bond. The owner can top it up and resume.",
+  failures: "Paused: it no longer fits the Budget's rules, or runs kept failing.",
+};
+
+/** §11.11.1. Only scheduled payouts run; the dashboard has no setup for the others yet, so they carry no link. */
+const CATALOG = [
+  { id: "scheduled-payouts", name: "Scheduled payouts", status: "live", summary: "Pay a recipient the same amount on a schedule." },
+  { id: "dca-near", name: "DCA NEAR → USDT", status: "coming_soon", summary: `Sell NEAR for USDT in small steps. ${NO_ADVICE}` },
+  { id: "auto-stake", name: "Auto-stake idle NEAR", status: "coming_soon", summary: "Keep spare NEAR staked until it is needed." },
+  { id: "rebalance", name: "Rebalance NEAR / USDC", status: "coming_soon", summary: `Hold a target split between the two. ${NO_ADVICE}` },
+  { id: "take-profit", name: "Take profit", status: "coming_soon", summary: `Sell part of your NEAR at a price you pick. ${NO_ADVICE}` },
+  { id: "custom", name: "Build your own", status: "contact", summary: "Ask the Key Doctor team for a strategy that is not listed." },
+] as const;
+
+const nsToIso = (ns: string): string => new Date(Number(BigInt(ns) / 1_000_000n)).toISOString();
 
 export interface GuardResult {
   schema_version: "kd.guard_result.v1";
@@ -322,7 +374,70 @@ export function createGuard({ config, rpc, key, newRequestId = randomUUID }: Gua
     };
   }
 
-  return { getPolicy, requestTransfer, getRequestStatus };
+  const budgetUrl = (dao: string, extra: Record<string, string>) => `${DASHBOARD_URL}?${new URLSearchParams({ page: "budget", dao, ...extra })}`;
+
+  /** A Guard older than 1.2.0 has no `get_plans` at all: null, not an empty list, so the agent never says "no plans yet". */
+  async function plansPage(from: number, limit: number): Promise<PlanView[] | null> {
+    try {
+      return await rpc.view<PlanView[]>(guard, "get_plans", { from, limit });
+    } catch (e) {
+      if (e instanceof RpcError && /MethodNotFound/.test(e.message)) return null;
+      throw e;
+    }
+  }
+
+  async function strategiesList() {
+    const [cfg, probe] = await Promise.all([rpc.view<{ dao_id: string }>(guard, "get_config"), plansPage(0, 1)]);
+    const plans = probe !== null;
+    return {
+      guard_id: guard,
+      dao_id: cfg.dao_id,
+      strategies: CATALOG.map((c) => ({ ...c, setup_url: c.status === "live" && plans ? budgetUrl(cfg.dao_id, { strategy: c.id }) : null })),
+      note: plans
+        ? "You cannot set up a strategy. Send the owner its setup_url: they set it up and sign it in their wallet."
+        : "This Guard was created before plans existed, so no strategy can run on it. The owner needs a new Budget for that.",
+    };
+  }
+
+  async function plansStatus() {
+    const cfg = await rpc.view<{ dao_id: string }>(guard, "get_config");
+    const plans: PlanView[] = [];
+    for (;;) {
+      const page = await plansPage(plans.length, PLAN_PAGE);
+      if (page === null) {
+        return { guard_id: guard, dao_id: cfg.dao_id, plans_supported: false, plans: [], message: "This Guard was created before plans existed, so it has no plans." };
+      }
+      plans.push(...page);
+      if (page.length < PLAN_PAGE) break;
+    }
+    const open = plans.filter((p) => p.status === "active" || p.status === "paused").length;
+    return {
+      guard_id: guard,
+      dao_id: cfg.dao_id,
+      plans_supported: true,
+      plans: plans.map((p) => ({
+        plan_id: p.plan_id,
+        strategy_id: p.strategy_id,
+        action: p.action.type,
+        receiver_id: p.action.type === "transfer" ? (p.action.receiver_id ?? null) : null,
+        amount_per_run_near: yoctoToNear(p.amount_per_run),
+        interval_sec: p.interval_sec,
+        runs_done: p.runs_done,
+        runs_total: p.runs_total,
+        status: p.status,
+        pause_reason: p.pause_reason,
+        status_text: p.status === "paused" ? (PAUSE_TEXT[p.pause_reason ?? ""] ?? "Paused.") : null,
+        next_run_at: p.status === "active" && p.next_run_at !== null ? nsToIso(p.next_run_at) : null,
+        url: budgetUrl(cfg.dao_id, { plan: String(p.plan_id) }),
+      })),
+      message:
+        plans.length === 0
+          ? "No plans on this Budget yet. Only the owner can start one, from the dashboard."
+          : `${plans.length} plan(s), ${open} active or paused. Only the owner can pause, resume or cancel a plan, from its url. Scheduled payouts pay a fixed NEAR amount, so they have no average price.`,
+    };
+  }
+
+  return { getPolicy, requestTransfer, getRequestStatus, strategiesList, plansStatus };
 }
 
 export function createGuardFromEnv(env: NodeJS.ProcessEnv) {

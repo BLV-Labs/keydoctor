@@ -47,6 +47,9 @@ interface Sent {
   signatureOk: boolean;
 }
 
+/** A view that answers like a Guard whose code has no such method (a 1.0.0 Guard asked for `get_plans`). */
+const METHOD_NOT_FOUND = Symbol("MethodNotFound");
+
 /** A fake NEAR RPC for the Guard: views from `views`, the access key, and send_tx answered by `onSend`. */
 function chain(opts: { views?: Record<string, (args: any) => unknown>; permission?: unknown; onSend?: (s: Sent) => unknown } = {}) {
   let nonce = 42n;
@@ -70,6 +73,7 @@ function chain(opts: { views?: Record<string, (args: any) => unknown>; permissio
       const view = views[params.method_name];
       if (!view) return reply({ error: { name: "HANDLER_ERROR", cause: { name: "UNKNOWN_METHOD" } } });
       const out = view(JSON.parse(Buffer.from(params.args_base64, "base64").toString()));
+      if (out === METHOD_NOT_FOUND) return reply({ result: { error: "wasm execution failed with error: MethodResolveError(MethodNotFound)" } });
       return reply({ result: { result: [...Buffer.from(JSON.stringify(out))] } });
     }
     if (method === "send_tx") {
@@ -295,6 +299,97 @@ describe("guard_get_policy", () => {
   });
 });
 
+const plan = (id: number, over: Record<string, unknown> = {}) => ({
+  plan_id: id,
+  action: { type: "transfer", receiver_id: "vendor.testnet" },
+  strategy_id: "scheduled-payouts",
+  token_in: null,
+  amount_per_run: "100000000000000000000000",
+  interval_sec: 3600,
+  runs_total: 3,
+  runs_done: 1,
+  start_at: "1793700000000000000",
+  next_run_at: "1793703600000000000",
+  status: "active",
+  pause_reason: null,
+  ...over,
+});
+
+describe("plans_status", () => {
+  it("reads every plan page by page, in NEAR and ISO time, with the owner's dashboard link, and sends nothing", async () => {
+    const asked: { from: number; limit: number }[] = [];
+    const all = Array.from({ length: 51 }, (_, i) => plan(i));
+    const { guard, sent } = chain({ views: { get_plans: (a) => (asked.push(a), all.slice(a.from, a.from + a.limit)) } });
+    const r = await guard.plansStatus();
+    // 51 plans need a second page: stopping at the first 50 would hide a running plan from the owner.
+    assert.deepEqual(asked, [{ from: 0, limit: 50 }, { from: 50, limit: 50 }]);
+    assert.equal(r.plans.length, 51);
+    assert.deepEqual(r.plans[0], {
+      plan_id: 0,
+      strategy_id: "scheduled-payouts",
+      action: "transfer",
+      receiver_id: "vendor.testnet",
+      amount_per_run_near: "0.1",
+      interval_sec: 3600,
+      runs_done: 1,
+      runs_total: 3,
+      status: "active",
+      pause_reason: null,
+      status_text: null,
+      next_run_at: "2026-11-03T11:00:00.000Z",
+      url: "https://key-doctor-dashboard.pages.dev/?page=budget&dao=dao.sputnik-v2.testnet&plan=0",
+    });
+    assert.equal(sent.length, 0, "a status read must never sign a transaction");
+  });
+
+  it("says why a plan is paused and gives no next run for one that will not run", async () => {
+    const { guard } = chain({
+      views: { get_plans: () => [plan(1, { status: "paused", pause_reason: "insufficient_balance" }), plan(2, { status: "completed", runs_done: 3, next_run_at: "1793703600000000000" })] },
+    });
+    const [paused, done] = (await guard.plansStatus()).plans;
+    assert.match(paused!.status_text!, /ran out of NEAR/);
+    assert.equal(paused!.next_run_at, null);
+    assert.equal(done!.next_run_at, null);
+  });
+
+  it("tells a Guard without plans apart from a Guard with none yet", async () => {
+    const old = await chain({ views: { get_plans: () => METHOD_NOT_FOUND } }).guard.plansStatus();
+    assert.equal(old.plans_supported, false);
+    assert.match(old.message, /created before plans existed/);
+    const fresh = await chain({ views: { get_plans: () => [] } }).guard.plansStatus();
+    assert.equal(fresh.plans_supported, true);
+    assert.match(fresh.message, /No plans on this Budget yet/);
+  });
+
+  it("fails loud on any other RPC error instead of reporting no plans", async () => {
+    // The default fake has no get_plans and answers UNKNOWN_METHOD, which is not MethodNotFound.
+    await assert.rejects(chain().guard.plansStatus(), /UNKNOWN_METHOD/);
+  });
+});
+
+describe("strategies_list", () => {
+  it("links only the live strategy, to the owner's setup drawer for this DAO", async () => {
+    const { guard, sent } = chain({ views: { get_plans: () => [] } });
+    const r = await guard.strategiesList();
+    assert.deepEqual(r.strategies.map((s) => s.id), ["scheduled-payouts", "dca-near", "auto-stake", "rebalance", "take-profit", "custom"]);
+    const [payouts, ...rest] = r.strategies;
+    assert.equal(payouts!.status, "live");
+    assert.equal(payouts!.setup_url, "https://key-doctor-dashboard.pages.dev/?page=budget&dao=dao.sputnik-v2.testnet&strategy=scheduled-payouts");
+    // A link to a strategy that cannot be set up would look usable and do nothing (§11.11.1).
+    for (const s of rest) assert.equal(s.setup_url, null, s.id);
+    assert.equal(r.strategies.find((s) => s.id === "custom")!.status, "contact");
+    assert.match(r.strategies.find((s) => s.id === "dca-near")!.summary, /This is not investment advice/);
+    assert.match(r.note, /You cannot set up a strategy/);
+    assert.equal(sent.length, 0);
+  });
+
+  it("gives no setup link on a Guard that cannot run plans", async () => {
+    const r = await chain({ views: { get_plans: () => METHOD_NOT_FOUND } }).guard.strategiesList();
+    assert.ok(r.strategies.every((s) => s.setup_url === null));
+    assert.match(r.note, /created before plans existed/);
+  });
+});
+
 describe("tool definitions", () => {
   it("teach the agent that over-limit payments are the council's call", () => {
     const transfer = TOOLS.find((t) => t.name === "guard_request_transfer")!;
@@ -305,6 +400,16 @@ describe("tool definitions", () => {
     assert.match(transfer.description, /Never ask anyone for a private key or seed phrase/);
     // The agent must not be able to choose the request_id or a raw yocto amount.
     assert.deepEqual(Object.keys(transfer.inputSchema.properties).sort(), ["amount_near", "memo", "receiver_id"]);
+  });
+
+  it("mark the strategy tools read-only and tell the agent the owner signs plans", () => {
+    for (const name of ["strategies_list", "plans_status"]) {
+      const t = TOOLS.find((x) => x.name === name)!;
+      assert.equal(t.annotations.readOnlyHint, true, name);
+      assert.deepEqual(t.inputSchema.properties, {}, name);
+      assert.match(t.description, /You cannot/, name);
+      assert.match(t.description, /owner/, name);
+    }
   });
 });
 
