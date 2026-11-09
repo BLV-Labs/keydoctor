@@ -346,14 +346,14 @@ describe("nav and the alerts / MCP pages", () => {
     assert.match(renderLayout(html`x`, "mainnet").value, /class="pill pill-note net-pill">Mainnet</);
   });
 
-  it("names the product Keyfence and keeps the MCP page reachable from the footer of every page", () => {
+  it("names the product Key Doctor and keeps the MCP page reachable from the footer of every page", () => {
     const layout = renderLayout(html`<p>x</p>`, "testnet", "check").value;
-    assert.match(layout, /class="brand">[\s\S]*<span>Keyfence<\/span><\/a>/);
-    assert.ok(!layout.includes("Key Doctor"));
+    assert.match(layout, /class="brand">[\s\S]*<span>Key Doctor<\/span><\/a>/);
+    assert.ok(!layout.includes("Keyfence"));
     const footer = layout.match(/<footer[\s\S]*?<\/footer>/)![0];
     assert.ok(footer.includes("page=mcp"));
     assert.ok(footer.includes("For developers (MCP)"));
-    assert.ok(footer.includes("Keyfence never holds your keys. Limits are enforced on-chain."));
+    assert.ok(footer.includes("Key Doctor never holds your keys. Limits are enforced on-chain."));
   });
 
   it("the old pages stay valid links: what is published must not land on an empty page (§10.1)", () => {

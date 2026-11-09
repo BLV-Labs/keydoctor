@@ -324,7 +324,7 @@ function keysTable(member: Member, report: KdReport, paging: Paging, known: Read
           <p class="small muted" id="key-status" role="status"></p>
         </div>
         ${keyDialogShell()}`}
-    <p class="pad small muted footnote">Revoke and Delete ask your wallet (Meteor, Here or HOT) to remove one key; you approve the transaction there. Keyfence never signs transactions and never holds keys.</p>
+    <p class="pad small muted footnote">Revoke and Delete ask your wallet (Meteor, Here or HOT) to remove one key; you approve the transaction there. Key Doctor never signs transactions and never holds keys.</p>
   </section>`;
 }
 

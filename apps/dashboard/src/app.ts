@@ -234,7 +234,7 @@ function scan(route: Route & { target: string; network: Network }): Promise<KdRe
 }
 
 function paintHome(value: string, error: string | null, network: Network, focusMain: boolean): void {
-  paint(renderHome(value, error, network), "Keyfence · Spending limits for AI agents", focusMain, network);
+  paint(renderHome(value, error, network), "Key Doctor · Spending limits for AI agents", focusMain, network);
 }
 
 /** Paints a scanned report for the route; DAO reports then fill in the proposal page. */
@@ -246,7 +246,7 @@ function paintReport(report: KdReport, route: Route, paging: Paging, seq: number
       : route.view === "cleanup"
         ? renderCleanup(report, route.from, route.level, paging, loadKnown(target))
         : renderAccount(report, route.from, paging, loadKnown(target));
-  paint(body, `${target} · Keyfence`, false, report.chain.network);
+  paint(body, `${target} · Key Doctor`, false, report.chain.network);
   root.insertAdjacentHTML("beforeend", renderWatchDialog(target, report.target.type, WORKER_URL).value);
   syncWallet();
   if (report.target.type === "dao") void paintProposals(report.target.id, report.chain.network, pageOf(paging, PROPOSALS_LIST), paging, seq);
@@ -379,7 +379,7 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
     return;
   }
   if (route.target === null && route.page === "mcp") {
-    paint(renderAgents(WORKER_URL), "For AI agents · Keyfence", focusMain, route.network ?? storedNetwork(), "mcp");
+    paint(renderAgents(WORKER_URL), "For AI agents · Key Doctor", focusMain, route.network ?? storedNetwork(), "mcp");
     return;
   }
   if (route.target === null) {
@@ -391,7 +391,7 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
   }
   const target = route.target;
   const network = route.network ?? "testnet";
-  paint(renderScanning(target, route.from), `Scanning ${target} · Keyfence`, focusMain, network);
+  paint(renderScanning(target, route.from), `Scanning ${target} · Key Doctor`, focusMain, network);
   try {
     const report = await scan({ ...route, target, network });
     if (seq !== scanSeq) return;
@@ -402,7 +402,7 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
   } catch (e) {
     if (seq !== scanSeq) return;
     if (!isKdError(e)) console.error("scan failed", { target, error: e });
-    paint(renderError(target, route.from, isKdError(e) ? e.kd : UNKNOWN_ERROR, network), `${target} · Keyfence`, false, network);
+    paint(renderError(target, route.from, isKdError(e) ? e.kd : UNKNOWN_ERROR, network), `${target} · Key Doctor`, false, network);
   }
 }
 
@@ -411,7 +411,7 @@ const budgetNetwork = (): Network => suffixNetwork(BUDGET_READ_FACTORY) ?? "test
 /** The Agent Budget page: the DAO form, or the DAO's Budget read live from the chain. Nothing here is sample data. */
 async function renderBudgetPage(dao: string | null, focusMain: boolean, seq: number, link: RouteLink | null, help: boolean): Promise<void> {
   const network = budgetNetwork();
-  const title = "Budget · Keyfence";
+  const title = "Budget · Key Doctor";
   budgetState = null;
   budgetSign2 = null;
   budgetCreation = null;
@@ -420,7 +420,7 @@ async function renderBudgetPage(dao: string | null, focusMain: boolean, seq: num
   setupBase = null;
   if (new URL(location.href).searchParams.has("step")) history.replaceState(null, "", withoutStep(location.href));
   if (help) {
-    paint(renderAgentGuide(dao), "How your agent works · Keyfence", focusMain, network, "budget");
+    paint(renderAgentGuide(dao), "How your agent works · Key Doctor", focusMain, network, "budget");
     return;
   }
   const start = (value: string, error: string | null) => {
@@ -450,7 +450,7 @@ async function renderBudgetPage(dao: string | null, focusMain: boolean, seq: num
     // Sign 1 made this account and sign 2 never came: the page offers to finish instead of starting over.
     const unfinished =
       state.guard === null && dao.endsWith(`.${SPUTNIK_FACTORY}`) && unfinishedBudgetOwner(state.dao.policy) !== null ? { canFinish: loadSetup(dao) !== null } : null;
-    paint(renderBudget(state, network, renderBudgetSetup(BUDGET_FACTORY !== ""), Date.now(), unfinished), `${dao} · Keyfence`, false, network, "budget");
+    paint(renderBudget(state, network, renderBudgetSetup(BUDGET_FACTORY !== ""), Date.now(), unfinished), `${dao} · Key Doctor`, false, network, "budget");
     if (link !== null && state.guard !== null) followBudgetLink(link, state);
   } catch (e) {
     if (seq !== scanSeq) return;
@@ -726,7 +726,7 @@ const yieldStatus = (): HTMLElement | null => document.getElementById("yield-sta
 
 /** The Yield agent page: the DAO form, or the DAO's treasury, Rhea Lend rates and yield proposals read live. */
 async function renderYieldPage(dao: string | null, focusMain: boolean, seq: number): Promise<void> {
-  const title = "Yield agent · Keyfence";
+  const title = "Yield agent · Key Doctor";
   yieldState = null;
   if (dao === null) {
     paint(renderYieldStart("", null), title, focusMain, "testnet", "my-agents");
@@ -740,7 +740,7 @@ async function renderYieldPage(dao: string | null, focusMain: boolean, seq: numb
     yieldState = live;
     rememberYieldDao(dao);
     rememberOpened(dao);
-    paint(renderYield(live, network, loadSettings(dao)), `${dao} · Yield agent · Keyfence`, false, network, "my-agents");
+    paint(renderYield(live, network, loadSettings(dao)), `${dao} · Yield agent · Key Doctor`, false, network, "my-agents");
   } catch (e) {
     if (seq !== scanSeq) return;
     if (!isKdError(e)) console.error("yield read failed", { dao, error: e });
@@ -877,7 +877,7 @@ function repaintYield(): void {
   const state = yieldState;
   if (state === null) return;
   const network = yieldNetwork(state.report.dao);
-  paint(renderYield(state, network, loadSettings(state.report.dao)), `${state.report.dao} · Yield agent · Keyfence`, false, network, "my-agents");
+  paint(renderYield(state, network, loadSettings(state.report.dao)), `${state.report.dao} · Yield agent · Key Doctor`, false, network, "my-agents");
 }
 
 /** Pause and Resume change what the page suggests in this browser. They never touch the chain. */
@@ -968,7 +968,7 @@ function paintYieldWizard(focusHeading: boolean): void {
   const view = wizardView(w);
   const current = document.getElementById("yield-create-form");
   if (current === null) {
-    paint(renderYieldCreate(view), "New yield agent · Keyfence", false, view.network, "my-agents");
+    paint(renderYieldCreate(view), "New yield agent · Key Doctor", false, view.network, "my-agents");
   } else {
     // The breadcrumb and title stay; only the form is swapped.
     current.outerHTML = renderYieldCreate(view).value.replace(/^[\s\S]*?(?=<form id="yield-create-form")/, "");
@@ -984,7 +984,7 @@ function renderYieldCreatePage(focusMain: boolean): void {
     step: 1, dao: "", values: { maxPut: "", keepReady: "0", minApr: "0" }, every: "1h", notice: null, errors: {},
     funds: { kind: "signed-out" }, fundsFor: "", lives: new Map(),
   };
-  paint(renderYieldCreate(wizardView(yieldWizard)), "New yield agent · Keyfence", focusMain, network, "my-agents");
+  paint(renderYieldCreate(wizardView(yieldWizard)), "New yield agent · Key Doctor", focusMain, network, "my-agents");
 }
 
 /** The treasuries this wallet signs for, each with its USDC read. A failed read marks that row, not the page. */
@@ -1144,13 +1144,13 @@ let agentsView: { data: MyAgents; accounts: string[]; cards: BudgetCard[] } | nu
 
 function paintMyAgents(view: { data: MyAgents; accounts: string[]; cards: BudgetCard[] }, focusMain: boolean): void {
   agentsView = view;
-  paint(renderMyAgents(view.data, view.accounts, view.cards), "Your agents · Keyfence", focusMain, budgetNetwork(), "my-agents");
+  paint(renderMyAgents(view.data, view.accounts, view.cards), "Your agents · Key Doctor", focusMain, budgetNetwork(), "my-agents");
 }
 
 /** Your agents: needs a connected wallet, then reads every budget of its accounts, all at once. */
 async function renderMyAgentsPage(focusMain: boolean, seq: number): Promise<void> {
   const network = budgetNetwork();
-  const title = "Your agents · Keyfence";
+  const title = "Your agents · Key Doctor";
   const accounts = connected?.accounts ?? [];
   budgetState = null;
   agentsView = null;
@@ -1847,7 +1847,7 @@ async function renderGuard(dao: string | null, focusMain: boolean, seq: number):
   const network = suffixNetwork(GUARD_FACTORY) ?? "testnet";
   guardState = null;
   guardPreview = null;
-  const title = "Agent Guard · Keyfence";
+  const title = "Agent Guard · Key Doctor";
   if (dao === null || GUARD_FACTORY === "") {
     paint(renderGuardStart("", null, GUARD_FACTORY), title, focusMain, network, "guard");
     return;
