@@ -90,7 +90,6 @@ Nộp qua form tại https://nearhackathon.com/#apply, hoặc qua API `POST http
 | Q-003 | Bắt buộc repo mới? | Không. Dùng nhánh riêng, hoặc tag `pre-hackathon` và `hackathon-submission`, kèm mục README dẫn tới phần diff |
 | Q-004 | Dự án cũ, hoặc tính năng mới trên dự án cũ? | Dự án cũ giữ nguyên: không. Tính năng mới làm trong khung thời gian: được, nếu tách theo Q-003 |
 | Q-005 | Thư viện, template, code AI viết? | Đều được, kể cả thư viện tự viết trước đó. Liệt kê trong README; thư viện cũ tính là nền |
-| Q-006 | 1Click JWT? | Không bắt buộc (không có thì phí 0,2%) |
 | Q-007 | Testnet cho Intents? | Không có. Dùng mainnet, account dev riêng, số tiền nhỏ |
 | Q-008 | Tiền thử nghiệm? | NEAR testnet miễn phí (faucet). Chi phí mainnet không được hoàn |
 | Q-009 | RPC, hosting? | RPC công khai miễn phí |

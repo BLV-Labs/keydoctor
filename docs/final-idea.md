@@ -231,7 +231,7 @@ UC11 và UC12 áp dụng nguyên cho Agent Budget; "council" là chính chủ Bu
 | Ví người dùng gọi Guard factory với `dao_id` truyền vào, rồi mới tạo DAO (hoặc ngược lại) | Tên DAO và Guard đoán trước được, factory công khai: kẻ gian chiếm trước tên giữa hai lần ký, Guard gắn vào DAO của kẻ gian và tiền Top up chảy vào đó. Thay bằng DAO tự tạo Guard (mục 11.10.4) |
 | Gộp `add_proposal` + `act_proposal` với số đoán trước | Có thể duyệt nhầm khoản chờ của agent vừa chen vào, và Sputnik trên testnet không kiểm tham số `proposal` (B-Q7). Thay bằng hai giao dịch: tạo đề xuất, đọc số thật, rồi duyệt (mục 11.10.5) |
 | Agent tự tạo hoặc đề xuất kế hoạch đầu tư | Rủi ro prompt injection mở luồng chi tiền mới; chỉ chủ tạo kế hoạch trên dashboard |
-| Swap qua NEAR Intents trong bài thi | Guard chưa kiểm được trên chain rằng báo giá 1Click trả tiền về DAO; DAO không có key để ký intent. Để Roadmap; dùng Rhea |
+| Swap qua NEAR Intents trong bài thi | DAO không có key để ký intent; Intents không có testnet (Q-007). Để Roadmap; dùng Rhea |
 
 ### 3.3 Kết quả đã kiểm (task hello)
 
