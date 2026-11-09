@@ -8,8 +8,8 @@ const svg = (size: number, body: string, width = 2) =>
   );
 
 export const icon = {
-  // Mark: the Key Doctor shield (docs/design/keyfence/logo.svg).
-  logo: () => svg(20, '<path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z"></path><path d="M12 9v6M9 12h6"></path>'),
+  // Mark: a key whose bow is a medical cross (docs/design/keyfence/logo.svg). 24px on the 32px header tile.
+  logo: () => svg(24, '<path d="M6 6.5h2a1 1 0 0 1 1 1V10h2.5a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9v2.5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V14H2.5a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1H5V7.5a1 1 0 0 1 1-1z"></path><path d="M12.5 12H22"></path><path d="M17.5 12v3.5M20.5 12v2.5"></path>', 2.2),
   search: () => svg(18, '<circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path>'),
   rescan: () => svg(16, '<path d="M21 12a9 9 0 11-3-6.7L21 8"></path><path d="M21 3v5h-5"></path>'),
   bell: () => svg(16, '<path d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.9 1.9 0 003.4 0"></path>'),
