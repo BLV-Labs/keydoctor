@@ -2,7 +2,7 @@
 import { isKdError, listProposals, scanAccount, scanTarget, type KdError, type KdReport, type ListProposalsResult, type Network, type Rpc } from "key-doctor";
 import { revealClampToggles, toggleClamp } from "./clamp.ts";
 import { html, type Html } from "./html.ts";
-import { renderAgents, renderAlertsDrawer, renderError, renderHome, renderLayout, renderScanning } from "./pages.ts";
+import { INVALID_NAME_MESSAGE, renderAgents, renderAlertsDrawer, renderError, renderHome, renderLayout, renderScanning } from "./pages.ts";
 import { buildDeletePlan, GUARD_TEXT, METEOR_INSTALL_URL, type DeletePlan } from "./cleanup.ts";
 import { renderCleanup } from "./cleanup-view.ts";
 import { PAGE_SIZE, pageOf, parsePaging, type Paging } from "./paging.ts";
@@ -234,7 +234,8 @@ function scan(route: Route & { target: string; network: Network }): Promise<KdRe
 }
 
 function paintHome(value: string, error: string | null, network: Network, focusMain: boolean): void {
-  paint(renderHome(value, error, network), "Key Doctor · Spending limits for AI agents", focusMain, network);
+  restoreConnected(network);
+  paint(renderHome(value, error, network, connected !== null), "Key Doctor · Spending limits for AI agents", focusMain, network);
 }
 
 /** Paints a scanned report for the route; DAO reports then fill in the proposal page. */
@@ -383,7 +384,7 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
     return;
   }
   if (route.target === null) {
-    const error = route.invalid === null ? null : "Invalid target. Enter a valid .near or .testnet account name.";
+    const error = route.invalid === null ? null : INVALID_NAME_MESSAGE;
     paintHome(route.invalid ?? "", error, route.network ?? storedNetwork(), focusMain);
     const bell = document.querySelector<HTMLElement>('[data-action="alerts-open"]');
     if (route.link?.kind === "alerts" && bell !== null) openAlerts(bell);
@@ -2636,7 +2637,7 @@ root.addEventListener("submit", (event) => {
     storeNetwork(network);
     navigate(routeHref(id, null, network));
   } catch (e) {
-    paintHome(raw, isKdError(e) ? e.kd.message.en : UNKNOWN_ERROR.message.en, selected, false);
+    paintHome(raw, isKdError(e) ? (e.kd.code === "INVALID_TARGET" ? INVALID_NAME_MESSAGE : e.kd.message.en) : UNKNOWN_ERROR.message.en, selected, false);
     document.getElementById("target")?.focus();
   }
 });

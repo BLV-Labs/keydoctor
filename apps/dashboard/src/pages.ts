@@ -104,17 +104,69 @@ function examples(network: Network): Html {
     : html`<p class="small muted">Mainnet scans read live data. Enter your own account, or your DAO's <span class="mono">*.sputnik-dao.near</span> name.</p>`;
 }
 
-export function renderHome(value: string, error: string | null, network: Network = "testnet"): Html {
+/** Shown under the field for a name that is not an account id (handoff K1 states). */
+export const INVALID_NAME_MESSAGE = "Not a NEAR account name. Names end in .testnet or .near.";
+
+function homeStep(n: number, title: string, body: string, glyph: Html): Html {
+  return html`<li class="home-step"><span class="home-tile" aria-hidden="true">${glyph}</span>
+    <div class="stack-xs"><p class="eyebrow">Step ${n}</p><h3 class="h3">${title}</h3><p class="small muted">${body}</p></div></li>`;
+}
+
+function homePath(glyph: Html, title: string, lead: string, points: string[], href: string, cta: string): Html {
+  return html`<article class="card pad stack-sm home-path">
+      <span class="home-tile" aria-hidden="true">${glyph}</span>
+      <h3 class="h3">${title}</h3><p class="small muted">${lead}</p>
+      <ul class="list small">${points.map((p) => html`<li>${p}</li>`)}</ul>
+      <div class="home-path-cta"><a class="btn btn-secondary" href="${href}" data-nav>${cta}</a></div>
+    </article>`;
+}
+
+/** Fixed sample text only; hidden from assistive tech because it shows no real data. */
+const HOME_PREVIEW = html`<div class="card pad stack-sm home-preview" aria-hidden="true">
+      <div class="home-preview-head">${icon.key()}<strong>Research bot</strong><span class="pill pill-ok">Active</span></div>
+      <div><div class="home-preview-row"><span>Spent today</span><span>1.2 of 5 NEAR</span></div><div class="home-bar"><span style="width: 24%"></span></div></div>
+      <div class="home-preview-line"><span class="tone-ok">${icon.check()}</span><span>Paid 0.4 NEAR to <span class="mono">search-api.testnet</span></span></div>
+      <div class="home-preview-line"><span class="tone-cleanup">${icon.clock()}</span><span>Waiting for you: 4.5 NEAR to <span class="mono">api-vendor.testnet</span></span></div>
+      <div class="home-preview-line"><span class="tone-high">${icon.close()}</span><span>You rejected 500 NEAR to <span class="mono">attacker.testnet</span></span></div>
+    </div>`;
+
+export function renderHome(value: string, error: string | null, network: Network = "testnet", signedIn = false): Html {
   const suffix = network === "mainnet" ? ".near" : ".testnet";
-  return html`<section class="hero stack">
-      <div class="stack-sm">
-        <p class="eyebrow">Key health for NEAR accounts and DAO councils</p>
-        <h1 class="display">Key Doctor checks your keys, and stays on call while you sleep.</h1>
-        <p class="lead">Enter your own NEAR account, or a Sputnik DAO to check its whole council. Key Doctor reads the public keys on chain, scores the risk with fixed rules, and explains each key. No sign-in needed to check. Connecting a wallet is only for removing your own keys. Key Doctor never holds anyone's keys.</p>
+  const primary = signedIn
+    ? html`<a class="btn btn-primary" href="${pageHref("my-agents")}" data-nav>Go to your agents</a>`
+    : html`<a class="btn btn-primary" href="${pageHref("budget")}" data-nav>${icon.plus()}Set up an agent budget</a>`;
+  return html`<section class="home-hero">
+      <div class="stack home-hero-text">
+        <p class="eyebrow home-eyebrow">Spending limits for AI agents on NEAR</p>
+        <h1 class="display">Give your AI agent money, not your keys.</h1>
+        <p class="lead">Key Doctor puts each agent behind a fence: a daily budget, a limit per payment and a list of who it may pay. Anything outside the fence waits for you.</p>
+        <div class="actions">${primary}<a class="btn btn-secondary" href="#check">${icon.key()}Check an account's keys</a></div>
       </div>
+      ${HOME_PREVIEW}
+    </section>
+
+    <section class="card pad stack" aria-labelledby="how"><h2 id="how" class="h2">How it works</h2>
+      <ol class="plain home-steps">
+        ${homeStep(1, "Build the fence", "Pick a daily budget and a limit per payment, then list who the agent may pay.", icon.check())}
+        ${homeStep(2, "Connect your agent", "Your agent gets a key that can only ask for payments. One command connects it.", icon.key())}
+        ${homeStep(3, "Approve the rest", "Payments inside the fence go through. Anything else waits for your tap in Key Doctor or Telegram.", icon.bell())}
+      </ol></section>
+
+    <section aria-labelledby="who" class="stack-sm">
+      <h2 id="who" class="h2">What do you want to do?</h2>
+      <div class="home-paths">
+        ${homePath(icon.list(), "Run an AI agent", "Let it pay for APIs, tools and services without access to your wallet.", ["Daily budget and limit per payment", "Allowed recipients", "Scheduled payouts"], pageHref("budget"), "Set up an agent budget")}
+        ${homePath(icon.users(), "Protect a council", "Know before the final vote if a council member's account was taken over.", ["Checks every council member's keys", "Telegram warning before the final vote", "Let an agent earn on idle funds, within limits"], "#check", "Check a council")}
+        ${homePath(icon.user(), "Check my own keys", "See every key on your account, what each one can do, and remove the ones you don't use.", ["One plain sentence per key", "Safe step-by-step cleanup", "Alert when a key is added"], "#check", "Check my keys")}
+      </div>
+    </section>
+
+    <section id="check" class="card pad stack-sm" aria-labelledby="check-h">
+      <h2 id="check-h" class="h2">Check any NEAR account or DAO</h2>
+      <p class="small muted">Free. Reads public data only. No sign-in needed to check. Connecting a wallet is only for removing your own keys.</p>
       <form id="check-form" class="stack-sm" novalidate>
         <div class="form-head">
-          <label for="target" class="label">NEAR account or DAO</label>
+          <label for="target" class="label">Account or DAO name</label>
           ${networkSwitch(network)}
         </div>
         <div class="input-row">
@@ -130,15 +182,11 @@ export function renderHome(value: string, error: string | null, network: Network
       </form>
     </section>
 
-    <section aria-labelledby="who" class="stack-sm">
-      <h2 id="who" class="h2">One account, or a whole council</h2>
-      <div class="grid-2">
-        <div class="card pad stack-xs"><h3 class="h3">Any NEAR account</h3>
-          <p class="small muted">See every access key, how old it is and what it can do. Connect your wallet to remove the ones you no longer need.</p></div>
-        <div class="card pad stack-xs"><h3 class="h3">A whole DAO council</h3>
-          <p class="small muted">One report for every member, plus alerts in Telegram when a risky proposal or a new key shows up.</p></div>
-      </div>
-    </section>`;
+    <ul class="plain home-trust small">
+      <li>${icon.check()}<span>Limits are enforced by an on-chain contract, not by the agent.</span></li>
+      <li>${icon.check()}<span>Your agent never gets your wallet key, only one that asks for payments.</span></li>
+      <li>${icon.check()}<span>Every payment that waits for you arrives in Telegram too.</span></li>
+    </ul>`;
 }
 
 const AGENT_TOOLS: ReadonlyArray<readonly [string, string]> = [
