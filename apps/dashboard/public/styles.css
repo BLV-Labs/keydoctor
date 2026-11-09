@@ -430,6 +430,7 @@ li:last-child > .member-row { border-bottom: 0; }
 .presets { display: flex; flex-wrap: wrap; gap: 12px; }
 .preset { flex: 1 1 180px; display: flex; flex-direction: column; gap: 2px; padding: 12px; border: 1px solid var(--kd-border-strong); border-radius: var(--kd-radius-md); background: var(--kd-surface); color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .preset[aria-pressed="true"] { border: 2px solid var(--kd-primary); padding: 11px; background: var(--kd-primary-tint); }
+.preset-later { border-style: dashed; opacity: .7; cursor: not-allowed; background: transparent; }
 #bs-recipients { margin-top: 8px; }
 .recipient-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--kd-border); font-size: var(--kd-fs-sm); }
 .budget-intro { display: flex; flex-direction: column; gap: 24px; }
@@ -522,7 +523,7 @@ a.agent-card:focus-visible { outline: 2px solid var(--kd-primary); outline-offse
 .agent-card-nums { display: flex; flex-wrap: wrap; gap: 12px 24px; }
 .agent-card-big { margin: 0; font-size: var(--kd-fs-lg); font-weight: 600; }
 .agent-card-failed { border-style: dashed; }
-.agent-card-new { align-items: center; justify-content: center; flex-direction: row; border-style: dashed; color: var(--kd-primary); }
+.agent-card-new { align-items: center; justify-content: center; flex-direction: row; flex-wrap: wrap; gap: 8px 16px; border-style: dashed; color: var(--kd-primary); }
 
 /* K4 New agent budget: stepper, recipient rows, can / cannot cards, review */
 .wiz-steps { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 16px; }

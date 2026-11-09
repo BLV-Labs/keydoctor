@@ -149,3 +149,19 @@ export function tokenRaw(text: string, decimals: number): string | null {
   if (!m) return null;
   return (BigInt(m[1]!) * 10n ** BigInt(decimals) + BigInt((m[2] ?? "").padEnd(decimals, "0") || "0")).toString();
 }
+
+export type YieldMove = { kind: "register" } | { kind: "supply"; amount: string } | { kind: "withdraw" };
+
+/**
+ * What an allowed yield proposal does, read back from its kind for plain wording. Null for anything the page
+ * does not build (same guard as allowedYieldKind), so a look-alike proposal is never described as a move.
+ */
+export function describeYieldKind(network: Network, kind: Record<string, unknown>): YieldMove | null {
+  if (!allowedYieldKind(network, kind)) return null;
+  const fc = kind.FunctionCall as { actions: Array<{ method_name: string; args: string }> };
+  const a = fc.actions[0]!;
+  if (a.method_name === "storage_deposit") return { kind: "register" };
+  if (a.method_name === "execute") return { kind: "withdraw" };
+  const args = decodeArgs(a.args) as { amount: string };
+  return { kind: "supply", amount: args.amount };
+}

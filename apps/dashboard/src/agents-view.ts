@@ -7,7 +7,7 @@ import { activityRow, agentName, ago, budgetStatusPill, describeKind, expiryText
 import { plural, yoctoToNear } from "./format.ts";
 import { html, type Html } from "./html.ts";
 import { icon } from "./icons.ts";
-import { budgetHref, pageHref, yieldHref } from "./route.ts";
+import { budgetHref, pageHref, yieldHref, yieldNewHref } from "./route.ts";
 import { avatar } from "./ui.ts";
 import { YIELD_ALLOWLIST, tokenAmount } from "./yield-proposals.ts";
 
@@ -24,8 +24,8 @@ function head(accounts: readonly string[], sub: string | null = null): Html {
 const NEW_AGENT = html`<details class="menu">
   <summary class="btn btn-primary">${icon.plus()}New agent</summary>
   <div class="pop card">
-    <a class="pop-item" href="${pageHref("budget")}" data-nav><span class="strong">Payment agent</span><span class="small muted">Spends from a budget within your limits. Needs 2 signatures.</span></a>
-    <a class="pop-item" href="${pageHref("yield")}" data-nav><span class="strong">Yield agent</span><span class="small muted">Watches Rhea Lend for idle stablecoins and suggests moves. You approve every one.</span></a>
+    <a class="pop-item" href="${pageHref("budget")}" data-nav><span class="strong">Pay for things</span><span class="small muted">Spends from a budget within your limits. Needs 2 signatures.</span></a>
+    <a class="pop-item" href="${yieldNewHref()}" data-nav><span class="strong">Earn on idle funds</span><span class="small muted">Watches Rhea Lend for idle stablecoins and suggests moves. You approve every one.</span></a>
   </div>
 </details>`;
 
@@ -159,7 +159,7 @@ function yieldCard(row: AgentRow, network: Network): Html {
     <p class="small muted">Suggests only. You approve every move.${network === "testnet" ? " Test data, not real yield." : ""}</p></a>`;
 }
 
-const NEW_CARD = html`<a class="agent-card agent-card-new" href="${pageHref("budget")}" data-nav>${icon.plus()}<span class="strong">New agent</span></a>`;
+const NEW_CARD = html`<div class="agent-card agent-card-new">${icon.plus()}<span class="strong">New agent</span><a class="link-btn" href="${pageHref("budget")}" data-nav>Pay for things</a><a class="link-btn" href="${yieldNewHref()}" data-nav>Earn on idle funds</a></div>`;
 
 /** The newest events across budgets, each worded by its own budget's agents. */
 function recentActivity(cards: readonly BudgetCard[], now: number): Html {
@@ -185,7 +185,7 @@ export function renderMyAgents(data: MyAgents, accounts: readonly string[], card
       <section class="card pad stack-xs budget-narrow">
         <p class="strong">No agents yet</p>
         <p class="small muted">Give your first agent a budget in about 2 minutes.</p>
-        <div class="actions"><a class="btn btn-primary" href="${pageHref("budget")}" data-nav>${icon.plus()}New agent</a></div>
+        <div class="actions"><a class="btn btn-primary" href="${pageHref("budget")}" data-nav>${icon.plus()}Pay for things</a><a class="btn" href="${yieldNewHref()}" data-nav>Earn on idle funds</a></div>
         ${note}
       </section>`;
   }

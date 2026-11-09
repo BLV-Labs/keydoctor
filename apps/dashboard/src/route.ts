@@ -35,6 +35,8 @@ export interface Route {
   link: RouteLink | null;
   /** `?page=budget&help=agent`: the "How your agent works" page. */
   help: boolean;
+  /** `?page=yield&new=1`: the New yield agent wizard. */
+  yieldNew: boolean;
 }
 
 const NETWORK_SUFFIX: Record<Network, string> = { mainnet: ".near", testnet: ".testnet" };
@@ -85,9 +87,10 @@ export function parseRoute(search: string): Route {
   const page = raw === null ? pageOf(p, dao) : "check";
   const link = raw === null ? parseLink(p, params) : null;
   const help = raw === null && p === "budget" && params.get("help") === "agent";
-  if (raw === null || raw.trim() === "") return { page, target: null, invalid: null, from: null, dao, view: "report", level, network, link, help };
+  const yieldNew = raw === null && p === "yield" && params.get("new") === "1";
+  if (raw === null || raw.trim() === "") return { page, target: null, invalid: null, from: null, dao, view: "report", level, network, link, help, yieldNew };
   const target = normalize(raw);
-  if (target === null) return { page: "check", target: null, invalid: raw, from: null, dao: null, view: "report", level, network, link: null, help: false };
+  if (target === null) return { page: "check", target: null, invalid: raw, from: null, dao: null, view: "report", level, network, link: null, help: false, yieldNew: false };
   const fromRaw = params.get("from");
   const from = fromRaw === null ? null : normalize(fromRaw);
   return {
@@ -101,6 +104,7 @@ export function parseRoute(search: string): Route {
     network: suffixNetwork(target) ?? network ?? "testnet",
     link: null,
     help: false,
+    yieldNew: false,
   };
 }
 
@@ -168,6 +172,11 @@ export function budgetHref(dao: string): string {
 /** The Yield agent page for one DAO. */
 export function yieldHref(dao: string): string {
   return `?${new URLSearchParams({ page: "yield", dao }).toString()}`;
+}
+
+/** The New yield agent wizard. */
+export function yieldNewHref(): string {
+  return "?page=yield&new=1";
 }
 
 /** The full "How your agent works" guide. */

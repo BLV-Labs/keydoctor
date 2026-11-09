@@ -1,20 +1,23 @@
 // The Yield agent page, pure. Every number is read from the chain (yield-read.ts) or the library's kd.yield.v1
 // report. The page never calls the AI step: suggestions show in the rule order (highest APR first), and the
 // council's wallets sign every proposal and vote (yield plan YD4).
-import { YIELD_REASON_TEXT, YIELD_WARNING_TEXT, type KdYieldReport, type Network, type YieldOpportunity } from "key-doctor";
+import { YIELD_REASON_TEXT, type KdYieldReport, type Network, type YieldOpportunity } from "key-doctor";
 import { formatUtc, yoctoToNear } from "./format.ts";
 import { html, type Html } from "./html.ts";
 import { icon } from "./icons.ts";
 import { copyRow } from "./pages.ts";
 import { pageHref } from "./route.ts";
-import { allowedYieldKind, RHEA_STORAGE_YOCTO, tokenAmount, YIELD_ALLOWLIST, YIELD_PREFIX, type YieldAllowlist } from "./yield-proposals.ts";
+import { pctText, suggest, summarySentence, votesNeeded } from "./yield-agent.ts";
+import { allowedYieldKind, describeYieldKind, RHEA_STORAGE_YOCTO, tokenAmount, YIELD_ALLOWLIST, type YieldAllowlist, type YieldMove } from "./yield-proposals.ts";
 import type { YieldLive, YieldProposal } from "./yield-read.ts";
+import { CHECK_EVERY_TEXT, type LimitField, type LimitInput, type YieldSettings } from "./yield-settings.ts";
 
 export type YieldPanel = "supply" | "withdraw" | "register";
 export type YieldState = "farming" | "idle" | "unknown";
 
 const EXAMPLE_DAO = "kdoncall.sputnik-v2.testnet";
-const LEAD = "Watches Rhea Lend for your DAO's idle stablecoins and suggests where they could earn. It never moves funds: every supply and every withdraw is a council vote.";
+const LEAD = "Watches Rhea Lend for your treasury's idle stablecoins and suggests where they could earn. It never moves funds: every move is a council vote.";
+export const YIELD_TESTNET_ONLY = "Yield works on testnet only for now";
 const SIG = html`<span class="sig">1 signature + vote</span>`;
 
 function head(lead: string): Html {
@@ -48,19 +51,19 @@ export function yieldStatePill(state: YieldState): Html {
 export function renderYieldStart(dao: string, error: string | null): Html {
   return html`${head(LEAD)}
     <form id="yield-dao-form" class="card pad stack-sm budget-narrow" novalidate>
-      <label for="yield-dao" class="label">The DAO's account name</label>
+      <label for="yield-dao" class="label">The treasury's account name</label>
       <div class="input-row">
         <input id="yield-dao" name="dao" type="text" class="input mono" value="${dao}" placeholder="${EXAMPLE_DAO}"
           autocomplete="off" autocapitalize="none" spellcheck="false" required${error ? html` aria-invalid="true" aria-describedby="yield-dao-error"` : ""}>
         <button type="submit" class="btn btn-secondary">Open</button>
       </div>
       ${error ? html`<p id="yield-dao-error" class="field-error" role="alert">${error}</p>` : ""}
-      <p class="small muted">Anyone can read a DAO's Yield page. Only its council can propose or vote, from their own wallets. Proposals are open on testnet only.</p>
+      <p class="small muted">Anyone can read a treasury's Yield page. Only its council can ask for a move or vote, from their own wallets. Moves are open on testnet only.</p>
     </form>`;
 }
 
 export function renderYieldLoading(dao: string): Html {
-  return html`${head("Reading this DAO's treasury and Rhea Lend rates…")}
+  return html`${head("Reading this treasury and the Rhea Lend rates…")}
     <section class="card pad stack-sm" aria-busy="true" aria-label="Loading ${dao}"><p class="meta mono" role="status">${dao}</p></section>`;
 }
 
@@ -79,52 +82,73 @@ function focus(live: YieldLive, list: YieldAllowlist | null) {
   return { ...t, holding, supplied, opportunity };
 }
 
-function tiles(live: YieldLive, f: NonNullable<ReturnType<typeof focus>>): Html {
-  const best = live.report.opportunities.find((o) => o.executable) ?? null;
+type Focus = NonNullable<ReturnType<typeof focus>>;
+
+const tokenOf = (network: Network) => YIELD_ALLOWLIST[network]?.tokens[0] ?? null;
+
+/** A move in plain words, for the suggestion and the history. */
+function moveText(m: YieldMove, network: Network): string {
+  const t = tokenOf(network);
+  const sym = t?.symbol ?? "";
+  if (m.kind === "register") return "Register with Rhea Lend";
+  if (m.kind === "withdraw") return `Take all ${sym} back from Rhea Lend`;
+  return `Put ${tokenAmount(m.amount, t?.decimals ?? 6)} ${sym} on Rhea Lend`;
+}
+
+function tiles(f: Focus, settings: YieldSettings | null): Html {
+  const keep = settings === null || BigInt(settings.keepReady) === 0n ? null : tokenAmount(settings.keepReady, f.decimals);
   const open = f.holding?.open_transfers ?? [];
-  const held = open.length === 0 ? "Nothing promised to open transfers" : `Open transfers ${open.map((o) => `#${o.proposal_id}`).join(", ")} hold part of it`;
+  const idleNote = keep !== null ? `${keep} ${f.symbol} kept ready` : open.length === 0 ? "Nothing promised to open transfers" : `Open transfers ${open.map((o) => `#${o.proposal_id}`).join(", ")} hold part of it`;
+  const o = f.opportunity;
   return html`<section class="tiles" aria-label="Yield summary">
-    ${tile("Idle in the DAO", amountValue(f.holding?.balance, f.decimals, f.symbol), "Balance of the eligible token")}
-    ${tile("Available to farm", amountValue(f.holding?.available, f.decimals, f.symbol), held)}
-    ${tile("Supplied on Rhea Lend", amountValue(f.supplied, f.decimals, f.symbol), "Interest included · withdraw needs a vote")}
-    ${tile("Best supply APR", best === null ? "none" : aprText(best.apr), best === null ? "No candidate on this network" : `${best.symbol} on Rhea Lend${best.test_data ? " · test data" : ""}`)}
+    ${tile("Working on Rhea Lend", amountValue(f.supplied, f.decimals, f.symbol), "Interest included · taking it back needs a vote")}
+    ${tile("Idle now", amountValue(f.holding?.available, f.decimals, f.symbol), idleNote)}
+    ${tile("Rate today", o === null ? "none" : html`${aprText(o.apr)} <span class="tile-unit">a year</span>`, o === null ? "No row on this network" : `Rhea Lend${o.test_data ? " · test data" : ""}`)}
   </section>`;
 }
 
-function suggestionCard(r: KdYieldReport, canSupply: boolean): Html {
-  const byId = new Map(r.opportunities.map((o) => [o.id, o]));
-  const items = r.suggestions.flatMap((s, i) => {
-    const o = byId.get(s.opportunity_id);
-    if (o === undefined) return [];
-    const tags = [
-      html`<span class="tag">Up to ${tokenAmount(s.max_amount, decimalsOf(r, s.token_id))} ${o.symbol}</span>`,
-      o.test_data ? html`<span class="tag tag-warn">Test data</span>` : "",
-      ...o.warnings.map((w) => html`<span class="tag tag-warn">${YIELD_WARNING_TEXT[w].en}</span>`),
-    ];
-    return [
-      html`<li class="sugg">
-        <span class="rank" aria-label="Rank ${String(i + 1)}">${String(i + 1)}</span>
-        <div class="sugg-body">
-          <div class="sugg-top"><span class="strong">Supply ${o.symbol} to Rhea Lend</span><span class="apr">${aprText(o.apr)} <span class="small muted">APR</span></span></div>
-          <div class="tags">${tags}</div>
-        </div>
-        <button type="button" class="btn btn-primary btn-sm" data-action="yield-open" data-panel="supply"${canSupply ? "" : " disabled"}>Propose</button>
-      </li>`,
-    ];
-  });
+const fmtVotes = (approvals: number, needed: number | null) => (needed === null ? `${String(approvals)} approved` : `${String(approvals)} of ${String(needed)} needed`);
+
+function suggestionCard(live: YieldLive, network: Network, f: Focus, settings: YieldSettings | null, featured: YieldProposal | null, canVote: boolean): Html {
+  const r = live.report;
+  const needed = votesNeeded(live.policy);
+  const prompt = settings === null
+    ? html`<div class="banner banner-note">${icon.info()}<span>No limits set yet. <button type="button" class="link-btn" data-action="yield-limits-open">Set limits</button></span></div>`
+    : "";
+  let body: Html;
+  if (featured !== null) {
+    const move = describeYieldKind(network, featured.kind) as YieldMove;
+    body = html`<div class="stack-sm">
+      <div class="sugg-top"><span class="strong">${moveText(move, network)}</span><span class="pill pill-info">${icon.clock()}${fmtVotes(featured.approvals, needed)}</span></div>
+      <p class="small muted">Waiting for the council. Funds move only when the vote passes.</p>
+      ${canVote ? html`<div class="actions">
+        <button type="button" class="btn btn-danger btn-sm" data-action="yield-vote" data-id="${String(featured.id)}" data-vote="VoteReject">Reject</button>
+        <button type="button" class="btn btn-primary btn-sm" data-action="yield-vote" data-id="${String(featured.id)}" data-vote="VoteApprove">Approve <span class="sig">1 signature</span></button></div>` : ""}
+    </div>`;
+  } else {
+    const s = suggest({ settings, apr: f.opportunity?.apr ?? null, idle: f.holding?.available ?? null, supplied: f.supplied, registered: live.registered, decimals: f.decimals, symbol: f.symbol });
+    if (s.kind === "nothing") {
+      body = html`<p class="strong">Nothing to do: ${s.reason}</p>`;
+    } else {
+      const amount = tokenAmount(s.amount, f.decimals);
+      const rate = f.opportunity === null ? "" : `Rate today ${aprText(f.opportunity.apr)} a year${f.opportunity.test_data ? " (test data)" : ""}. `;
+      const keep = settings === null || BigInt(settings.keepReady) === 0n ? "" : `, with ${tokenAmount(settings.keepReady, f.decimals)} ${f.symbol} kept ready`;
+      body = s.kind === "register"
+        ? html`<div class="stack-sm">
+            <div class="sugg-top"><span class="strong">Register with Rhea Lend first</span></div>
+            <p class="small muted">${rate}One time, before the first move. Then ${amount} ${f.symbol} can go to work.</p>
+            <div class="actions"><button type="button" class="btn btn-primary btn-sm" data-action="yield-open" data-panel="register">Propose ${SIG}</button></div></div>`
+        : html`<div class="stack-sm">
+            <div class="sugg-top"><span class="strong">Put ${amount} ${f.symbol} on Rhea Lend</span></div>
+            <p class="small muted">${rate}${amount} ${f.symbol} is idle${keep}.</p>
+            <div class="actions"><button type="button" class="btn btn-primary btn-sm" data-action="yield-open" data-panel="supply" data-amount="${amount}">Propose ${SIG}</button></div></div>`;
+    }
+  }
   return html`<section class="card" aria-labelledby="y-suggest">
-    <div class="b-head">
-      <div><h2 id="y-suggest" class="b-h">Suggestion</h2><p class="small muted">Read at block ${r.chain.block_height.toLocaleString("en-US")} · ${formatUtc(r.chain.block_timestamp)}</p></div>
-      <span class="pill pill-note pill-sm">Rule order</span>
-    </div>
-    ${items.length === 0 ? html`<p class="pad muted">No suggestion right now.</p>` : html`<ol class="plain-list sugg-list">${items}</ol>`}
-    <p class="small muted pad-row">Ordered by APR, highest first. The AI-assisted order with reasons is in Telegram (<span class="mono">/yield ${r.dao}</span>) and in the MCP tool <span class="mono">yield_suggestions</span>.</p>
-    <ul class="plain-list stack-xs pad-row-banner">${r.notes.map((n) => html`<li class="banner banner-note">${icon.info()}<span>${n.en}</span></li>`)}</ul>
+    <div class="b-head"><div><h2 id="y-suggest" class="b-h">Suggestion</h2><p class="small muted">Read at block ${r.chain.block_height.toLocaleString("en-US")} · ${formatUtc(r.chain.block_timestamp)}</p></div></div>
+    <div class="pad stack-sm">${body}${prompt}</div>
+    <p class="small muted pad-row">An optional AI ranking with reasons is in Telegram (<span class="mono">/yield ${r.dao}</span>) and in the MCP tool <span class="mono">yield_suggestions</span>.</p>
   </section>`;
-}
-
-function decimalsOf(r: KdYieldReport, tokenId: string): number {
-  return r.holdings.find((h) => h.token_id === tokenId)?.decimals ?? 6;
 }
 
 function rateRow(o: YieldOpportunity): Html {
@@ -143,20 +167,28 @@ function rateRow(o: YieldOpportunity): Html {
   </tr>`;
 }
 
-function ratesCard(r: KdYieldReport): Html {
+/** The full rates table and filtered-out rows. Only used inside Technical details, so it has no nested <details>. */
+function ratesTable(r: KdYieldReport): Html {
   const rejected = r.rejected.map(
     (x) => html`<li class="rej"><span class="strong mono wrap">${x.token_id}</span><span class="muted">${x.network} · ${x.reasons.map((why) => YIELD_REASON_TEXT[why].en).join(" ")}</span></li>`,
   );
-  return html`<section class="card" aria-labelledby="y-rates">
-    <div class="b-head"><div><h2 id="y-rates" class="b-h">Rates</h2><p class="small muted">Rhea Lend, two sources each. Only rows on this DAO's network can be proposed.</p></div></div>
+  return html`<h3 class="drawer-h3">Rates</h3>
     ${r.opportunities.length === 0
-      ? html`<p class="pad muted">No row passed the filter.</p>`
+      ? html`<p class="small muted">No row passed the filter.</p>`
       : html`<div class="table-scroll"><table class="key-table rates">
           <thead><tr><th>Token</th><th>Network</th><th class="num">Supply APR</th><th class="num">Total supplied</th><th class="num">Withdrawable</th><th>Sources</th><th>Use</th></tr></thead>
           <tbody>${r.opportunities.map(rateRow)}</tbody></table></div>`}
-    ${rejected.length === 0
-      ? ""
-      : html`<details class="rejected"><summary class="small">Filtered out (${String(rejected.length)})${icon.chevronRight()}</summary><ul class="plain-list small">${rejected}</ul></details>`}
+    ${rejected.length === 0 ? "" : html`<h3 class="drawer-h3">Filtered out (${String(rejected.length)})</h3><ul class="plain-list small">${rejected}</ul>`}`;
+}
+
+function ratesNow(r: KdYieldReport): Html {
+  const rows = r.opportunities.slice(0, 4).map(
+    (o) => html`<div class="rule-row"><dt>${o.symbol}</dt><dd>${aprText(o.apr)} a year${o.test_data ? html` <span class="tag tag-warn">Test data</span>` : ""}</dd></div>`,
+  );
+  return html`<section class="card" aria-labelledby="y-rates">
+    <div class="b-head"><h2 id="y-rates" class="b-h">Rates now</h2></div>
+    ${rows.length === 0 ? html`<p class="pad muted">No rate to show.</p>` : html`<dl class="rule-list">${rows}</dl>`}
+    <p class="small muted pad-row">Rhea Lend supply rates. Data for the council, not financial advice.</p>
   </section>`;
 }
 
@@ -168,25 +200,25 @@ const STATUS_PILL: Record<string, Html> = {
   Failed: html`<span class="pill pill-cleanup">Failed</span>`,
 };
 
-function proposalRow(p: YieldProposal, network: Network, canVote: boolean): Html {
-  const text = p.description.startsWith(YIELD_PREFIX) ? p.description.slice(YIELD_PREFIX.length).trim() : p.description;
+function historyRow(p: YieldProposal, network: Network, needed: number | null, canVote: boolean): Html {
+  const move = describeYieldKind(network, p.kind);
+  const text = move === null ? "A different kind of vote" : moveText(move, network);
   const open = p.status === "InProgress";
-  const pill = open ? html`<span class="pill pill-info">${icon.clock()}${String(p.approvals)} approved</span>` : (STATUS_PILL[p.status] ?? html`<span class="pill pill-note">${p.status}</span>`);
-  const allowed = allowedYieldKind(network, p.kind);
-  const warn = allowed ? "" : html`<span class="small activity-why">${icon.alertSmall()} Not a call this page builds (${callText(p.kind)}). Check it in the DAO before you vote.</span>`;
-  const votes = open && canVote && allowed
+  const pill = open ? html`<span class="pill pill-info">${icon.clock()}${fmtVotes(p.approvals, needed)}</span>` : (STATUS_PILL[p.status] ?? html`<span class="pill pill-note">${p.status}</span>`);
+  const warn = allowedYieldKind(network, p.kind) ? "" : html`<span class="small activity-why">${icon.alertSmall()} Not a move this page builds (${callText(p.kind)}). Check it with the council before you vote.</span>`;
+  const votes = open && canVote && move !== null
     ? html`<span class="activity-time actions">
         <button type="button" class="btn btn-danger btn-sm" data-action="yield-vote" data-id="${String(p.id)}" data-vote="VoteReject">Reject</button>
         <button type="button" class="btn btn-primary btn-sm" data-action="yield-vote" data-id="${String(p.id)}" data-vote="VoteApprove">Approve <span class="sig">1 signature</span></button></span>`
     : "";
   return html`<li class="activity-row">
     <span class="activity-status">${pill}</span>
-    <span class="activity-text wrap">#${String(p.id)} ${text}<span class="small muted activity-why">Proposed by <span class="mono">${p.proposer}</span></span>${warn}</span>
+    <span class="activity-text wrap">#${String(p.id)} ${text}<span class="small muted activity-why">Asked by <span class="mono">${p.proposer}</span></span>${warn}</span>
     ${votes}
   </li>`;
 }
 
-/** What the proposal really calls, from its kind (never its description). */
+/** What the vote really calls, from its kind (never its description). */
 function callText(kind: Record<string, unknown>): string {
   const fc = kind.FunctionCall as { receiver_id?: unknown; actions?: Array<{ method_name?: unknown }> } | undefined;
   if (fc === undefined || typeof fc !== "object" || fc === null) return Object.keys(kind)[0] ?? "unknown kind";
@@ -194,71 +226,66 @@ function callText(kind: Record<string, unknown>): string {
   return `${String(fc.receiver_id)}: ${methods}`;
 }
 
-function votesCard(proposals: YieldProposal[] | null, network: Network, canVote: boolean): Html {
+function historyCard(proposals: YieldProposal[] | null, shown: YieldProposal[], network: Network, needed: number | null, canVote: boolean): Html {
   const body =
     proposals === null
-      ? html`<p class="pad muted">The DAO's proposals could not be read right now.</p>`
-      : proposals.length === 0
-        ? html`<p class="pad muted">No yield proposal among the DAO's newest 40.</p>`
-        : html`<ul class="plain-list">${proposals.map((p) => proposalRow(p, network, canVote))}</ul>`;
+      ? html`<p class="pad muted">The treasury's votes could not be read right now.</p>`
+      : shown.length === 0
+        ? html`<p class="pad muted">No moves yet.</p>`
+        : html`<ul class="plain-list">${shown.map((p) => historyRow(p, network, needed, canVote))}</ul>`;
   return html`<section class="card" aria-labelledby="y-props">
-    <div class="b-head"><div><h2 id="y-props" class="b-h">Council votes</h2><p class="small muted">Supply, withdraw and register proposals, newest first.</p></div></div>
+    <div class="b-head"><div><h2 id="y-props" class="b-h">History</h2><p class="small muted">Moves the council was asked for, newest first.</p></div></div>
     ${body}
   </section>`;
 }
 
 const row = (dt: Html | string, dd: Html | string) => html`<div class="rule-row"><dt>${dt}</dt><dd>${dd}</dd></div>`;
 
-function positionCard(live: YieldLive, f: NonNullable<ReturnType<typeof focus>>, canWithdraw: boolean): Html {
-  const registered = live.registered === null ? "unknown" : live.registered ? "Yes" : "Not yet: one register vote first";
-  return html`<section class="card" aria-labelledby="y-pos">
-    <div class="b-head"><h2 id="y-pos" class="b-h">Position on Rhea Lend</h2>
-      ${canWithdraw ? html`<button type="button" class="btn btn-ghost" data-action="yield-open" data-panel="withdraw">Withdraw</button>` : ""}</div>
-    <dl class="rule-list">
-      ${row("Registered", registered)}
-      ${row("Supplied", f.supplied === null ? "unknown" : `${tokenAmount(f.supplied, f.decimals)} ${f.symbol}`)}
-      ${row("Supply APR now", f.opportunity === null ? "unknown" : `${aprText(f.opportunity.apr)}${f.opportunity.test_data ? " (test data)" : ""}`)}
-    </dl>
+function limitsCard(settings: YieldSettings | null, f: Focus | null): Html {
+  const d = f?.decimals ?? 6;
+  const sym = f?.symbol ?? "";
+  return html`<section class="card" aria-labelledby="y-lim">
+    <div class="b-head"><h2 id="y-lim" class="b-h">Limits</h2>
+      ${f === null ? "" : html`<button type="button" class="btn btn-ghost" data-action="yield-limits-open">${settings === null ? "Set limits" : "Edit"}</button>`}</div>
+    ${settings === null
+      ? html`<p class="pad muted">No limits set. Suggestions use everything idle.</p>`
+      : html`<dl class="rule-list">
+          ${row("Most it may put to work", `${tokenAmount(settings.maxPut, d)} ${sym}`)}
+          ${row("Always keep ready", `${tokenAmount(settings.keepReady, d)} ${sym}`)}
+          ${row("Only act above", `${pctText(settings.minApr)}% a year`)}
+          ${row("Checks rates", `every ${CHECK_EVERY_TEXT[settings.checkEvery]}`)}
+          ${row("How it acts", "Suggests, you approve each move")}
+        </dl>`}
   </section>`;
 }
 
-function treasuryCard(f: NonNullable<ReturnType<typeof focus>>): Html {
-  const h = f.holding;
-  const open = h?.open_transfers ?? [];
-  return html`<section class="card" aria-labelledby="y-hold">
-    <div class="b-head"><h2 id="y-hold" class="b-h">Treasury</h2></div>
-    <dl class="rule-list">
-      ${row(`${f.symbol} balance`, h?.balance == null ? "unknown" : tokenAmount(h.balance, f.decimals))}
-      ${open.map((o) => row(`Promised to open transfer #${o.proposal_id}`, `− ${tokenAmount(o.amount, f.decimals)}`))}
-      ${row(html`<span class="strong">Available to farm</span>`, html`<span class="strong">${h?.available == null ? "unknown" : tokenAmount(h.available, f.decimals)}</span>`)}
-    </dl>
-    ${h?.error ? html`<p class="small muted pad-row">${h.error}</p>` : ""}
+function takeBackCard(f: Focus | null, canWithdraw: boolean): Html {
+  return html`<section class="card" aria-labelledby="y-back">
+    <div class="b-head"><h2 id="y-back" class="b-h">Take money back</h2></div>
+    <div class="pad stack-sm">
+      <p class="small muted">${f === null || f.supplied === null || BigInt(f.supplied) === 0n ? "Nothing is working on Rhea Lend right now." : `Brings all ${tokenAmount(f.supplied, f.decimals)} ${f.symbol} back, interest included. The council votes first.`}</p>
+      <button type="button" class="btn btn-secondary" data-action="yield-open" data-panel="withdraw"${canWithdraw ? "" : " disabled"}>Take it back ${SIG}</button>
+    </div>
   </section>`;
 }
 
-function runsCard(dao: string, list: YieldAllowlist | null): Html {
-  return html`<section class="card" aria-labelledby="y-set">
-    <div class="b-head"><h2 id="y-set" class="b-h">How this agent runs</h2></div>
-    <dl class="rule-list">
-      ${row("Telegram push", "Checks every 15 minutes for chats that watch")}
-      ${row("Pushes when", "Top idea or its APR changes")}
-      ${row("Tokens", list === null ? "None on this network yet" : list.tokens.map((t) => t.symbol).join(", "))}
-      ${row("Can move funds", html`<span class="strong">No, council votes</span>`)}
-    </dl>
-    <div class="pad-row stack-xs"><p class="small muted">Turn pushes on in your Telegram chat. <span class="mono">/yield_unwatch</span> turns them off.</p>${copyRow(`/yield_watch ${dao}`)}</div>
-  </section>`;
-}
-
-function technical(r: KdYieldReport, list: YieldAllowlist | null): Html {
+function technical(live: YieldLive, list: YieldAllowlist | null, f: Focus | null): Html {
+  const r = live.report;
   const extra = [...r.errors, ...r.limitations];
+  const registered = live.registered === null ? "unknown" : live.registered ? "Yes" : "Not yet";
   return html`<details class="card tech"><summary>Technical details${icon.chevronRight()}</summary>
     <dl class="tech-list">
-      <div class="tech-row"><dt>Rhea Lend contract</dt><dd class="mono">${list?.lend ?? "proposals off on this network"}</dd></div>
+      <div class="tech-row"><dt>Rhea Lend contract</dt><dd class="mono">${list?.lend ?? "not open on this network"}</dd></div>
+      <div class="tech-row"><dt>Registered with Rhea Lend</dt><dd>${registered}</dd></div>
+      <div class="tech-row"><dt>Treasury balance</dt><dd>${f?.holding?.balance == null ? "unknown" : `${tokenAmount(f.holding.balance, f.decimals)} ${f.symbol}`}</dd></div>
       <div class="tech-row"><dt>Yield ruleset</dt><dd class="mono">${r.yield_ruleset_version}</dd></div>
       <div class="tech-row"><dt>Block</dt><dd class="mono">${String(r.chain.block_height)}</dd></div>
       <div class="tech-row"><dt>Network</dt><dd>${r.chain.network}</dd></div>
     </dl>
+    ${ratesTable(r)}
+    ${r.notes.length === 0 ? "" : html`<ul class="list small">${r.notes.map((n) => html`<li>${n.en}</li>`)}</ul>`}
     ${extra.length === 0 ? "" : html`<ul class="list small pad-row">${extra.map((e) => html`<li>${e}</li>`)}</ul>`}
+    <div class="stack-xs"><p class="small muted">Telegram pushes: <span class="mono">/yield_watch</span> turns them on for a chat, <span class="mono">/yield_unwatch</span> turns them off.</p>${copyRow(`/yield_watch ${r.dao}`)}</div>
   </details>`;
 }
 
@@ -275,33 +302,46 @@ export function yieldActions(live: YieldLive, network: Network) {
   };
 }
 
-/** The live page for one DAO. */
-export function renderYield(live: YieldLive, network: Network): Html {
+function statePill(settings: YieldSettings | null): Html {
+  if (settings === null) return html`<span class="pill pill-note">No limits set</span>`;
+  return settings.paused ? html`<span class="pill pill-note">Paused</span>` : html`<span class="pill pill-ok">${icon.check()}Watching</span>`;
+}
+
+/** The live page for one treasury (K8). Settings are this browser's limits; null runs the page without them. */
+export function renderYield(live: YieldLive, network: Network, settings: YieldSettings | null = null): Html {
   const r = live.report;
   const list = YIELD_ALLOWLIST[network];
   const f = focus(live, list);
   const can = yieldActions(live, network);
-  const closed = list === null ? html`<p class="banner banner-cleanup">${icon.alertSmall()}<span>Yield proposals are not open on ${network} yet. Rates show for reference.</span></p>` : "";
-  return html`<nav class="breadcrumb" aria-label="Breadcrumb"><a href="${pageHref("my-agents")}" data-nav>My Agents</a><span aria-hidden="true">/</span><span class="mono">${r.dao}</span><span aria-hidden="true">/</span><span>Yield agent</span></nav>
-    ${head(LEAD)}
+  const needed = votesNeeded(live.policy);
+  const proposals = live.proposals ?? [];
+  const featured = list === null ? null : (proposals.find((p) => p.status === "InProgress" && describeYieldKind(network, p.kind) !== null) ?? null);
+  const shown = proposals.filter((p) => p !== featured);
+  const summary = f === null ? LEAD : summarySentence(settings, f.decimals, f.symbol);
+  const closed = list === null ? html`<p class="banner banner-cleanup">${icon.alertSmall()}<span>${YIELD_TESTNET_ONLY}. Rates show for reference.</span></p>` : "";
+  return html`<nav class="breadcrumb" aria-label="Breadcrumb"><a href="${pageHref("my-agents")}" data-nav>Your agents</a><span aria-hidden="true">/</span><span>Yield agent</span></nav>
+    ${head(summary)}
     <section class="budget-top" aria-label="Yield agent">
-      <div class="budget-name"><span class="strong mono wrap">${r.dao}</span>${yieldStatePill(yieldState(live.positions))}<span class="tag">${network}</span></div>
+      <div class="budget-name"><span class="strong mono wrap">${r.dao}</span>${list === null ? "" : statePill(settings)}<span class="tag">${network}</span></div>
       <div class="actions">
+        ${list !== null && settings !== null ? html`<button type="button" class="btn btn-secondary" data-action="yield-pause">${settings.paused ? "Resume" : "Pause"}</button>` : ""}
+        ${list !== null ? html`<button type="button" class="btn btn-secondary" data-action="yield-limits-open">${settings === null ? "Set limits" : "Edit limits"}</button>` : ""}
         <button type="button" class="btn btn-secondary" data-action="rescan">${icon.rescan()}Rescan</button>
-        ${can.register ? html`<button type="button" class="btn btn-primary" data-action="yield-open" data-panel="register">Register on Rhea Lend ${SIG}</button>` : ""}
-        ${can.withdraw ? html`<button type="button" class="btn btn-secondary" data-action="yield-open" data-panel="withdraw">Withdraw ${SIG}</button>` : ""}
-        ${can.open && !can.register ? html`<button type="button" class="btn btn-primary" data-action="yield-open" data-panel="supply"${can.supply ? "" : " disabled"}>Propose supply ${SIG}</button>` : ""}
       </div>
     </section>
     ${closed}
-    ${f === null ? "" : tiles(live, f)}
+    ${f === null ? "" : tiles(f, settings)}
     <p id="yield-status" class="small" role="status"></p>
     <div class="budget-cols">
-      <div class="budget-main">${suggestionCard(r, can.supply)}${ratesCard(r)}${votesCard(live.proposals, network, can.open)}</div>
-      <aside class="budget-side" aria-label="Position and settings">
-        ${f === null ? "" : html`${positionCard(live, f, can.withdraw)}${treasuryCard(f)}`}
-        ${runsCard(r.dao, list)}
-        ${technical(r, list)}
+      <div class="budget-main">
+        ${f === null ? "" : suggestionCard(live, network, f, settings, featured, can.open)}
+        ${historyCard(live.proposals, shown, network, needed, can.open)}
+      </div>
+      <aside class="budget-side" aria-label="Rates and limits">
+        ${ratesNow(r)}
+        ${list === null ? "" : limitsCard(settings, f)}
+        ${list === null ? "" : takeBackCard(f, can.withdraw)}
+        ${technical(live, list, f)}
       </aside>
     </div>
     <dialog id="yield-action" class="drawer" aria-labelledby="yp-title"></dialog>`;
@@ -316,56 +356,92 @@ function drawerHead(title: string, note: string): Html {
 const CANCEL = html`<button type="button" class="btn btn-secondary" data-action="close-dialog">Cancel</button>`;
 const sumRow = (label: string, value: Html | string) => html`<div class="sum-row"><span class="muted">${label}</span><span class="sum-value wrap">${value}</span></div>`;
 const NEXT = html`<div class="stack-xs"><h3 class="drawer-h3">What happens next</h3><ol class="list small">
-  <li>Your wallet signs one transaction that adds the proposal and attaches the DAO's bond. It moves no funds.</li>
+  <li>Your wallet signs one transaction that asks the council for this move and attaches the treasury's deposit. It moves no funds.</li>
   <li>The council votes. Funds move only when the vote passes.</li></ol></div>
   <p class="small muted">Receiver, method and token come from code, never from the AI step.</p>`;
 
 /** The drawer for one council action. Null when the network has no allowlist (the page shows no button then). */
-export function renderYieldPanel(panel: YieldPanel, live: YieldLive, network: Network, error: string | null = null, amount = ""): Html | null {
+export function renderYieldPanel(panel: YieldPanel, live: YieldLive, network: Network, error: string | null = null, amount = "", cap: string | null = null): Html | null {
   const list = YIELD_ALLOWLIST[network];
   const f = focus(live, list);
   if (list === null || f === null) return null;
   const bond = live.policy === null ? "unknown" : `${yoctoToNear(live.policy.proposal_bond)} NEAR`;
   const err = error ? html`<p id="yp-error" class="field-error" role="alert">${error}</p>` : "";
-  const sign = (kind: YieldPanel) => html`<button type="button" class="btn btn-primary" data-action="yield-sign" data-panel="${kind}">Create proposal <span class="sig">1 signature</span></button>`;
+  const sign = (kind: YieldPanel) => html`<button type="button" class="btn btn-primary" data-action="yield-sign" data-panel="${kind}">Ask the council <span class="sig">1 signature</span></button>`;
   if (panel === "register") {
-    return html`${drawerHead("Register the DAO on Rhea Lend", "One time, before the first supply")}
+    return html`${drawerHead("Register this treasury with Rhea Lend", "One time, before the first move")}
       <div class="drawer-body">
-        <div class="sum-box">${sumRow("The DAO pays", `${yoctoToNear(RHEA_STORAGE_YOCTO)} NEAR storage deposit`)}${sumRow("Call", html`<span class="mono">storage_deposit on ${list.lend}</span>`)}${sumRow("Bond from your wallet", bond)}</div>
+        <div class="sum-box">${sumRow("The treasury pays", `${yoctoToNear(RHEA_STORAGE_YOCTO)} NEAR storage deposit`)}${sumRow("Call", html`<span class="mono">storage_deposit on ${list.lend}</span>`)}${sumRow("Deposit from your wallet", bond)}</div>
         ${NEXT}${err}
       </div>
       <div class="drawer-foot">${CANCEL}${sign("register")}</div>`;
   }
   if (panel === "withdraw") {
-    return html`${drawerHead("Propose a withdraw", "From Rhea Lend back to the DAO")}
+    return html`${drawerHead("Take money back", "From Rhea Lend back to the treasury")}
       <div class="drawer-body">
         <div class="sum-box">
           ${sumRow("Rhea Lend returns", `All ${f.supplied === null ? "" : tokenAmount(f.supplied, f.decimals)} ${f.symbol} supplied, interest included`)}
           ${sumRow("To", html`<span class="mono">${live.report.dao}</span>`)}
           ${sumRow("Call", html`<span class="mono">execute (Withdraw) on ${list.lend}</span>`)}
-          ${sumRow("Bond from your wallet", bond)}
+          ${sumRow("Deposit from your wallet", bond)}
         </div>
-        <p class="small muted">Withdraw first when a payout needs the funds: the vote takes time.</p>
+        <p class="small muted">Take money back first when a payout needs it: the vote takes time.</p>
         ${NEXT}${err}
       </div>
       <div class="drawer-foot">${CANCEL}${sign("withdraw")}</div>`;
   }
   const available = f.holding?.available ?? null;
-  const max = available === null ? "" : tokenAmount(available, f.decimals);
-  return html`<form id="yield-panel-form" class="drawer-form" novalidate>${drawerHead("Propose a supply", `${f.symbol} to Rhea Lend${f.opportunity === null ? "" : ` · ${aprText(f.opportunity.apr)} APR${f.opportunity.test_data ? " (test data)" : ""}`}`)}
+  const max = cap ?? (available === null ? "" : tokenAmount(available, f.decimals));
+  return html`<form id="yield-panel-form" class="drawer-form" novalidate>${drawerHead("Put money to work", `${f.symbol} on Rhea Lend${f.opportunity === null ? "" : ` · ${aprText(f.opportunity.apr)} a year${f.opportunity.test_data ? " (test data)" : ""}`}`)}
     <div class="drawer-body">
       <div class="stack-xs">
         <label class="label" for="yp-amount">Amount</label>
         <div class="input-unit"><input id="yp-amount" name="amount" type="text" class="input mono" inputmode="decimal" value="${amount}" autocomplete="off" spellcheck="false"${error ? html` aria-invalid="true" aria-describedby="yp-error"` : ""}><span class="muted">${f.symbol}</span></div>
-        <div class="presets"><button type="button" class="filter-chip" data-action="yield-max" data-amount="${max}"${available === null ? " disabled" : ""}>Max ${max}</button></div>
-        <p class="small muted">Available is the DAO's balance minus what open transfers promise.</p>
+        <div class="presets"><button type="button" class="filter-chip" data-action="yield-max" data-amount="${max}"${max === "" ? " disabled" : ""}>Max ${max}</button></div>
+        <p class="small muted">${cap === null ? "Available is the treasury's balance minus what open transfers promise." : "Max follows your limits. The code still checks the amount against what the treasury really has available."}</p>
       </div>
       <div class="sum-box">
         ${sumRow("To", html`<span class="mono">${list.lend}</span>`)}
         ${sumRow("Call", html`<span class="mono">ft_transfer_call on ${f.token_id}</span>`)}
-        ${sumRow("Bond from your wallet", bond)}
+        ${sumRow("Deposit from your wallet", bond)}
       </div>
       ${NEXT}${err}
     </div>
-    <div class="drawer-foot">${CANCEL}<button type="submit" class="btn btn-primary">Create proposal <span class="sig">1 signature</span></button></div></form>`;
+    <div class="drawer-foot">${CANCEL}<button type="submit" class="btn btn-primary">Ask the council <span class="sig">1 signature</span></button></div></form>`;
+}
+
+export interface LimitErrors extends Partial<Record<LimitField, string>> {}
+
+/** The three limit inputs, shared by the New yield agent wizard (K7) and the Edit limits drawer (K8). */
+export function limitFields(v: LimitInput, errors: LimitErrors, symbol: string, idleText: string | null, p: string): Html {
+  const field = (name: LimitField, label: string, hint: string, unit: string) => html`<div class="stack-xs">
+      <label class="label" for="${p}-${name}">${label}</label>
+      <div class="input-unit"><input id="${p}-${name}" name="${name}" type="text" class="input mono" inputmode="decimal" value="${v[name]}" autocomplete="off" spellcheck="false"
+        aria-describedby="${p}-${name}-hint${errors[name] ? ` ${p}-${name}-error` : ""}"${errors[name] ? html` aria-invalid="true"` : ""}><span class="muted">${unit}</span></div>
+      <p id="${p}-${name}-hint" class="small muted">${hint}</p>
+      ${errors[name] ? html`<p id="${p}-${name}-error" class="field-error" role="alert">${errors[name] as string}</p>` : ""}
+    </div>`;
+  return html`${field("maxPut", "Most it may put to work", idleText === null ? "The most it will ever suggest putting on Rhea Lend." : `The most it will ever suggest putting on Rhea Lend. At most ${idleText} ${symbol}.`, symbol)}
+    ${field("keepReady", "Always keep ready", "Left untouched in the treasury so payouts are never short. 0 keeps nothing back.", symbol)}
+    ${field("minApr", "Only act above", "It stays quiet while the rate is at or below this.", "% a year")}`;
+}
+
+/** The Edit limits drawer (K8): the same fields and checks as K7, saved to this browser. */
+export function renderYieldLimits(live: YieldLive, network: Network, settings: YieldSettings | null, values: LimitInput | null = null, errors: LimitErrors = {}): Html | null {
+  const list = YIELD_ALLOWLIST[network];
+  const f = focus(live, list);
+  if (list === null || f === null) return null;
+  const idle = f.holding?.available == null ? null : BigInt(f.holding.available) + (f.supplied === null ? 0n : BigInt(f.supplied));
+  const ceilingText = idle === null || idle === 0n ? null : tokenAmount(idle.toString(), f.decimals);
+  const v = values ?? {
+    maxPut: settings === null ? (ceilingText ?? "") : tokenAmount(settings.maxPut, f.decimals),
+    keepReady: settings === null ? "0" : tokenAmount(settings.keepReady, f.decimals),
+    minApr: settings === null ? "0" : pctText(settings.minApr),
+  };
+  return html`<form id="yield-limits-form" class="drawer-form" novalidate>${drawerHead("Limits", "Saved in this browser. They shape what is suggested, not what the council can approve.")}
+    <div class="drawer-body">
+      ${limitFields(v, errors, f.symbol, null, "yl")}
+      ${ceilingText === null ? "" : html`<p class="small muted">The treasury has ${ceilingText} ${f.symbol} to work with today. A higher limit is fine: suggestions never go above what is idle.</p>`}
+    </div>
+    <div class="drawer-foot">${CANCEL}<button type="submit" class="btn btn-primary">Save limits</button></div></form>`;
 }
