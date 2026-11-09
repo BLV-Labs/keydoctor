@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Keyfence · Your agents</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+.k{--k-page:#F6F7F9;--k-surface:#FFFFFF;--k-surface-muted:#F9FAFB;--k-border:#E4E7EC;--k-border-strong:#D0D5DD;--k-border-input:#667085;--k-text:#101828;--k-text-2:#344054;--k-text-muted:#475467;--k-primary:#0F5F5C;--k-primary-hover:#0B4A47;--k-on-primary:#FFFFFF;--k-primary-tint:#E3F1F0;--k-focus:#2E6BB8;--k-high:#B42318;--k-high-bg:#FEF3F2;--k-high-border:#FECDCA;--k-high-text:#7A271A;--k-cleanup:#93370D;--k-cleanup-bg:#FFFAEB;--k-cleanup-border:#FEDF89;--k-ok:#067647;--k-ok-bg:#ECFDF3;--k-ok-border:#ABEFC6;--k-note-bg:#F2F4F7;--k-high-edge:#F04438;--k-backdrop:rgba(16, 24, 40, 0.6);--k-shadow:0 20px 48px rgba(16, 24, 40, 0.25);color-scheme:light}
+.k[data-theme="dark"]{--k-page:#0B1017;--k-surface:#121821;--k-surface-muted:#161D27;--k-border:#232C38;--k-border-strong:#3A4656;--k-border-input:#6B7A8F;--k-text:#E6EDF5;--k-text-2:#C3CDD9;--k-text-muted:#9AA7B6;--k-primary:#7CD4CF;--k-primary-hover:#A6E4E0;--k-on-primary:#0B1017;--k-primary-tint:#12302F;--k-focus:#6EA8FE;--k-high:#F97066;--k-high-bg:#2A1414;--k-high-border:#5C2420;--k-high-text:#FDA29B;--k-cleanup:#FDB022;--k-cleanup-bg:#2A1F0B;--k-cleanup-border:#5C4210;--k-ok:#47CD89;--k-ok-bg:#0E2A1D;--k-ok-border:#1F5A3D;--k-note-bg:#1C2430;--k-high-edge:#F97066;--k-backdrop:rgba(0, 0, 0, 0.7);--k-shadow:0 20px 48px rgba(0, 0, 0, 0.6);color-scheme:dark}
+body{margin:0;background:#0B1017}
+a{color:var(--k-primary);cursor:pointer;transition:color .2s,background-color .2s}a:hover{color:var(--k-primary-hover)}button{cursor:pointer}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--k-focus);outline-offset:2px}
+@media (prefers-reduced-motion: reduce){*{transition:none !important}}
+</style>
+</helmet>
+<div class="k" data-theme="{{theme}}" style="min-height: 100vh; background: var(--k-page); color: var(--k-text); font-family: Inter, system-ui, sans-serif; font-size: 14px; line-height: 1.5;">
+<header style="background: var(--k-surface); border-bottom: 1px solid var(--k-border);">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 8px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 28px;">
+      <a href="K-Home.dc.html" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--k-text);">
+        <span style="width: 32px; height: 32px; border-radius: 8px; background: var(--k-primary); display: inline-flex; align-items: center; justify-content: center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--k-on-primary)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6.5" cy="9" r="4"></circle><path d="M10.5 9H21"></path><path d="M13.5 9v8.5l1 1.5 1-1.5V9M18 9v8.5l1 1.5 1-1.5V9"></path></svg></span>
+        <span style="font-weight: 700; font-size: 17px; letter-spacing: -0.01em;">Keyfence</span>
+      </a>
+      <nav aria-label="Main" style="display: flex; flex-wrap: wrap; gap: 4px 22px;"><a href="K-Agents.dc.html" aria-current="page" style="color: var(--k-text); font-weight: 600; text-decoration: none; padding: 10px 2px; border-bottom: 2px solid var(--k-primary);">Agents</a><a href="K-Keys.dc.html" style="color: var(--k-text-muted); font-weight: 500; text-decoration: none; padding: 10px 2px; border-bottom: 2px solid transparent;">Keys</a><a href="K-Agents.dc.html#alerts" style="color: var(--k-text-muted); font-weight: 500; text-decoration: none; padding: 10px 2px; border-bottom: 2px solid transparent;">Alerts</a></nav>
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+        <span style="display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--k-cleanup); background: var(--k-cleanup-bg); border: 1px solid var(--k-cleanup-border); border-radius: 999px; padding: 1px 9px; white-space: nowrap;">Testnet</span>
+        <button type="button" onClick="{{toggleTheme}}" aria-label="Dark theme" aria-pressed="{{isDark}}" style="width: 44px; height: 44px; border: 0; border-radius: 8px; background: transparent; color: var(--k-text-muted); display: inline-flex; align-items: center; justify-content: center;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"></path></svg></button>
+        <span style="display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; border: 1px solid var(--k-border-strong); border-radius: 999px; font-size: 13px; color: var(--k-text-2);"><span style="width: 8px; height: 8px; border-radius: 999px; background: var(--k-ok);"></span><span style="font-family: 'JetBrains Mono', ui-monospace, monospace;">maruko.testnet</span></span>
+      </div>
+    </div>
+  </header><main style="max-width: 1200px; margin: 0 auto; padding: 28px 24px 64px; display: flex; flex-direction: column; gap: 20px;">
+  <div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px;">
+    <div style="flex: 1 1 400px;"><h1 style="margin: 0; font-size: 24px; font-weight: 700;">Your agents</h1><p style="margin: 4px 0 0; color: var(--k-text-muted);">2 budgets · 3 agents · everything they did in the last 24 hours</p></div>
+    <a href="K-Popups-Agents.dc.html" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 16px; border-radius: 8px; font: inherit; font-size: 14px; font-weight: 600; text-decoration: none; white-space: nowrap; box-sizing: border-box; background: var(--k-primary); color: var(--k-on-primary); border: 1px solid var(--k-primary);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>New agent</a>
+  </div>
+
+  <section aria-labelledby="needs" style="display: flex; flex-direction: column; gap: 10px;">
+    <div style="display: flex; align-items: center; gap: 10px;"><h2 id="needs" style="margin: 0; font-size: 18px;">Needs you</h2><span style="display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--k-cleanup); background: var(--k-cleanup-bg); border: 1px solid var(--k-cleanup-border); border-radius: 999px; padding: 1px 9px; white-space: nowrap;">2 waiting</span></div>
+    <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px;">
+      <li style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 14px 16px; border: 1px solid var(--k-cleanup-border); background: var(--k-cleanup-bg); border-radius: 10px;">
+      <span style="color: var(--k-cleanup);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></span>
+      <div style="flex: 1 1 380px; min-width: 0;">
+        <p style="margin: 0; font-weight: 600;">Research bot wants to pay <span style="white-space: nowrap;">4.5 NEAR</span> to <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; overflow-wrap: anywhere;">api-vendor.testnet</span></p>
+        <p style="margin: 2px 0 0; font-size: 13px; color: var(--k-text-muted);">More than the 1 NEAR limit per payment · Team research · expires in 5 h</p>
+      </div>
+      <div style="display: flex; gap: 8px;"><button type="button" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 8px; font: inherit; font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap; box-sizing: border-box; background: var(--k-surface); color: var(--k-text-2); border: 1px solid var(--k-border-strong);">Reject</button><a href="K-Approve.dc.html" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 8px; font: inherit; font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap; box-sizing: border-box; background: var(--k-primary); color: var(--k-on-primary); border: 1px solid var(--k-primary);">Review</a></div></li>
+      <li style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 14px 16px; border: 1px solid var(--k-cleanup-border); background: var(--k-cleanup-bg); border-radius: 10px;">
+      <span style="color: var(--k-cleanup);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></span>
+      <div style="flex: 1 1 380px; min-width: 0;">
+        <p style="margin: 0; font-weight: 600;">Ops bot wants to pay <span style="white-space: nowrap;">0.8 NEAR</span> to <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; overflow-wrap: anywhere;">new-freelancer.testnet</span></p>
+        <p style="margin: 2px 0 0; font-size: 13px; color: var(--k-text-muted);">Not on your recipient list · Ops payouts · expires in 22 h</p>
+      </div>
+      <div style="display: flex; gap: 8px;"><button type="button" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 8px; font: inherit; font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap; box-sizing: border-box; background: var(--k-surface); color: var(--k-text-2); border: 1px solid var(--k-border-strong);">Reject</button><a href="K-Approve.dc.html" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 8px; font: inherit; font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap; box-sizing: border-box; background: var(--k-primary); color: var(--k-on-primary); border: 1px solid var(--k-primary);">Review</a></div></li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="budgets" style="display: flex; flex-direction: column; gap: 10px;">
+    <h2 id="budgets" style="margin: 0; font-size: 18px;">Budgets and yield agents</h2>
+    <div style="display: flex; flex-wrap: wrap; gap: 16px;">
+      <a href="K-Budget.dc.html" style="flex: 1 1 340px; min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 18px; background: var(--k-surface); border: 1px solid var(--k-border); border-radius: 12px; color: var(--k-text); text-decoration: none;">
+      <div style="display: flex; align-items: center; gap: 10px;"><span style="width: 36px; height: 36px; border-radius: 9px; background: var(--k-primary-tint); color: var(--k-primary); display: inline-flex; align-items: center; justify-content: center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6.5" cy="9" r="4"></circle><path d="M10.5 9H21"></path><path d="M13.5 9v8.5l1 1.5 1-1.5V9M18 9v8.5l1 1.5 1-1.5V9"></path></svg></span><b style="font-size: 16px;">Team research</b><span style="margin-left: auto;"><span style="display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--k-ok); background: var(--k-ok-bg); border: 1px solid var(--k-ok-border); border-radius: 999px; padding: 1px 9px; white-space: nowrap;">Active</span></span></div>
+      <div style="display: flex; gap: 24px; flex-wrap: wrap;">
+        <div><p style="margin: 0; font-size: 12px; color: var(--k-text-muted);">Balance</p><p style="margin: 0; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums;">18.4 NEAR</p></div>
+        <div style="flex: 1 1 160px;"><p style="margin: 0; font-size: 12px; color: var(--k-text-muted);">Spent today</p><p style="margin: 0; font-weight: 600; font-variant-numeric: tabular-nums;">1.2 of 5 NEAR</p><div style="height: 6px; border-radius: 999px; background: var(--k-note-bg); overflow: hidden; margin-top: 6px;"><div style="width: 24%; height: 100%; background: var(--k-primary);"></div></div></div>
+      </div>
+      <p style="margin: 0; font-size: 13px; color: var(--k-text-muted);">2 agents · 4 recipients · last payment 12 min ago</p></a>
+      <a href="K-Budget.dc.html" style="flex: 1 1 340px; min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 18px; background: var(--k-surface); border: 1px solid var(--k-border); border-radius: 12px; color: var(--k-text); text-decoration: none;">
+      <div style="display: flex; align-items: center; gap: 10px;"><span style="width: 36px; height: 36px; border-radius: 9px; background: var(--k-primary-tint); color: var(--k-primary); display: inline-flex; align-items: center; justify-content: center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6.5" cy="9" r="4"></circle><path d="M10.5 9H21"></path><path d="M13.5 9v8.5l1 1.5 1-1.5V9M18 9v8.5l1 1.5 1-1.5V9"></path></svg></span><b style="font-size: 16px;">Ops payouts</b><span style="margin-left: auto;"><span style="display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--k-ok); background: var(--k-ok-bg); border: 1px solid var(--k-ok-border); border-radius: 999px; padding: 1px 9px; white-space: nowrap;">Active</span></span></div>
+      <div style="display: flex; gap: 24px; flex-wrap: wrap;">
+        <div><p style="margin: 0; font-size: 12px; color: var(--k-text-muted);">Balance</p><p style="margin: 0; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums;">42.0 NEAR</p></div>
+        <div style="flex: 1 1 160px;"><p style="margin: 0; font-size: 12px; color: var(--k-text-muted);">Spent today</p><p style="margin: 0; font-weight: 600; font-variant-numeric: tabular-nums;">6.5 of 20 NEAR</p><div style="height: 6px; border-radius: 999px; background: var(--k-note-bg); overflow: hidden; margin-top: 6px;"><div style="width: 32%; height: 100%; background: var(--k-primary);"></div></div></div>
+      </div>
+      <p style="margin: 0; font-size: 13px; color: var(--k-text-muted);">1 agent · 6 recipients · 1 scheduled payout</p></a>
+      <a href="K-Create.dc.html" style="flex: 1 1 260px; min-height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; border: 1px dashed var(--k-border-strong); border-radius: 12px; color: var(--k-primary); font-weight: 600; text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>New agent<span style="font-weight: 400; font-size: 13px; color: var(--k-text-muted);">A payment agent or a yield agent</span></a>
+    </div>
+  </section>
+
+  <section style="background: var(--k-surface); border: 1px solid var(--k-border); border-radius: 12px; padding: 20px; "><div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 12px;"><h2 style="margin: 0; font-size: 16px; font-weight: 600;">Recent activity</h2><span style="font-size: 13px; color: var(--k-text-muted);">all budgets</span></div><ul style="list-style: none; margin: 0; padding: 0;">
+    <li style="display: grid; grid-template-columns: 24px minmax(0,1fr) auto auto; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--k-border);"><span style="color: var(--k-ok);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"></path></svg></span><span style="min-width: 0; overflow-wrap: anywhere;">Research bot paid <span style="font-family: 'JetBrains Mono', ui-monospace, monospace;">search-api.testnet</span></span><span style="font-variant-numeric: tabular-nums; font-weight: 600;">0.4 NEAR</span><span style="font-size: 13px; color: var(--k-text-muted); white-space: nowrap;">12 min ago</span></li>
+    <li style="display: grid; grid-template-columns: 24px minmax(0,1fr) auto auto; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--k-border);"><span style="color: var(--k-ok);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg></span><span style="min-width: 0; overflow-wrap: anywhere;">Scheduled payout to <span style="font-family: 'JetBrains Mono', ui-monospace, monospace;">ops-lead.testnet</span> (run 3 of 12)</span><span style="font-variant-numeric: tabular-nums; font-weight: 600;">0.5 NEAR</span><span style="font-size: 13px; color: var(--k-text-muted); white-space: nowrap;">1 h ago</span></li>
+    <li style="display: grid; grid-template-columns: 24px minmax(0,1fr) auto auto; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--k-border);"><span style="color: var(--k-high);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></span><span style="min-width: 0; overflow-wrap: anywhere;">You rejected Research bot to <span style="font-family: 'JetBrains Mono', ui-monospace, monospace;">attacker.testnet</span> (not on your list)</span><span style="font-variant-numeric: tabular-nums; font-weight: 600;">500 NEAR</span><span style="font-size: 13px; color: var(--k-text-muted); white-space: nowrap;">3 h ago</span></li>
+    <li style="display: grid; grid-template-columns: 24px minmax(0,1fr) auto auto; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--k-border);"><span style="color: var(--k-ok);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"></path></svg></span><span style="min-width: 0; overflow-wrap: anywhere;">You approved Ops bot to <span style="font-family: 'JetBrains Mono', ui-monospace, monospace;">design-studio.testnet</span></span><span style="font-variant-numeric: tabular-nums; font-weight: 600;">3 NEAR</span><span style="font-size: 13px; color: var(--k-text-muted); white-space: nowrap;">yesterday</span></li>
+  </ul></section>
+
+  <section id="alerts"><section style="background: var(--k-surface); border: 1px solid var(--k-border); border-radius: 12px; padding: 20px; "><div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px;"><span style="color: var(--k-primary);"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.9 1.9 0 003.4 0"></path></svg></span><div style="flex: 1 1 360px;"><h2 style="margin: 0; font-size: 16px;">Telegram alerts are on</h2><p style="margin: 2px 0 0; color: var(--k-text-muted);">Waiting payments and refused requests go to the “Ops team” group. Approve from Telegram with one tap.</p></div><a href="#alerts" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 8px; font: inherit; font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap; box-sizing: border-box; background: var(--k-surface); color: var(--k-text-2); border: 1px solid var(--k-border-strong);">Manage alerts</a></div></section></section>
+</main><footer style="border-top: 1px solid var(--k-border); background: var(--k-surface);"><div style="max-width: 1200px; margin: 0 auto; padding: 16px 24px; display: flex; flex-wrap: wrap; gap: 6px 24px; font-size: 13px; color: var(--k-text-muted);"><span>Testnet. Contracts are unaudited.</span><span>Keyfence never holds your keys. Limits are enforced on-chain.</span><a href="K-Home.dc.html#agents-mcp" style="color: var(--k-text-muted);">For developers (MCP)</a></div></footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"$preview":{"width":1440,"height":1300}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = Object.assign({ themeOverride: null }, {}); }
+
+  renderVals() {
+    const theme = this.state.themeOverride || (this.props.theme ?? 'light');
+    return Object.assign({
+      theme: theme,
+      isDark: theme === 'dark',
+      toggleTheme: () => this.setState({ themeOverride: theme === 'dark' ? 'light' : 'dark' })
+    }, (() => { return {}; })());
+  }
+}
+</script>
+</body>
+</html>
