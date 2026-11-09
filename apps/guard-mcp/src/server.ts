@@ -15,6 +15,8 @@ async function callTool(guard: Guard, name: string, args: Record<string, unknown
     if (name === "guard_get_policy") return toolResult(await guard.getPolicy());
     if (name === "guard_request_transfer") return toolResult(await guard.requestTransfer(args));
     if (name === "guard_get_request_status") return toolResult(await guard.getRequestStatus(args));
+    if (name === "strategies_list") return toolResult(await guard.strategiesList());
+    if (name === "plans_status") return toolResult(await guard.plansStatus());
   } catch (e) {
     const err = e instanceof ToolError ? { error_code: e.code, message: e.message } : { error_code: "INTERNAL", message: (e as Error).message };
     return toolResult(err, true);

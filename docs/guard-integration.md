@@ -122,13 +122,15 @@ Any other MCP client (Claude Desktop, Cursor, an agent SDK):
 - Start the same command (`pnpm --silent --filter guard-mcp start`, run from the repo) as a stdio server, with the variables above.
 - Several Guards: add one server entry per Guard, each under its own name, `GUARD_CONTRACT_ID` and key.
 
-Tools, each returning `kd.guard_result.v1`:
+Tools (the three `guard_*` ones return `kd.guard_result.v1`):
 
 | Tool | Use |
 | --- | --- |
 | `guard_get_policy` | Read limits, what is left in the 24 h window, whitelist, paused |
 | `guard_request_transfer` | `receiver_id`, `amount_near` (decimal string), optional `memo`. Returns `auto_approved`, `pending` (with reasons) or `rejected` (a Guard error such as `PAUSED`) |
 | `guard_get_request_status` | `request_id`; refreshes a non-final request from the DAO |
+| `strategies_list` | Read the strategy catalog; send the owner the `setup_url` (the agent cannot create a plan) |
+| `plans_status` | Read each plan's progress, status and next run, with a dashboard link |
 
 Prompt tip: tell the agent to submit payments to the guard tool and let the Guard and council decide. The tool descriptions already say: never resend or split a `pending` payment, and follow up with `guard_get_request_status`.
 

@@ -11,6 +11,8 @@ const guard = {
   getRequestStatus: async () => {
     throw new Error("boom");
   },
+  strategiesList: async () => ({ strategies: [] }),
+  plansStatus: async () => ({ plans: [] }),
 } as unknown as Guard;
 
 const call = (method: string, params?: unknown) => handle(guard, { jsonrpc: "2.0", id: 1, method, params });
@@ -24,12 +26,17 @@ describe("MCP dispatch", () => {
     assert.equal(old.result.protocolVersion, "2025-06-18");
   });
 
-  it("lists exactly the three Guard tools", async () => {
+  it("lists exactly the Guard tools, so nothing else can move money", async () => {
     const r: any = await call("tools/list");
     assert.deepEqual(
       r.result.tools.map((t: { name: string }) => t.name),
-      ["guard_get_policy", "guard_request_transfer", "guard_get_request_status"],
+      ["guard_get_policy", "guard_request_transfer", "guard_get_request_status", "strategies_list", "plans_status"],
     );
+  });
+
+  it("routes the strategy tools", async () => {
+    assert.deepEqual(((await call("tools/call", { name: "strategies_list", arguments: {} })) as any).result.structuredContent, { strategies: [] });
+    assert.deepEqual(((await call("tools/call", { name: "plans_status", arguments: {} })) as any).result.structuredContent, { plans: [] });
   });
 
   it("returns tool data as text and structuredContent", async () => {

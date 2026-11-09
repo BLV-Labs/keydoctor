@@ -104,7 +104,7 @@ describe("renderBudget", () => {
   });
   it("carries no mock names and labels the unbuilt features", () => {
     assert.doesNotMatch(page, /Research bot|Team payouts/);
-    assert.match(page, /DCA NEAR<\/span><span class="small muted">Coming soon/);
+    assert.match(page, /DCA NEAR → USDT<\/span><span class="small muted">Coming soon/);
   });
   it("shows unknown, not zero, when a read failed", () => {
     const failed = renderBudget(live({ balance: null, proposals: null, requests: null }), "testnet").value;
