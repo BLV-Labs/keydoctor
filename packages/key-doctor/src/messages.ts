@@ -460,7 +460,7 @@ export const ACTION_TEXT = {
 
 const STRATEGY_NAME: Record<string, Text> = {
   "scheduled-payouts": { vi: "Chi định kỳ", en: "Scheduled payouts" },
-  "dca-near": { vi: "DCA NEAR", en: "DCA NEAR" },
+  "dca-near": { vi: "DCA NEAR → USDT", en: "DCA NEAR → USDT" },
 };
 
 /** "2026-11-07T09:00:00.000Z" to "2026-11-07 09:00 UTC". */

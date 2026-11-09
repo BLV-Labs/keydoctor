@@ -275,7 +275,7 @@ function agentsCard(g: GuardLive): Html {
 
 const STRATEGIES: ReadonlyArray<readonly [string, string]> = [
   ["Scheduled payouts", "Pay a recipient the same amount on a schedule."],
-  ["DCA NEAR", "Buy NEAR with USDC in small steps."],
+  ["DCA NEAR → USDT", "Sell NEAR for USDT in small steps."],
   ["Auto-stake idle NEAR", "Keep spare NEAR staked until it is needed."],
   ["Rebalance NEAR / USDC", "Hold a target split between the two."],
   ["Take profit", "Sell part of your NEAR at a price you pick."],
