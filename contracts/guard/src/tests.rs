@@ -70,12 +70,12 @@ fn ask(g: &mut Guard, now: u64, rid: &str, to: &str, amount: u128) {
 
 fn added(g: &mut Guard, now: u64, rid: &str, result: Result<u64, PromiseError>) {
     env_as(GUARD, now);
-    let _ = g.on_proposal_added(rid.into(), result);
+    let _ = g.on_proposal_added(rid.into(), None, result);
 }
 
 fn voted(g: &mut Guard, now: u64, rid: &str, result: Result<(), PromiseError>) {
     env_as(GUARD, now);
-    g.on_voted(rid.into(), result);
+    g.record_vote(rid.into(), result.is_ok());
 }
 
 fn synced(g: &mut Guard, now: u64, rid: &str, status: &str, submitted: u64) {
@@ -1199,13 +1199,13 @@ fn a_new_plan_waits_for_its_start_time_and_reads_as_section_4_11() {
 }
 
 #[test]
-fn a_swap_plan_does_not_parse_before_it_can_run() {
-    // GĐ31 adds `swap`. Storing one now would give the owner a plan that can only fail.
+fn a_swap_plan_parses_now_that_it_can_run() {
+    // GĐ31 added `swap`: it must parse, with the fields the dashboard sends.
     let input = near_sdk::serde_json::json!({
         "action": { "type": "swap", "pool_id": 1, "token_out": "wrap.testnet", "max_slippage_bps": 50 },
         "strategy_id": "dca", "token_in": "", "amount_per_run": "1", "interval_sec": 60, "runs_total": 1, "start_at": "0",
     });
-    assert!(near_sdk::serde_json::from_value::<PlanInput>(input).is_err());
+    assert!(near_sdk::serde_json::from_value::<PlanInput>(input).is_ok());
 }
 
 #[test]
@@ -1571,4 +1571,374 @@ fn only_a_paused_plan_resumes() {
 fn an_unknown_plan_is_refused() {
     let mut g = setup();
     step(&mut g, T0, 9);
+}
+
+// ---- DCA swap step (GĐ31 S1, ADR 0007 / plan Change 1.3 and 1.5)
+
+const EXCHANGE: &str = "ref-finance-101.testnet";
+const WRAP: &str = "wrap.testnet";
+const USDT: &str = "usdt.fakes.testnet";
+
+fn swap_of(bps: u16) -> PlanAction {
+    PlanAction::Swap { pool_id: 57, token_out: id(USDT), max_slippage_bps: bps }
+}
+
+/// A DCA plan: sells 0.1 NEAR per run.
+fn dca(bps: u16, runs: u32) -> PlanInput {
+    plan_of(swap_of(bps), NEAR / 10, runs)
+}
+
+fn quoted(g: &mut Guard, now: u64, rid: &str, plan_id: u32, quote: Result<u128, PromiseError>) {
+    env_as(GUARD, now);
+    let _ = g.on_quote(rid.into(), plan_id, quote.map(U128));
+}
+
+/// The `kind` of the proposal `on_quote` created.
+fn swap_proposal_kind() -> Value {
+    calls().into_iter().find(|c| c.1 == "add_proposal").unwrap().3["proposal"]["kind"].clone()
+}
+
+fn decoded(v: &Value) -> Value {
+    let bytes: near_sdk::json_types::Base64VecU8 = near_sdk::serde_json::from_value(v.clone()).unwrap();
+    near_sdk::serde_json::from_slice(&bytes.0).unwrap()
+}
+
+/// `min_amount_out` of the swap message inside a swap kind.
+fn min_out_of(kind: &Value) -> Value {
+    let args = decoded(&kind["FunctionCall"]["actions"][1]["args"]);
+    let msg: Value = near_sdk::serde_json::from_str(args["msg"].as_str().unwrap()).unwrap();
+    msg["actions"][0]["min_amount_out"].clone()
+}
+
+#[test]
+fn a_swap_step_asks_rhea_for_a_quote_before_any_proposal_exists() {
+    // The proposal's `min_amount_out` comes from the price at run time, so no `add_proposal` may precede the quote.
+    let mut g = setup();
+    create(&mut g, dca(100, 2));
+    let due = T0 + MINUTE;
+    step(&mut g, due, 0);
+    assert!(!method_called("add_proposal"), "no proposal before the quote");
+    let quote = calls().into_iter().find(|c| c.1 == "get_return").unwrap();
+    assert_eq!(quote.0, EXCHANGE, "the exchange is the network constant, never a caller's choice");
+    assert_eq!(
+        quote.3,
+        near_sdk::serde_json::json!({
+            "pool_id": 57, "token_in": WRAP, "amount_in": (NEAR / 10).to_string(), "token_out": USDT,
+        })
+    );
+    assert!(method_called("on_quote"));
+    // The slot moved and the run is counted in the first receipt, as for every step (K2).
+    assert_eq!(spent(&g), NEAR / 10);
+    assert_eq!(due_at(&g, 0), due + MINUTE);
+    let r = rec(&g, &step_id(0, due));
+    assert_eq!((r.receiver_id.as_str(), r.amount.0, r.plan_id), (WRAP, NEAR / 10, Some(0)));
+}
+
+#[test]
+fn a_swap_step_gives_every_caller_the_same_receipts() {
+    // K1: the keeper passes only a plan id; whoever calls, the contracts and amounts are the same.
+    let run_as = |caller: &str| {
+        let mut g = setup();
+        create(&mut g, dca(100, 2));
+        env_as(caller, T0 + MINUTE);
+        let _ = g.execute_plan_step(0);
+        (calls(), plan(&g, 0))
+    };
+    assert_eq!(run_as(STRANGER), run_as(AGENT));
+}
+
+#[test]
+fn a_failed_quote_pauses_with_quote_failed_not_add_proposal_failed_and_gives_the_limit_back() {
+    // Plan 1.5 row 2. Two causes need two codes: a dead quote is the pool's problem (retry later), a refused
+    // add_proposal is the DAO's. `finish` alone would label it ADD_PROPOSAL_FAILED.
+    for quote in [Err(PromiseError::Failed), Ok(0)] {
+        let mut g = setup();
+        create(&mut g, dca(100, 2));
+        let (due, rid) = (T0 + MINUTE, step_id(0, T0 + MINUTE));
+        step(&mut g, due, 0);
+        assert_eq!(spent(&g), NEAR / 10);
+        quoted(&mut g, due, &rid, 0, quote);
+        let p = plan(&g, 0);
+        assert_eq!((p.status, p.pause_reason, p.runs_done), (PlanStatus::Paused, Some(PlanPauseReason::Failures), 0));
+        assert_eq!(p.next_run_at, Some(U64(due + MINUTE)), "Resume needs a slot");
+        assert!(logged("QUOTE_FAILED"));
+        assert!(!logged("ADD_PROPOSAL_FAILED"), "the first code wins");
+        assert_eq!(rec(&g, &rid).status, RequestStatus::Failed);
+        assert_eq!(spent(&g), 0, "nothing moved, so the daily window is given back");
+        assert!(!method_called("add_proposal"), "no proposal on a dead quote");
+    }
+}
+
+#[test]
+fn a_failed_quote_leaves_the_owners_pause_in_place() {
+    // A step in flight when the owner paused must not turn the owner's pause into a Failures pause.
+    let mut g = setup();
+    create(&mut g, dca(100, 2));
+    let (due, rid) = (T0 + MINUTE, step_id(0, T0 + MINUTE));
+    step(&mut g, due, 0);
+    env_as(DAO, due);
+    g.pause_plan(0);
+    quoted(&mut g, due, &rid, 0, Ok(0));
+    assert_eq!(plan(&g, 0).pause_reason, Some(PlanPauseReason::Owner));
+}
+
+#[test]
+fn a_good_quote_sets_min_out_to_the_exact_floor_of_quote_times_the_kept_share() {
+    // The owner chose a max price drop: the swap must refuse anything under quote * (10000 - bps) / 10000, rounded
+    // DOWN (rounding up could refuse the quoted price itself).
+    // 12_345 * 9950 / 10_000 = 12_283.275 -> 12_283 (ceil would be 12_284); 12_345 * 9800 / 10_000 = 12_098.1.
+    for (bps, quote, want) in [
+        (100u16, 1_000_000u128, 990_000u128),
+        (50, 12_345, 12_283),
+        (200, 12_345, 12_098),
+        (100, 1, 0), // 1 * 9900 / 10000 = 0: floor, never rounds up to the whole quote
+    ] {
+        let mut g = setup();
+        create(&mut g, dca(bps, 2));
+        let (due, rid) = (T0 + MINUTE, step_id(0, T0 + MINUTE));
+        step(&mut g, due, 0);
+        quoted(&mut g, due, &rid, 0, Ok(quote));
+        assert_eq!(min_out_of(&swap_proposal_kind()), want.to_string(), "bps {bps} quote {quote}");
+    }
+}
+
+#[test]
+fn min_out_does_not_overflow_on_a_quote_near_u128_max() {
+    // quote * 9950 would overflow u128 (and the contract builds with overflow-checks); the result must still be the
+    // exact floor. Constants computed with arbitrary-precision integers.
+    for (bps, want) in [
+        (50u16, "338580955086333771146057734394609370397"),
+        (100, "336879543251729078828740861357450529340"),
+        (200, "333476719582519694194107115283132847225"),
+    ] {
+        let mut g = setup();
+        create(&mut g, dca(bps, 2));
+        let (due, rid) = (T0 + MINUTE, step_id(0, T0 + MINUTE));
+        step(&mut g, due, 0);
+        quoted(&mut g, due, &rid, 0, Ok(u128::MAX));
+        assert_eq!(min_out_of(&swap_proposal_kind()), want, "bps {bps}");
+    }
+}
+
+#[test]
+fn a_good_quote_builds_the_wrap_then_swap_proposal_and_the_guard_votes_on_the_same_kind() {
+    let mut g = setup();
+    create(&mut g, dca(100, 2));
+    let (due, rid) = (T0 + MINUTE, step_id(0, T0 + MINUTE));
+    step(&mut g, due, 0);
+    quoted(&mut g, due, &rid, 0, Ok(896_500));
+
+    let add = calls().into_iter().find(|c| c.1 == "add_proposal").unwrap();
+    assert_eq!((add.0.as_str(), add.2), (DAO, BOND));
+    let line = format!("[KD-GUARD] request={rid} agent={GUARD} decision=auto reasons=- memo=plan 0 run 1");
+    assert_eq!(add.3["proposal"]["description"], line);
+    let call = &add.3["proposal"]["kind"]["FunctionCall"];
+    assert_eq!(call["receiver_id"], WRAP, "wNEAR is the receiver of both actions");
+    let acts = call["actions"].as_array().unwrap();
+    assert_eq!(acts.len(), 2);
+
+    // 1. wrap exactly the run's NEAR
+    assert_eq!(acts[0]["method_name"], "near_deposit");
+    assert_eq!(acts[0]["deposit"], (NEAR / 10).to_string(), "deposit == amount_per_run: the daily limit counts it");
+    assert_eq!(decoded(&acts[0]["args"]), near_sdk::serde_json::json!({}));
+    assert_eq!(acts[0]["gas"], dao::GAS_NEAR_DEPOSIT.as_gas().to_string());
+
+    // 2. ft_transfer_call to the exchange, 1 yocto, with the swap message
+    assert_eq!(acts[1]["method_name"], "ft_transfer_call");
+    assert_eq!(acts[1]["deposit"], "1", "NEP-141 needs exactly 1 yocto");
+    assert_eq!(acts[1]["gas"], dao::GAS_FT_TRANSFER_CALL.as_gas().to_string());
+    let args = decoded(&acts[1]["args"]);
+    assert_eq!(args["receiver_id"], EXCHANGE);
+    assert_eq!(args["amount"], (NEAR / 10).to_string());
+    let msg: Value = near_sdk::serde_json::from_str(args["msg"].as_str().unwrap()).unwrap();
+    // 896_500 * 9900 / 10_000 = 887_535
+    assert_eq!(
+        msg,
+        near_sdk::serde_json::json!({ "actions": [{
+            "pool_id": 57, "token_in": WRAP, "token_out": USDT,
+            "amount_in": (NEAR / 10).to_string(), "min_amount_out": "887535",
+        }]})
+    );
+    assert!(!logged("plan_paused"));
+
+    // The vote must carry the SAME kind: the DAO compares it with the stored proposal.
+    let kind = swap_proposal_kind();
+    env_as(GUARD, due);
+    let _ = g.on_proposal_added(rid.clone(), Some(kind.clone()), Ok(9));
+    let vote = calls().into_iter().find(|c| c.1 == "act_proposal").unwrap();
+    assert_eq!((vote.3["id"].as_u64(), vote.3["action"].as_str()), (Some(9), Some("VoteApprove")));
+    assert_eq!(vote.3["proposal"], kind);
+    voted(&mut g, due, &rid, Ok(()));
+    assert_eq!(plan(&g, 0).runs_done, 1);
+    assert_eq!(rec(&g, &rid).status, RequestStatus::AutoApproved);
+}
+
+#[test]
+fn the_vote_uses_the_kind_it_is_given_and_without_one_rebuilds_from_the_plan() {
+    // With `Some(kind)` (swap): the plan cannot rebuild it, so the argument is the only source.
+    let due = T0 + MINUTE;
+    let mut g = setup();
+    create(&mut g, dca(100, 2));
+    step(&mut g, due, 0);
+    let given = near_sdk::serde_json::json!({ "Transfer": { "receiver_id": "elsewhere.testnet", "token_id": "", "amount": "7", "msg": null } });
+    env_as(GUARD, due);
+    let _ = g.on_proposal_added(step_id(0, due), Some(given.clone()), Ok(3));
+    let vote = calls().into_iter().find(|c| c.1 == "act_proposal").unwrap();
+    assert_eq!(vote.3["proposal"], given);
+
+    // With `None` (also what a callback in flight at the upgrade carries): as before GĐ31. A transfer plan votes
+    // the transfer from its stored plan...
+    let mut g = setup();
+    create(&mut g, pay_vendor(2));
+    step(&mut g, due, 0);
+    added(&mut g, due, &step_id(0, due), Ok(4));
+    let vote = calls().into_iter().find(|c| c.1 == "act_proposal").unwrap();
+    assert_eq!(vote.3["proposal"]["Transfer"]["receiver_id"], VENDOR);
+    // ...a call plan votes its call...
+    let mut g = setup();
+    create(&mut g, plan_of(pool_call(), NEAR, 2));
+    step(&mut g, due, 0);
+    added(&mut g, due, &step_id(0, due), Ok(6));
+    let vote = calls().into_iter().find(|c| c.1 == "act_proposal").unwrap();
+    assert_eq!(vote.3["proposal"]["FunctionCall"]["receiver_id"], "pool.testnet");
+    // ...and so does an agent request with no plan.
+    let mut g = setup();
+    ask(&mut g, T0, "req-0001", VENDOR, NEAR);
+    added(&mut g, T0, "req-0001", Ok(5));
+    let vote = calls().into_iter().find(|c| c.1 == "act_proposal").unwrap();
+    assert_eq!(vote.3["proposal"]["Transfer"]["amount"], NEAR.to_string());
+}
+
+#[test]
+fn the_swap_vote_gets_the_swap_gas_and_a_transfer_vote_keeps_its_own() {
+    // A swap's act_proposal holds near_deposit + F; giving it the transfer gas would fail every run at the vote.
+    let due = T0 + MINUTE;
+    let gas_of_vote = |g: &mut Guard, kind: Option<Value>, rid: &str| {
+        env_as(GUARD, due);
+        let _ = g.on_proposal_added(rid.into(), kind, Ok(1));
+        get_created_receipts()
+            .into_iter()
+            .find(|r| r.receiver_id == id(DAO))
+            .and_then(|r| {
+                r.actions.into_iter().find_map(|a| match a {
+                    MockAction::FunctionCallWeight { prepaid_gas, .. } => Some(prepaid_gas.as_gas()),
+                    _ => None,
+                })
+            })
+            .unwrap()
+    };
+    let mut g = setup();
+    create(&mut g, dca(100, 2));
+    step(&mut g, due, 0);
+    let swap_gas = gas_of_vote(&mut g, Some(near_sdk::serde_json::json!({})), &step_id(0, due));
+    let mut g = setup();
+    create(&mut g, pay_vendor(2));
+    step(&mut g, due, 0);
+    let transfer_gas = gas_of_vote(&mut g, None, &step_id(0, due));
+    assert_eq!(swap_gas, GAS_ACT_PROPOSAL_SWAP.as_gas());
+    assert_eq!(transfer_gas, GAS_ACT_PROPOSAL.as_gas());
+    assert!(swap_gas >= dao::GAS_NEAR_DEPOSIT.as_gas() + dao::GAS_FT_TRANSFER_CALL.as_gas());
+}
+
+#[test]
+fn a_failed_vote_on_a_swap_pauses_for_balance_and_gives_the_limit_back() {
+    // The DAO is short of NEAR: near_deposit fails inside act_proposal, so the vote fails (F4). Like a transfer, the
+    // owner is told to top up (a call would say Failures), and the NEAR counted for the run goes back.
+    let mut g = setup();
+    create(&mut g, dca(100, 2));
+    let (due, rid) = (T0 + MINUTE, step_id(0, T0 + MINUTE));
+    step(&mut g, due, 0);
+    quoted(&mut g, due, &rid, 0, Ok(896_500));
+    let kind = swap_proposal_kind();
+    env_as(GUARD, due);
+    let _ = g.on_proposal_added(rid.clone(), Some(kind), Ok(1));
+    voted(&mut g, due, &rid, Err(PromiseError::Failed));
+    let p = plan(&g, 0);
+    assert_eq!((p.status, p.pause_reason, p.runs_done), (PlanStatus::Paused, Some(PlanPauseReason::InsufficientBalance), 0));
+    assert!(logged("VOTE_FAILED"));
+    assert_eq!(spent(&g), 0);
+    assert_eq!(rec(&g, &rid).status, RequestStatus::Failed);
+}
+
+#[test]
+fn a_refused_swap_at_rhea_still_counts_the_run() {
+    // D2 (owner accepted): the vote passed and Sputnik shows Approved, so sync reads Executed and the run stays
+    // counted; the NEAR sits in the DAO as wNEAR.
+    let mut g = setup();
+    create(&mut g, dca(100, 1));
+    let (due, rid) = (T0 + MINUTE, step_id(0, T0 + MINUTE));
+    step(&mut g, due, 0);
+    quoted(&mut g, due, &rid, 0, Ok(896_500));
+    let kind = swap_proposal_kind();
+    env_as(GUARD, due);
+    let _ = g.on_proposal_added(rid.clone(), Some(kind), Ok(1));
+    voted(&mut g, due, &rid, Ok(()));
+    synced(&mut g, due + 5, &rid, "Approved", due);
+    let p = plan(&g, 0);
+    assert_eq!((p.runs_done, p.status), (1, PlanStatus::Completed));
+    assert_eq!(spent(&g), NEAR / 10);
+}
+
+// `#[private]` is enforced by the wasm entry point the macro generates, so a native unit test cannot see it:
+// tests/sandbox.rs `on_quote_cannot_be_called_by_anyone_but_the_guard` covers it.
+
+#[test]
+#[should_panic(expected = "NOT_A_SWAP_PLAN")]
+fn on_quote_only_serves_a_swap_plan() {
+    let mut g = setup();
+    create(&mut g, pay_vendor(2));
+    step(&mut g, T0 + MINUTE, 0);
+    quoted(&mut g, T0 + MINUTE, &step_id(0, T0 + MINUTE), 0, Ok(1));
+}
+
+#[test]
+#[should_panic(expected = "OVER_PER_TX")]
+fn a_swap_plan_cannot_start_over_the_per_tx_limit() {
+    // A DCA plan must not sell more per run than an agent could move.
+    let mut g = setup();
+    create(&mut g, plan_of(swap_of(100), 6 * NEAR, 2));
+}
+
+#[test]
+#[should_panic(expected = "OVER_DAILY_LIMIT")]
+fn a_swap_plan_cannot_start_over_the_daily_limit() {
+    let mut g = setup();
+    env_as(DAO, T0);
+    g.set_policy(GuardPolicy { max_per_tx: U128(30 * NEAR), ..limits() });
+    create(&mut g, plan_of(swap_of(100), 21 * NEAR, 2));
+}
+
+#[test]
+#[should_panic(expected = "INVALID_SLIPPAGE")]
+fn create_plan_refuses_a_slippage_outside_the_three_choices() {
+    let mut g = setup();
+    create(&mut g, dca(75, 2));
+}
+
+#[test]
+#[should_panic(expected = "INVALID_TOKEN_OUT")]
+fn create_plan_refuses_wnear_as_the_token_to_buy() {
+    let mut g = setup();
+    create(&mut g, plan_of(PlanAction::Swap { pool_id: 57, token_out: id(WRAP), max_slippage_bps: 100 }, NEAR / 10, 2));
+}
+
+#[test]
+fn a_swap_over_the_daily_limit_skips_the_slot_without_a_quote() {
+    // A skip must not spend a view or count money. (Plan 1.5 row 1.)
+    let mut g = setup();
+    for i in 0..4 {
+        auto_approved(&mut g, T0 + 1, &format!("req-000{i}"), 5 * NEAR, i);
+    }
+    create(&mut g, plan_of(swap_of(100), NEAR, 2));
+    step(&mut g, T0 + MINUTE, 0);
+    assert!(logged("OVER_DAILY_LIMIT"));
+    assert!(!method_called("get_return") && !method_called("add_proposal"));
+    assert_eq!(spent(&g), 20 * NEAR);
+}
+
+#[test]
+fn the_guard_reports_version_1_3_0() {
+    // The dashboard and the upgrade script read this to know which Guard a Budget runs.
+    let g = setup();
+    assert_eq!(g.kd_guard_info()["version"], "1.3.0");
 }

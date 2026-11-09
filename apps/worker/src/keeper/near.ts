@@ -8,9 +8,10 @@ const TGAS = 10n ** 12n;
 
 /**
  * The only two calls the keeper signs. K2a: both are caller-blind and take no deposit, and gas is fixed here.
- * 200 Tgas is what the sandbox runs a step with (145 is the lowest that works); 50 covers the DAO view and callback.
+ * 300 Tgas (the protocol cap) because a swap step chains quote, proposal, deposit and `ft_transfer_call` to the exchange
+ * (GĐ31); a plain step needs about 145. Unused gas is refunded. 50 covers the DAO view and callback.
  */
-const KEEPER_GAS = { execute_plan_step: 200n * TGAS, sync_request: 50n * TGAS } as const;
+const KEEPER_GAS = { execute_plan_step: 300n * TGAS, sync_request: 50n * TGAS } as const;
 export type KeeperMethod = keyof typeof KEEPER_GAS;
 
 export function base58Encode(bytes: Uint8Array): string {
@@ -136,7 +137,27 @@ export class RpcFailed extends Error {}
 /** One outcome of `send_tx`: enough of nearcore's FinalExecutionOutcomeView for the keeper. */
 export interface TxOutcome {
   status: { SuccessValue?: string; Failure?: unknown };
-  receipts_outcome: { outcome: { logs: string[] } }[];
+  receipts_outcome: { outcome: { logs: string[]; executor_id?: string; status?: { Failure?: unknown } } }[];
+}
+
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * What the exchange did with a swap step, from its own receipts only: any contract in the chain can log a fake
+ * `Swapped` line. Null when no exchange receipt is in the outcome (`send_tx` returned before it ran).
+ */
+export function swapOutcome(tx: TxOutcome, exchange: string, wrap: string, tokenOut: string): { amount_out: string } | { failed: string } | null {
+  const re = new RegExp(`^Swapped (\\d+) ${escapeRe(wrap)} for (\\d+) ${escapeRe(tokenOut)}$`);
+  for (const r of tx.receipts_outcome) {
+    if (r.outcome.executor_id !== exchange) continue;
+    const failure = r.outcome.status?.Failure;
+    if (failure !== undefined) return { failed: /E68|SLIPPAGE/.test(JSON.stringify(failure)) ? "SLIPPAGE" : "SWAP_FAILED" };
+    for (const l of r.outcome.logs) {
+      const m = re.exec(l);
+      if (m) return { amount_out: m[2]! };
+    }
+  }
+  return null;
 }
 
 /** `kd_guard` NEP-297 events of a transaction, in order. */

@@ -5,7 +5,12 @@ import type { GuardCreateArgs } from "./guard-form.ts";
 export const GUARD_ROLE = "agent-guard";
 /** The role of docs/guard-integration.md step 2: the Guard alone adds and approves transfers, nothing else. */
 export const GUARD_PERMISSIONS = ["transfer:AddProposal", "transfer:VoteApprove"];
-const GUARD_VOTE_POLICY = { transfer: { weight_kind: "RoleWeight", quorum: "0", threshold: "1" } };
+/** The Guard of an Agent Budget also holds the swap rights (§11.10.3, GĐ31): a swap step is a `call` proposal. */
+export const BUDGET_GUARD_PERMISSIONS = [...GUARD_PERMISSIONS, "call:AddProposal", "call:VoteApprove"];
+const ROLE_VOTE = { weight_kind: "RoleWeight", quorum: "0", threshold: "1" };
+/** One vote entry per proposal kind the rights name, each decided by the role alone. */
+const votePolicyFor = (rights: readonly string[]): Record<string, unknown> =>
+  Object.fromEntries(["transfer", "call"].filter((k) => rights.some((r) => r.startsWith(`${k}:`))).map((k) => [k, ROLE_VOTE]));
 /** Gas on the factory call: `create` refuses less than 215 Tgas, and the sandbox test runs on this. */
 export const CREATE_GAS = "220000000000000";
 const GUARD_CALL_GAS = "50000000000000";
@@ -57,15 +62,15 @@ const isGroup = (kind: unknown): kind is { Group: string[] } =>
  * `ChangePolicyAddOrUpdateRole`, so the full policy is proposed). Every other role is kept as it is. A DAO with
  * Guards already gets the new one added to the same role. Null when the role already lists `guardId`.
  */
-export function addGuardRoleProposal(policy: RawPolicy, guardId: string): AddProposalArgs | null {
+export function addGuardRoleProposal(policy: RawPolicy, guardId: string, rights: readonly string[] = GUARD_PERMISSIONS): AddProposalArgs | null {
   const existing = policy.roles.find((r) => r.name === GUARD_ROLE);
   const members = existing && isGroup(existing.kind) ? existing.kind.Group : [];
   if (members.includes(guardId)) return null;
   const role: RawRole = {
     name: GUARD_ROLE,
     kind: { Group: [...members, guardId] },
-    permissions: [...GUARD_PERMISSIONS],
-    vote_policy: GUARD_VOTE_POLICY,
+    permissions: [...rights],
+    vote_policy: votePolicyFor(rights),
   };
   const roles = existing ? policy.roles.map((r) => (r === existing ? role : r)) : [...policy.roles, role];
   return {
@@ -88,6 +93,27 @@ export function removeGuardRoleProposal(policy: RawPolicy, guardId: string): Add
   return {
     proposal: { description: `Remove ${guardId} from role ${GUARD_ROLE}`, kind: { ChangePolicy: { policy: { ...policy, roles } } } },
   };
+}
+
+/** True when the `agent-guard` role lists `guardId` and holds the swap rights. */
+export function hasSwapRights(policy: RawPolicy, guardId: string): boolean {
+  return policy.roles.some((r) => r.name === GUARD_ROLE && isGroup(r.kind) && r.kind.Group.includes(guardId) && ["call:AddProposal", "call:VoteApprove"].every((p) => r.permissions.includes(p)));
+}
+
+/**
+ * Allow swaps: the whole current policy with the swap rights added to the role that lists `guardId`; other roles and
+ * members stay as they are. Null when the role already has the rights or does not list `guardId` (nothing to allow).
+ */
+export function allowSwapsProposal(policy: RawPolicy, guardId: string): AddProposalArgs | null {
+  const existing = policy.roles.find((r) => r.name === GUARD_ROLE && isGroup(r.kind) && r.kind.Group.includes(guardId));
+  if (existing === undefined || hasSwapRights(policy, guardId)) return null;
+  const role: RawRole = {
+    ...existing,
+    permissions: [...new Set([...existing.permissions, "call:AddProposal", "call:VoteApprove"])],
+    vote_policy: { ...votePolicyFor(["call:"]), ...existing.vote_policy },
+  };
+  const roles = policy.roles.map((r) => (r === existing ? role : r));
+  return { proposal: { description: `Allow swaps for ${guardId}`, kind: { ChangePolicy: { policy: { ...policy, roles } } } } };
 }
 
 /** The DAO-only Guard methods the "Propose change" form offers. */
@@ -117,20 +143,56 @@ export const AGENT_GAS_FUND_YOCTO = 5n * 10n ** 23n;
 /** `add_agent` with a key: the entry's storage, and the fund. What is not used goes back to the DAO. */
 export const NEW_AGENT_DEPOSIT = (BigInt(GUARD_STORAGE_DEPOSIT) + AGENT_GAS_FUND_YOCTO).toString();
 
+/** `upgrade` fetches the code (60 Tgas), deploys and migrates (80 Tgas): 200 Tgas leaves room, and `act_proposal` has 300. */
+const UPGRADE_GAS = "200000000000000";
+
 /** A FunctionCall proposal DAO → Guard, the only way to change a locked Guard. */
-export function guardChangeProposal(guardId: string, method: GuardMethod | PlanMethod, args: object, deposit: string = STORAGE_METHODS.includes(method) ? GUARD_STORAGE_DEPOSIT : "0"): AddProposalArgs {
+export function guardChangeProposal(
+  guardId: string,
+  method: GuardMethod | PlanMethod | "upgrade",
+  args: object,
+  deposit: string = (STORAGE_METHODS as readonly string[]).includes(method) ? GUARD_STORAGE_DEPOSIT : "0",
+): AddProposalArgs {
   return {
     proposal: {
       description: `Agent Guard ${guardId}: ${method}`,
       kind: {
         FunctionCall: {
           receiver_id: guardId,
-          actions: [{ method_name: method, args: base64Json(args), deposit, gas: GUARD_CALL_GAS }],
+          actions: [{ method_name: method, args: base64Json(args), deposit, gas: method === "upgrade" ? UPGRADE_GAS : GUARD_CALL_GAS }],
         },
       },
     },
   };
 }
+
+/** Update your Budget: the Guard pulls its new code from `factory` and checks it hashes to `codeHash` (read from the factory). */
+export function upgradeGuardProposal(guardId: string, factory: string, codeHash: string): AddProposalArgs {
+  return guardChangeProposal(guardId, "upgrade", { code_source: factory, code_hash: codeHash });
+}
+
+/** A contract the Budget's account must be registered on before it can hold its token (NEP-145). */
+export interface UsdtRegistration {
+  contract: string;
+  /** `storage_balance_bounds.min` of that contract, yoctoNEAR: the exact deposit. */
+  min: string;
+}
+
+/** Enable USDT: one `storage_deposit` request per contract that still lacks the DAO, paid by the DAO. */
+export function enableUsdtProposals(dao: string, missing: readonly UsdtRegistration[]): AddProposalArgs[] {
+  return missing.map((m) => ({
+    proposal: {
+      description: `Register ${dao} on ${m.contract}`,
+      kind: {
+        FunctionCall: {
+          receiver_id: m.contract,
+          actions: [{ method_name: "storage_deposit", args: base64Json({ account_id: dao, registration_only: true }), deposit: m.min, gas: STORAGE_DEPOSIT_GAS }],
+        },
+      },
+    },
+  }));
+}
+const STORAGE_DEPOSIT_GAS = "30000000000000";
 
 /**
  * Which of `labels` (Sputnik proposal kinds: "call" for FunctionCall, "policy" for ChangePolicy) `account` may

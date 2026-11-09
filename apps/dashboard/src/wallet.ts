@@ -135,6 +135,53 @@ export async function signActProposal(
   if (outcomeFailed(outcome)) throw new Error(`The transaction for proposal ${args.id} failed on the chain.`);
 }
 
+/** `add_proposal` alone is cheap: 20 Tgas each lets a batch of up to 10 stay under the 300 Tgas a transaction may carry. */
+const BATCH_ADD_PROPOSAL_GAS = 20_000_000_000_000n;
+
+/** Sign 1 for several requests in one wallet approval: one transaction with one `add_proposal` each. */
+export async function signAddProposalBatch(
+  accountId: string,
+  network: Network,
+  dao: string,
+  bond: string,
+  proposals: AddProposalArgs[],
+  walletId: WalletId,
+  onStep: (text: string) => void = () => {},
+): Promise<void> {
+  const wallet = await walletFor(accountId, network, walletId, onStep);
+  onStep(`Step 3/3: approve the ${proposals.length} requests in ${walletLabel(walletId)}.`);
+  const outcome: unknown = await wallet.signAndSendTransactions({
+    transactions: [
+      { signerId: accountId, receiverId: dao, actions: proposals.map((p) => actionCreators.functionCall("add_proposal", p, BATCH_ADD_PROPOSAL_GAS, BigInt(bond))) },
+    ],
+  });
+  if (outcomeFailed(outcome)) throw new Error("The transaction failed on the chain.");
+}
+
+/** Sign 2 for several requests in one wallet approval: the 300 Tgas a transaction may carry is shared between the votes. */
+export async function signActProposals(
+  accountId: string,
+  network: Network,
+  dao: string,
+  votes: { id: number; proposal: Record<string, unknown> }[],
+  walletId: WalletId,
+  onStep: (text: string) => void = () => {},
+): Promise<void> {
+  const wallet = await walletFor(accountId, network, walletId, onStep);
+  onStep(`Step 3/3: approve the ${votes.length} approvals in ${walletLabel(walletId)}.`);
+  const gas = ACT_PROPOSAL_GAS / BigInt(votes.length);
+  const outcome: unknown = await wallet.signAndSendTransactions({
+    transactions: [
+      {
+        signerId: accountId,
+        receiverId: dao,
+        actions: votes.map((v) => actionCreators.functionCall("act_proposal", { id: v.id, action: "VoteApprove", proposal: v.proposal }, gas, 0n)),
+      },
+    ],
+  });
+  if (outcomeFailed(outcome)) throw new Error("The transaction failed on the chain.");
+}
+
 /** Top up: a plain NEAR transfer from the owner's account to the DAO. */
 export async function signTopUp(
   accountId: string,

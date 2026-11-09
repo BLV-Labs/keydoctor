@@ -25,7 +25,10 @@ import {
   BudgetFlowError,
   confirmFirstSignature,
   confirmProposal,
+  createDcaProposal,
+  DCA_STRATEGY,
   createPlanProposal,
+  dcaFromForm,
   freshAgentAccount,
   PAYOUT_STRATEGY,
   planChangeProposal,
@@ -36,7 +39,7 @@ import {
   type ConfirmedProposal,
   type VoteAction,
 } from "./budget-flow.ts";
-import { budgetRpc, proposalLabel, readBalance, readBudget, readProposal, topUpBlocks, TOP_UP_TEXT, type BudgetLive } from "./budget-read.ts";
+import { budgetRpc, guardNeedsUpdate, proposalLabel, readBalance, readBudget, readDcaQuote, readDcaReadiness, readProposal, topUpBlocks, TOP_UP_TEXT, type BudgetLive, type DcaReadiness } from "./budget-read.ts";
 import {
   BALANCED_RULES,
   CAUTIOUS_RULES,
@@ -61,14 +64,19 @@ import {
   fenceSentence,
   isModalPanel,
   type BudgetPanel,
+  type DcaView,
 } from "./budget-view.ts";
 import {
   addGuardRoleProposal,
+  allowSwapsProposal,
   createGuardProposal,
+  enableUsdtProposals,
   guardChangeProposal,
+  hasSwapRights,
   isGuardMethod,
   missingProposePermissions,
   removeGuardRoleProposal,
+  upgradeGuardProposal,
   type AddProposalArgs,
   type RawPolicy,
 } from "./guard-proposals.ts";
@@ -110,7 +118,22 @@ interface NewAgent {
   key: { publicKey: string; privateKey: string };
 }
 
-let budgetSign2: { account: string; walletId: WalletId; confirmed: ConfirmedProposal; description: string; agent: NewAgent | null } | null = null;
+/**
+ * `check` reads the chain after the vote and says whether the change took hold (Sputnik shows a failed call as Approved).
+ * `batch` holds the other requests of a several-in-one approval; `confirmed` is then the first of them.
+ */
+interface Sign2 {
+  account: string;
+  walletId: WalletId;
+  confirmed: ConfirmedProposal;
+  description: string;
+  agent: NewAgent | null;
+  check: (() => Promise<string>) | null;
+  batch: ConfirmedProposal[] | null;
+}
+let budgetSign2: Sign2 | null = null;
+/** The DCA pop-up's reads: the checklist state and the price of one run. */
+let dcaRead: { readiness: DcaReadiness | null; quote: string | null } = { readiness: null, quote: null };
 /** An agent whose last signature has started. Its private key exists only here: leaving the page loses it. */
 let budgetNewAgent: NewAgent | null = null;
 /** A Budget being created. `key` exists from sign 2 on, and only here: leaving the page loses it. */
@@ -481,9 +504,10 @@ function followBudgetLink(link: RouteLink, state: BudgetLive): void {
   }
   if (link.kind === "strategy") {
     if (link.id === PAYOUT_STRATEGY && state.plans !== null) openBudgetPanel("plan", main);
+    else if (link.id === DCA_STRATEGY && state.plans !== null) openBudgetPanel("dca", main);
     else {
       const status = budgetStatus();
-      if (status !== null) status.textContent = link.id === PAYOUT_STRATEGY ? "Scheduled payouts cannot be set up here right now: the plans could not be read." : `Strategy ${link.id} is not available yet.`;
+      if (status !== null) status.textContent = link.id === PAYOUT_STRATEGY || link.id === DCA_STRATEGY ? "Plans cannot be set up here right now: they could not be read." : `Strategy ${link.id} is not available yet.`;
     }
   }
   if (link.kind === "plan") {
@@ -557,7 +581,7 @@ async function confirmAfterSign1(built: AddProposalArgs["proposal"], outcome: un
  * Sign 1 of an owner action: add the proposal, take its id from the transaction outcome, read it back and compare.
  * Only a match shows the button for sign 2. If sign 1 went through but this stops, the proposal waits under "Needs you".
  */
-function startTwoSignatures(args: AddProposalArgs, agent: NewAgent | null = null): void {
+function startTwoSignatures(args: AddProposalArgs, agent: NewAgent | null = null, check: (() => Promise<string>) | null = null): void {
   const status = budgetStatus();
   if (status === null) return;
   const signer = budgetSigner(status, [proposalLabel(args.proposal.kind)]);
@@ -574,7 +598,7 @@ function startTwoSignatures(args: AddProposalArgs, agent: NewAgent | null = null
       status.textContent = "Signature 1 done. Reading the request back from the chain…";
       try {
         const confirmed = await confirmAfterSign1(args.proposal, outcome, state.dao.dao, network);
-        budgetSign2 = { account, walletId, confirmed, description: args.proposal.description, agent };
+        budgetSign2 = { account, walletId, confirmed, description: args.proposal.description, agent, check, batch: null };
         status.textContent = "Signature 1 of 2 done and checked against the chain.";
         if (next) next.innerHTML = renderBudgetNext(confirmed.id, args.proposal.description).value;
         next?.querySelector("button")?.focus();
@@ -592,19 +616,32 @@ function signSecondSignature(button: HTMLButtonElement): void {
   const pending = budgetSign2;
   const state = budgetState;
   if (status === null || pending === null || state === null) return;
-  const { account, walletId, confirmed, agent } = pending;
+  const { account, walletId, confirmed, agent, check, batch } = pending;
   button.disabled = true;
   // Before the wallet opens: an answer lost on the way back must not lose the key of an agent that now exists.
   budgetNewAgent = agent;
   agentKeyHref = location.href;
   status.textContent = `Waiting for ${walletLabel(walletId)}. Signature 2 of 2: check the transaction there before you approve.`;
   import("./wallet.ts")
-    .then((w) => w.signActProposal(account, budgetNetwork(), state.dao.dao, actProposalArgs(confirmed, "VoteApprove"), walletId, (t) => (status.textContent = t)))
-    .then(() => statusAfterVote(budgetNetwork(), state.dao.dao, confirmed.id))
+    .then((w) =>
+      batch === null
+        ? w.signActProposal(account, budgetNetwork(), state.dao.dao, actProposalArgs(confirmed, "VoteApprove"), walletId, (t) => (status.textContent = t))
+        : w.signActProposals(account, budgetNetwork(), state.dao.dao, batch.map((c) => ({ id: c.id, proposal: c.kind })), walletId, (t) => (status.textContent = t)),
+    )
+    .then(async () => {
+      // A several-in-one approval is judged by its last request: the votes ran in one transaction.
+      const last = batch === null ? confirmed : (batch[batch.length - 1] ?? confirmed);
+      return statusAfterVote(budgetNetwork(), state.dao.dao, last.id);
+    })
     .then(async (after) => {
       budgetSign2 = null;
       const next = document.getElementById("budget-next");
       if (next) next.innerHTML = "";
+      if (check !== null) {
+        if (after !== "Approved") return statusWithButton(status, voteResultText(confirmed.id, "VoteApprove", confirmed.kind, after), "rescan", "Reload");
+        status.textContent = "Checking the chain…";
+        return statusWithButton(status, await check(), "rescan", "Reload");
+      }
       if (agent === null) return statusWithButton(status, voteResultText(confirmed.id, "VoteApprove", confirmed.kind, after), "rescan", "Reload");
       status.textContent = "Checking the chain…";
       showAgentAdded(status, state, agent, await readAgentProblem(state, agent, 5));
@@ -1209,6 +1246,7 @@ function openAlerts(trigger: HTMLElement): void {
 
 function openBudgetPanel(panel: BudgetPanel, trigger: HTMLElement): void {
   if (budgetState === null) return;
+  if (panel === "dca") return openDca(trigger);
   showBudgetDrawer(renderBudgetPanel(panel, budgetState, null, budgetPanelValues(panel, budgetState)), trigger, isModalPanel(panel));
   document.querySelector<HTMLElement>("#budget-panel-form :is(input:not([type=hidden]), select)")?.focus();
 }
@@ -1423,7 +1461,146 @@ async function checkBudgetName(input: HTMLInputElement): Promise<void> {
   }
 }
 
-const isBudgetPanel = (v: unknown): v is BudgetPanel => v === "topup" || v === "withdraw" || v === "rules" || v === "add-agent" || v === "recipients" || v === "plan";
+const isBudgetPanel = (v: unknown): v is BudgetPanel =>
+  v === "topup" || v === "withdraw" || v === "rules" || v === "add-agent" || v === "recipients" || v === "plan" || v === "dca";
+
+const formValues = (form: HTMLFormElement): Record<string, string> => Object.fromEntries([...new FormData(form).entries()].map(([k, v]) => [k, String(v)]));
+
+const dcaContract = (): string => BUDGET_FACTORY || BUDGET_FACTORY_NAME;
+const dcaView = (): DcaView => ({ network: budgetNetwork(), readiness: dcaRead.readiness, quote: dcaRead.quote, canUpdate: true });
+
+function renderDcaPanel(error: string | null, values: Record<string, string>, now: number = Date.now()): Html {
+  return renderBudgetPanel("dca", budgetState as BudgetLive, error, { ...budgetPanelTo(), ...values, connected: connected === null ? "" : "1" }, now, dcaView());
+}
+
+/** Opens the DCA pop-up at once, then fills the checklist when the chain reads are back. */
+function openDca(trigger: HTMLElement): void {
+  if (budgetState === null) return;
+  dcaRead = { readiness: null, quote: null };
+  showBudgetDrawer(renderDcaPanel(null, {}), trigger, false);
+  void refreshDca();
+}
+
+/** Re-draws the open DCA form from its own values, keeping the field the owner is in. */
+function repaintDca(): void {
+  const form = document.getElementById("budget-panel-form");
+  if (!(form instanceof HTMLFormElement) || form.dataset.panel !== "dca" || budgetState === null) return;
+  const activeId = document.activeElement instanceof HTMLElement && form.contains(document.activeElement) ? document.activeElement.id : "";
+  form.outerHTML = renderDcaPanel(null, formValues(form)).value;
+  if (activeId !== "") document.getElementById(activeId)?.focus();
+}
+
+async function refreshDca(): Promise<void> {
+  const state = budgetState;
+  if (state === null || state.guard === null) return;
+  const readiness = await readDcaReadiness(state.dao.dao, state.guard.guard_id, dcaContract(), budgetNetwork()).catch(() => null);
+  dcaRead = { ...dcaRead, readiness };
+  repaintDca();
+}
+
+/** Waits for a chain read to show the change; reads lag the vote, so a miss is read again. */
+async function untilRead(tries: number, ok: () => Promise<boolean>): Promise<boolean> {
+  for (let attempt = 0; attempt < tries; attempt += 1) {
+    if (attempt > 0) await sleep(2000);
+    if (await ok().catch(() => false)) return true;
+  }
+  return false;
+}
+
+/** One of the three checklist fixes. Each goes through the same two signatures and ends with a read of the chain. */
+function runDcaFix(kind: string): void {
+  const status = budgetStatus();
+  const state = budgetState;
+  if (status === null || state === null || state.guard === null) return;
+  const guardId = state.guard.guard_id;
+  const network = budgetNetwork();
+  if (kind === "dca-usdt") return void enableUsdt();
+  if (kind === "dca-upgrade") {
+    const hash = dcaRead.readiness?.latestHash ?? null;
+    if (hash === null) return void (status.textContent = "The newest Budget code could not be read, so it cannot be updated now.");
+    closeBudgetDrawer();
+    startTwoSignatures(upgradeGuardProposal(guardId, dcaContract(), hash), null, async () => {
+      let version: string | null = null;
+      const done = await untilRead(5, async () => {
+        version = (await readDcaReadiness(state.dao.dao, guardId, dcaContract(), network)).version;
+        return version !== null && !guardNeedsUpdate(version);
+      });
+      return done ? `Your Budget is updated to version ${String(version)}. Open the plan again to continue.` : `The approval went through, but the Budget still reports version ${String(version ?? "unknown")}. Reload and check again before you start a plan.`;
+    });
+    return;
+  }
+  const proposal = allowSwapsProposal(state.dao.policy, guardId);
+  if (proposal === null) return void (status.textContent = "Swaps are already allowed for this Budget.");
+  closeBudgetDrawer();
+  startTwoSignatures(proposal, null, async () => {
+    const done = await untilRead(5, async () => {
+      const fresh = await readBudget(state.dao.dao, BUDGET_READ_FACTORY, network);
+      return hasSwapRights(fresh.dao.policy, guardId);
+    });
+    return done ? "Swaps are allowed for your Budget. Open the plan again to continue." : "The approval went through, but the rights did not change. Reload and check before you start a plan.";
+  });
+}
+
+/** Enable USDT: one request per contract that lacks the Budget, added in one wallet approval and approved in a second. */
+async function enableUsdt(): Promise<void> {
+  const status = budgetStatus();
+  const state = budgetState;
+  const registrations = dcaRead.readiness?.registrations ?? null;
+  if (status === null || state === null || registrations === null) return;
+  const dao = state.dao.dao;
+  const network = budgetNetwork();
+  const missing = registrations.filter((r) => !r.registered).map((r) => ({ contract: r.contract, min: r.min }));
+  if (missing.length === 0) return void (status.textContent = "USDT is already enabled for this Budget.");
+  const proposals = enableUsdtProposals(dao, missing);
+  const signer = budgetSigner(status, proposals.map((p) => proposalLabel(p.proposal.kind)));
+  if (signer === null) return;
+  closeBudgetDrawer();
+  const { account, walletId } = signer;
+  budgetSign2 = null;
+  const next = document.getElementById("budget-next");
+  if (next) next.innerHTML = "";
+  status.textContent = `Waiting for ${walletLabel(walletId)}. Signature 1 of 2: check the transaction there before you approve.`;
+  try {
+    const rpc = budgetRpc(network);
+    const { height } = await rpc.block();
+    const first = Number(await rpc.callFunction(dao, height, "get_last_proposal_id", {}));
+    if (!Number.isInteger(first)) throw new BudgetFlowError("PROPOSAL_UNREADABLE", "The next request number could not be read.");
+    const w = await import("./wallet.ts");
+    await w.signAddProposalBatch(account, network, dao, state.dao.policy.proposal_bond, proposals, walletId, (t) => (status.textContent = t));
+    status.textContent = "Signature 1 done. Reading the requests back from the chain…";
+    const confirmed: ConfirmedProposal[] = [];
+    for (const [i, p] of proposals.entries()) {
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          confirmed.push(await confirmProposal(p.proposal, first + i, (id) => readProposal(rpc, dao, id)));
+          break;
+        } catch (e) {
+          if (!(e instanceof BudgetFlowError && e.code === "PROPOSAL_UNREADABLE") || attempt >= 3) throw e;
+          await sleep(2000);
+        }
+      }
+    }
+    const head = confirmed[0];
+    if (head === undefined) return;
+    const description = `Enable USDT: ${proposals.length} request${proposals.length === 1 ? "" : "s"}`;
+    const check = async (): Promise<string> => {
+      let still: string[] = [];
+      const done = await untilRead(5, async () => {
+        const r = await readDcaReadiness(dao, signer.guardId, dcaContract(), network);
+        still = (r.registrations ?? []).filter((x) => !x.registered).map((x) => x.contract);
+        return r.registrations !== null && still.length === 0;
+      });
+      return done ? "USDT is enabled for your Budget. Open the plan again to continue." : `The approval went through, but ${still.length === 0 ? "the setup could not be read" : `${still.join(", ")} still ${still.length === 1 ? "does" : "do"} not list your Budget`}. Reload and check before you start a plan.`;
+    };
+    budgetSign2 = { account, walletId, confirmed: head, description, agent: null, check, batch: confirmed };
+    status.textContent = "Signature 1 of 2 done and checked against the chain.";
+    if (next) next.innerHTML = renderBudgetNext(head.id, description).value;
+    next?.querySelector("button")?.focus();
+  } catch (e) {
+    const why = e instanceof BudgetFlowError ? e.message : e instanceof Error ? e.message : "The requests could not be checked.";
+    statusWithButton(status, `Not done: ${why} If signature 1 went through, the requests wait under "Needs you".`, "rescan", "Reload");
+  }
+}
 
 /** The owner-action form: validates, then starts the one-signature Top up or the two-signature flow. */
 function submitBudgetPanel(form: HTMLFormElement): void {
@@ -1433,10 +1610,28 @@ function submitBudgetPanel(form: HTMLFormElement): void {
   if (state === null || state.guard === null || status === null || !isBudgetPanel(panel)) return;
   const values = Object.fromEntries([...new FormData(form).entries()].map(([k, v]) => [k, String(v)]));
   const reject = (error: string) => {
-    form.outerHTML = renderBudgetPanel(panel, state, error, { ...values, ...budgetPanelTo() }).value;
+    form.outerHTML = (panel === "dca" ? renderDcaPanel(error, values) : renderBudgetPanel(panel, state, error, { ...values, ...budgetPanelTo() })).value;
     document.querySelector<HTMLElement>("#budget-panel-form :is(input:not([type=hidden]), select)")?.focus();
   };
   const guardId = state.guard.guard_id;
+  if (panel === "dca") {
+    const now = Date.now();
+    const result = dcaFromForm(values, state.guard, now);
+    if (!result.ok) return reject(result.error);
+    if (values.step !== "confirm") {
+      void readDcaQuote(result.value.amount.yocto, budgetNetwork())
+        .catch(() => null)
+        .then((quote) => {
+          dcaRead = { ...dcaRead, quote };
+          form.outerHTML = renderDcaPanel(null, { ...values, step: "confirm" }, now).value;
+          document.querySelector<HTMLElement>('#budget-panel-form [type="submit"]')?.focus();
+        });
+      return;
+    }
+    closeBudgetDrawer();
+    startTwoSignatures(createDcaProposal(guardId, result.value));
+    return;
+  }
   if (panel === "plan") {
     const now = Date.now();
     const result = planFromForm(values, state.guard, now);
@@ -2461,6 +2656,18 @@ root.addEventListener("click", (event) => {
       document.querySelector<HTMLElement>("#bp-receiver")?.focus();
       break;
     }
+    case "budget-dca-edit": {
+      const form = el.closest("form");
+      if (form === null || budgetState === null) break;
+      form.outerHTML = renderDcaPanel(null, { ...formValues(form), step: "edit" }).value;
+      document.querySelector<HTMLElement>("#bp-amount")?.focus();
+      break;
+    }
+    case "dca-upgrade":
+    case "dca-allow":
+    case "dca-usdt":
+      runDcaFix(el.dataset.action ?? "");
+      break;
     case "budget-recipient-drop":
       closeBudgetDrawer();
       dropBudgetRecipient(el.dataset.account ?? "");

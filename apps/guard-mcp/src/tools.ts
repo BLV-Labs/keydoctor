@@ -102,7 +102,7 @@ export const TOOLS = [
 
 interface PlanView {
   plan_id: number;
-  action: { type: string; receiver_id?: string };
+  action: { type: string; receiver_id?: string; token_out?: string };
   strategy_id: string;
   amount_per_run: string;
   interval_sec: number;
@@ -120,10 +120,10 @@ const PAUSE_TEXT: Record<string, string> = {
   failures: "Paused: it no longer fits the Budget's rules, or runs kept failing.",
 };
 
-/** §11.11.1. Only scheduled payouts run; the dashboard has no setup for the others yet, so they carry no link. */
+/** §11.11.1. Payouts and DCA run; the rest have no dashboard setup yet, so they carry no link. DCA is testnet only (ADR 0007). */
 const CATALOG = [
   { id: "scheduled-payouts", name: "Scheduled payouts", status: "live", summary: "Pay a recipient the same amount on a schedule." },
-  { id: "dca-near", name: "DCA NEAR → USDT", status: "coming_soon", summary: `Sell NEAR for USDT in small steps. ${NO_ADVICE}` },
+  { id: "dca-near", name: "DCA NEAR → USDT", status: "live", summary: `Sell NEAR for USDT in small steps, on testnet only. ${NO_ADVICE}` },
   { id: "auto-stake", name: "Auto-stake idle NEAR", status: "coming_soon", summary: "Keep spare NEAR staked until it is needed." },
   { id: "rebalance", name: "Rebalance NEAR / USDC", status: "coming_soon", summary: `Hold a target split between the two. ${NO_ADVICE}` },
   { id: "take-profit", name: "Take profit", status: "coming_soon", summary: `Sell part of your NEAR at a price you pick. ${NO_ADVICE}` },
@@ -392,7 +392,7 @@ export function createGuard({ config, rpc, key, newRequestId = randomUUID }: Gua
     return {
       guard_id: guard,
       dao_id: cfg.dao_id,
-      strategies: CATALOG.map((c) => ({ ...c, setup_url: c.status === "live" && plans ? budgetUrl(cfg.dao_id, { strategy: c.id }) : null })),
+      strategies: CATALOG.map((c) => ({ ...c, setup_url: c.status === "live" && plans && (c.id !== "dca-near" || config.network === "testnet") ? budgetUrl(cfg.dao_id, { strategy: c.id }) : null })),
       note: plans
         ? "You cannot set up a strategy. Send the owner its setup_url: they set it up and sign it in their wallet."
         : "This Guard was created before plans existed, so no strategy can run on it. The owner needs a new Budget for that.",
@@ -420,6 +420,7 @@ export function createGuard({ config, rpc, key, newRequestId = randomUUID }: Gua
         strategy_id: p.strategy_id,
         action: p.action.type,
         receiver_id: p.action.type === "transfer" ? (p.action.receiver_id ?? null) : null,
+        token_out: p.action.type === "swap" ? (p.action.token_out ?? null) : null,
         amount_per_run_near: yoctoToNear(p.amount_per_run),
         interval_sec: p.interval_sec,
         runs_done: p.runs_done,
@@ -433,7 +434,7 @@ export function createGuard({ config, rpc, key, newRequestId = randomUUID }: Gua
       message:
         plans.length === 0
           ? "No plans on this Budget yet. Only the owner can start one, from the dashboard."
-          : `${plans.length} plan(s), ${open} active or paused. Only the owner can pause, resume or cancel a plan, from its url. Scheduled payouts pay a fixed NEAR amount, so they have no average price.`,
+          : `${plans.length} plan(s), ${open} active or paused. Only the owner can pause, resume or cancel a plan, from its url. Scheduled payouts pay a fixed NEAR amount, so they have no average price. A swap plan sells amount_per_run_near NEAR for token_out each run.`,
     };
   }
 

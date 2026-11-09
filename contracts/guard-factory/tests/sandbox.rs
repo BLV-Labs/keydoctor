@@ -458,3 +458,73 @@ async fn sign_2_creates_the_guard_and_its_role_in_one_transaction() -> anyhow::R
     assert!(after["roles"].as_array().unwrap().iter().any(|r| r["name"] == "agent-guard" && r["kind"]["Group"][0] == guard.as_str()), "{after}");
     Ok(())
 }
+
+/// The Guard wasm plus one empty custom section: still valid, but a different hash and length.
+fn guard_wasm_v2() -> anyhow::Result<Vec<u8>> {
+    let mut code = std::fs::read(GUARD_WASM)?;
+    code.extend([0x00, 0x05, 0x04, b'm', b'a', b'r', b'k']);
+    Ok(code)
+}
+
+fn borsh_bytes(code: &[u8]) -> Vec<u8> {
+    let mut args = (code.len() as u32).to_le_bytes().to_vec();
+    args.extend(code);
+    args
+}
+
+// GĐ31 D1. The unit test cannot see `#[private]` (the wasm entry point enforces it), so the caller check is proved here.
+#[tokio::test]
+async fn only_the_factory_account_can_replace_the_guard_code() -> anyhow::Result<()> {
+    // The factory is the code source a DAO votes an `upgrade` against: if anyone else could swap the bytes, an
+    // approved hash would suddenly name a Guard the DAO never saw.
+    let e = setup().await?;
+    let v2 = guard_wasm_v2()?;
+    let before: String = e.factory.view("get_code_hash").await?.json()?;
+    for who in [&e.stranger, &e.council, &e.agent] {
+        let outcome = who.call(e.factory.id(), "set_guard_code").args(borsh_bytes(&v2)).max_gas().transact().await?;
+        assert!(outcome.is_failure(), "{} must not replace the code", who.id());
+    }
+    // The DAO account itself, through a proposal, is another caller too.
+    let kind = json!({ "FunctionCall": { "receiver_id": e.factory.id(), "actions": [{
+        "method_name": "set_guard_code", "args": STANDARD.encode(&v2), "deposit": "0",
+        "gas": Gas::from_tgas(50).as_gas().to_string() }]}});
+    let refused = e.council_passes(kind).await.expect_err("the DAO's call must fail");
+    assert!(format!("{refused:?}").contains("is private"), "{refused:?}");
+    assert_eq!(e.factory.view("get_code_hash").await?.json::<String>()?, before, "the hash must not move");
+    assert_eq!(e.factory.view("get_guard_code").await?.result, std::fs::read(GUARD_WASM)?, "nor the bytes");
+    Ok(())
+}
+
+#[tokio::test]
+async fn after_set_guard_code_the_hash_the_bytes_and_the_next_guard_follow_the_new_code() -> anyhow::Result<()> {
+    let e = setup().await?;
+    let v2 = guard_wasm_v2()?;
+    let old_hash: String = e.factory.view("get_code_hash").await?.json()?;
+
+    // A Guard made before keeps the old code.
+    assert_eq!(e.dao_creates("early", NearToken::from_near(5)).await?, "Approved");
+    let early = e.worker.view_account(&e.guard_id("early").parse()?).await?;
+    assert_eq!(local_hash(&early.contract_state), old_hash);
+
+    e.factory.as_account().call(e.factory.id(), "set_guard_code").args(borsh_bytes(&v2)).max_gas().transact().await?.into_result()?;
+    let new_hash: String = e.factory.view("get_code_hash").await?.json()?;
+    assert_ne!(new_hash, old_hash);
+    assert_eq!(e.factory.view("get_guard_code").await?.result, v2, "the bytes an `upgrade` hashes");
+    let meta: Value = e.factory.view("kd_factory_metadata").await?.json()?;
+    assert_eq!(meta["guard_code_hash"], new_hash, "{meta}");
+
+    // The next Guard runs the new code; the early one is not touched.
+    assert_eq!(e.dao_creates("late", NearToken::from_near(5)).await?, "Approved");
+    let late = e.worker.view_account(&e.guard_id("late").parse()?).await?;
+    assert_eq!(local_hash(&late.contract_state), new_hash);
+    let early = e.worker.view_account(&e.guard_id("early").parse()?).await?;
+    assert_eq!(local_hash(&early.contract_state), old_hash);
+    Ok(())
+}
+
+fn local_hash(state: &near_workspaces::ContractState) -> String {
+    match state {
+        near_workspaces::ContractState::LocalHash(h) => h.to_string(),
+        other => panic!("expected a deployed contract, got {other:?}"),
+    }
+}

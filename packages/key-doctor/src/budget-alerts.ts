@@ -1,6 +1,7 @@
 // kd.budget_alert.v1 from chain state (§4.11, §9.5). Pure, like diffReports: the keeper passes what it read and
 // sends whatever `alerts_sent` does not hold yet, so a message missed in one cycle comes out of the next.
-import { OWNER_TEXT, ownerActionText, planCompletedText, planPausedText, planSkippedText, planStepText, type AlertText, type Text } from "./messages.ts";
+import { dcaPrice } from "./dca.ts";
+import { OWNER_TEXT, ownerActionText, planCompletedText, planPausedText, planSkippedText, planStepText, type AlertText, type SwapFigures, type Text } from "./messages.ts";
 import type { BudgetAlertKind, KdBudgetAlert, Network, Plan, PlanStepResult } from "./types.ts";
 
 /** The fields of a Guard `RequestRecord` that matter here. */
@@ -35,6 +36,22 @@ const txLink = (network: Network, hash: string): string => `https://${network ==
 /** A plan that stopped has no next run to announce. */
 const nextRun = (plan: Plan): string | null => (plan.status === "active" && plan.next_run_at !== null ? iso(plan.next_run_at) : null);
 
+/**
+ * What a DCA plan got back up to `run`, in bigint with the token's 6 decimals. Only runs the keeper saw carry an
+ * `amount_out`, so the average divides by the NEAR of those runs alone. Null figures are left out of the message.
+ */
+function swapFigures(plan: Plan, run: number, step: PlanStepResult, steps: readonly PlanStepRecord[]): SwapFigures {
+  const seen = steps.filter((s) => s.plan_id === plan.plan_id && s.status === "executed" && s.run <= run && s.amount_out !== undefined);
+  const out = seen.reduce((n, s) => n + BigInt(s.amount_out!), 0n);
+  const inn = seen.reduce((n, s) => n + BigInt(s.amount_in), 0n);
+  return {
+    ...(step.amount_out !== undefined && { amount_out: step.amount_out }),
+    ...(step.price !== undefined && { price: step.price }),
+    received: seen.length === 0 ? null : out.toString(),
+    avg_price: seen.length === 0 ? null : dcaPrice(inn.toString(), out.toString()),
+  };
+}
+
 export function budgetAlerts(input: BudgetAlertInput): KdBudgetAlert[] {
   const { network, budget, plans, requests, steps, now } = input;
   const dashboard = input.dashboardUrl ? `${input.dashboardUrl.replace(/\/+$/, "")}/?page=budget&dao=${encodeURIComponent(budget.dao_id)}` : "";
@@ -65,6 +82,8 @@ export function budgetAlerts(input: BudgetAlertInput): KdBudgetAlert[] {
     const due = /^plan-\d+-(\d+)$/.exec(r.request_id)?.[1];
     const run = Number(/^plan \d+ run (\d+)$/.exec(r.memo)?.[1]);
     if (!plan || due === undefined || !Number.isInteger(run)) continue;
+    // The keeper saw this run's swap refused: the skip message is the one for this run, not a second "done".
+    if (steps.some((x) => x.plan_id === plan.plan_id && x.due === due && x.status === "skipped")) continue;
     const step: PlanStepResult = steps.find((s) => s.plan_id === plan.plan_id && s.due === due && s.status === "executed") ?? {
       plan_id: plan.plan_id,
       run,
@@ -73,12 +92,13 @@ export function budgetAlerts(input: BudgetAlertInput): KdBudgetAlert[] {
       ...(r.proposal_id !== null && { proposal_id: r.proposal_id }),
       executed_at: iso(r.updated_at),
     };
-    const totals = { spent: spent(plan, run), received: null, avg_price: null };
+    const swap = plan.action.type === "swap" ? swapFigures(plan, run, step, steps) : undefined;
+    const totals = { spent: spent(plan, run), received: swap?.received ?? null, avg_price: swap?.avg_price ?? null };
     // The last run is one message, not two: UC18 expects one message per run, each with its transaction.
     if (plan.status === "completed" && run === plan.runs_total) {
-      out.push(alert("plan_completed", plan, `${run}-${due}`, step, planCompletedText(plan.strategy_id, plan.action, plan.amount_per_run, plan.runs_total, totals.spent), totals));
+      out.push(alert("plan_completed", plan, `${run}-${due}`, step, planCompletedText(plan.strategy_id, plan.action, plan.amount_per_run, plan.runs_total, totals.spent, swap), totals));
     } else {
-      out.push(alert("plan_step_executed", plan, `${run}-${due}`, step, planStepText(plan.strategy_id, plan.action, plan.amount_per_run, run, plan.runs_total, totals.spent, nextRun(plan)), totals));
+      out.push(alert("plan_step_executed", plan, `${run}-${due}`, step, planStepText(plan.strategy_id, plan.action, plan.amount_per_run, run, plan.runs_total, totals.spent, nextRun(plan), swap), totals));
     }
   }
 
@@ -86,7 +106,7 @@ export function budgetAlerts(input: BudgetAlertInput): KdBudgetAlert[] {
   for (const s of steps) {
     const plan = byId.get(s.plan_id);
     if (s.status !== "skipped" || !plan) continue;
-    out.push(alert("plan_step_skipped", plan, `${s.run}-${s.due}`, s, planSkippedText(plan.strategy_id, s.run, plan.runs_total, s.reason ?? "", nextRun(plan))));
+    out.push(alert("plan_step_skipped", plan, `${s.run}-${s.due}`, s, planSkippedText(plan.strategy_id, s.run, plan.runs_total, s.reason ?? "", nextRun(plan), plan.amount_per_run)));
   }
 
   for (const plan of plans) {

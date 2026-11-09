@@ -5,6 +5,7 @@
 // read-back is the real protection against approving the wrong proposal.
 import { nearToYocto, yoctoToNear } from "./format.ts";
 import { GUARD_FORM_TEXT, isAccountId, KEEPER_ACCOUNT, MAX_AGENTS, MAX_LABEL_CHARS, MAX_WHITELIST } from "./guard-form.ts";
+import { DCA_TESTNET } from "key-doctor";
 import { guardChangeProposal, NEW_AGENT_DEPOSIT, type AddProposalArgs } from "./guard-proposals.ts";
 
 export type BudgetFlowCode = "NO_PROPOSAL_ID" | "PROPOSAL_UNREADABLE" | "PROPOSAL_MISMATCH" | "PROPOSAL_NOT_OPEN";
@@ -300,7 +301,7 @@ export interface PlanTotals {
   last_run_ms: number;
 }
 
-export function planTotals(plan: PayoutPlan, spendable: string | null): PlanTotals {
+export function planTotals(plan: Pick<PayoutPlan, "amount" | "runs" | "interval_sec" | "start_ms">, spendable: string | null): PlanTotals {
   const amount = BigInt(plan.amount.yocto);
   const total = amount * BigInt(plan.runs);
   const left = (need: bigint) => (spendable === null ? null : (need > BigInt(spendable) ? need - BigInt(spendable) : 0n).toString());
@@ -313,4 +314,81 @@ export function planTotals(plan: PayoutPlan, spendable: string | null): PlanTota
     per_day: (amount * BigInt(runsPerDay)).toString(),
     last_run_ms: plan.start_ms + (plan.runs - 1) * plan.interval_sec * 1000,
   };
+}
+
+/** The catalog id of the DCA strategy (GĐ31). */
+export const DCA_STRATEGY = "dca-near";
+/** DCA also offers weeks. */
+export const DCA_UNITS = { ...PLAN_UNITS, weeks: 604_800 } as const;
+export type DcaUnit = keyof typeof DCA_UNITS;
+/** The "max price drop" choices in basis points (the Guard accepts 1 to 500). */
+export const DCA_SLIPPAGE_CHOICES: readonly number[] = [50, 100, 200];
+export const DCA_DEFAULT_SLIPPAGE = 100;
+
+/** A DCA plan the owner typed, checked. Amounts yoctoNEAR, times milliseconds. */
+export interface DcaPlan {
+  amount: { yocto: string; near: string };
+  interval_sec: number;
+  runs: number;
+  start_ms: number;
+  starts_now: boolean;
+  slippage_bps: number;
+}
+
+/**
+ * The DCA form to a plan, refused here for what the Guard's `create_plan` refuses (limits, interval, slippage): Sputnik
+ * shows a FunctionCall the Guard refused as Approved. "Stop after" is a count of runs or an end date; the Guard stores
+ * runs only, so an end date becomes `floor((end - start) / interval) + 1` runs (0 or more than the maximum is refused).
+ */
+export function dcaFromForm(v: Record<string, string>, rules: Pick<PlanRules, "policy">, nowMs: number): FormResult<DcaPlan> {
+  const everyText = (v.every ?? "").trim();
+  const unit = v.unit as DcaUnit;
+  const startText = (v.start ?? "").trim();
+  const slippage = Number(v.slippage ?? DCA_DEFAULT_SLIPPAGE);
+  if (rules.policy === null) return fail("Could not read your rules, so the plan cannot be checked. Reload and try again.");
+  const amount = amountFromForm(v.amount ?? "", null);
+  if (!amount.ok) return amount;
+  const yocto = BigInt(amount.value.yocto);
+  if (yocto > BigInt(rules.policy.max_per_tx)) return fail(`NEAR per run is above your per-request limit (${yoctoToNear(rules.policy.max_per_tx)} NEAR). Lower it or edit your rules.`);
+  if (yocto > BigInt(rules.policy.max_per_day)) return fail(`NEAR per run is above your 24-hour limit (${yoctoToNear(rules.policy.max_per_day)} NEAR). Lower it or edit your rules.`);
+  if (!(unit in DCA_UNITS) || !/^\d{1,6}$/.test(everyText)) return fail("Every: a whole number of minutes, hours, days or weeks.");
+  const interval = Number(everyText) * DCA_UNITS[unit];
+  if (interval < MIN_PLAN_INTERVAL_SEC) return fail("Runs must be at least 1 minute apart.");
+  if (interval > MAX_PLAN_INTERVAL_SEC) return fail("Runs can be at most 365 days apart.");
+  if (!DCA_SLIPPAGE_CHOICES.includes(slippage)) return fail("Pick a max price drop from the list.");
+  let start = nowMs;
+  if (startText !== "") {
+    const typed = DATETIME_LOCAL.test(startText) ? new Date(startText).getTime() : NaN;
+    if (Number.isNaN(typed)) return fail("Start: pick a date and time, or leave it empty to start now.");
+    start = Math.max(typed, nowMs);
+  }
+  let runs: number;
+  if (v.stop === "date") {
+    const endText = (v.end ?? "").trim();
+    const end = DATETIME_LOCAL.test(endText) ? new Date(endText).getTime() : NaN;
+    if (Number.isNaN(end)) return fail("End date: pick a date and time.");
+    runs = Math.floor((end - start) / (interval * 1000)) + 1;
+    if (runs < 1 || end < start) return fail("The end date is before the first run. Pick a later date or start earlier.");
+    if (runs > MAX_PLAN_RUNS) return fail(`That end date gives ${runs} runs, more than the ${MAX_PLAN_RUNS} allowed. Run less often or pick an earlier date.`);
+  } else {
+    const runsText = (v.runs ?? "").trim();
+    if (!/^\d{1,4}$/.test(runsText) || Number(runsText) < 1 || Number(runsText) > MAX_PLAN_RUNS) return fail(`Number of runs: a whole number from 1 to ${MAX_PLAN_RUNS}.`);
+    runs = Number(runsText);
+  }
+  return { ok: true, value: { amount: amount.value, interval_sec: interval, runs, start_ms: start, starts_now: start === nowMs, slippage_bps: slippage } };
+}
+
+/** `create_plan(plan)` with a swap step: the Guard sells `amount_per_run` NEAR for USDT on the testnet exchange. */
+export function createDcaProposal(guardId: string, plan: DcaPlan): AddProposalArgs {
+  return guardChangeProposal(guardId, "create_plan", {
+    plan: {
+      action: { type: "swap", pool_id: DCA_TESTNET.pool_id, token_out: DCA_TESTNET.token_out, max_slippage_bps: plan.slippage_bps },
+      strategy_id: DCA_STRATEGY,
+      token_in: "",
+      amount_per_run: plan.amount.yocto,
+      interval_sec: plan.interval_sec,
+      runs_total: plan.runs,
+      start_at: (BigInt(plan.start_ms) * 1_000_000n).toString(),
+    },
+  });
 }

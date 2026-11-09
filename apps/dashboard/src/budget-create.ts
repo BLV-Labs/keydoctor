@@ -4,7 +4,7 @@ import type { KeyPermission } from "key-doctor";
 import { actProposalArgs } from "./budget-flow.ts";
 import { nearToYocto } from "./format.ts";
 import { formToInput, guardAccountId, MAX_NAME_LEN, validateGuardForm, type GuardCreateArgs, type GuardFormError } from "./guard-form.ts";
-import { addGuardRoleProposal, AGENT_GAS_FUND_YOCTO, base64Json, createGuardProposal, GUARD_ROLE, type AddProposalArgs, type RawPolicy } from "./guard-proposals.ts";
+import { addGuardRoleProposal, AGENT_GAS_FUND_YOCTO, base64Json, BUDGET_GUARD_PERMISSIONS, createGuardProposal, GUARD_ROLE, type AddProposalArgs, type RawPolicy } from "./guard-proposals.ts";
 
 export const SPUTNIK_FACTORY = "sputnik-v2.testnet";
 const NEAR = 10n ** 24n;
@@ -113,7 +113,7 @@ export function secondSignatureCalls(plan: BudgetPlan, factory: string, policy: 
   const bond = BigInt(policy.proposal_bond);
   const agents = plan.args.agents.map((a) => ({ ...a, public_key: agentPublicKey }));
   const create = createGuardProposal(factory, { ...plan.args, agents }, plan.guardDepositYocto);
-  const role = addGuardRoleProposal(policy, plan.guardId);
+  const role = addGuardRoleProposal(policy, plan.guardId, BUDGET_GUARD_PERMISSIONS);
   if (role === null) throw new Error("The DAO already lists this Guard, so it is not a new Budget.");
   const add = (args: AddProposalArgs): BudgetCall => ({ method: "add_proposal", args: { ...args }, gas: 15n * TGAS, deposit: bond });
   const approve = (id: number, args: AddProposalArgs, tgas: bigint): BudgetCall => ({

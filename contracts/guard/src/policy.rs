@@ -14,6 +14,15 @@ pub const MAX_PLAN_ARGS_BYTES: usize = 2048;
 /// Inside `act_proposal`'s 80 Tgas, with room for the DAO's own work.
 pub const MAX_PLAN_CALL_GAS: u64 = 50_000_000_000_000;
 
+/// Slippage choices of the DCA form (0.5 / 1 / 2 %).
+pub const SWAP_SLIPPAGE_BPS: [u16; 3] = [50, 100, 200];
+
+/// `(wrap, exchange)` of the Guard's network, from its own account suffix. The keeper passes only a plan id, so
+/// nobody but this constant picks the contracts a swap calls. `None` off testnet: no swap there.
+pub fn dex_for(guard: &AccountId) -> Option<(&'static str, &'static str)> {
+    guard.as_str().ends_with(".testnet").then_some(("wrap.testnet", "ref-finance-101.testnet"))
+}
+
 /// Auto when every condition holds, otherwise Pending with the full list of reasons, in spec order.
 pub fn decide(p: &GuardPolicy, wl: Option<&WhitelistEntry>, spent: u128, amount: u128) -> (Decision, Vec<String>) {
     let mut reasons = vec![];
@@ -117,13 +126,25 @@ pub fn check_plan(plan: &PlanInput, guard: &AccountId, dao: &AccountId, factory:
             return Err("INVALID_CALL_GAS");
         }
     }
+    if let PlanAction::Swap { token_out, max_slippage_bps, .. } = &plan.action {
+        let Some((wrap, exchange)) = dex_for(guard) else {
+            return Err("SWAP_NOT_SUPPORTED");
+        };
+        if !SWAP_SLIPPAGE_BPS.contains(max_slippage_bps) {
+            return Err("INVALID_SLIPPAGE");
+        }
+        let t = token_out.as_str();
+        if t == wrap || t == exchange || token_out == guard || token_out == dao || factory == Some(t) {
+            return Err("INVALID_TOKEN_OUT");
+        }
+    }
     Ok(())
 }
 
-/// The agent limits, which hold for a plan too. A `call` has no receiver to whitelist.
+/// The agent limits, which hold for a plan too. A `call` or `swap` has no receiver to whitelist.
 pub fn plan_reasons(p: &GuardPolicy, action: &PlanAction, wl: Option<&WhitelistEntry>, spent: u128, amount: u128) -> Vec<String> {
     let (_, mut reasons) = decide(p, wl, spent, amount);
-    if matches!(action, PlanAction::Call { .. }) {
+    if matches!(action, PlanAction::Call { .. } | PlanAction::Swap { .. }) {
         reasons.retain(|r| r != "NOT_WHITELISTED");
     }
     reasons
@@ -340,6 +361,66 @@ mod tests {
         assert_eq!(plan_reasons(&policy(), &call, None, 0, 6 * NEAR), ["OVER_PER_TX"]);
         let transfer = PlanAction::Transfer { receiver_id: "vendor.testnet".parse().unwrap() };
         assert_eq!(plan_reasons(&policy(), &transfer, None, 0, NEAR), ["NOT_WHITELISTED"]);
+    }
+
+    fn swap_to(token_out: &str, bps: u16) -> PlanAction {
+        PlanAction::Swap { pool_id: 57, token_out: token_out.parse().unwrap(), max_slippage_bps: bps }
+    }
+
+    #[test]
+    fn a_swap_is_a_testnet_feature_and_a_plan_for_it_is_refused_anywhere_else() {
+        // D9: `dex_for` is the only place the exchange ids live, so a Guard off testnet has no exchange to call and
+        // must refuse at create time instead of failing every run.
+        let swap = plan(swap_to("usdt.fakes.testnet", 100));
+        assert_eq!(check(&swap), Ok(()));
+        let (guard, dao) = ("g.factory.near".parse().unwrap(), "dao.sputnik-dao.near".parse().unwrap());
+        assert_eq!(check_plan(&swap, &guard, &dao, Some("factory.near")), Err("SWAP_NOT_SUPPORTED"));
+        // The other actions do not depend on the network.
+        let transfer = plan(PlanAction::Transfer { receiver_id: "vendor.near".parse().unwrap() });
+        assert_eq!(check_plan(&transfer, &guard, &dao, Some("factory.near")), Ok(()));
+        assert_eq!(dex_for(&guard), None);
+        assert_eq!(dex_for(&"g.factory.testnet".parse().unwrap()), Some(("wrap.testnet", "ref-finance-101.testnet")));
+    }
+
+    #[test]
+    fn a_swap_slippage_is_one_of_the_three_choices_of_the_form() {
+        // The dashboard offers 0.5 / 1 / 2 %. Any other value is a hand-made plan, and 10000 would make
+        // `min_amount_out` zero: no protection at all.
+        for ok in [50, 100, 200] {
+            assert_eq!(check(&plan(swap_to("usdt.fakes.testnet", ok))), Ok(()), "{ok}");
+        }
+        for bad in [0, 1, 49, 51, 99, 150, 201, 500, 10_000, u16::MAX] {
+            assert_eq!(check(&plan(swap_to("usdt.fakes.testnet", bad))), Err("INVALID_SLIPPAGE"), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_swap_cannot_buy_the_contracts_it_trades_through_or_the_ones_that_set_the_rules() {
+        // Buying wrap or the exchange token would be a loop; the Guard, the DAO and the factory are never a token.
+        for t in ["wrap.testnet", "ref-finance-101.testnet", "g.factory.testnet", "dao.testnet", "factory.testnet"] {
+            assert_eq!(check(&plan(swap_to(t, 100))), Err("INVALID_TOKEN_OUT"), "{t}");
+        }
+        assert_eq!(check(&plan(swap_to("usdt.fakes.testnet", 100))), Ok(()));
+        assert_eq!(check(&plan(swap_to("wrap.testnet.x.testnet", 100))), Ok(()), "only the exact ids are refused");
+    }
+
+    #[test]
+    fn a_swap_is_checked_for_network_before_slippage_and_slippage_before_token() {
+        // Each code must name the first thing the owner has to fix; a wrong order would send them to the wrong field.
+        let (guard, dao) = ("g.factory.near".parse().unwrap(), "dao.testnet".parse().unwrap());
+        let both = plan(swap_to("wrap.testnet", 7));
+        assert_eq!(check_plan(&both, &guard, &dao, None), Err("SWAP_NOT_SUPPORTED"));
+        assert_eq!(check(&both), Err("INVALID_SLIPPAGE"));
+    }
+
+    #[test]
+    fn a_swap_has_no_receiver_to_whitelist_but_keeps_both_agent_limits() {
+        // Same rule as a call: the receiver is the network constant. The per-tx and per-day caps still bound the NEAR
+        // sold, or a DCA plan would be a way around the limits.
+        let swap = swap_to("usdt.fakes.testnet", 100);
+        assert!(plan_reasons(&policy(), &swap, None, 0, NEAR).is_empty(), "no NOT_WHITELISTED");
+        assert_eq!(plan_reasons(&policy(), &swap, None, 0, 6 * NEAR), ["OVER_PER_TX"]);
+        assert_eq!(plan_reasons(&policy(), &swap, None, 18 * NEAR, 3 * NEAR), ["OVER_DAILY_LIMIT"]);
     }
 
     #[test]

@@ -106,7 +106,7 @@ pub struct WhitelistInput {
     pub max_per_tx: Option<U128>,
 }
 
-/// What one step does (§4.11, §11.11.2). `swap` joins here in GĐ31: until then `create_plan` cannot parse it.
+/// What one step does (§4.11, §11.11.2). `Swap` is last so the borsh bytes of stored plans stay valid.
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -121,6 +121,13 @@ pub enum PlanAction {
         args_base64: Base64VecU8,
         deposit: U128,
         gas: U64,
+    },
+    /// DCA (§11.11.3, 4c). Sells `amount_per_run` NEAR on the network's Rhea exchange (`policy::dex_for`);
+    /// `min_amount_out` is set at run time from a quote.
+    Swap {
+        pool_id: u64,
+        token_out: AccountId,
+        max_slippage_bps: u16,
     },
 }
 

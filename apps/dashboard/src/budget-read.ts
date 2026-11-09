@@ -1,6 +1,6 @@
 // Read-only chain data for the Agent Budget page: the DAO's balance, its open proposals (raw, because Approve and
 // Reject pass the displayed `proposal` back) and the Guard's recent requests. Nothing here is sample data.
-import { createRpc, DEFAULT_RPC_URLS, type Network, type Rpc } from "key-doctor";
+import { createRpc, DCA_TESTNET, DEFAULT_RPC_URLS, type Network, type Rpc } from "key-doctor";
 import { GUARD_ROLE, type RawPolicy } from "./guard-proposals.ts";
 import { readGuardDao, type GuardDao, type GuardLive } from "./guard-read.ts";
 
@@ -42,6 +42,8 @@ export interface BudgetLive {
   requests: BudgetRequest[] | null;
   /** The Guard's plans (§11.11.2), in `plan_id` order; null when the read failed or the Guard has none to read. */
   plans: BudgetPlan[] | null;
+  /** The DAO's USDT in base units (testnet only, DCA); null when unread or on mainnet. */
+  usdt?: string | null;
 }
 
 /** A Guard plan (contracts/guard `Plan`). Times are nanoseconds since the epoch; amounts yoctoNEAR. */
@@ -215,7 +217,86 @@ export async function readBudget(dao: string, factory: string, network: Network)
     }
   };
   const [funds, proposals, requests, plans] = await Promise.all([readBalance(dao, height, network), proposalsRead(), requestsRead(), plansRead()]);
-  return { dao: state, guard, balance: funds?.balance ?? null, withdrawable: funds?.withdrawable ?? null, proposals, requests, plans };
+  const usdt = network === "testnet" ? await readUsdtBalance(rpc, height, dao) : null;
+  return { dao: state, guard, balance: funds?.balance ?? null, withdrawable: funds?.withdrawable ?? null, proposals, requests, plans, usdt };
+}
+
+/** `ft_balance_of(usdt, dao)` in base units; null when the read failed (shown as unknown, never as zero). */
+async function readUsdtBalance(rpc: Rpc, height: number, dao: string): Promise<string | null> {
+  try {
+    const raw = await rpc.callFunction(DCA_TESTNET.token_out, height, "ft_balance_of", { account_id: dao });
+    return typeof raw === "string" && /^\d+$/.test(raw) ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The contracts a Budget's account must be registered on before swaps can pay in USDT. */
+export const DCA_TOKEN_CONTRACTS: readonly string[] = [DCA_TESTNET.wrap, DCA_TESTNET.exchange, DCA_TESTNET.token_out];
+
+export interface DcaReadiness {
+  /** `kd_guard_info.version` of the Guard; null when the Guard has no such view. */
+  version: string | null;
+  /** The factory's current Guard code hash (base58); null when unread. */
+  latestHash: string | null;
+  /** Per contract: whether the DAO is registered, and the deposit a registration needs. null = unread. */
+  registrations: { contract: string; registered: boolean; min: string }[] | null;
+}
+
+/** True when `version` ("1.2.0") is lower than 1.3.0; an unreadable version is not old. */
+export function guardNeedsUpdate(version: string | null): boolean {
+  const m = version === null ? null : /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (m === null) return false;
+  const [a, b] = [Number(m[1]), Number(m[2])];
+  return a < 1 || (a === 1 && b < 3);
+}
+
+/** Testnet DCA checklist reads at one block: the Guard version, the factory's code hash and the NEP-145 state of each contract. */
+export async function readDcaReadiness(dao: string, guardId: string, factory: string, network: Network): Promise<DcaReadiness> {
+  const rpc = budgetRpc(network);
+  const { height } = await rpc.block();
+  const view = async (account: string, method: string, args: unknown): Promise<unknown> => {
+    try {
+      return await rpc.callFunction(account, height, method, args);
+    } catch {
+      return null;
+    }
+  };
+  const [info, hash, regs] = await Promise.all([
+    view(guardId, "kd_guard_info", {}),
+    factory === "" ? Promise.resolve(null) : view(factory, "get_code_hash", {}),
+    Promise.all(
+      DCA_TOKEN_CONTRACTS.map(async (contract) => {
+        const [bal, bounds] = await Promise.all([view(contract, "storage_balance_of", { account_id: dao }), view(contract, "storage_balance_bounds", {})]);
+        const min = isRecord(bounds) && typeof bounds.min === "string" && /^\d+$/.test(bounds.min) ? bounds.min : null;
+        if (min === null) return null;
+        return { contract, registered: bal !== null && isRecord(bal), min };
+      }),
+    ),
+  ]);
+  return {
+    version: isRecord(info) && typeof info.version === "string" ? info.version : null,
+    latestHash: typeof hash === "string" ? hash : null,
+    registrations: regs.every((r) => r !== null) ? (regs as { contract: string; registered: boolean; min: string }[]) : null,
+  };
+}
+
+/** A Rhea quote for selling `amountIn` yoctoNEAR; null when the read failed. */
+export async function readDcaQuote(amountIn: string, network: Network): Promise<string | null> {
+  if (network !== "testnet" || !/^\d+$/.test(amountIn) || BigInt(amountIn) === 0n) return null;
+  try {
+    const rpc = budgetRpc(network);
+    const { height } = await rpc.block();
+    const out = await rpc.callFunction(DCA_TESTNET.exchange, height, "get_return", {
+      pool_id: DCA_TESTNET.pool_id,
+      token_in: DCA_TESTNET.wrap,
+      amount_in: amountIn,
+      token_out: DCA_TESTNET.token_out,
+    });
+    return typeof out === "string" && /^\d+$/.test(out) ? out : null;
+  } catch {
+    return null;
+  }
 }
 
 export type TopUpBlock = "NOT_COUNCIL" | "FOREIGN_MEMBER" | "NO_GUARD_ROLE" | "FOREIGN_GUARD";

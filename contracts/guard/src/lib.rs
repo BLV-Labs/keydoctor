@@ -14,7 +14,9 @@ mod events;
 mod policy;
 mod types;
 
-use dao::{ext_dao, function_call_kind, transfer_kind, DaoPolicyView, ProposalView};
+use dao::{
+    ext_dao, ext_exchange, function_call_kind, swap_kind, transfer_kind, DaoPolicyView, ProposalView,
+};
 use events::emit;
 pub use types::*;
 
@@ -27,6 +29,13 @@ const GAS_VIEW: Gas = Gas::from_tgas(10);
 const GAS_ON_VIEW: Gas = Gas::from_tgas(15);
 const GAS_ON_AGENT_CREATED: Gas = Gas::from_tgas(5);
 // Fixed, so it caps the code size: 30 Tgas stopped at about 340 KB, and the Guard is 333 KB.
+// Swap step (Change 1.4): each hop holds what the hops after it attach, with F = GAS_FT_TRANSFER_CALL.
+// act_proposal 15 own + near_deposit + F; on_proposal_added 5 + act + on_voted; on_quote 5 + add_proposal + on_added;
+// execute_plan_step 10 + get_return + on_quote = 80 + F, inside the keeper's 300 Tgas.
+const GAS_QUOTE_VIEW: Gas = Gas::from_tgas(10);
+const GAS_ACT_PROPOSAL_SWAP: Gas = Gas::from_tgas(20 + 150);
+const GAS_ON_ADDED_SWAP: Gas = Gas::from_tgas(35 + 150);
+const GAS_ON_QUOTE: Gas = Gas::from_tgas(60 + 150);
 const GAS_GET_CODE: Gas = Gas::from_tgas(60);
 const GAS_ON_CODE: Gas = Gas::from_tgas(60);
 const GAS_MIGRATE: Gas = Gas::from_tgas(20);
@@ -198,13 +207,16 @@ impl Guard {
             .with_attached_deposit(NearToken::from_yoctonear(self.proposal_bond))
             .with_static_gas(GAS_ADD_PROPOSAL)
             .add_proposal(json!({ "description": description, "kind": kind }))
-            .then(Self::ext(env::current_account_id()).with_static_gas(GAS_ON_ADDED).on_proposal_added(request_id))
+            .then(Self::ext(env::current_account_id()).with_static_gas(GAS_ON_ADDED).on_proposal_added(request_id, None))
     }
 
     #[private]
     pub fn on_proposal_added(
         &mut self,
         request_id: String,
+        // Set by a swap step, whose `min_amount_out` is known only at run time. Unset: rebuild from the plan, which
+        // is also what a callback already in flight at an upgrade carries.
+        kind: Option<Value>,
         #[callback_result] added: Result<u64, PromiseError>,
     ) -> PromiseOrValue<RequestRecord> {
         let mut r = self.record(&request_id);
@@ -222,36 +234,68 @@ impl Guard {
             emit("request_pending", record_event(&r));
             return PromiseOrValue::Value(self.save(r));
         }
-        let kind = match r.plan_id {
-            Some(plan_id) => plan_kind(&self.plan(plan_id)),
-            None => transfer_kind(&r.receiver_id, r.amount),
+        let swap = kind.is_some();
+        let kind = match (kind, r.plan_id) {
+            (Some(kind), _) => kind,
+            (None, Some(plan_id)) => plan_kind(&self.plan(plan_id)),
+            (None, None) => transfer_kind(&r.receiver_id, r.amount),
         };
         self.save(r);
         PromiseOrValue::Promise(
             ext_dao::ext(self.dao_id.clone())
-                .with_static_gas(GAS_ACT_PROPOSAL)
+                .with_static_gas(if swap { GAS_ACT_PROPOSAL_SWAP } else { GAS_ACT_PROPOSAL })
                 .act_proposal(id, "VoteApprove".to_string(), kind, None)
                 .then(Self::ext(env::current_account_id()).with_static_gas(GAS_ON_VOTED).on_voted(request_id)),
         )
     }
 
+    /// Step 4c, second hop. A failed or empty quote pauses the plan with `QUOTE_FAILED` before the request fails,
+    /// because `finish` would otherwise pause it with `ADD_PROPOSAL_FAILED`; `finish` also gives the daily limit back.
     #[private]
-    pub fn on_voted(&mut self, request_id: String, #[callback_result] voted: Result<(), PromiseError>) -> RequestRecord {
+    pub fn on_quote(
+        &mut self,
+        request_id: String,
+        plan_id: u32,
+        #[callback_result] quote: Result<U128, PromiseError>,
+    ) -> PromiseOrValue<RequestRecord> {
         let mut r = self.record(&request_id);
         let now = env::block_timestamp();
-        if r.status.is_final() {
-            // A sync_request between act_proposal and this callback already saw the final DAO status.
-            return r;
-        }
-        if voted.is_err() {
+        let mut plan = self.plan(plan_id);
+        let PlanAction::Swap { pool_id: _, ref token_out, max_slippage_bps } = plan.action else {
+            env::panic_str("NOT_A_SWAP_PLAN");
+        };
+        let quote = quote.map(|q| q.0).unwrap_or(0);
+        if quote == 0 {
+            self.halt_plan(&mut plan, PlanPauseReason::Failures, "QUOTE_FAILED");
+            self.plans.set(plan_id, plan);
             self.finish(&mut r, RequestStatus::Failed, now);
-            emit("request_failed", with_note(&r, "act_proposal failed; the proposal stays InProgress for the council"));
-        } else {
-            // The final Executed / Failed comes from sync_request.
-            self.finish(&mut r, RequestStatus::AutoApproved, now);
-            emit("request_auto_approved", record_event(&r));
+            emit("request_failed", with_note(&r, "swap quote failed"));
+            return PromiseOrValue::Value(self.save(r));
         }
-        self.save(r)
+        // quote * (10000 - bps) / 10000 without the overflow of the product.
+        let keep = 10_000 - max_slippage_bps as u128;
+        let min_out = quote / 10_000 * keep + quote % 10_000 * keep / 10_000;
+        let guard = env::current_account_id();
+        let (wrap, exchange) = policy::dex_for(&guard).unwrap_or_else(|| env::panic_str("SWAP_NOT_SUPPORTED"));
+        let PlanAction::Swap { pool_id, .. } = plan.action else { unreachable!() };
+        let kind = swap_kind(wrap, exchange, plan.amount_per_run, pool_id, token_out, min_out);
+        let description = policy::description(&request_id, guard.as_str(), Decision::Auto, &[], &r.memo);
+        PromiseOrValue::Promise(
+            ext_dao::ext(self.dao_id.clone())
+                .with_attached_deposit(NearToken::from_yoctonear(self.proposal_bond))
+                .with_static_gas(GAS_ADD_PROPOSAL)
+                .add_proposal(json!({ "description": description, "kind": kind }))
+                .then(Self::ext(guard).with_static_gas(GAS_ON_ADDED_SWAP).on_proposal_added(request_id, Some(kind))),
+        )
+    }
+
+    #[private]
+    pub fn on_voted(&mut self, request_id: String) -> RequestRecord {
+        // act_proposal returns what the executed proposal returns: nothing for a transfer, the
+        // ft_transfer_call amount for a swap (ADR 0007). Only success matters, so the bytes are not read;
+        // TooLong means it succeeded with a non-empty value.
+        let voted = !matches!(env::promise_result_checked(0, 0), Err(PromiseError::Failed));
+        self.record_vote(request_id, voted)
     }
 
     /// Anyone may call. Reads the proposal from the DAO and records the final status.
@@ -408,6 +452,10 @@ impl Guard {
         let receiver_id = match &plan.action {
             PlanAction::Transfer { receiver_id } => receiver_id.clone(),
             PlanAction::Call { target, .. } => target.clone(),
+            PlanAction::Swap { .. } => {
+                let (wrap, _) = policy::dex_for(&guard).unwrap_or_else(|| env::panic_str("SWAP_NOT_SUPPORTED"));
+                wrap.parse().unwrap_or_else(|_| env::panic_str("SWAP_NOT_SUPPORTED"))
+            }
         };
         let record = RequestRecord {
             request_id: request_id.clone(),
@@ -424,18 +472,34 @@ impl Guard {
             counted_in_window: true,
             plan_id: Some(plan_id),
         };
-        let kind = plan_kind(&plan);
         emit("request_submitted", record_event(&record));
         self.requests.insert(request_id.clone(), record);
         self.push_recent(request_id.clone());
+        let swap = match &plan.action {
+            PlanAction::Swap { pool_id, token_out, .. } => Some((*pool_id, token_out.clone())),
+            _ => None,
+        };
+        // A swap has no proposal kind yet: it needs the quote first (`on_quote`).
+        let kind = swap.is_none().then(|| plan_kind(&plan));
         self.plans.set(plan_id, plan);
+
+        if let Some((pool_id, token_out)) = swap {
+            let (wrap, exchange) = policy::dex_for(&guard).unwrap_or_else(|| env::panic_str("SWAP_NOT_SUPPORTED"));
+            let (wrap, exchange): (AccountId, AccountId) = (wrap.parse().unwrap(), exchange.parse().unwrap());
+            return PromiseOrValue::Promise(
+                ext_exchange::ext(exchange)
+                    .with_static_gas(GAS_QUOTE_VIEW)
+                    .get_return(pool_id, wrap, amount, token_out)
+                    .then(Self::ext(guard).with_static_gas(GAS_ON_QUOTE).on_quote(request_id, plan_id)),
+            );
+        }
 
         PromiseOrValue::Promise(
             ext_dao::ext(self.dao_id.clone())
                 .with_attached_deposit(NearToken::from_yoctonear(self.proposal_bond))
                 .with_static_gas(GAS_ADD_PROPOSAL)
                 .add_proposal(json!({ "description": description, "kind": kind }))
-                .then(Self::ext(guard).with_static_gas(GAS_ON_ADDED).on_proposal_added(request_id)),
+                .then(Self::ext(guard).with_static_gas(GAS_ON_ADDED).on_proposal_added(request_id, None)),
         )
     }
 
@@ -682,7 +746,7 @@ impl Guard {
 
     /// Key Doctor reads this to recognise a DAO member as a Guard (§5.3).
     pub fn kd_guard_info(&self) -> Value {
-        json!({ "standard": "kd_guard", "version": "1.2.0", "dao_id": self.dao_id })
+        json!({ "standard": "kd_guard", "version": "1.3.0", "dao_id": self.dao_id })
     }
 
     // ---- upgrade (§11.5.12, ADR 0006)
@@ -719,6 +783,25 @@ impl Guard {
 }
 
 impl Guard {
+    /// The body of `on_voted`, split out so tests can pass the vote's outcome.
+    pub(crate) fn record_vote(&mut self, request_id: String, voted: bool) -> RequestRecord {
+        let mut r = self.record(&request_id);
+        let now = env::block_timestamp();
+        if r.status.is_final() {
+            // A sync_request between act_proposal and this callback already saw the final DAO status.
+            return r;
+        }
+        if !voted {
+            self.finish(&mut r, RequestStatus::Failed, now);
+            emit("request_failed", with_note(&r, "act_proposal failed; the proposal stays InProgress for the council"));
+        } else {
+            // The final Executed / Failed comes from sync_request.
+            self.finish(&mut r, RequestStatus::AutoApproved, now);
+            emit("request_auto_approved", record_event(&r));
+        }
+        self.save(r)
+    }
+
     fn assert_dao(&self) {
         require!(env::predecessor_account_id() == self.dao_id, "ONLY_DAO");
     }
@@ -751,7 +834,7 @@ impl Guard {
     fn plan_limit_failure(&self, action: &PlanAction, amount: u128) -> Option<String> {
         let wl = match action {
             PlanAction::Transfer { receiver_id } => self.whitelist.get(receiver_id),
-            PlanAction::Call { .. } => None,
+            PlanAction::Call { .. } | PlanAction::Swap { .. } => None,
         };
         policy::plan_reasons(&self.policy, action, wl, 0, amount).into_iter().next()
     }
@@ -798,7 +881,7 @@ impl Guard {
                 // A failed callback carries no cause. A `call` can also fail for a role without `call:VoteApprove`,
                 // and a top-up would not help that.
                 let reason = match plan.action {
-                    PlanAction::Transfer { .. } => PlanPauseReason::InsufficientBalance,
+                    PlanAction::Transfer { .. } | PlanAction::Swap { .. } => PlanPauseReason::InsufficientBalance,
                     PlanAction::Call { .. } => PlanPauseReason::Failures,
                 };
                 self.halt_plan(&mut plan, reason, "VOTE_FAILED");
@@ -892,6 +975,8 @@ fn plan_kind(plan: &Plan) -> Value {
         PlanAction::Call { target, method, args_base64, deposit, gas } => {
             function_call_kind(target, method, args_base64, *deposit, *gas)
         }
+        // The swap kind needs the run-time quote, so `on_quote` builds it.
+        PlanAction::Swap { .. } => env::panic_str("SWAP_KIND_AT_RUN_TIME"),
     }
 }
 

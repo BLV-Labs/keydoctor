@@ -300,7 +300,7 @@ describe("GĐ29 keeper: what it signs", () => {
     assert.deepEqual(call!.args, { plan_id: 0 });
     assert.equal(call!.signer, KEEPER);
     assert.equal(call!.deposit, 0n);
-    assert.equal(call!.gas, 200_000_000_000_000n);
+    assert.equal(call!.gas, 300_000_000_000_000n);
   });
 
   it("does nothing before the step is due, and leaves the key alone", async (t) => {
@@ -679,5 +679,109 @@ describe("GĐ29 keeper: Worker limits and the key", () => {
     const res = await post("run-token");
     assert.equal(res.status, 200);
     assert.equal(((await res.json()) as { job: string }).job, "keeper");
+  });
+});
+
+describe("GD31 keeper: a DCA swap step (stepRecord, S3)", () => {
+  const EX = "ref-finance-101.testnet";
+  const SWAP = { type: "swap", pool_id: 57, token_out: "usdt.fakes.testnet", max_slippage_bps: 100 } as const;
+  const TENTH = (NEAR / 10n).toString();
+  const rhea = (out: string) => ({ outcome: { logs: [`Swapped ${TENTH} wrap.testnet for ${out} usdt.fakes.testnet`], executor_id: EX } });
+  const dcaPlan = (g: FakeGuard, runs_total = 3) => g.plan({ action: SWAP, strategy_id: "dca-near", amount_per_run: TENTH, runs_total });
+
+  /** What lands after the Guard's own receipt: the exchange's receipts, appended to the Guard's answer. */
+  function withReceipts(chain: Chain, extra: (() => unknown[]) | null) {
+    const inner = chain.sendTx!;
+    chain.sendTx = (b64) => {
+      const out = inner(b64) as { receipts_outcome: unknown[] };
+      if (extra) out.receipts_outcome.push(...extra());
+      return out;
+    };
+  }
+  const saved = (db: TestD1) => rows(db, "SELECT status, result_json FROM plan_steps ORDER BY run").map((r) => ({ status: r.status, ...JSON.parse(r.result_json) }));
+
+  it("an executed swap stores amount_out and the exact price, and the message and gas follow", async (t) => {
+    const { env, chain, guard, db } = setup(t);
+    await watched(env, chain);
+    dcaPlan(guard);
+    withReceipts(chain, () => [rhea("896500")]);
+    await runKeeperJob(env);
+    const [s] = saved(db);
+    assert.equal(s!.status, "executed");
+    assert.equal(s!.amount_out, "896500");
+    assert.equal(s!.price, "8.965");
+    assert.equal(guard.calls[0]!.gas, 300n * 10n ** 12n, "a swap step chains 5 contracts: the cap, not 145 Tgas");
+    // Telegram rendering of the swap message.
+    const text = texts(chain)[0]!;
+    assert.match(text, /^Key Doctor · DCA NEAR → USDT \(1\/3\)\nSold 0\.1 NEAR for 0\.8965 USDT · price 8\.965\nAverage price: 8\.965 · Received in total: 0\.8965 USDT\nNext run: /);
+    assert.doesNotMatch(text, /balance/i);
+    assert.equal(sends(chain).length, 1);
+  });
+
+  it("a Swapped log from a contract that is not the exchange is ignored: no number reaches the owner (forgery guard)", async (t) => {
+    const { env, chain, guard, db } = setup(t);
+    await watched(env, chain);
+    dcaPlan(guard);
+    withReceipts(chain, () => [{ outcome: { logs: [`Swapped ${TENTH} wrap.testnet for 999999999 usdt.fakes.testnet`], executor_id: "evil.testnet" } }]);
+    await runKeeperJob(env);
+    const [s] = saved(db);
+    assert.equal(s!.status, "executed");
+    assert.equal(s!.amount_out, undefined);
+    assert.equal(s!.price, undefined);
+    assert.match(texts(chain)[0]!, /^Key Doctor · DCA NEAR → USDT \(1\/3\)\nSold 0\.1 NEAR for USDT\.\nTotal sold: 0\.1 NEAR\n/);
+    assert.doesNotMatch(texts(chain)[0]!, /999|price/);
+  });
+
+  it("no exchange receipt yet: executed without amount_out, and a later run still has its own number", async (t) => {
+    const { env, chain, guard, db } = setup(t);
+    await watched(env, chain);
+    dcaPlan(guard);
+    withReceipts(chain, null);
+    await runKeeperJob(env);
+    nextHour(chain);
+    withReceipts(chain, () => [rhea("896500")]);
+    await runKeeperJob(env);
+    const got = saved(db);
+    assert.deepEqual(got.map((s) => [s.status, s.amount_out]), [["executed", undefined], ["executed", "896500"]]);
+    // Run 2's average divides by the NEAR of the run that has a number, not by both runs.
+    assert.match(texts(chain)[1]!, /Average price: 8\.965 · Received in total: 0\.8965 USDT/);
+  });
+
+  it("a refused swap (E68) is stored skipped with SLIPPAGE and told once, with the NEAR still in the Budget", async (t) => {
+    const { env, chain, guard, db } = setup(t);
+    await watched(env, chain);
+    dcaPlan(guard);
+    const failure = { ActionError: { kind: { FunctionCallError: { ExecutionError: "Smart contract panicked: E68: slippage error" } } } };
+    withReceipts(chain, () => [{ outcome: { logs: [], executor_id: EX, status: { Failure: failure } } }]);
+    await runKeeperJob(env);
+    const [s] = saved(db);
+    assert.equal(s!.status, "skipped");
+    assert.equal(s!.reason, "SLIPPAGE");
+    assert.equal(s!.amount_out, undefined);
+    const told = texts(chain);
+    assert.equal(told.length, 1, "one message for the run: the skip, not also a 'done'");
+    assert.match(told[0]!, /Skipped this run: the price moved more than you allow\. 0\.1 NEAR stays in your Budget as wrapped NEAR\./);
+    // A later cycle must not announce the same run as done either.
+    await runKeeperJob(env);
+    assert.equal(texts(chain).length, 1);
+  });
+
+  it("any other exchange failure is stored as SWAP_FAILED", async (t) => {
+    const { env, chain, guard, db } = setup(t);
+    await watched(env, chain);
+    dcaPlan(guard);
+    withReceipts(chain, () => [{ outcome: { logs: [], executor_id: EX, status: { Failure: "E21: token not registered" } } }]);
+    await runKeeperJob(env);
+    assert.equal(saved(db)[0]!.reason, "SWAP_FAILED");
+    assert.match(texts(chain)[0]!, /the exchange refused the swap\. 0\.1 NEAR stays/);
+  });
+
+  it("a plain transfer plan is not touched by swap parsing, even if the receipts carry an exchange failure", async (t) => {
+    const { env, chain, guard, db } = setup(t);
+    await watched(env, chain);
+    guard.plan();
+    withReceipts(chain, () => [{ outcome: { logs: [], executor_id: EX, status: { Failure: "E68" } } }]);
+    await runKeeperJob(env);
+    assert.equal(saved(db)[0]!.status, "executed");
   });
 });
