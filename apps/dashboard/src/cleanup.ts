@@ -93,7 +93,7 @@ export function buildDeletePlan(m: Member, publicKeys: readonly string[], signer
 export const GUARD_TEXT: Record<GuardError, string> = {
   EMPTY: "No keys to delete.",
   UNKNOWN_KEY: "A listed key is no longer on the account. Rescan first.",
-  LAST_FULL_ACCESS: "This would delete the last full-access key. Keyfence never does that.",
+  LAST_FULL_ACCESS: "This would delete the last full-access key. Key Doctor never does that.",
   SIGNER_KEY: "This would delete the key that signs the transaction.",
   NEEDS_TWO_FULL_ACCESS_LEFT: "The wallet does not say which key it signs with, so at least two full-access keys must stay after this delete.",
 };

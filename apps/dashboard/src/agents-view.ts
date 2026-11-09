@@ -37,7 +37,7 @@ export function renderMyAgentsSignedOut(): Html {
   return html`${head([])}
     <section class="card pad stack-xs budget-narrow">
       <p class="strong">Connect your wallet to see your agents</p>
-      <p class="small muted">Keyfence only reads. Your wallet signs.</p>
+      <p class="small muted">Key Doctor only reads. Your wallet signs.</p>
       <button type="button" class="btn btn-primary btn-start" data-action="open-wallet">Connect wallet</button>
       <p class="small"><a href="${pageHref("budget")}" data-nav>Or open one budget by name</a></p>
     </section>`;

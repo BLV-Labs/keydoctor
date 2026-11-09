@@ -86,7 +86,7 @@ function stepCard(step: Step, m: Member, report: KdReport, blocked: string | nul
       <span class="pill pill-sm ${step.done ? "pill-ok" : "pill-note"}">${step.done ? "Done" : "To do"}</span>
     </div>
     ${!step.done && step.keys.length > 0 ? html`<p class="small muted">${plural(step.keys.length, "key")}, in this order:</p>${keyList(step, m, report, blocked ? null : `sign-status-${step.id}`, paging, known)}` : ""}
-    ${step.keep ? html`<p class="small"><strong>Keep:</strong> <span class="mono">${truncateKey(step.keep.public_key)}</span> (${plural(step.keep.use_count ?? 0, "use")}). Keyfence never lists the last master key.</p>` : ""}
+    ${step.keep ? html`<p class="small"><strong>Keep:</strong> <span class="mono">${truncateKey(step.keep.public_key)}</span> (${plural(step.keep.use_count ?? 0, "use")}). Key Doctor never lists the last master key.</p>` : ""}
     ${!step.done ? html`<p>${HOW[step.id]}</p>` : ""}
     ${!step.done && blocked ? html`<p class="small field-hint">${blocked}</p>` : ""}
     ${!step.done && step.keys.length > 0 && !blocked ? html`<p class="small muted" id="sign-status-${step.id}" role="status"></p>` : ""}
@@ -180,5 +180,5 @@ export function renderCleanup(report: KdReport, from: string | null, level: Leve
       </div>
     </details>
     ${keyDialogShell()}
-    <p class="small muted">Keyfence never signs transactions or holds keys: every change happens in your wallet, and this page reads the result from the chain when you check again.</p>`;
+    <p class="small muted">Key Doctor never signs transactions or holds keys: every change happens in your wallet, and this page reads the result from the chain when you check again.</p>`;
 }
