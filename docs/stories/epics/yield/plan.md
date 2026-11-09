@@ -84,7 +84,6 @@ Output is filtered data and reasons, not financial advice, and `messages` say so
 | Testnet lending | `contract.1638481328.burrow.testnet` | 9 assets. Rates are test data: `usdc.fakes.testnet` `0.1041`, `usdt.fakes.testnet` `0.0000`, `dai.fakes.testnet` `2.4958`. All three allow deposit and withdraw |
 | Farm rewards | `farms` in the same call | Testnet: only `wrap.testnet` pays one, `test_brrr.1638481328.burrow.testnet`. Mainnet: none on the five stablecoins above |
 | Test tokens | `*.fakes.testnet` code | All three export `mint`. Who may call it is untested |
-| Route cost | 1Click `POST /v0/quote`, `dry: true` | NEAR→NEAR works. NEAR→Base returned 400 `Internal server error` twice, cause unknown |
 | Inference | `cloud-api.near.ai/v1/chat/completions`, `/v1/models` | Models list is public, 64 models. Chat call not tested, needs a key |
 | TEE models | `near.ai/models` tiers, `/v1/models` features | Private TEE with `structured_outputs` and ready: `Qwen/Qwen3.6-35B-A3B-FP8`, `Qwen/Qwen3.8-27B`, `z-ai/glm-5.3-flash`. `deepseek-ai/DeepSeek-V4.1-Flash-1017` is Private TEE with neither `structured_outputs` nor `json_mode`, so code must parse its JSON, and `is_ready` is empty |
 | TEE verification | `nearai/nearai-cloud-verifier` (Python, TypeScript), `cloud.near.ai/verify` | Checks the attestation report and the response signature. The TypeScript path uses `dcap-qvl-node`, not checked on Workers |
@@ -93,7 +92,6 @@ Known gaps:
 
 - Sources disagree: USDC supply was 11.60 at the Rhea API and 11.27 at DefiLlama, cause unknown. DAI matched at 5.52. On-chain data wins, and a large gap removes the candidate.
 - Intents swaps and bridges tokens. It does not deposit into a pool.
-- `customRecipientMsg` on 1Click is marked experimental and can lose funds. Not used.
 - A DAO has no EVM address, so Aave, Compound, Morpho and Curve execution needs Chain Signatures. Roadmap.
 - The Rhea cross-chain SDK needs a wallet `sign_message`. Support for contract accounts is unknown.
 - The testnet and mainnet Rhea contracts may be different versions, so a testnet pass does not prove mainnet.
