@@ -1,3 +1,4 @@
+import { DCA_TESTNET, formatUnits } from "./dca.ts";
 import type { Messages, PlanAction, PlanPauseReason } from "./types.ts";
 import { BLOCK_TIME_MS, FA_OLD_DAYS, MAX_KEYS, ROLE_LABEL_MAX_LEN } from "./rules/thresholds.ts";
 
@@ -471,8 +472,23 @@ const planTitle = (strategyId: string, run: number, total: number): Text => {
   return { vi: `${name.vi} (${run}/${total})`, en: `${name.en} (${run}/${total})` };
 };
 
-const stepDone = (action: PlanAction, amount: string): Text => {
+/** What a DCA run got, in the token's 6 decimals as the exchange logged it. Missing figures are left out, never guessed. */
+export interface SwapFigures {
+  amount_out?: string;
+  price?: string;
+  /** Over the plan's executed runs so far. */
+  received?: string | null;
+  avg_price?: string | null;
+}
+
+const stepDone = (action: PlanAction, amount: string, swap?: SwapFigures): Text => {
   const near = formatNear(amount);
+  if (action.type === "swap") {
+    const out = swap?.amount_out === undefined ? null : formatUnits(swap.amount_out, DCA_TESTNET.token_out_decimals);
+    if (out === null) return { vi: `Đã bán ${near} NEAR lấy USDT.`, en: `Sold ${near} NEAR for USDT.` };
+    const p = swap?.price;
+    return { vi: `Đã bán ${near} NEAR lấy ${out} USDT${p ? ` · giá ${p}` : ""}`, en: `Sold ${near} NEAR for ${out} USDT${p ? ` · price ${p}` : ""}` };
+  }
   if (action.type === "transfer") return { vi: `Đã chuyển ${near} NEAR cho ${action.receiver_id}.`, en: `Sent ${near} NEAR to ${action.receiver_id}.` };
   if (action.type === "call") return { vi: `Đã gọi ${action.method} trên ${action.target}.`, en: `Called ${action.method} on ${action.target}.` };
   return { vi: `Đã chạy bước với ${near} NEAR.`, en: `Ran the step with ${near} NEAR.` };
@@ -485,30 +501,54 @@ function textOf(title: Text, vi: string[], en: string[], action: Text = { vi: ""
   };
 }
 
-export function planStepText(strategyId: string, action: PlanAction, amount: string, run: number, total: number, spent: string, nextRun: string | null): AlertText {
-  const done = stepDone(action, amount);
+/** The totals line of a message: what a swap plan got back, or what any other plan spent. */
+const totalsLines = (action: PlanAction, spent: string, swap?: SwapFigures): { vi: string; en: string } => {
+  if (action.type !== "swap") return { vi: `Tổng đã chi: ${formatNear(spent)} NEAR`, en: `Total spent: ${formatNear(spent)} NEAR` };
+  const got = swap?.received == null ? null : formatUnits(swap.received, DCA_TESTNET.token_out_decimals);
+  const avg = swap?.avg_price;
+  return {
+    vi: [avg ? `Giá bán trung bình: ${avg}` : null, got ? `Đã nhận tổng: ${got} USDT` : null].filter(Boolean).join(" · ") || `Tổng đã bán: ${formatNear(spent)} NEAR`,
+    en: [avg ? `Average price: ${avg}` : null, got ? `Received in total: ${got} USDT` : null].filter(Boolean).join(" · ") || `Total sold: ${formatNear(spent)} NEAR`,
+  };
+};
+
+export function planStepText(strategyId: string, action: PlanAction, amount: string, run: number, total: number, spent: string, nextRun: string | null, swap?: SwapFigures): AlertText {
+  const done = stepDone(action, amount, swap);
+  const totals = totalsLines(action, spent, swap);
   const next = nextRun === null ? null : utc(nextRun);
   return textOf(
     planTitle(strategyId, run, total),
-    [done.vi, `Tổng đã chi: ${formatNear(spent)} NEAR`, ...(next ? [`Lần tới: ${next}`] : [])],
-    [done.en, `Total spent: ${formatNear(spent)} NEAR`, ...(next ? [`Next run: ${next}`] : [])],
+    [done.vi, totals.vi, ...(next ? [`Lần tới: ${next}`] : [])],
+    [done.en, totals.en, ...(next ? [`Next run: ${next}`] : [])],
   );
 }
 
-export function planCompletedText(strategyId: string, action: PlanAction, amount: string, total: number, spent: string): AlertText {
-  const done = stepDone(action, amount);
+export function planCompletedText(strategyId: string, action: PlanAction, amount: string, total: number, spent: string, swap?: SwapFigures): AlertText {
+  const done = stepDone(action, amount, swap);
+  const totals = action.type === "swap" ? totalsLines(action, spent, swap) : null;
   return textOf(
     planTitle(strategyId, total, total),
-    [done.vi, `Kế hoạch hoàn tất: ${total}/${total} lần, tổng đã chi ${formatNear(spent)} NEAR.`],
-    [done.en, `Plan complete: ${total}/${total} runs, ${formatNear(spent)} NEAR spent in total.`],
+    [done.vi, ...(totals ? [totals.vi] : []), `Kế hoạch hoàn tất: ${total}/${total} lần, tổng đã chi ${formatNear(spent)} NEAR.`],
+    [done.en, ...(totals ? [totals.en] : []), `Plan complete: ${total}/${total} runs, ${formatNear(spent)} NEAR spent in total.`],
   );
 }
 
-export function planSkippedText(strategyId: string, run: number, total: number, reason: string, nextRun: string | null): AlertText {
-  const why: Text = reason === "OVER_DAILY_LIMIT" ? { vi: "vượt hạn mức 24 giờ", en: "over the 24 h limit" } : { vi: reason, en: reason };
+export function planSkippedText(strategyId: string, run: number, total: number, reason: string, nextRun: string | null, amount?: string): AlertText {
   const next = nextRun === null ? null : utc(nextRun);
+  const title = planTitle(strategyId, run, total);
+  // A refused swap leaves the NEAR in the Budget as wrapped NEAR (ADR 0007): "no money moved" would be wrong.
+  if ((reason === "SLIPPAGE" || reason === "SWAP_FAILED") && amount !== undefined) {
+    const near = formatNear(amount);
+    const why: Text = reason === "SLIPPAGE" ? { vi: "giá trượt quá mức bạn cho phép", en: "the price moved more than you allow" } : { vi: "sàn từ chối lệnh bán", en: "the exchange refused the swap" };
+    return textOf(
+      title,
+      [`Bỏ qua lần này: ${why.vi}. ${near} NEAR vẫn ở trong Budget (dạng wrapped NEAR).`, ...(next ? [`Lần tới: ${next}`] : [])],
+      [`Skipped this run: ${why.en}. ${near} NEAR stays in your Budget as wrapped NEAR.`, ...(next ? [`Next run: ${next}`] : [])],
+    );
+  }
+  const why: Text = reason === "OVER_DAILY_LIMIT" ? { vi: "vượt hạn mức 24 giờ", en: "over the 24 h limit" } : { vi: reason, en: reason };
   return textOf(
-    planTitle(strategyId, run, total),
+    title,
     [`Bỏ qua lần này: ${why.vi}. Không có tiền nào được chi.`, ...(next ? [`Lần tới: ${next}`] : [])],
     [`Skipped this run: ${why.en}. No money moved.`, ...(next ? [`Next run: ${next}`] : [])],
   );

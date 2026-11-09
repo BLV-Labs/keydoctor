@@ -1,9 +1,9 @@
 // Keeper (ADR 0005, GĐ29): calls the plan steps that are due and tells the Budget's chats what happened.
 // The Guard decides everything: this job only pays the gas (K2). It never takes an amount, a receiver or a choice.
-import { DEFAULT_RPC_URLS, budgetAlerts, guardPausedAlert, type KdBudgetAlert, type Plan, type PlanRequest, type PlanStepRecord } from "key-doctor";
+import { DCA_TESTNET, DEFAULT_RPC_URLS, budgetAlerts, dcaPrice, guardPausedAlert, type KdBudgetAlert, type Plan, type PlanRequest, type PlanStepRecord } from "key-doctor";
 import type { Env } from "../env.ts";
 import { rpcUrlsFor } from "../core.ts";
-import { RpcFailed, createKeeperRpc, guardEvents, loadKeeperKey, panicCode, signCall, type KeeperKey, type KeeperMethod, type KeeperRpc, type TxOutcome } from "../keeper/near.ts";
+import { RpcFailed, createKeeperRpc, guardEvents, loadKeeperKey, panicCode, signCall, swapOutcome, type KeeperKey, type KeeperMethod, type KeeperRpc, type TxOutcome } from "../keeper/near.ts";
 import { MAX_MARKS, alertSent, clearSent, markSent, markSentMany, sentIds } from "../store/alerts.ts";
 import { acquireLease, releaseLease, saveStep, stepsFor } from "../store/plan-steps.ts";
 import { chatsFor } from "../store/subscriptions.ts";
@@ -190,7 +190,16 @@ function stepRecord(plan: Plan, due: string, hash: string, tx: TxOutcome, now: s
   const base = { plan_id: plan.plan_id, run: plan.runs_done + 1, amount_in: plan.amount_per_run, tx_hash: hash, executed_at: now, due };
   for (const { event, data } of guardEvents(tx)) {
     if (data?.plan_id !== plan.plan_id) continue;
-    if (event === "plan_step_executed") return { ...base, run: data.run, status: "executed", proposal_id: data.proposal_id };
+    if (event === "plan_step_executed") {
+      const executed: PlanStepRecord & { tx_hash: string } = { ...base, run: data.run, status: "executed", proposal_id: data.proposal_id };
+      if (plan.action.type !== "swap") return executed;
+      // The Guard cannot see the exchange's outcome (ADR 0007): the number and the refusal come from Rhea's own receipts.
+      const swap = swapOutcome(tx, DCA_TESTNET.exchange, DCA_TESTNET.wrap, plan.action.token_out);
+      if (swap === null) return executed;
+      if ("failed" in swap) return { ...executed, status: "skipped", reason: swap.failed };
+      const price = dcaPrice(plan.amount_per_run, swap.amount_out);
+      return { ...executed, amount_out: swap.amount_out, ...(price !== null && { price }) };
+    }
     if (event === "plan_step_skipped") return { ...base, run: data.run, status: "skipped", reason: data.reason };
     if (event === "plan_paused") return { ...base, status: "failed", reason: data.code ?? data.reason };
   }

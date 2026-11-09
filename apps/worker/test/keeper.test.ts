@@ -300,7 +300,7 @@ describe("GĐ29 keeper: what it signs", () => {
     assert.deepEqual(call!.args, { plan_id: 0 });
     assert.equal(call!.signer, KEEPER);
     assert.equal(call!.deposit, 0n);
-    assert.equal(call!.gas, 200_000_000_000_000n);
+    assert.equal(call!.gas, 300_000_000_000_000n);
   });
 
   it("does nothing before the step is due, and leaves the key alone", async (t) => {

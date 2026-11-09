@@ -37,7 +37,7 @@ describe("keeper signing", () => {
         blockHash: Buffer.from(BLOCK),
         methodName: "execute_plan_step",
         args: Buffer.from(JSON.stringify({ plan_id: 3 })),
-        gas: 200_000_000_000_000n,
+        gas: 300_000_000_000_000n,
         deposit: 0n,
       },
       Buffer.from(SEED),
