@@ -368,11 +368,16 @@ describe("nav and the alerts / MCP pages", () => {
     assert.deepEqual(parseRoute("?page=budget&approve=12").link, { kind: "approve", id: 12 });
     assert.deepEqual(parseRoute("?page=budget&topup=NEAR&amount=2.5").link, { kind: "topup", token: "near", amount: "2.5" });
     assert.equal(parseRoute("?page=budget&help=agent").help, true);
+    assert.deepEqual(parseRoute("?page=budget&strategy=scheduled-payouts").link, { kind: "strategy", id: "scheduled-payouts" });
+    assert.deepEqual(parseRoute("?page=budget&plan=7").link, { kind: "plan", id: 7 });
   });
 
   it("a malformed deep link opens nothing rather than the wrong thing", () => {
     assert.equal(parseRoute("?page=budget&approve=abc").link, null);
     assert.equal(parseRoute("?page=budget&approve=-1").link, null);
+    assert.equal(parseRoute("?page=budget&plan=x").link, null);
+    assert.equal(parseRoute("?page=budget&strategy=<b>").link, null);
+    assert.equal(parseRoute("?page=check&plan=1").link, null);
     assert.equal(parseRoute("?page=budget&topup=").link, null);
     assert.deepEqual(parseRoute("?page=budget&topup=near&amount=1e9").link, { kind: "topup", token: "near", amount: null });
     assert.equal(parseRoute("?page=check&approve=12").link, null);

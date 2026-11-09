@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { addAgentProblem, addAgentProposal, agentProposal, amountFromForm, freshAgentAccount, rulesProposal } from "../src/budget-flow.ts";
-import { topUpBlocks, withdrawableYocto, type BudgetLive, type BudgetProposal, type BudgetRequest } from "../src/budget-read.ts";
+import { parsePlan, topUpBlocks, withdrawableYocto, type BudgetLive, type BudgetPlan, type BudgetProposal, type BudgetRequest } from "../src/budget-read.ts";
 import {
   BALANCED_RULES,
   CAUTIOUS_RULES,
   balanceAfter,
   describeKind,
+  everyText,
+  planStatus,
   renderBudget,
   renderBudgetActivity,
   renderBudgetAgent,
@@ -22,6 +24,7 @@ import {
 import { renderAgentGuide } from "../src/agent-guide.ts";
 import { budgetPolicy } from "../src/budget-create.ts";
 import type { RawPolicy } from "../src/guard-proposals.ts";
+import { KEEPER_ACCOUNT } from "../src/guard-form.ts";
 
 const NEAR = (n: number) => `${n}${"0".repeat(24)}`;
 const policy: RawPolicy = {
@@ -48,6 +51,7 @@ const live = (over: Partial<BudgetLive> = {}): BudgetLive => ({
   withdrawable: NEAR(11),
   proposals: [{ id: 4, proposer: "g1.guards.testnet", description: "pay vendor", kind: { Transfer: { receiver_id: "v.testnet", amount: NEAR(2), token_id: "" } }, status: "InProgress", submission_time: null }],
   requests: [],
+  plans: [],
   ...over,
 });
 
@@ -100,7 +104,7 @@ describe("renderBudget", () => {
   });
   it("carries no mock names and labels the unbuilt features", () => {
     assert.doesNotMatch(page, /Research bot|Team payouts/);
-    assert.match(page, /Not available yet/);
+    assert.match(page, /DCA NEAR<\/span><span class="small muted">Coming soon/);
   });
   it("shows unknown, not zero, when a read failed", () => {
     const failed = renderBudget(live({ balance: null, proposals: null, requests: null }), "testnet").value;
@@ -413,5 +417,89 @@ describe("Budget views the owner decides from", () => {
   it("no recipient means every payment waits, and the page says so", () => {
     assert.match(renderRecipients("").value, /every payment your agent asks for will wait/);
     assert.match(renderRecipients("a.testnet\n\nb.testnet").value, /data-line="1"/);
+  });
+});
+
+describe("scheduled payouts on the Budget page", () => {
+  const plan = (over: Partial<BudgetPlan> = {}): BudgetPlan => ({
+    plan_id: 2, receiver_id: "vendor.testnet", action_type: "transfer", strategy_id: "scheduled-payouts", amount_per_run: NEAR(1),
+    interval_sec: 3_600, runs_total: 3, runs_done: 1, next_run_at: "1794222000000000000", status: "active", pause_reason: null, ...over,
+  });
+  const withList = (over: Partial<BudgetLive> = {}) => {
+    const b = live(over);
+    return { ...b, guard: { ...b.guard!, whitelist: [{ account_id: "vendor.testnet", label: "vendor", max_per_tx: null }] } };
+  };
+
+  it("offers Set up only when the Guard's plans were read: an old Guard without plans must not get a button that fails", () => {
+    assert.match(renderBudget(live(), "testnet").value, /data-panel="plan"/);
+    const old = renderBudget(live({ plans: null }), "testnet").value;
+    assert.doesNotMatch(old, /data-panel="plan"/);
+    assert.match(old, /Could not read scheduled plans/);
+  });
+
+  it("the other strategies stay Coming soon", () => {
+    const page = renderBudget(live(), "testnet").value;
+    assert.equal((page.match(/Coming soon/g) ?? []).length, 4);
+  });
+
+  it("lists each plan with what it pays, its progress and the actions its status allows", () => {
+    const page = renderBudget(live({ plans: [plan(), plan({ plan_id: 3, status: "paused", pause_reason: "insufficient_balance" }), plan({ plan_id: 4, status: "completed", runs_done: 3, next_run_at: null })] }), "testnet").value;
+    assert.match(page, /id="plan-2"/);
+    assert.match(page, /1 NEAR to vendor\.testnet every 1 hour/);
+    assert.match(page, /Run 1 of 3/);
+    assert.match(page, /data-op="pause" data-plan="2"/);
+    assert.match(page, /data-op="resume" data-plan="3"/);
+    assert.match(page, /ran out of NEAR/);
+    assert.match(page, /data-op="cancel" data-plan="3"/);
+    // An ended plan has nothing left to pause or cancel.
+    assert.doesNotMatch(page, /data-plan="4"/);
+  });
+
+  it("says intervals in the largest unit that fits", () => {
+    assert.equal(everyText(60), "1 minute");
+    assert.equal(everyText(7_200), "2 hours");
+    assert.equal(everyText(172_800), "2 days");
+    assert.equal(everyText(90), "90 seconds");
+    assert.equal(planStatus(plan({ status: "paused", pause_reason: "owner" })), "Paused by you");
+    assert.equal(planStatus(plan({ status: "paused", pause_reason: "something_new" })), "Paused");
+  });
+
+  it("the setup form picks from allowed recipients only, never the keeper", () => {
+    const b = live();
+    const form = renderBudgetPanel("plan", { ...b, guard: { ...b.guard!, whitelist: [{ account_id: "vendor.testnet", label: "", max_per_tx: null }, { account_id: KEEPER_ACCOUNT, label: "", max_per_tx: null }] } }).value;
+    assert.match(form, /<option value="vendor\.testnet"/);
+    assert.doesNotMatch(form, new RegExp(`option value="${KEEPER_ACCOUNT.replace(/\./g, "\\.")}"`));
+    assert.match(renderBudgetPanel("plan", live()).value, /Add one first/);
+  });
+
+  it("the review shows the totals and says a short balance pauses the plan instead of blocking it", () => {
+    const values = { step: "confirm", receiver: "vendor.testnet", amount: "1", every: "1", unit: "hours", runs: "20", start: "" };
+    const review = renderBudgetPanel("plan", withList(), null, values, Date.UTC(2026, 10, 9)).value;
+    assert.match(review, /Start plan/);
+    assert.match(review, /20 NEAR/); // total
+    assert.match(review, /9 NEAR short of all runs/); // 20 − 11 spendable
+    assert.match(review, /pauses and alerts you/);
+    // 24 hourly runs fit in one 24 hours but only 20 exist: 20 NEAR, over the 4 NEAR daily limit.
+    assert.match(review, /Up to 20 runs fall in one 24 hours/);
+    assert.match(review, /not investment advice/);
+  });
+
+  it("a review that no longer passes goes back to the form with the reason", () => {
+    const values = { step: "confirm", receiver: "vendor.testnet", amount: "2", every: "1", unit: "hours", runs: "3", start: "" };
+    const page = renderBudgetPanel("plan", withList(), null, values).value;
+    assert.doesNotMatch(page, /Start plan/);
+    assert.match(page, /per-request limit/);
+  });
+});
+
+describe("parsePlan", () => {
+  const raw = { plan_id: 0, action: { type: "transfer", receiver_id: "vendor.testnet" }, strategy_id: "scheduled-payouts", token_in: "", amount_per_run: NEAR(1), interval_sec: 60, runs_total: 3, runs_done: 0, next_run_at: "1", status: "active", pause_reason: null };
+  it("reads the Guard's plan view", () => {
+    assert.deepEqual(parsePlan(raw), { plan_id: 0, receiver_id: "vendor.testnet", action_type: "transfer", strategy_id: "scheduled-payouts", amount_per_run: NEAR(1), interval_sec: 60, runs_total: 3, runs_done: 0, next_run_at: "1", status: "active", pause_reason: null });
+  });
+  it("refuses a malformed row rather than showing wrong numbers", () => {
+    assert.equal(parsePlan({ ...raw, amount_per_run: 5 }), null);
+    assert.equal(parsePlan({ ...raw, status: "deleted" }), null);
+    assert.equal(parsePlan(null), null);
   });
 });

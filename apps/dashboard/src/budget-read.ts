@@ -40,6 +40,24 @@ export interface BudgetLive {
   proposals: BudgetProposal[] | null;
   /** The Guard's newest requests; null when the read failed. */
   requests: BudgetRequest[] | null;
+  /** The Guard's plans (§11.11.2), in `plan_id` order; null when the read failed or the Guard has none to read. */
+  plans: BudgetPlan[] | null;
+}
+
+/** A Guard plan (contracts/guard `Plan`). Times are nanoseconds since the epoch; amounts yoctoNEAR. */
+export interface BudgetPlan {
+  plan_id: number;
+  /** The receiver of a `transfer` plan; null for any other action, which this page only names. */
+  receiver_id: string | null;
+  action_type: string;
+  strategy_id: string;
+  amount_per_run: string;
+  interval_sec: number;
+  runs_total: number;
+  runs_done: number;
+  next_run_at: string | null;
+  status: "active" | "paused" | "completed" | "cancelled";
+  pause_reason: string | null;
 }
 
 /** How many of the newest DAO proposals are scanned for open ones. */
@@ -78,6 +96,38 @@ export function parseRequest(raw: unknown): BudgetRequest | null {
     created_at: nanos(raw.created_at),
   };
 }
+
+const PLAN_STATUSES: readonly BudgetPlan["status"][] = ["active", "paused", "completed", "cancelled"];
+const count = (v: unknown): number | null => (typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? v : null);
+
+/** One plan as `get_plans` returns it; null for anything malformed, so a plan is never shown half-read. */
+export function parsePlan(raw: unknown): BudgetPlan | null {
+  if (!isRecord(raw) || !isRecord(raw.action)) return null;
+  const id = count(raw.plan_id);
+  const interval = count(raw.interval_sec);
+  const total = count(raw.runs_total);
+  const done = count(raw.runs_done);
+  const amount = nanos(raw.amount_per_run);
+  const status = PLAN_STATUSES.find((s) => s === raw.status);
+  const type = raw.action.type;
+  if (id === null || interval === null || total === null || done === null || amount === null || status === undefined || typeof type !== "string") return null;
+  return {
+    plan_id: id,
+    receiver_id: type === "transfer" && typeof raw.action.receiver_id === "string" ? raw.action.receiver_id : null,
+    action_type: type,
+    strategy_id: typeof raw.strategy_id === "string" ? raw.strategy_id : "",
+    amount_per_run: amount,
+    interval_sec: interval,
+    runs_total: total,
+    runs_done: done,
+    next_run_at: nanos(raw.next_run_at),
+    status,
+    pause_reason: typeof raw.pause_reason === "string" ? raw.pause_reason : null,
+  };
+}
+
+/** `get_plans` takes at most 50 a call. */
+const PLAN_PAGE = 50;
 
 const STORAGE_YOCTO_PER_BYTE = 10n ** 19n;
 
@@ -148,8 +198,24 @@ export async function readBudget(dao: string, factory: string, network: Network)
       return null;
     }
   };
-  const [funds, proposals, requests] = await Promise.all([readBalance(dao, height, network), proposalsRead(), requestsRead()]);
-  return { dao: state, guard, balance: funds?.balance ?? null, withdrawable: funds?.withdrawable ?? null, proposals, requests };
+  const plansRead = async (): Promise<BudgetPlan[] | null> => {
+    if (guard === null) return null;
+    try {
+      const plans: BudgetPlan[] = [];
+      for (;;) {
+        const raw = await rpc.callFunction(guard.guard_id, height, "get_plans", { from: plans.length, limit: PLAN_PAGE });
+        if (!Array.isArray(raw)) return null;
+        const page = raw.map(parsePlan);
+        if (page.some((p) => p === null)) return null;
+        plans.push(...(page as BudgetPlan[]));
+        if (raw.length < PLAN_PAGE) return plans;
+      }
+    } catch {
+      return null;
+    }
+  };
+  const [funds, proposals, requests, plans] = await Promise.all([readBalance(dao, height, network), proposalsRead(), requestsRead(), plansRead()]);
+  return { dao: state, guard, balance: funds?.balance ?? null, withdrawable: funds?.withdrawable ?? null, proposals, requests, plans };
 }
 
 export type TopUpBlock = "NOT_COUNCIL" | "FOREIGN_MEMBER" | "NO_GUARD_ROLE" | "FOREIGN_GUARD";
