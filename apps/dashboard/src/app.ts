@@ -7,6 +7,7 @@ import { buildDeletePlan, GUARD_TEXT, METEOR_INSTALL_URL, type DeletePlan } from
 import { renderCleanup } from "./cleanup-view.ts";
 import { PAGE_SIZE, pageOf, parsePaging, type Paging } from "./paging.ts";
 import { renderKeyDetail } from "./key-detail.ts";
+import { loadKnown, markKnown } from "./known-keys.ts";
 import { PROPOSALS_ID, PROPOSALS_LIST, renderProposals } from "./proposals-view.ts";
 import { renderAccount, renderCouncil } from "./report.ts";
 import { budgetHref, guardHref, homeHref, parseRoute, resolveInput, routeHref, settledHref, suffixNetwork, yieldHref, type Page, type Route, type RouteLink } from "./route.ts";
@@ -240,8 +241,8 @@ function paintReport(report: KdReport, route: Route, paging: Paging, seq: number
     report.target.type === "dao"
       ? renderCouncil(report, paging)
       : route.view === "cleanup"
-        ? renderCleanup(report, route.from, route.level, paging)
-        : renderAccount(report, route.from, paging);
+        ? renderCleanup(report, route.from, route.level, paging, loadKnown(target))
+        : renderAccount(report, route.from, paging, loadKnown(target));
   paint(body, `${target} · Keyfence`, false, report.chain.network);
   root.insertAdjacentHTML("beforeend", renderWatchDialog(target, report.target.type, WORKER_URL).value);
   syncWallet();
@@ -1743,7 +1744,7 @@ async function paintProposals(dao: string, network: Network, page: number, pagin
   const cached = proposalPages.get(page);
   const box0 = document.getElementById(PROPOSALS_ID);
   if (cached !== undefined && box0 !== null) {
-    box0.innerHTML = renderProposals(cached, page, paging).value;
+    box0.innerHTML = renderProposals(cached, page, paging, lastReport?.members ?? []).value;
     revealClampToggles(box0);
     return;
   }
@@ -1762,7 +1763,7 @@ async function paintProposals(dao: string, network: Network, page: number, pagin
   }
   const box = document.getElementById(PROPOSALS_ID);
   if (seq !== scanSeq || box === null) return;
-  box.innerHTML = renderProposals(result, shown, paging).value;
+  box.innerHTML = renderProposals(result, shown, paging, lastReport?.members ?? []).value;
   revealClampToggles(box);
 }
 
@@ -2163,6 +2164,14 @@ root.addEventListener("click", (event) => {
       dialogTrigger = el;
       dialog.showModal();
       break;
+    case "known-key": {
+      // "That was me": remember the key in this browser and repaint; nothing is sent anywhere.
+      const key = el.dataset.key;
+      if (!lastReport || lastReport.target.type !== "account" || !key) break;
+      markKnown(lastReport.target.id, key);
+      paintReport(lastReport, parseRoute(location.search), parsePaging(location.search), scanSeq);
+      break;
+    }
     case "view-key": {
       const m = lastReport?.members[0];
       const key = m?.keys.find((k) => k.public_key === el.dataset.key);

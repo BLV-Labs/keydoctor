@@ -31,7 +31,7 @@ describe("html escaping", () => {
   it("a hostile account id in a report never becomes markup", () => {
     const r = account();
     const m = r.members[0] as Member;
-    m.flags[0]!.messages.en.title = '<img src=x onerror="alert(1)">';
+    m.flags[0]!.messages.en.explain = '<img src=x onerror="alert(1)">';
     const out = renderAccount(r, null).value;
     assert.doesNotMatch(out, /<img/);
     assert.match(out, /&lt;img src=x/);
@@ -139,18 +139,17 @@ describe("view model", () => {
 });
 
 describe("pages", () => {
-  it("council page shows summary tiles, members linked to their profile, voting rules and limits", () => {
+  it("council page shows the verdict, members linked to their profile, how money moves and limits", () => {
     const out = renderCouncil(dao());
     const t = text(out);
-    assert.match(t, /3 members Transfers need 2 of 3 votes/);
-    assert.match(t, /Quantum-ready 1 \/ 3/);
+    assert.match(t, /3 members · 2 votes needed to move money · Worst state: Act now/);
     assert.match(out.value, /href="\?target=a\.kd-demo\.testnet&amp;from=kd-demo\.sputnik-dao\.testnet"/);
-    assert.match(t, /Ratio 1\/2 → 2 votes/);
+    assert.match(t, /2 votes \(Ratio 1\/2\)/);
     assert.match(t, /0\.1 NEAR/);
     assert.match(t, /Key age is estimated from the access-key nonce/);
-    assert.match(t, /Scanned at block 182,340,111 · Nov 3, 2026, 02:00 UTC · ruleset 2026-11-03/);
+    assert.match(t, /Read at block 182,340,111 · Nov 3, 2026, 02:00 UTC · ruleset 2026-11-03/);
     // Status is never color alone: the pill carries a text label.
-    assert.match(out.value, /class="pill pill-high[^"]*"><svg[^>]*aria-hidden="true"[^>]*>.*?<\/svg>High risk/);
+    assert.match(out.value, /class="pill pill-sm pill-high"><svg[^>]*aria-hidden="true"[^>]*>.*?<\/svg>Act now/);
   });
 
   it("account page shows the new-key alert, rule texts verbatim and every key", () => {
@@ -159,11 +158,12 @@ describe("pages", () => {
     const out = renderAccount(report, "kd-demo.sputnik-dao.testnet");
     const t = text(out);
     assert.match(out.value, /role="alert"/);
-    assert.match(t, /A full-access key was added about 3 hours ago/);
+    assert.match(t, /A new master key was added about 3 hours ago/);
     assert.match(t, /tell your council through another channel/);
     assert.match(t, /Opened from the council of kd-demo\.sputnik-dao\.testnet/);
-    for (const f of (r.members[0] as Member).flags) assert.ok(t.includes(f.messages.en.explain), f.rule_id);
-    assert.match(t, /KEY_UNUSED × 2/);
+    // Every rule text stays reachable: the new-key flag in the banner, the rest in the tidy-up rows or "More checks".
+    const firstPerRule = new Map((r.members[0] as Member).flags.map((f) => [f.rule_id, f] as const).reverse());
+    for (const f of firstPerRule.values()) assert.ok(t.includes(f.messages.en.explain) || f.rule_id === "FA_RECENT" || f.rule_id === "FA_MANY", f.rule_id);
     assert.equal((out.value.match(/<tr[ >]/g) ?? []).length, 1 + (r.members[0] as Member).keys.length);
   });
 
@@ -173,23 +173,25 @@ describe("pages", () => {
     const report: KdReport = { ...r, target: { type: "account", id: "a.kd-demo.testnet" }, members: [member] };
     const out = renderAccount(report, null).value;
     const full = member.keys.filter((k) => k.permission.type === "full_access").length;
-    assert.equal((out.match(/data-action="delete-key"/g) ?? []).length, member.keys.length);
+    // One per row, plus the banner's "Remove it now" for the new master key.
+    assert.equal((out.match(/data-action="delete-key"/g) ?? []).length, member.keys.length + 1);
     assert.equal((out.match(/>Delete<\/button>/g) ?? []).length, full);
+    assert.equal((out.match(/>Remove it now<\/button>/g) ?? []).length, 1);
     assert.equal((out.match(/>Revoke<\/button>/g) ?? []).length, member.keys.length - full);
     for (const k of member.keys) assert.ok(out.includes(`data-key="${k.public_key}"`), k.public_key);
   });
 
-  it("key table names the dApp each app key is approved for, and every row has a View button", () => {
+  it("key table says what each key can do in words, and every row has a View button", () => {
     const r = dao();
     const member = r.members[0] as Member;
     const report: KdReport = { ...r, target: { type: "account", id: "a.kd-demo.testnet" }, members: [member] };
     const out = renderAccount(report, null).value;
-    assert.match(out, /<th scope="col">Approved for<\/th>/);
+    assert.match(out, /<th scope="col">What it can do<\/th>/);
     assert.equal((out.match(/data-action="view-key"/g) ?? []).length, member.keys.length);
     for (const k of member.keys) {
-      if (k.permission.type === "function_call") assert.match(out, new RegExp(`data-label="Approved for"><span class="mono wrap-soft">${k.permission.receiver_id.split(".").map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\.<wbr>")}</span>`));
+      if (k.permission.type === "function_call") assert.ok(text({ value: out }).replace(/\. /g, ".").includes(`Use ${k.permission.receiver_id}`), k.permission.receiver_id);
     }
-    assert.match(out, /Any contract/);
+    assert.match(text({ value: out }), /Everything \(master key\)/);
   });
 
   it("key detail shows the dApp, methods and allowance of an app key, and says a full-access key can do anything", () => {
@@ -212,7 +214,7 @@ describe("pages", () => {
     const r = dao();
     const report: KdReport = { ...r, target: { type: "account", id: "c.kd-demo.testnet" }, members: [r.members[2] as Member] };
     const t = text(renderAccount(report, null));
-    assert.match(t, /No issues found for this account/);
+    assert.match(t, /Nothing to fix/);
     assert.doesNotMatch(t, /Opened from the council/);
   });
 
@@ -244,7 +246,7 @@ describe("pages", () => {
         retryable: true,
       }),
     );
-    assert.match(err, /Scan failed Could not read chain data right now\. Try again/);
+    assert.match(err, /We could not read the chain The risk is unknown, not low\. Nothing was changed\. Try again/);
   });
 });
 
@@ -311,10 +313,10 @@ describe("proposal list (C7)", () => {
   });
 
   it("says plainly when there are no proposals, when the read failed, and when some were unreadable", () => {
-    assert.match(text(renderProposals(result([], 0))), /no proposals yet/);
-    assert.match(text(renderProposals(null)), /Could not read proposals/);
-    assert.match(text(renderProposals(result([], 3, ["proposal 2: RPC_ERROR"]))), /No proposal on this page could be read/);
-    assert.match(text(renderProposals(result([info({})], 3, ["proposal 1: NOT_A_DAO"]))), /1 proposal\(s\) on this page could not be read/);
+    assert.match(text(renderProposals(result([], 0))), /no votes yet/);
+    assert.match(text(renderProposals(null)), /Could not read votes/);
+    assert.match(text(renderProposals(result([], 3, ["proposal 2: RPC_ERROR"]))), /No vote on this page could be read/);
+    assert.match(text(renderProposals(result([info({})], 3, ["proposal 1: NOT_A_DAO"]))), /1 vote\(s\) on this page could not be read/);
   });
 
   it("hostile chain text in a description never becomes markup", () => {
