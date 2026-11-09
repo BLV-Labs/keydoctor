@@ -3,7 +3,7 @@
 import type { KeyPermission } from "key-doctor";
 import { actProposalArgs } from "./budget-flow.ts";
 import { nearToYocto } from "./format.ts";
-import { formToInput, guardAccountId, validateGuardForm, type GuardCreateArgs, type GuardFormError } from "./guard-form.ts";
+import { formToInput, guardAccountId, MAX_NAME_LEN, validateGuardForm, type GuardCreateArgs, type GuardFormError } from "./guard-form.ts";
 import { addGuardRoleProposal, AGENT_GAS_FUND_YOCTO, base64Json, createGuardProposal, GUARD_ROLE, type AddProposalArgs, type RawPolicy } from "./guard-proposals.ts";
 
 export const SPUTNIK_FACTORY = "sputnik-v2.testnet";
@@ -174,3 +174,121 @@ export const UNSAVED_KEY_QUESTION = "Your agent's key is not saved yet. If you l
 export function agentKeyUnsaved(key: { publicKey: string } | null | undefined, savedPublicKey: string | null): boolean {
   return key != null && key.publicKey !== savedPublicKey;
 }
+
+// The New agent budget wizard (Keyfence K4). It collects the same form fields `planBudget` reads, one step at a time.
+
+/** The four steps, in the order the owner sees them. */
+export const WIZARD_STEPS = ["Fence", "Recipients", "Agent", "Review"] as const;
+export const NAME_MIN_CHARS = 3;
+const AGENT_LABEL_MAX = 64;
+
+/** A problem under a field. `text` wins over the wording of the code. */
+export interface SetupError {
+  field: string;
+  code: string;
+  text?: string;
+}
+
+const SETUP_TEXT: Record<string, string> = {
+  NAME_EMPTY: "Give your budget a name.",
+  NAME_TOO_SHORT: `Use at least ${NAME_MIN_CHARS} characters.`,
+  INVALID_NAME: `Use ${NAME_MIN_CHARS} to ${MAX_NAME_LEN} characters: a-z, 0-9, - and _.`,
+  INVALID_AMOUNT: "Enter an amount of NEAR above 0, like 1.5.",
+  PER_TX_OVER_DAILY: "Per payment cannot be more than per day.",
+  INVALID_PENDING: "Enter a whole number from 1 to 100.",
+  FUNDING_TOO_LOW: "Start with at least 0.5 NEAR.",
+  FUNDING_BELOW_RESERVE: "The starting balance must be at least the amount kept in reserve.",
+  FUNDING_UNDER_MINIMUM: "Start with more NEAR: it must cover the waiting payments, the agent's fees and the reserve.",
+  NO_AGENTS: "Give your agent a name.",
+  AGENT_TOO_LONG: `Use at most ${AGENT_LABEL_MAX} characters.`,
+  INVALID_ACCOUNT: "This is not a valid NEAR account.",
+  KEEPER_RECIPIENT: "This account cannot be a recipient.",
+  LABEL_TOO_LONG: `Use at most ${AGENT_LABEL_MAX} characters.`,
+  TOO_MANY_WHITELIST: "Add at most 50 recipients.",
+};
+
+/** The words under a field. They never use the chain's own terms. */
+export function setupErrorText(e: SetupError): string {
+  return e.text ?? SETUP_TEXT[e.code] ?? "Check this value.";
+}
+
+const FENCE_FIELDS = ["name", "maxPerTx", "maxPerDay", "maxPendingPerAgent", "minReserve", "funding"];
+
+/** Which step shows a field. */
+export function stepOfField(field: string): 1 | 2 | 3 {
+  if (field.startsWith("whitelist")) return 2;
+  if (field === "agentLabel") return 3;
+  return 1;
+}
+
+/**
+ * What is wrong with the fields of one step, from the same checks `planBudget` runs before signing. Nothing here
+ * reads the chain. A field that belongs to a later step is not judged yet.
+ */
+export function validateSetupStep(step: 1 | 2 | 3, get: (name: string) => string, factory: string): SetupError[] {
+  const label = get("agentLabel").trim();
+  // Steps 1 and 2 are judged before the agent has a name; a stand-in keeps "no agent" out of their errors.
+  const read = (name: string) => (name === "agentLabel" && label === "" ? "agent" : get(name));
+  const errors: SetupError[] = [];
+  if (step === 1) {
+    const name = get("name").trim();
+    if (name === "") errors.push({ field: "name", code: "NAME_EMPTY" });
+    else if (name.length < NAME_MIN_CHARS && /^[a-z0-9_-]+$/.test(name)) errors.push({ field: "name", code: "NAME_TOO_SHORT" });
+  }
+  const planned = planBudget(read, null, factory, "0");
+  if (!planned.ok) {
+    const fields = step === 1 ? FENCE_FIELDS : step === 2 ? null : ["agentLabel"];
+    for (const e of planned.errors) {
+      const here = fields === null ? e.field.startsWith("whitelist") : fields.includes(e.field);
+      if (here && !errors.some((x) => x.field === e.field)) errors.push(e);
+    }
+  }
+  if (step === 3) {
+    if (label === "") errors.push({ field: "agentLabel", code: "NO_AGENTS" });
+    else if (label.length > AGENT_LABEL_MAX && !errors.some((x) => x.field === "agentLabel")) errors.push({ field: "agentLabel", code: "AGENT_TOO_LONG" });
+  }
+  return errors;
+}
+
+/** One row of the Recipients step. `cap` is a NEAR amount, empty for no limit of its own. */
+export interface RecipientRow {
+  account: string;
+  label: string;
+  cap: string;
+}
+
+/** The rows as the `whitelist` lines the form parser reads. Empty rows go; a comma in a name would split it, so it becomes a space. */
+export function recipientLines(rows: readonly RecipientRow[]): string {
+  return rows
+    .map((r) => ({ account: r.account.trim(), label: r.label.replace(/,/g, " ").replace(/\s+/g, " ").trim(), cap: r.cap.replace(/near/i, "").trim() }))
+    .filter((r) => r.account !== "" || r.label !== "" || r.cap !== "")
+    .map((r) => (r.cap !== "" ? `${r.account}, ${r.label}, ${r.cap}` : r.label !== "" ? `${r.account}, ${r.label}` : r.account))
+    .join("\n");
+}
+
+/** The lines back to rows, for repainting the step. */
+export function parseRecipientLines(raw: string): RecipientRow[] {
+  return raw
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l !== "")
+    .map((line) => {
+      const [account = "", ...rest] = line.split(",").map((p) => p.trim());
+      const cap = rest.length >= 2 ? rest.pop()! : "";
+      return { account, label: rest.join(" "), cap };
+    });
+}
+
+/**
+ * The owner of a DAO that has the shape sign 1 leaves: one role, one member. That is how a Budget whose second
+ * signature never happened looks, until a Guard is found for it. Null for any other policy.
+ */
+export function unfinishedBudgetOwner(policy: RawPolicy): string | null {
+  const role = policy.roles.length === 1 ? policy.roles[0] : undefined;
+  const members = (role?.kind as { Group?: unknown } | undefined)?.Group;
+  return role?.name === "owner" && Array.isArray(members) && members.length === 1 && typeof members[0] === "string" ? members[0] : null;
+}
+
+/** Where the wizard keeps what was typed once sign 1 is through, so Finish setup can pick up. Never a key. */
+export const SETUP_FIELDS = ["name", "preset", "maxPerTx", "maxPerDay", "maxPendingPerAgent", "minReserve", "funding", "whitelist", "agentLabel"] as const;
+export const savedSetupKey = (dao: string): string => `kd.budget.setup.${dao}`;

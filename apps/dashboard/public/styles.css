@@ -521,3 +521,29 @@ a.agent-card:focus-visible { outline: 2px solid var(--kd-primary); outline-offse
 .agent-card-big { margin: 0; font-size: var(--kd-fs-lg); font-weight: 600; }
 .agent-card-failed { border-style: dashed; }
 .agent-card-new { align-items: center; justify-content: center; flex-direction: row; border-style: dashed; color: var(--kd-primary); }
+
+/* K4 New agent budget: stepper, recipient rows, can / cannot cards, review */
+.wiz-steps { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.wiz-step { display: inline-flex; align-items: center; gap: 8px; color: var(--kd-muted); font-size: var(--kd-fs-sm); }
+.wiz-step .step-dot { background: var(--kd-surface-muted); color: var(--kd-muted); border: 1px solid var(--kd-border-strong); }
+.wiz-step[data-state="now"] { color: var(--kd-text); font-weight: 600; }
+.wiz-step[data-state="now"] .step-dot, .wiz-step[data-state="done"] .step-dot { background: var(--kd-primary); color: var(--kd-on-primary); border-color: var(--kd-primary); }
+.wiz-h { margin: 0; font-size: var(--kd-fs-lg); }
+.wiz-h:focus { outline: none; }
+.wiz-body[inert] { opacity: 0.6; }
+.wiz-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.rcpt-list { display: flex; flex-direction: column; gap: 8px; }
+.rcpt-head, .rcpt-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) minmax(0, 1fr) 40px; gap: 8px; align-items: start; }
+.rcpt-check { display: block; min-height: 1.2em; }
+.rcpt-error { grid-column: 1 / -1; margin: 0; }
+.can-cards { align-items: stretch; }
+.can-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.can-list li { display: flex; gap: 8px; align-items: flex-start; }
+.review-rows .sum-row { flex-wrap: wrap; }
+.wiz-next { margin: 0; padding-left: 20px; }
+.chip[aria-pressed="true"] { border-color: var(--kd-primary); background: var(--kd-primary-tint); }
+@media (max-width: 640px) {
+  .rcpt-head { display: none; }
+  .rcpt-row { grid-template-columns: minmax(0, 1fr) 40px; }
+  .rcpt-account { grid-column: 1 / 2; }
+}

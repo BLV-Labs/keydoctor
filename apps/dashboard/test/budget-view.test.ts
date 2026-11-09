@@ -18,12 +18,12 @@ import {
   renderBudgetApprove,
   renderBudgetCreate,
   renderAgentAdded,
-  renderBudgetKey,
+  renderAgentKeyReady,
   renderBudgetPause,
   renderBudgetPanel,
   renderBudgetSetup,
   renderBudgetStart,
-  renderRecipients,
+  renderRecipientList,
 } from "../src/budget-view.ts";
 import { renderAgentGuide } from "../src/agent-guide.ts";
 import { budgetPolicy } from "../src/budget-create.ts";
@@ -232,20 +232,21 @@ describe("panels and setup", () => {
     assert.match(renderBudgetPanel("topup", live()).value, /1 signature/);
   });
   it("setup says creation is not available while the factory is not deployed", () => {
-    assert.match(renderBudgetSetup(false).value, /not available yet: the Agent Budget factory <span class="mono">keydoctor-guards-v2\.testnet<\/span> is not deployed/);
-    assert.doesNotMatch(renderBudgetSetup(true).value, /not available yet/);
-    assert.match(renderBudgetSetup(true).value, /2 signatures/);
+    assert.match(renderBudgetSetup(false, {}, [], null, 4).value, /not available yet: the Agent Budget factory <span class="mono">keydoctor-guards-v2\.testnet<\/span> is not deployed/);
+    assert.doesNotMatch(renderBudgetSetup(true, {}, [], null, 4).value, /not available yet/);
+    assert.match(renderBudgetSetup(true, {}, [], null, 4).value, /2 signatures/);
   });
   it("asks for the agent's name, not an account: the account is always a1.<guard>", () => {
-    const form = renderBudgetSetup(true).value;
+    const form = renderBudgetSetup(true, {}, [], null, 3).value;
     assert.match(form, /name="agentLabel"/);
     assert.doesNotMatch(form, /name="agents"/);
   });
-  it("after sign 2 asks to save the key first, and says when the chain does not show a finished budget", () => {
-    const done = renderBudgetKey("a1.g.testnet", "g.testnet", "d.testnet", "testnet", null).value;
+  it("after sign 2 the pop-up asks to save the key first, and says when the chain does not show a finished budget", () => {
+    const ready = { label: "Payroll bot", account: "a1.g.testnet", budget: "team", guardId: "g.testnet", dao: "d.testnet", network: "testnet" as const };
+    const done = renderAgentKeyReady({ ...ready, problem: null }).value;
     assert.match(done, /data-action="budget-key"/);
-    assert.match(done, /leaving loses it/);
-    assert.match(renderBudgetKey("a1.g.testnet", "g.testnet", "d.testnet", "testnet", "the role is missing").value, /does not show a finished budget: the role is missing/);
+    assert.match(done, /Payroll bot is ready/);
+    assert.match(renderAgentKeyReady({ ...ready, problem: "the role is missing" }).value, /the role is missing/);
   });
   it("the connect screen gives all three steps of §11.12.7, so a newcomer needs nothing else to plug an agent in", () => {
     const out = renderAgentAdded("a2.g.testnet", "g.testnet", "d.testnet", "testnet", null).value;
@@ -483,8 +484,8 @@ describe("Budget views the owner decides from", () => {
     assert.doesNotMatch(opened, /id="bs-custom" class="grid-2" hidden/);
   });
   it("no recipient means every payment waits, and the page says so", () => {
-    assert.match(renderRecipients("").value, /every payment your agent asks for will wait/);
-    assert.match(renderRecipients("a.testnet\n\nb.testnet").value, /data-line="1"/);
+    assert.match(renderRecipientList([]).value, /Every payment your agents ask for will wait/);
+    assert.match(renderRecipientList([{ account: "a.testnet", label: "", cap: "" }, { account: "b.testnet", label: "", cap: "" }]).value, /data-row="1"/);
   });
 });
 
