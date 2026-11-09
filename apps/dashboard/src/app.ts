@@ -10,7 +10,7 @@ import { renderKeyDetail } from "./key-detail.ts";
 import { loadKnown, markKnown } from "./known-keys.ts";
 import { PROPOSALS_ID, PROPOSALS_LIST, renderProposals } from "./proposals-view.ts";
 import { renderAccount, renderCouncil } from "./report.ts";
-import { budgetHref, guardHref, homeHref, parseRoute, resolveInput, routeHref, settledHref, suffixNetwork, yieldHref, type Page, type Route, type RouteLink } from "./route.ts";
+import { budgetHref, guardHref, homeHref, parseRoute, resolveInput, routeHref, settledHref, suffixNetwork, yieldHref, yieldNewHref, type Page, type Route, type RouteLink } from "./route.ts";
 import { renderAgentGuide } from "./agent-guide.ts";
 import { yoctoToNear } from "./format.ts";
 import { formToInput, isAccountId, validateGuardForm, type GuardFormError } from "./guard-form.ts";
@@ -78,9 +78,12 @@ import { avatar } from "./ui.ts";
 import { readAgentBudgets, readMyAgents, readWalletDaos, type BudgetCard, type MyAgents } from "./agents-read.ts";
 import { hydrateDaoPicker, openedDaos, rememberOpenedDao, unhydrateDaoPicker } from "./dao-picker.ts";
 import { renderMyAgents, renderMyAgentsError, renderMyAgentsLoading, renderMyAgentsSignedOut } from "./agents-view.ts";
-import { allowedYieldKind, registerProposal, supplyProposal, tokenRaw, withdrawAllProposal, YIELD_ALLOWLIST, YieldProposalError } from "./yield-proposals.ts";
+import { allowedYieldKind, registerProposal, supplyProposal, tokenAmount, tokenRaw, withdrawAllProposal, YIELD_ALLOWLIST, YieldProposalError } from "./yield-proposals.ts";
 import { councilAccounts, readYield, rememberYieldDao, seenYieldDaos, type YieldLive } from "./yield-read.ts";
-import { renderYield, renderYieldLoading, renderYieldPanel, renderYieldStart, type YieldPanel } from "./yield-view.ts";
+import { renderYield, renderYieldLimits, type LimitErrors, renderYieldLoading, renderYieldPanel, renderYieldStart, type YieldPanel } from "./yield-view.ts";
+import { suggest, suggestedAmount } from "./yield-agent.ts";
+import { renderYieldCreate, type CreateView, type FundRow, type FundsView } from "./yield-create.ts";
+import { CHECK_EVERY, loadSettings, saveSettings, validateSettings, type CheckEvery, type LimitInput, type YieldSettings } from "./yield-settings.ts";
 import { renderWatchDialog, renderWatchLinks } from "./watch.ts";
 import { isWalletId, walletLabel, type WalletId } from "./wallets.ts";
 import { connectedAccount, forgetConnected, lockedNotice, rememberConnected, viewerRole, walletBar, type Role } from "./session.ts";
@@ -315,6 +318,7 @@ function syncWallet(): void {
   const now = (connected?.accounts ?? []).join(",");
   if (route.target === null && route.page === "my-agents" && shown !== null && shown !== now) void render(false);
   hydrateDaoPickers();
+  if (route.target === null && route.page === "yield" && route.yieldNew && yieldWizard !== null && yieldWizard.fundsFor !== now) void loadYieldFunds();
   const role = viewerRoleNow();
   const id = lastReport?.target.id ?? "";
   for (const b of root.querySelectorAll<HTMLButtonElement>('[data-action="delete-key"]')) {
@@ -360,6 +364,10 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
   }
   if (route.target === null && route.page === "budget") {
     await renderBudgetPage(route.dao, focusMain, seq, route.link, route.help);
+    return;
+  }
+  if (route.target === null && route.page === "yield" && route.yieldNew) {
+    renderYieldCreatePage(focusMain);
     return;
   }
   if (route.target === null && route.page === "yield") {
@@ -732,7 +740,7 @@ async function renderYieldPage(dao: string | null, focusMain: boolean, seq: numb
     yieldState = live;
     rememberYieldDao(dao);
     rememberOpened(dao);
-    paint(renderYield(live, network), `${dao} · Yield agent · Keyfence`, false, network, "my-agents");
+    paint(renderYield(live, network, loadSettings(dao)), `${dao} · Yield agent · Keyfence`, false, network, "my-agents");
   } catch (e) {
     if (seq !== scanSeq) return;
     if (!isKdError(e)) console.error("yield read failed", { dao, error: e });
@@ -745,7 +753,7 @@ function openYieldPanel(panel: YieldPanel, trigger: HTMLElement, error: string |
   const state = yieldState;
   const box = document.getElementById("yield-action") as HTMLDialogElement | null;
   if (state === null || box === null) return;
-  const content = renderYieldPanel(panel, state, yieldNetwork(state.report.dao), error, amount);
+  const content = renderYieldPanel(panel, state, yieldNetwork(state.report.dao), error, amount, yieldCap(state));
   if (content === null) return;
   box.innerHTML = content.value;
   dialogTrigger = trigger;
@@ -761,12 +769,12 @@ function yieldProposalFor(panel: YieldPanel, amountText: string): AddProposalArg
   const token = YIELD_ALLOWLIST[network]?.tokens[0];
   try {
     if (panel === "register") return registerProposal(network);
-    if (token === undefined) return `Yield proposals are not open on ${network} yet.`;
+    if (token === undefined) return "Yield works on testnet only for now.";
     if (panel === "withdraw") return withdrawAllProposal(network, token.token_id);
     const raw = tokenRaw(amountText, token.decimals);
     if (raw === null) return `Enter an amount like 12.5, with at most ${token.decimals} decimals.`;
     const available = state.report.holdings.find((h) => h.token_id === token.token_id)?.available ?? null;
-    if (available === null) return "The DAO's available balance could not be read. Reload and try again.";
+    if (available === null) return "The treasury's available balance could not be read. Reload and try again.";
     return supplyProposal(network, token.token_id, raw, available);
   } catch (e) {
     if (e instanceof YieldProposalError) return e.message;
@@ -794,8 +802,8 @@ function signYieldProposal(panel: YieldPanel, amountText: string, trigger: HTMLE
   if (policy === null || account === undefined) {
     status.textContent =
       policy === null
-        ? "The DAO's policy could not be read, so the bond is unknown. Reload and try again."
-        : `${connected.accounts[0] ?? "This account"} may not add function-call proposals to ${state.report.dao}. Switch to a council member's account.`;
+        ? "The treasury's rules could not be read, so the deposit is unknown. Reload and try again."
+        : `${connected.accounts[0] ?? "This account"} may not ask the council for moves on ${state.report.dao}. Switch to a council member's account.`;
     return;
   }
   const { walletId } = connected;
@@ -803,7 +811,7 @@ function signYieldProposal(panel: YieldPanel, amountText: string, trigger: HTMLE
   status.textContent = `Waiting for ${walletLabel(walletId)}. Check the transaction there before you approve.`;
   import("./wallet.ts")
     .then((w) => w.signAddProposals(account, yieldNetwork(dao), dao, policy.proposal_bond, [built], walletId, (t) => (status.textContent = t)))
-    .then(() => statusWithButton(status, "Proposal added. The council votes on it under Council votes; funds move only when it passes.", "rescan", "Reload"))
+    .then(() => statusWithButton(status, "Asked the council. They vote on it under History; funds move only when it passes.", "rescan", "Reload"))
     .catch((e: unknown) => notDone(status, e));
 }
 
@@ -828,13 +836,13 @@ function voteYield(button: HTMLButtonElement): void {
   const dao = state.report.dao;
   const network = yieldNetwork(dao);
   button.disabled = true;
-  status.textContent = "Checking the proposal on the chain…";
+  status.textContent = "Checking the vote on the chain…";
   confirmProposal({ description: shown.description, kind: shown.kind }, id, (n) => readProposal(budgetRpc(network), dao, n))
     .then((confirmed) => {
       if (action === "VoteApprove" && !allowedYieldKind(network, confirmed.kind)) {
-        throw new Error(`Proposal #${id} is not a call this page builds. Check it in the DAO before you vote.`);
+        throw new Error(`Vote #${id} is not a move this page builds. Check it with the council before you vote.`);
       }
-      status.textContent = `Waiting for ${walletLabel(walletId)}. ${action === "VoteApprove" ? "Approve" : "Reject"} proposal #${id}.`;
+      status.textContent = `Waiting for ${walletLabel(walletId)}. ${action === "VoteApprove" ? "Approve" : "Reject"} move #${id}.`;
       return import("./wallet.ts")
         .then((w) => w.signActProposal(account, network, dao, actProposalArgs(confirmed, action), walletId, (t) => (status.textContent = t)))
         .then(() => statusAfterVote(network, dao, id))
@@ -844,6 +852,291 @@ function voteYield(button: HTMLButtonElement): void {
       button.disabled = false;
       notDone(status, e);
     });
+}
+
+
+/** The token this page acts on and its zero state, for wizard views before any read. */
+const yieldToken = (network: Network) => YIELD_ALLOWLIST[network]?.tokens[0] ?? { token_id: "", symbol: "USDC (test)", decimals: 6 };
+
+const holdingOf = (live: YieldLive, network: Network) => live.report.holdings.find((h) => h.token_id === yieldToken(network).token_id) ?? null;
+const suppliedOf = (live: YieldLive, network: Network): string | null =>
+  live.positions === null ? null : (live.positions.find((p) => p.token_id === yieldToken(network).token_id)?.supplied ?? "0");
+
+/** Max in the supply drawer when limits exist: the same capped amount the suggestion shows. "" means none to put to work. */
+function yieldCap(state: YieldLive): string | null {
+  const network = yieldNetwork(state.report.dao);
+  const s = loadSettings(state.report.dao);
+  const available = holdingOf(state, network)?.available ?? null;
+  const supplied = suppliedOf(state, network);
+  if (s === null || available === null || supplied === null) return null;
+  const amount = suggestedAmount(BigInt(available), BigInt(supplied), { maxPut: BigInt(s.maxPut), keepReady: BigInt(s.keepReady) });
+  return amount > 0n ? tokenAmount(amount.toString(), yieldToken(network).decimals) : "";
+}
+
+function repaintYield(): void {
+  const state = yieldState;
+  if (state === null) return;
+  const network = yieldNetwork(state.report.dao);
+  paint(renderYield(state, network, loadSettings(state.report.dao)), `${state.report.dao} · Yield agent · Keyfence`, false, network, "my-agents");
+}
+
+/** Pause and Resume change what the page suggests in this browser. They never touch the chain. */
+function toggleYieldPause(): void {
+  const state = yieldState;
+  const s = state === null ? null : loadSettings(state.report.dao);
+  if (state === null || s === null) return;
+  const saved = saveSettings(state.report.dao, { ...s, paused: !s.paused });
+  repaintYield();
+  if (!saved) {
+    const status = yieldStatus();
+    if (status !== null) status.textContent = "This browser would not save the change, so it is gone after a reload.";
+  }
+}
+
+function openYieldLimits(trigger: HTMLElement, values: LimitInput | null = null, errors: LimitErrors = {}): void {
+  const state = yieldState;
+  const box = document.getElementById("yield-action") as HTMLDialogElement | null;
+  if (state === null || box === null) return;
+  const network = yieldNetwork(state.report.dao);
+  const content = renderYieldLimits(state, network, loadSettings(state.report.dao), values, errors);
+  if (content === null) return;
+  box.innerHTML = content.value;
+  dialogTrigger = trigger;
+  if (!box.open) box.showModal();
+  (box.querySelector<HTMLElement>('[aria-invalid="true"]') ?? box.querySelector<HTMLElement>("input"))?.focus();
+}
+
+const limitInput = (form: HTMLFormElement): LimitInput => {
+  const data = new FormData(form);
+  const text = (n: string) => String(data.get(n) ?? "");
+  return { maxPut: text("maxPut"), keepReady: text("keepReady"), minApr: text("minApr") };
+};
+
+function submitYieldLimits(form: HTMLFormElement): void {
+  const state = yieldState;
+  if (state === null) return;
+  const dao = state.report.dao;
+  const network = yieldNetwork(dao);
+  const t = yieldToken(network);
+  const input = limitInput(form);
+  // No balance ceiling here (K7 has one): the limit only caps suggestions, which never exceed what is idle anyway,
+  // and a treasury with nothing idle today must still be able to set limits and pause.
+  const result = validateSettings(input, { decimals: t.decimals, symbol: t.symbol, ceiling: null });
+  if (!result.ok) {
+    openYieldLimits(form, input, result.errors);
+    return;
+  }
+  const before = loadSettings(dao);
+  const next: YieldSettings = { maxPut: result.maxPut, keepReady: result.keepReady, minApr: result.minApr, checkEvery: before?.checkEvery ?? "1h", mode: "suggest", paused: before?.paused ?? false };
+  const saved = saveSettings(dao, next);
+  (document.getElementById("yield-action") as HTMLDialogElement | null)?.close();
+  repaintYield();
+  const status = yieldStatus();
+  if (status !== null) status.textContent = saved ? "Limits saved in this browser." : "This browser would not save the limits, so they are gone after a reload.";
+}
+
+/** New yield agent (K7): the steps live in memory, so a reload starts again. Nothing is saved until Create. */
+interface YieldWizard {
+  step: number;
+  dao: string;
+  values: LimitInput;
+  every: CheckEvery;
+  notice: string | null;
+  errors: LimitErrors;
+  funds: FundsView;
+  /** The wallet accounts the funds list was read for. */
+  fundsFor: string;
+  lives: Map<string, YieldLive>;
+}
+let yieldWizard: YieldWizard | null = null;
+
+function wizardView(w: YieldWizard): CreateView {
+  const network = budgetNetwork();
+  const t = yieldToken(network);
+  const live = w.lives.get(w.dao) ?? null;
+  const o = live?.report.opportunities.find((x) => x.executable && x.token_id === t.token_id) ?? null;
+  return {
+    network, step: w.step, funds: w.funds, dao: w.dao, idle: live === null ? null : (holdingOf(live, network)?.available ?? null),
+    rate: o === null ? null : { apr: o.apr, testData: o.test_data }, token: { symbol: t.symbol, decimals: t.decimals },
+    values: w.values, every: w.every, errors: w.errors, notice: w.notice,
+  };
+}
+
+function paintYieldWizard(focusHeading: boolean): void {
+  const w = yieldWizard;
+  if (w === null) return;
+  const view = wizardView(w);
+  const current = document.getElementById("yield-create-form");
+  if (current === null) {
+    paint(renderYieldCreate(view), "New yield agent · Keyfence", false, view.network, "my-agents");
+  } else {
+    // The breadcrumb and title stay; only the form is swapped.
+    current.outerHTML = renderYieldCreate(view).value.replace(/^[\s\S]*?(?=<form id="yield-create-form")/, "");
+  }
+  const target = document.querySelector<HTMLElement>('#yield-create-form [aria-invalid="true"]');
+  (focusHeading ? (target ?? document.getElementById("yc-h")) : target)?.focus();
+}
+
+function renderYieldCreatePage(focusMain: boolean): void {
+  const network = budgetNetwork();
+  yieldState = null;
+  yieldWizard = {
+    step: 1, dao: "", values: { maxPut: "", keepReady: "0", minApr: "0" }, every: "1h", notice: null, errors: {},
+    funds: { kind: "signed-out" }, fundsFor: "", lives: new Map(),
+  };
+  paint(renderYieldCreate(wizardView(yieldWizard)), "New yield agent · Keyfence", focusMain, network, "my-agents");
+}
+
+/** The treasuries this wallet signs for, each with its USDC read. A failed read marks that row, not the page. */
+async function loadYieldFunds(): Promise<void> {
+  const w = yieldWizard;
+  if (w === null) return;
+  const network = budgetNetwork();
+  const accounts = connected?.accounts ?? [];
+  const key = accounts.join(",");
+  w.fundsFor = key;
+  if (accounts.length === 0) {
+    w.funds = { kind: "signed-out" };
+    paintYieldWizard(false);
+    return;
+  }
+  w.funds = { kind: "loading" };
+  paintYieldWizard(false);
+  try {
+    const daos = await readWalletDaos(accounts, network, [GUARD_FACTORY, BUDGET_READ_FACTORY], [...seenYieldDaos(), ...openedDaos()]);
+    const reads = await Promise.allSettled(daos.map((d) => readYield(d, network)));
+    if (yieldWizard !== w || w.fundsFor !== key) return;
+    const rows: FundRow[] = daos.map((dao, i) => {
+      const r = reads[i]!;
+      if (r.status === "rejected") return { dao, total: null, idle: null, failed: true };
+      w.lives.set(dao, r.value);
+      const h = holdingOf(r.value, network);
+      return { dao, total: h?.balance ?? null, idle: h?.available ?? null, failed: false };
+    });
+    w.funds = { kind: "ready", rows };
+  } catch (e) {
+    if (yieldWizard !== w || w.fundsFor !== key) return;
+    console.error("wallet treasuries failed", { error: e });
+    w.funds = { kind: "failed" };
+  }
+  paintYieldWizard(false);
+}
+
+/** Choosing a treasury fills the Limits defaults from its idle amount. */
+function chooseYieldDao(w: YieldWizard, dao: string): void {
+  const network = budgetNetwork();
+  const live = w.lives.get(dao);
+  const idle = live === undefined ? null : (holdingOf(live, network)?.available ?? null);
+  w.dao = dao;
+  w.values = { maxPut: idle === null ? "" : tokenAmount(idle, yieldToken(network).decimals), keepReady: "0", minApr: "0" };
+  w.errors = {};
+  w.notice = null;
+}
+
+function pickYieldFunds(dao: string): void {
+  const w = yieldWizard;
+  if (w === null || !w.lives.has(dao)) return;
+  chooseYieldDao(w, dao);
+  paintYieldWizard(false);
+}
+
+/** Keeps what is typed on the step on screen before the step changes. */
+function captureYieldStep(form: HTMLFormElement, w: YieldWizard): void {
+  if (w.step === 3) w.values = limitInput(form);
+  if (w.step === 1) {
+    const typed = form.querySelector<HTMLInputElement>('input[name="dao"]');
+    if (typed !== null) w.dao = typed.value.trim().toLowerCase();
+  }
+}
+
+function yieldWizardBack(): void {
+  const w = yieldWizard;
+  const form = document.getElementById("yield-create-form") as HTMLFormElement | null;
+  if (w === null || form === null || w.step <= 1) return;
+  captureYieldStep(form, w);
+  w.step -= 1;
+  w.errors = {};
+  w.notice = null;
+  paintYieldWizard(true);
+}
+
+function submitYieldWizard(form: HTMLFormElement): void {
+  const w = yieldWizard;
+  if (w === null) return;
+  const network = budgetNetwork();
+  const t = yieldToken(network);
+  captureYieldStep(form, w);
+  w.notice = null;
+  w.errors = {};
+  if (w.step === 1) {
+    const dao = w.dao;
+    if (dao === "") {
+      w.notice = "Pick a treasury to continue.";
+    } else if (suffixNetwork(dao) !== network) {
+      w.notice = `That is not a ${network} treasury.`;
+    } else if (!w.lives.has(dao)) {
+      const status = document.getElementById("yield-create-status");
+      if (status !== null) status.textContent = `Reading ${dao}…`;
+      readYield(dao, network).then(
+        (live) => {
+          if (yieldWizard !== w) return;
+          w.lives.set(dao, live);
+          chooseYieldDao(w, dao);
+          advanceYieldWizard(w);
+        },
+        (e: unknown) => {
+          if (yieldWizard !== w) return;
+          if (!isKdError(e)) console.error("yield read failed", { dao, error: e });
+          w.notice = isKdError(e) ? `${dao}: ${e.kd.message.en}` : `${dao} could not be read right now. Try again.`;
+          paintYieldWizard(false);
+        },
+      );
+      return;
+    } else {
+      if (w.values.maxPut === "") chooseYieldDao(w, dao);
+      advanceYieldWizard(w);
+      return;
+    }
+    paintYieldWizard(false);
+    return;
+  }
+  if (w.step === 3) {
+    const idle = holdingOf(w.lives.get(w.dao) as YieldLive, network)?.available ?? null;
+    const result = validateSettings(w.values, { decimals: t.decimals, symbol: t.symbol, ceiling: idle });
+    if (!result.ok) {
+      w.errors = result.errors;
+      paintYieldWizard(true);
+      return;
+    }
+  }
+  if (w.step === 5) {
+    const result = validateSettings(w.values, { decimals: t.decimals, symbol: t.symbol, ceiling: null });
+    if (!result.ok) return;
+    const saved = saveSettings(w.dao, { maxPut: result.maxPut, keepReady: result.keepReady, minApr: result.minApr, checkEvery: w.every, mode: "suggest", paused: false });
+    if (!saved) {
+      w.notice = "This browser would not save the limits (storage is blocked), so the agent cannot be created here.";
+      paintYieldWizard(false);
+      return;
+    }
+    rememberYieldDao(w.dao);
+    rememberOpened(w.dao);
+    navigate(yieldHref(w.dao));
+    return;
+  }
+  advanceYieldWizard(w);
+}
+
+function advanceYieldWizard(w: YieldWizard): void {
+  if (w.step >= 5) return;
+  const live = w.lives.get(w.dao);
+  const idle = live === undefined ? null : (holdingOf(live, budgetNetwork())?.available ?? null);
+  if (w.step === 1 && (idle === null || BigInt(idle) === 0n)) {
+    w.notice = "Nothing is idle in that treasury, so there is nothing to put to work.";
+    paintYieldWizard(false);
+    return;
+  }
+  w.step += 1;
+  paintYieldWizard(true);
 }
 
 /** The last Your agents read: Review and Reject on that page act on the budget named by the button. */
@@ -2000,8 +2293,28 @@ root.addEventListener("click", (event) => {
       void render(false);
       break;
     case "yield-open":
-      openYieldPanel(el.dataset.panel === "withdraw" ? "withdraw" : el.dataset.panel === "register" ? "register" : "supply", el);
+      openYieldPanel(el.dataset.panel === "withdraw" ? "withdraw" : el.dataset.panel === "register" ? "register" : "supply", el, null, el.dataset.amount ?? "");
       break;
+    case "yield-pause":
+      toggleYieldPause();
+      break;
+    case "yield-limits-open":
+      openYieldLimits(el);
+      break;
+    case "yield-new-pick":
+      pickYieldFunds(el.dataset.dao ?? "");
+      break;
+    case "yield-new-back":
+      yieldWizardBack();
+      break;
+    case "yield-new-every": {
+      const every = CHECK_EVERY.find((e) => e === el.dataset.every);
+      if (yieldWizard !== null && every !== undefined) {
+        yieldWizard.every = every;
+        paintYieldWizard(false);
+      }
+      break;
+    }
     case "yield-max": {
       const input = document.getElementById("yp-amount") as HTMLInputElement | null;
       if (input !== null) input.value = el.dataset.amount ?? "";
@@ -2276,6 +2589,16 @@ root.addEventListener("submit", (event) => {
   if (form.id === "yield-dao-form") {
     event.preventDefault();
     navigate(yieldHref(String(new FormData(form).get("dao") ?? "").trim()));
+    return;
+  }
+  if (form.id === "yield-create-form") {
+    event.preventDefault();
+    submitYieldWizard(form);
+    return;
+  }
+  if (form.id === "yield-limits-form") {
+    event.preventDefault();
+    submitYieldLimits(form);
     return;
   }
   if (form.id === "yield-panel-form") {

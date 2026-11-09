@@ -163,6 +163,15 @@ describe("Your agents inbox", () => {
     }
     assert.match(page([]), /No agents yet/);
   });
+
+  // New agent must reach both wizards: K4 for a budget, K7 for a yield agent. A dead link hides the yield agent.
+  it("offers both kinds of new agent, empty or not", () => {
+    const yieldNew = /href="\?page=yield&amp;new=1"|href="\?page=yield&new=1"/;
+    for (const out of [page([]), page([card("a.sputnik-v2.testnet", a)])]) {
+      assert.match(out, /Pay for things/);
+      assert.match(out, yieldNew);
+    }
+  });
 });
 
 describe("readAgentBudgets", () => {

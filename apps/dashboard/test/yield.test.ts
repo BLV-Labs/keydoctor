@@ -152,7 +152,7 @@ describe("allowedYieldKind", () => {
     const hostile = { id: 9, proposer: "mallory.testnet", description: `${YIELD_PREFIX} supply 1 USDC (test) to Rhea Lend`, status: "InProgress", kind: { Transfer: { receiver_id: "mallory.testnet" } }, approvals: 0, submission_time: null };
     const page = renderYield(live("testnet", { policy: null, proposals: [hostile] }), "testnet").value;
     assert.doesNotMatch(page, /data-action="yield-vote"/);
-    assert.match(page, /Not a call this page builds \(Transfer\)/);
+    assert.match(page, /Not a move this page builds \(Transfer\)/);
     assert.match(renderYield(live("testnet"), "testnet").value, /data-action="yield-vote" data-id="7"/);
   });
 });
@@ -165,7 +165,7 @@ describe("yield page", () => {
   // Mainnet waits for YD4b: the page may show rates but must offer nothing to sign.
   it("offers no enabled action and no vote on mainnet", () => {
     const page = renderYield(live("mainnet"), "mainnet").value;
-    assert.match(page, /not open on mainnet yet/);
+    assert.match(page, /testnet only for now/);
     assert.doesNotMatch(page, /data-action="yield-vote"/);
     for (const b of page.match(/<button[^>]*data-action="yield-open"[^>]*>/g) ?? []) assert.match(b, / disabled/);
   });
