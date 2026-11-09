@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { addAgentProblem, addAgentProposal, agentProposal, amountFromForm, freshAgentAccount, rulesProposal } from "../src/budget-flow.ts";
-import { parsePlan, topUpBlocks, withdrawableYocto, withdrawMaxYocto, type BudgetLive, type BudgetPlan, type BudgetProposal, type BudgetRequest } from "../src/budget-read.ts";
+import { parseGuardTxs, parsePlan, parseRequest, topUpBlocks, txUrl, withdrawableYocto, withdrawMaxYocto, type BudgetLive, type BudgetPlan, type BudgetProposal, type BudgetRequest } from "../src/budget-read.ts";
 import {
   BALANCED_RULES,
   CAUTIOUS_RULES,
@@ -63,7 +63,7 @@ const live = (over: Partial<BudgetLive> = {}): BudgetLive => ({
 describe("renderBudget", () => {
   const page = renderBudget(live(), "testnet").value;
   it("shows chain values", () => {
-    assert.match(page, /11 NEAR/);
+    assert.match(page, /11\.00 NEAR/);
     assert.match(page, /bot\.testnet/);
     assert.match(page, /#4/);
   });
@@ -372,6 +372,7 @@ describe("Budget views the owner decides from", () => {
     decision: "Pending",
     reasons: ["OVER_PER_TX"],
     proposal_id: 4,
+    plan_id: null,
     status: "Pending",
     created_at: nanos(NOW - 2 * HOUR),
     ...over,
@@ -433,6 +434,25 @@ describe("Budget views the owner decides from", () => {
     assert.match(out, /Scheduled payout paid/);
     assert.doesNotMatch(out, /g1\.guards\.testnet/);
   });
+  it("Activity names a DCA step a swap: its receiver is the wrap contract, and calling that a payment misleads the owner", () => {
+    const dca: BudgetPlan = { plan_id: 2, receiver_id: null, action_type: "swap", strategy_id: "dca-near", amount_per_run: "100000000000000000000000", interval_sec: 300, runs_total: 2, runs_done: 1, next_run_at: null, status: "active", pause_reason: null };
+    const step = request({ agent: "g1.guards.testnet", receiver_id: "wrap.testnet", amount: "100000000000000000000000", decision: "Auto", reasons: [], status: "Executed", proposal_id: null, plan_id: 2 });
+    const out = renderBudgetActivity(live({ requests: [step], plans: [dca] }), "all", NOW).value.split('<ul class="plain-list">')[1]!;
+    assert.match(out, /<\/svg>Swapped automatically</);
+    assert.match(out, /DCA sold NEAR for USDT/);
+    assert.match(out, /0\.1 NEAR/);
+    assert.doesNotMatch(out, /Paid automatically<|paid|wrap\.testnet/);
+    const payout = { ...dca, action_type: "transfer", receiver_id: "v.testnet" };
+    const pay = renderBudgetActivity(live({ requests: [{ ...step, receiver_id: "v.testnet" }], plans: [payout] }), "all", NOW).value;
+    assert.match(pay, /<\/svg>Paid automatically</);
+    assert.match(pay, /Scheduled payout paid/);
+  });
+  it("Activity links a row to its transaction only when the indexer found it", () => {
+    const tx = "https://testnet.nearblocks.io/txns/BMPJhtudb7mvxWdqwbzaW6pJX4V5RPiAeBQma1qhDdhf";
+    const linked = renderBudgetActivity(live({ requests: [request({ tx_url: tx })] }), "all", NOW).value;
+    assert.match(linked, /href="https:\/\/testnet\.nearblocks\.io\/txns\/BMPJ[^"]*" target="_blank" rel="noopener"/);
+    assert.doesNotMatch(renderBudgetActivity(live({ requests: [request({ tx_url: null })] }), "all", NOW).value, /nearblocks/);
+  });
   it("Needs you lists the proposal that expires first at the top, and the tile quotes that same one", () => {
     const base = dated();
     const older = { ...base.proposals![0]!, id: 3, submission_time: nanos(NOW - 40 * HOUR) };
@@ -461,10 +481,15 @@ describe("Budget views the owner decides from", () => {
     // Live on payroll-1: the card said 30 NEAR while 4.7 of it paid for storage, so the owner could plan with NEAR
     // no transfer can send. The card counts only what can leave; the held part is named, never hidden.
     const card = (b: BudgetLive) => renderBudget(b, "testnet").value.match(/Balance<\/span><span class="tile-value">([^<]*)<\/span><span class="tile-note">[^<]*<\/span><span class="tile-note">([^<]*)</);
-    assert.deepEqual(card(live())?.slice(1), ["11 NEAR", "Plus 1 NEAR kept for account storage, not spendable"]);
+    assert.deepEqual(card(live())?.slice(1), ["11.00 NEAR", "Plus 1 NEAR kept for account storage, not spendable"]);
     const plain = (b: BudgetLive) => renderBudget(b, "testnet").value.match(/Balance<\/span><span class="tile-value">([^<]*)<\/span><span class="tile-note">([^<]*)<\/span><\/button>/);
-    assert.deepEqual(plain(live({ withdrawable: NEAR(12) }))?.slice(1), ["12 NEAR", "enough for 12 days at today&#39;s pace"]);
+    assert.deepEqual(plain(live({ withdrawable: NEAR(12) }))?.slice(1), ["12.00 NEAR", "enough for 12 days at today&#39;s pace"]);
     assert.deepEqual(plain(live({ withdrawable: null }))?.slice(1), ["unknown", "Top up any time"]);
+  });
+  it("the balance card rounds down to two decimals: 24 decimals do not read, and rounding up would promise NEAR that is not there", () => {
+    const plain = (b: BudgetLive) => renderBudget(b, "testnet").value.match(/Balance<\/span><span class="tile-value">([^<]*)</)?.[1];
+    assert.equal(plain(live({ withdrawable: "9879654321000000000000001" })), "9.87 NEAR");
+    assert.equal(plain(live({ withdrawable: "5000000000000000000000" })), "0.00 NEAR");
   });
   it("Withdraw offers what can leave once the waiting deposits and the new request's storage stay, and names the wallet", () => {
     // WHY: signature 1 stores a proposal on the DAO; a transfer of every spendable yocto then fails at signature 2.
@@ -595,5 +620,41 @@ describe("parsePlan", () => {
     assert.equal(parsePlan({ ...raw, amount_per_run: 5 }), null);
     assert.equal(parsePlan({ ...raw, status: "deleted" }), null);
     assert.equal(parsePlan(null), null);
+  });
+});
+
+describe("budget-read: Activity transaction links", () => {
+  // Live rows of payroll-2's Guard (NearBlocks v3, 2026-11-09): plan 2 run 1 and an agent request.
+  const rows = {
+    data: [
+      { transaction_hash: "Feqo6QaBscP13nWUYvWHVz4oWzd4CQeHYcVye7raEY4r", signer_account_id: "keydoctor-keeper.testnet", block_timestamp: "1794242241463748423", actions: [{ action: "FUNCTION_CALL", method: "sync_request" }] },
+      { transaction_hash: "BMPJhtudb7mvxWdqwbzaW6pJX4V5RPiAeBQma1qhDdhf", signer_account_id: "keydoctor-keeper.testnet", block_timestamp: "1794242233494867338", actions: [{ action: "FUNCTION_CALL", method: "execute_plan_step" }] },
+      { transaction_hash: "czwT4i49Pd9KhZgCookaVmwLapsFBC5wXrmLSDtupDd", signer_account_id: "a1.payroll-2.keydoctor-guards-v2.testnet", block_timestamp: "1794109343305061275", actions: [{ action: "FUNCTION_CALL", method: "request_transfer" }] },
+      { transaction_hash: 7, actions: [] },
+    ],
+  };
+  const txs = parseGuardTxs(rows);
+  const req = (over: Record<string, unknown>) =>
+    parseRequest({ request_id: "x", agent: "a1.payroll-2.keydoctor-guards-v2.testnet", receiver_id: "v.testnet", amount: "1", memo: "", decision: "Auto", reasons: [], status: "Executed", ...over })!;
+  it("drops a malformed row instead of linking a broken hash", () => {
+    assert.equal(txs.length, 3);
+  });
+  it("a plan step links its execute_plan_step, not the sync_request that follows it", () => {
+    const step = req({ agent: "payroll-2.keydoctor-guards-v2.testnet", plan_id: 2, created_at: "1794242234193069144" });
+    assert.equal(txUrl(step, txs, "testnet"), "https://testnet.nearblocks.io/txns/BMPJhtudb7mvxWdqwbzaW6pJX4V5RPiAeBQma1qhDdhf");
+  });
+  it("an agent request links the agent's own request_transfer", () => {
+    assert.equal(txUrl(req({ created_at: "1794109343887039617" }), txs, "testnet"), "https://testnet.nearblocks.io/txns/czwT4i49Pd9KhZgCookaVmwLapsFBC5wXrmLSDtupDd");
+  });
+  it("links nothing rather than a wrong transaction: another signer, a tx after the request, or one too long before", () => {
+    assert.equal(txUrl(req({ agent: "other.testnet", created_at: "1794109343887039617" }), txs, "testnet"), null);
+    assert.equal(txUrl(req({ created_at: "1794109343000000000" }), txs, "testnet"), null);
+    assert.equal(txUrl(req({ created_at: "1794109399000000000" }), txs, "testnet"), null);
+    assert.equal(txUrl(req({}), txs, "testnet"), null);
+  });
+  it("picks the nearest step when the keeper ran two a few seconds apart", () => {
+    const later = { hash: "Later111", signer: "keydoctor-keeper.testnet", method: "execute_plan_step", at: "1794242236000000000" };
+    const step = req({ plan_id: 3, created_at: "1794242236700000000" });
+    assert.equal(txUrl(step, [...txs, later], "testnet"), "https://testnet.nearblocks.io/txns/Later111");
   });
 });

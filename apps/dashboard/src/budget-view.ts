@@ -68,6 +68,12 @@ const summaryOf = (g: GuardLive): string =>
     : fenceSentence(g.agents?.length ?? g.config?.agents ?? null, near(g.policy.max_per_day), near(g.policy.max_per_tx), g.whitelist?.length ?? g.config?.whitelist ?? null);
 
 export const near = (yocto: string | null | undefined): string => (yocto === null || yocto === undefined ? "unknown" : `${yoctoToNear(yocto)} NEAR`);
+/** The Balance tile: two decimals, rounded down so it never shows more than can be spent. */
+function nearShort(yocto: string | null | undefined): string {
+  if (yocto === null || yocto === undefined || !/^\d+$/.test(yocto)) return "unknown";
+  const cents = BigInt(yocto) / 10n ** 22n;
+  return `${cents / 100n}.${(cents % 100n).toString().padStart(2, "0")} NEAR`;
+}
 
 const LEAD = "A budget your AI agent can spend, within rules you set. Larger payments wait for your approval. Top up or withdraw anytime.";
 
@@ -188,7 +194,7 @@ function tiles(b: BudgetLive, now: number): Html {
       ? html`<span class="tile-value">${near(plan.amount_per_run)}</span><span class="tile-note wrap">to ${plan.receiver_id ?? "a recipient"} · ${nsToUtc(plan.next_run_at ?? "0")}</span>`
       : html`<span class="tile-value">None</span>${b.plans === null ? html`<span class="tile-note">Not available right now</span>` : html`<span class="tile-note"><button type="button" class="btn btn-ghost btn-link" data-action="budget-open" data-panel="plan">Set one up</button></span>`}`;
   return html`<section class="tiles" aria-label="Budget summary">
-    ${tile("all", "Balance", near(b.withdrawable), [runway === null ? "Top up any time" : runway, b.usdt === undefined || b.usdt === null ? "" : `USDT in your Budget: ${formatUnits(b.usdt, DCA_TESTNET.token_out_decimals)}`, held === null || held === 0n ? "" : `Plus ${near(held.toString())} kept for account storage, not spendable`])}
+    ${tile("all", "Balance", nearShort(b.withdrawable), [runway === null ? "Top up any time" : runway, b.usdt === undefined || b.usdt === null ? "" : `USDT in your Budget: ${formatUnits(b.usdt, DCA_TESTNET.token_out_decimals)}`, held === null || held === 0n ? "" : `Plus ${near(held.toString())} kept for account storage, not spendable`])}
     ${tile("auto", "Spent today", w === null ? "unknown" : p === null ? near(w.spent_in_window) : `${yoctoToNear(w.spent_in_window)} / ${near(p.max_per_day)}`,
       [w === null ? "" : `resets ${localTime(w.resets_at)}`],
       w !== null && p !== null ? html`<progress class="progress" max="100" value="${percent(w.spent_in_window, p.max_per_day)}" aria-label="Share of the daily limit spent"></progress>` : "")}
@@ -273,17 +279,24 @@ function activityGroup(r: BudgetRequest): Exclude<ActivityFilter, "all"> | null 
   return r.status === "Submitted" || r.status === "Pending" ? "waiting" : null;
 }
 
-export function activityRow(r: BudgetRequest, g: GuardLive | null, now: number): Html {
+export function activityRow(r: BudgetRequest, g: GuardLive | null, plans: BudgetPlan[] | null, now: number): Html {
   const group = activityGroup(r);
   const tone = group === "rejected" ? "pill-high" : group === "waiting" ? "pill-cleanup" : "pill-ok";
   const mark = group === "rejected" ? icon.alertSmall() : group === "waiting" ? icon.clock() : group === "auto" ? icon.check() : "";
-  const label = group === "auto" && r.status === "Executed" ? "Paid automatically" : (REQUEST_STATUS[r.status] ?? r.status);
+  // A DCA step pays the wrap contract to swap: it is a sale of NEAR, not a payment to anyone.
+  const swap = r.plan_id !== null && plans?.find((p) => p.plan_id === r.plan_id)?.action_type === "swap";
+  const paid = r.status === "Executed";
+  const label = group === "auto" && paid ? (swap ? "Swapped automatically" : "Paid automatically") : (REQUEST_STATUS[r.status] ?? r.status);
   const reasons = r.reasons.map((c) => reasonText(c, g, r.receiver_id)).join(", ");
+  const what = swap
+    ? `DCA ${paid ? "sold" : "is selling"} NEAR for USDT`
+    : html`${agentName(g, r.agent)} ${paid ? "paid" : "asked to pay"} <span class="mono">${r.receiver_id}</span>`;
+  const when = ago(r.created_at, now);
   return html`<li class="activity-row">
     <span class="activity-status"><span class="pill ${tone}">${mark}${label}</span></span>
-    <span class="activity-text wrap">${agentName(g, r.agent)} ${r.status === "Executed" ? "paid" : "asked to pay"} <span class="mono">${r.receiver_id}</span>${reasons === "" ? "" : html`<span class="small muted activity-why">${reasons}</span>`}</span>
+    <span class="activity-text wrap">${what}${reasons === "" ? "" : html`<span class="small muted activity-why">${reasons}</span>`}</span>
     <span class="activity-amount">${near(r.amount)}</span>
-    <span class="activity-time small muted">${ago(r.created_at, now)}</span></li>`;
+    <span class="activity-time small muted">${r.tx_url ? html`<a href="${r.tx_url}" target="_blank" rel="noopener" title="Open the transaction in the explorer">${when}</a>` : when}</span></li>`;
 }
 
 /** The Activity card with one chip pressed. It repaints alone when a chip or a summary tile is pressed. */
@@ -298,7 +311,7 @@ export function renderBudgetActivity(b: BudgetLive, filter: ActivityFilter, now:
         ? html`<p class="muted pad-row">No requests yet.</p>`
         : rows.length === 0
           ? html`<p class="muted pad-row">Nothing here yet.</p>`
-          : html`<ul class="plain-list">${rows.map((r) => activityRow(r, b.guard, now))}</ul>`;
+          : html`<ul class="plain-list">${rows.map((r) => activityRow(r, b.guard, b.plans, now))}</ul>`;
   return html`<section id="budget-activity" class="card" aria-labelledby="b-activity">
     <div class="b-head"><h2 id="b-activity" class="b-h">Activity</h2></div>
     <div class="filter-chips" role="group" aria-label="Filter activity">${chip("all", "All")}${chip("auto", "Paid automatically")}${chip("waiting", "Waited for you")}${chip("rejected", "Rejected")}</div>

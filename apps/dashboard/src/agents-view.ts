@@ -164,12 +164,12 @@ const NEW_CARD = html`<div class="agent-card agent-card-new">${icon.plus()}<span
 /** The newest events across budgets, each worded by its own budget's agents. */
 function recentActivity(cards: readonly BudgetCard[], now: number): Html {
   const events = cards
-    .flatMap(({ live }) => (live?.requests ?? []).map((r) => ({ r, g: live?.guard ?? null })))
+    .flatMap(({ live }) => (live?.requests ?? []).map((r) => ({ r, g: live?.guard ?? null, plans: live?.plans ?? null })))
     .sort((a, b) => (BigInt(a.r.created_at ?? "0") < BigInt(b.r.created_at ?? "0") ? 1 : BigInt(a.r.created_at ?? "0") > BigInt(b.r.created_at ?? "0") ? -1 : 0))
     .slice(0, ACTIVITY_SHOWN);
   return html`<section class="card" aria-labelledby="ma-activity">
     <div class="b-head"><h2 id="ma-activity" class="b-h">Recent activity</h2></div>
-    ${events.length === 0 ? html`<p class="muted pad-row">No requests yet.</p>` : html`<ul class="plain-list">${events.map((e) => activityRow(e.r, e.g, now))}</ul>`}</section>`;
+    ${events.length === 0 ? html`<p class="muted pad-row">No requests yet.</p>` : html`<ul class="plain-list">${events.map((e) => activityRow(e.r, e.g, e.plans, now))}</ul>`}</section>`;
 }
 
 const ALERTS = html`<section id="alerts" class="card" aria-labelledby="ma-alerts">
