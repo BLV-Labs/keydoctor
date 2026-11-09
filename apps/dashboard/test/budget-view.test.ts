@@ -8,7 +8,10 @@ import {
   balanceAfter,
   describeKind,
   everyText,
+  fenceSentence,
+  inWallet,
   planStatus,
+  runwayText,
   renderBudget,
   renderBudgetActivity,
   renderBudgetAgent,
@@ -16,6 +19,7 @@ import {
   renderBudgetCreate,
   renderAgentAdded,
   renderBudgetKey,
+  renderBudgetPause,
   renderBudgetPanel,
   renderBudgetSetup,
   renderBudgetStart,
@@ -82,15 +86,46 @@ describe("renderBudget", () => {
     assert.match(describeKind({ ChangePolicy: {} }), /who controls this Budget/);
   });
   it("states the true signature count on each owner action", () => {
-    assert.match(page, /Top up <span class="sig">1 signature</);
-    assert.match(page, /Pause agents <span class="sig">1 signature</);
-    assert.match(page, /Withdraw <span class="sig">2 signatures</);
-    assert.match(page, /Edit rules <span class="sig">2 signatures</);
-    assert.match(page, /Add an agent <span class="sig">2 signatures</);
+    // Page buttons open a pop-up; the pop-up states the count next to the wallet button.
+    assert.equal(inWallet(1), "1 signature in your wallet");
+    assert.equal(inWallet(2), "2 signatures in your wallet");
+    assert.match(renderBudgetPanel("topup", live()).value, /1 signature in your wallet/);
+    assert.match(renderBudgetPause(live()).value, /1 signature in your wallet/);
+    assert.match(renderBudgetPanel("withdraw", live()).value, /2 signatures in your wallet/);
+    assert.match(renderBudgetPanel("rules", live()).value, /2 signatures in your wallet/);
+    assert.match(renderBudgetPanel("add-agent", live()).value, /2 signatures in your wallet/);
+    assert.match(renderBudgetPanel("recipients", live()).value, /2 signatures in your wallet/);
+    const listed = live();
+    const withVendor = { ...listed, guard: { ...listed.guard!, whitelist: [{ account_id: "vendor.testnet", label: "", max_per_tx: null }] } };
+    assert.match(renderBudgetPanel("plan", withVendor, null, { step: "confirm", receiver: "vendor.testnet", amount: "1", every: "1", unit: "hours", runs: "2", start: "" }).value, /2 signatures in your wallet/);
     const agent = renderBudgetAgent(live().guard!.agents![0]!, live()).value;
     assert.match(agent, /Remove <span class="sig">2 signatures</);
     assert.match(agent, /Turn off agent <span class="sig">2 signatures</);
     assert.doesNotMatch(page, /One signature/i);
+  });
+  it("the page opens with a plain sentence built from the limits", () => {
+    assert.match(page, /1 agent can spend up to 4 NEAR a day and 1 NEAR per payment, only to accounts you approve each time\. Anything else waits for you\./);
+    assert.match(fenceSentence(2, "4 NEAR", "1 NEAR", 3), /^2 agents can spend up to 4 NEAR a day and 1 NEAR per payment, only to 3 recipients\./);
+    assert.match(fenceSentence(1, "4 NEAR", "1 NEAR", 0), /only to accounts you approve each time/);
+    assert.match(fenceSentence(1, "4 NEAR", "1 NEAR", null), /only to the recipients you allow/);
+    const base = live();
+    assert.match(renderBudget({ ...base, guard: { ...base.guard!, policy: null } }, "testnet").value, /We could not read the limits\. Nothing was changed\./);
+  });
+  it("tells the owner when the balance is under the reserve and shows the runway", () => {
+    const base = live();
+    const low = renderBudget({ ...base, withdrawable: NEAR(0) }, "testnet").value;
+    assert.match(low, /Agents cannot pay until you top up above 1 NEAR\./);
+    assert.doesNotMatch(page, /Agents cannot pay until/);
+    assert.equal(runwayText(base), "enough for 11 days at today's pace");
+  });
+  it("Pause asks first: Cancel has focus, the cost is stated, and no jargon shows", () => {
+    const out = renderBudgetPause(live()).value;
+    assert.match(out, /Pause all agents\?/);
+    assert.match(out, /<button[^>]*autofocus[^>]*>Cancel</);
+    assert.match(out, /data-action="budget-pause-now"/);
+    assert.match(out, /Resuming takes 2/);
+    assert.match(page, /data-action="budget-pause"/);
+    assert.doesNotMatch(page, /data-action="budget-pause-now"/);
   });
   it("shows what each agent spent, and leaves it out for a Guard that cannot report it", () => {
     const agent = { account_id: "bot.testnet", label: "ops", enabled: true, pending: 1 };
@@ -104,7 +139,7 @@ describe("renderBudget", () => {
   });
   it("carries no mock names and labels the unbuilt features", () => {
     assert.doesNotMatch(page, /Research bot|Team payouts/);
-    assert.match(page, /DCA NEAR → USDT<\/span><span class="small muted">Coming soon/);
+    assert.doesNotMatch(page, /DCA NEAR/);
   });
   it("shows unknown, not zero, when a read failed", () => {
     const failed = renderBudget(live({ balance: null, proposals: null, requests: null }), "testnet").value;
@@ -125,6 +160,29 @@ describe("words a newcomer sees (§10.4)", () => {
       renderBudgetSetup(true).value,
     ]) {
       assert.doesNotMatch(shown(out), jargon);
+    }
+  });
+  it("every pop-up and drawer, Pause and Approve included, keeps the machinery out of sight", () => {
+    const NOW = Date.UTC(2026, 10, 6);
+    const base = live();
+    const proposal = { ...base.proposals![0]!, submission_time: `${NOW - 3_600_000}000000` };
+    const b = {
+      ...base,
+      proposals: [proposal],
+      requests: [{ request_id: "1", agent: "bot.testnet", receiver_id: "v.testnet", amount: NEAR(2), memo: "invoice", decision: "Pending", reasons: ["NOT_WHITELISTED", "OVER_PER_TX", "OVER_DAILY_LIMIT"], proposal_id: 4, status: "Pending", created_at: `${NOW - 7_200_000}000000` } as BudgetRequest],
+      dao: { ...base.dao, policy: { ...base.dao.policy, proposal_period: `${72 * 3_600_000}000000` } as never },
+    };
+    const expired = { ...b, proposals: [{ ...proposal, submission_time: `${NOW - 80 * 3_600_000}000000` }] };
+    const blocked = renderBudgetPanel("topup", live(), null, { blocked: "Only the owner can top up." }).value;
+    for (const out of [
+      renderBudgetPause(b).value,
+      renderBudgetApprove(proposal, b, NOW).value,
+      renderBudgetApprove(expired.proposals[0]!, expired, NOW).value,
+      renderBudgetPanel("plan", live()).value,
+      blocked,
+    ]) {
+      assert.doesNotMatch(shown(out), jargon);
+      assert.doesNotMatch(shown(out), /\byocto|whitelist|policy/i);
     }
   });
   it("the Technical details block still gives the real names, for whoever wants to check them", () => {
@@ -326,7 +384,7 @@ describe("Budget views the owner decides from", () => {
   it("Needs you names the agent, the amount and the limit crossed, so the owner need not read a raw proposal", () => {
     const out = renderBudget(dated({ requests: [request()] }), "testnet", "", NOW).value;
     assert.match(out, /ops wants to pay <strong>2 NEAR<\/strong> to <span class="mono">v\.testnet/);
-    assert.match(out, /Over your 1 NEAR per-request limit/);
+    assert.match(out, /More than the 1 NEAR limit per payment/);
     assert.match(out, /Expires in 61 hours/);
   });
   it("an unknown hold reason is shown as the chain gave it, never dropped", () => {
@@ -359,10 +417,19 @@ describe("Budget views the owner decides from", () => {
   it("Activity says paid only once the chain says Executed: an auto-approved request still in flight has not paid anyone", () => {
     const inFlight = request({ decision: "Auto", reasons: [], status: "AutoApproved", proposal_id: null });
     const out = renderBudgetActivity(live({ requests: [inFlight] }), "all", NOW).value;
-    assert.match(out, /Auto-approved/);
     assert.match(out, /asked to pay/);
+    assert.match(out, /<\/svg>Approved by the rules</);
+    assert.doesNotMatch(out, /<\/svg>Paid automatically</);
     assert.doesNotMatch(out, /> paid |ops paid/);
-    assert.match(renderBudgetActivity(live({ requests: [{ ...inFlight, status: "Executed" }] }), "all", NOW).value, /ops paid/);
+    const done = renderBudgetActivity(live({ requests: [{ ...inFlight, status: "Executed" }] }), "all", NOW).value;
+    assert.match(done, /ops paid/);
+    assert.match(done, /<\/svg>Paid automatically</);
+  });
+  it("Activity names a plan step a Scheduled payout: the Guard records itself as the agent, and its account is a technical name", () => {
+    const step = request({ agent: "g1.guards.testnet", decision: "Auto", reasons: [], status: "Executed", proposal_id: null });
+    const out = renderBudgetActivity(live({ requests: [step] }), "all", NOW).value;
+    assert.match(out, /Scheduled payout paid/);
+    assert.doesNotMatch(out, /g1\.guards\.testnet/);
   });
   it("Needs you lists the proposal that expires first at the top, and the tile quotes that same one", () => {
     const base = dated();
@@ -370,9 +437,9 @@ describe("Budget views the owner decides from", () => {
     const b = { ...base, proposals: [...base.proposals!, older] };
     const out = renderBudget(b, "testnet", "", NOW).value;
     assert.ok(out.indexOf("Request #3") < out.indexOf("Request #4"));
-    assert.match(out, /Oldest: 32 hours left/);
+    assert.match(out, /Soonest: 32 hours left/);
   });
-  it("a paused Budget offers Resume, with the proposal's 2 signatures, instead of Pause", () => {
+  it("a paused Budget offers Resume, with 2 signatures, instead of Pause", () => {
     const base = live();
     const out = renderBudget({ ...base, guard: { ...base.guard!, config: { ...base.guard!.config!, paused: true } } }, "testnet").value;
     assert.match(out, /Resume agents <span class="sig">2 signatures</);
@@ -391,10 +458,11 @@ describe("Budget views the owner decides from", () => {
   it("the balance card shows only what can be spent, and names the NEAR kept for storage", () => {
     // Live on payroll-1: the card said 30 NEAR while 4.7 of it paid for storage, so the owner could plan with NEAR
     // no transfer can send. The card counts only what can leave; the held part is named, never hidden.
-    const card = (b: BudgetLive) => renderBudget(b, "testnet").value.match(/Budget balance<\/span><span class="tile-value">([^<]*)<\/span><span class="tile-note">([^<]*)</);
+    const card = (b: BudgetLive) => renderBudget(b, "testnet").value.match(/Balance<\/span><span class="tile-value">([^<]*)<\/span><span class="tile-note">[^<]*<\/span><span class="tile-note">([^<]*)</);
     assert.deepEqual(card(live())?.slice(1), ["11 NEAR", "Plus 1 NEAR kept for account storage, not spendable"]);
-    assert.deepEqual(card(live({ withdrawable: NEAR(12) }))?.slice(1), ["12 NEAR", "Top up or withdraw anytime"]);
-    assert.deepEqual(card(live({ withdrawable: null }))?.slice(1), ["unknown", "Top up or withdraw anytime"]);
+    const plain = (b: BudgetLive) => renderBudget(b, "testnet").value.match(/Balance<\/span><span class="tile-value">([^<]*)<\/span><span class="tile-note">([^<]*)<\/span><\/button>/);
+    assert.deepEqual(plain(live({ withdrawable: NEAR(12) }))?.slice(1), ["12 NEAR", "enough for 12 days at today&#39;s pace"]);
+    assert.deepEqual(plain(live({ withdrawable: null }))?.slice(1), ["unknown", "Top up any time"]);
   });
   it("Withdraw offers exactly what the chain says can leave, and names the connected wallet", () => {
     const out = renderBudgetPanel("withdraw", live(), null, { to: "owner.testnet" }).value;
@@ -434,12 +502,13 @@ describe("scheduled payouts on the Budget page", () => {
     assert.match(renderBudget(live(), "testnet").value, /data-panel="plan"/);
     const old = renderBudget(live({ plans: null }), "testnet").value;
     assert.doesNotMatch(old, /data-panel="plan"/);
-    assert.match(old, /Could not read scheduled plans/);
+    assert.doesNotMatch(old, /b-later/, "no Scheduled payouts card when the plans could not be read");
+    assert.match(old, /Not available right now/);
   });
 
-  it("the other strategies stay Coming soon", () => {
+  it("the Budget page promises no strategy that is not built", () => {
     const page = renderBudget(live(), "testnet").value;
-    assert.equal((page.match(/Coming soon/g) ?? []).length, 4);
+    assert.equal((page.match(/Coming soon/g) ?? []).length, 0);
   });
 
   it("lists each plan with what it pays, its progress and the actions its status allows", () => {
@@ -469,13 +538,13 @@ describe("scheduled payouts on the Budget page", () => {
     const form = renderBudgetPanel("plan", { ...b, guard: { ...b.guard!, whitelist: [{ account_id: "vendor.testnet", label: "", max_per_tx: null }, { account_id: KEEPER_ACCOUNT, label: "", max_per_tx: null }] } }).value;
     assert.match(form, /<option value="vendor\.testnet"/);
     assert.doesNotMatch(form, new RegExp(`option value="${KEEPER_ACCOUNT.replace(/\./g, "\\.")}"`));
-    assert.match(renderBudgetPanel("plan", live()).value, /Add one first/);
+    assert.match(renderBudgetPanel("plan", live()).value, /Add a recipient first/);
   });
 
   it("the review shows the totals and says a short balance pauses the plan instead of blocking it", () => {
     const values = { step: "confirm", receiver: "vendor.testnet", amount: "1", every: "1", unit: "hours", runs: "20", start: "" };
     const review = renderBudgetPanel("plan", withList(), null, values, Date.UTC(2026, 10, 9)).value;
-    assert.match(review, /Start plan/);
+    assert.match(review, /Start schedule/);
     assert.match(review, /20 NEAR/); // total
     assert.match(review, /9 NEAR short of all runs/); // 20 − 11 spendable
     assert.match(review, /pauses and alerts you/);
@@ -487,7 +556,7 @@ describe("scheduled payouts on the Budget page", () => {
   it("a review that no longer passes goes back to the form with the reason", () => {
     const values = { step: "confirm", receiver: "vendor.testnet", amount: "2", every: "1", unit: "hours", runs: "3", start: "" };
     const page = renderBudgetPanel("plan", withList(), null, values).value;
-    assert.doesNotMatch(page, /Start plan/);
+    assert.doesNotMatch(page, /Start schedule/);
     assert.match(page, /per-request limit/);
   });
 });

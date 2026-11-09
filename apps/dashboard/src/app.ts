@@ -52,9 +52,12 @@ import {
   renderBudgetLoading,
   renderBudgetNext,
   renderBudgetPanel,
+  renderBudgetPause,
   renderBudgetSetup,
   renderBudgetStart,
   renderRecipients,
+  fenceSentence,
+  isModalPanel,
   type BudgetPanel,
 } from "./budget-view.ts";
 import {
@@ -386,9 +389,9 @@ function followBudgetLink(link: RouteLink, state: BudgetLive): void {
   if (link.kind === "add-agent") openBudgetPanel("add-agent", main);
   if (link.kind === "topup") {
     const error = link.token === "near" ? null : `This page tops up NEAR only, so nothing is filled in for ${link.token}.`;
-    const values: Record<string, string> = budgetPanelTo();
+    const values: Record<string, string> = budgetPanelValues("topup", state);
     if (error === null && link.amount !== null) values.amount = link.amount;
-    showBudgetDrawer(renderBudgetPanel("topup", state, error, values), main);
+    showBudgetDrawer(renderBudgetPanel("topup", state, error, values), main, true);
   }
   if (link.kind === "strategy") {
     if (link.id === PAYOUT_STRATEGY && state.plans !== null) openBudgetPanel("plan", main);
@@ -811,14 +814,15 @@ function openAlerts(trigger: HTMLElement): void {
 
 function openBudgetPanel(panel: BudgetPanel, trigger: HTMLElement): void {
   if (budgetState === null) return;
-  showBudgetDrawer(renderBudgetPanel(panel, budgetState, null, budgetPanelTo()), trigger);
+  showBudgetDrawer(renderBudgetPanel(panel, budgetState, null, budgetPanelValues(panel, budgetState)), trigger, isModalPanel(panel));
   document.querySelector<HTMLElement>("#budget-panel-form :is(input:not([type=hidden]), select)")?.focus();
 }
 
-/** Opens the Budget drawer with `content`. */
-function showBudgetDrawer(content: Html, trigger: HTMLElement): void {
+/** Opens the Budget pop-up with `content`: a centred dialog for a short confirm, a right-side drawer for a form. */
+function showBudgetDrawer(content: Html, trigger: HTMLElement, modal = false): void {
   const box = document.getElementById("budget-action") as HTMLDialogElement | null;
   if (box === null) return;
+  box.className = modal ? "modal" : "drawer";
   box.innerHTML = content.value;
   dialogTrigger = trigger;
   if (!box.open) box.showModal();
@@ -829,11 +833,25 @@ const closeBudgetDrawer = (): void => (document.getElementById("budget-action") 
 
 const budgetPanelTo = (): Record<string, string> => (connected?.accounts[0] === undefined ? {} : { to: connected.accounts[0] });
 
+/** What a pop-up starts with: the connected account, and for Top up the reason the chain check already blocks it. */
+function budgetPanelValues(panel: BudgetPanel, state: BudgetLive): Record<string, string> {
+  const values = budgetPanelTo();
+  const guardId = state.guard?.guard_id;
+  if (panel === "topup" && connected !== null && guardId !== undefined) {
+    const registry = state.dao.guards.map((g) => g.guard_id);
+    const blocks = topUpBlocks(state.dao.policy, connected.accounts[0] ?? "", guardId, registry);
+    const sender = connected.accounts.find((a) => topUpBlocks(state.dao.policy, a, guardId, registry).length === 0);
+    if (sender === undefined && blocks.length > 0) values.blocked = blocks.map((b) => TOP_UP_TEXT[b]).join(" ");
+    else if (sender !== undefined) values.to = sender;
+  }
+  return values;
+}
+
 function openBudgetApprove(button: HTMLElement): void {
   const state = budgetState;
   const proposal = state?.proposals?.find((p) => p.id === Number(button.dataset.id));
   if (state === null || proposal === undefined) return;
-  showBudgetDrawer(renderBudgetApprove(proposal, state), button);
+  showBudgetDrawer(renderBudgetApprove(proposal, state), button, true);
 }
 
 function openBudgetAgent(button: HTMLElement): void {
@@ -841,6 +859,30 @@ function openBudgetAgent(button: HTMLElement): void {
   const agent = state?.guard?.agents?.find((a) => a.account_id === button.dataset.agent);
   if (state === null || agent === undefined) return;
   showBudgetDrawer(renderBudgetAgent(agent, state), button);
+}
+
+function openBudgetPause(button: HTMLElement): void {
+  if (budgetState === null) return;
+  showBudgetDrawer(renderBudgetPause(budgetState), button, true);
+}
+
+/** Edit the fence: Save stays off until a value changes, a per-payment limit above the daily one is named, and the sentence follows what is typed. */
+function syncBudgetFence(form: HTMLFormElement): void {
+  const input = (name: string) => form.elements.namedItem(name) as HTMLInputElement | null;
+  const inputs = ["maxPerTx", "maxPerDay", "maxPending", "minReserve"].map(input);
+  const changed = inputs.some((i) => i !== null && `${i.value.trim()}${i.dataset.was?.endsWith(" NEAR") === true ? " NEAR" : ""}` !== (i.dataset.was ?? ""));
+  const perTx = Number(input("maxPerTx")?.value);
+  const perDay = Number(input("maxPerDay")?.value);
+  const bad = Number.isFinite(perTx) && Number.isFinite(perDay) && perTx > perDay;
+  const error = document.getElementById("bp-fence-error");
+  if (error !== null) error.hidden = !bad;
+  const save = form.querySelector<HTMLButtonElement>('[type="submit"]');
+  if (save !== null) save.disabled = !changed || bad;
+  const summary = document.getElementById("bp-summary");
+  if (summary !== null) {
+    const count = (v: string | undefined) => (v === undefined || v === "" ? null : Number(v));
+    summary.textContent = fenceSentence(count(summary.dataset.agents), `${input("maxPerDay")?.value.trim()} NEAR`, `${input("maxPerTx")?.value.trim()} NEAR`, count(summary.dataset.recipients));
+  }
 }
 
 /** Repaints Activity with one chip pressed. A summary tile also brings it into view. */
@@ -1746,6 +1788,24 @@ root.addEventListener("click", (event) => {
     case "budget-recipient-remove":
       changeBudgetRecipients((lines) => lines.filter((_, i) => i !== Number(el.dataset.line)));
       break;
+    case "budget-pause":
+      openBudgetPause(el);
+      break;
+    case "budget-pause-now": {
+      closeBudgetDrawer();
+      const pageButton = document.querySelector<HTMLButtonElement>('.budget-top [data-action="budget-pause"]');
+      pauseBudget(pageButton ?? (el as HTMLButtonElement));
+      break;
+    }
+    case "budget-chip": {
+      const input = document.getElementById("bp-amount") as HTMLInputElement | null;
+      if (input !== null) {
+        input.value = el.dataset.amount ?? "";
+        input.focus();
+      }
+      syncBudgetAfter();
+      break;
+    }
     case "budget-full": {
       const input = document.getElementById("bp-amount") as HTMLInputElement | null;
       if (input !== null) input.value = el.dataset.amount ?? "";
@@ -1789,9 +1849,6 @@ root.addEventListener("click", (event) => {
       break;
     case "budget-key":
       downloadAgentKey();
-      break;
-    case "budget-pause":
-      pauseBudget(el as HTMLButtonElement);
       break;
     case "alerts-open":
       openAlerts(el);
@@ -1875,6 +1932,8 @@ root.addEventListener(
 root.addEventListener("input", (event) => {
   const el = event.target as HTMLElement;
   if (el.id === "bp-amount") syncBudgetAfter();
+  const fence = el.closest<HTMLFormElement>('#budget-panel-form[data-panel="rules"]');
+  if (fence !== null) syncBudgetFence(fence);
   if (el.id === "approve-check") {
     const input = el as HTMLInputElement;
     const confirm = input.closest("dialog")?.querySelector<HTMLButtonElement>('[data-vote="VoteApprove"]');
