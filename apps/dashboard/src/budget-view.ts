@@ -976,7 +976,7 @@ const FENCE_LABELS: ReadonlyArray<readonly [string, string, string]> = [
 /** Step 1's money line: what signature 1 sends, before any spending money. Null code storage: not read yet. */
 export function setupCostText(values: Record<string, string>, codeStorageYocto: string | null): string {
   const cost = createCost(values.funding ?? "", codeStorageYocto);
-  if (cost === null) return "Creating this budget costs about 10 NEAR in signature 1. The exact amount shows once it is read from the chain.";
+  if (cost === null) return "Creating this budget costs at least 6 NEAR in signature 1. The exact amount shows once it is read from the chain.";
   return `Creating this budget costs about ${yoctoToNear(cost.total)} NEAR in signature 1: ${yoctoToNear(cost.account)} NEAR for the budget account's storage, ${yoctoToNear(cost.contract)} NEAR for the spending contract and ${yoctoToNear(cost.fees)} NEAR set aside for fees. Spending money comes later, with Top up.`;
 }
 

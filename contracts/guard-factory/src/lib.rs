@@ -1,6 +1,8 @@
 // Key Doctor Guard factory (docs/guard-flow.md, Path B). A Sputnik v2 DAO calls `create` through a FunctionCall
-// proposal. The factory creates `<name>.<factory>` with its own copy of the Guard code it stores, paid for by the
-// calling DAO's deposit, with `dao_id` = that DAO and no access key, so the Guard is locked from birth. The registry lists which
+// proposal. The factory creates `<name>.<factory>` running the Guard code it stores, paid for by the calling DAO's
+// deposit, with `dao_id` = that DAO and no access key, so the Guard is locked from birth. Once that code is published
+// as a NEP-591 global contract (`publish_guard_code_global`), a new Guard points at it by hash instead of holding its
+// own copy, so its account locks 32 bytes instead of the whole wasm. The registry lists which
 // DAOs use a Guard. It is an index only: each Guard's own `dao_id` and `assert_dao` stay the authority.
 use near_sdk::json_types::{Base58CryptoHash, U128, U64};
 use near_sdk::serde_json::{json, Value};
@@ -23,6 +25,9 @@ const GAS_ON_DAO_CHECKED: Gas = Gas::from_tgas(190);
 // the full 50 runs out inside `new`, which `on_created` refunds.
 const GAS_GUARD_NEW: Gas = Gas::from_tgas(120);
 const GAS_ON_CREATED: Gas = Gas::from_tgas(15);
+const GAS_ON_PUBLISHED: Gas = Gas::from_tgas(10);
+/// What an account that uses a global contract by hash stores for it: the 32-byte hash (NEP-591).
+const GLOBAL_CODE_REF_BYTES: u128 = 32;
 /// `create` checks this so a short-gassed call fails before any money moves: GAS_VIEW, GAS_ON_DAO_CHECKED and what
 /// `create` burns itself (5 Tgas at the longest input). The dashboard attaches 220 Tgas.
 const MIN_CREATE_GAS: Gas = Gas::from_tgas(215);
@@ -34,6 +39,9 @@ const MAX_NAME_LEN: usize = 32;
 const MIN_GUARD_BALANCE: NearToken = NearToken::from_millinear(500);
 /// Raw storage key of the Guard code, kept out of the contract state so that only the methods that use it load it.
 const GUARD_CODE_KEY: &[u8] = b"guard_code";
+/// Raw storage key of the hash last published as a global contract. Outside the contract state on purpose: a factory
+/// deployed before global contracts upgrades in place (`factory-update.sh`) without a state migration.
+const GLOBAL_HASH_KEY: &[u8] = b"guard_code_global";
 
 #[near(serializers = [borsh])]
 #[derive(BorshStorageKey)]
@@ -85,8 +93,36 @@ impl Factory {
     pub fn set_guard_code(&mut self, #[serializer(borsh)] guard_code: Vec<u8>) {
         self.guard_code_hash = env::sha256_array(&guard_code);
         self.guard_code_len = guard_code.len() as u64;
+        // New Guards take their own copy again until this hash is published too (`guard_code_global` compares hashes).
         env::storage_write(GUARD_CODE_KEY, &guard_code);
         emit("guard_code_set", json!({ "code_hash": Base58CryptoHash::from(self.guard_code_hash), "len": self.guard_code_len }));
+    }
+
+    /// Publishes the stored Guard code as a global contract identified by its hash. The factory account pays for it
+    /// once: NEP-591 burns 10x the usual storage price (about 35 NEAR for the Guard), and it is not refunded. After
+    /// `on_guard_code_published`, every new Guard uses that code by hash. Private, like `set_guard_code`: only the
+    /// factory's own key decides what code new Guards run. Nobody can change a global contract published by hash,
+    /// so the code a Guard runs still matches `guard_code_hash` byte for byte.
+    #[private]
+    pub fn publish_guard_code_global(&mut self) -> Promise {
+        let code = env::storage_read(GUARD_CODE_KEY).unwrap_or_else(|| env::panic_str("NO_GUARD_CODE"));
+        Promise::new(env::current_account_id())
+            .deploy_global_contract(code)
+            .then(Self::ext(env::current_account_id()).with_static_gas(GAS_ON_PUBLISHED).on_guard_code_published(
+                Base58CryptoHash::from(self.guard_code_hash),
+            ))
+    }
+
+    /// Turns the global path on only when the publish succeeded and the code was not replaced in between.
+    #[private]
+    pub fn on_guard_code_published(&mut self, code_hash: Base58CryptoHash) -> bool {
+        let published = !matches!(env::promise_result_checked(0, 0), Err(PromiseError::Failed));
+        if published && CryptoHash::from(code_hash) == self.guard_code_hash {
+            env::storage_write(GLOBAL_HASH_KEY, &self.guard_code_hash);
+            emit("guard_code_published", json!({ "code_hash": code_hash }));
+            return true;
+        }
+        false
     }
 
     /// Called by a DAO through a FunctionCall proposal. The caller becomes the Guard's `dao_id`, so a DAO can
@@ -145,11 +181,14 @@ impl Factory {
             self.release(&dao_id, &guard_id);
             return Promise::new(dao_id).transfer(NearToken::from_yoctonear(deposit.0));
         }
-        let code = env::storage_read(GUARD_CODE_KEY).unwrap_or_else(|| env::panic_str("NO_GUARD_CODE"));
-        Promise::new(guard_id.clone())
-            .create_account()
-            .transfer(NearToken::from_yoctonear(amount.0))
-            .deploy_contract(code)
+        let account = Promise::new(guard_id.clone()).create_account().transfer(NearToken::from_yoctonear(amount.0));
+        // Same code either way: the global one is published by `guard_code_hash`, so it is these exact bytes.
+        let account = if self.guard_code_global() {
+            account.use_global_contract(self.guard_code_hash)
+        } else {
+            account.deploy_contract(env::storage_read(GUARD_CODE_KEY).unwrap_or_else(|| env::panic_str("NO_GUARD_CODE")))
+        };
+        account
             .function_call("new", init.to_string().into_bytes(), NearToken::from_near(0), GAS_GUARD_NEW)
             .then(Self::ext(env::current_account_id()).with_static_gas(GAS_ON_CREATED).on_created(guard_id, dao_id, deposit))
     }
@@ -202,8 +241,9 @@ impl Factory {
     pub fn kd_factory_metadata(&self) -> Value {
         json!({
             "standard": "kd_guard_factory",
-            "version": "1.0.0",
+            "version": "1.1.0",
             "guard_code_hash": Base58CryptoHash::from(self.guard_code_hash),
+            "guard_code_global": self.guard_code_global(),
             "guards": self.guards.len(),
             "max_guards_per_dao": MAX_GUARDS_PER_DAO,
             "min_guard_balance": U128(MIN_GUARD_BALANCE.as_yoctonear()),
@@ -213,9 +253,16 @@ impl Factory {
 }
 
 impl Factory {
-    /// What each Guard's copy of the code locks on its own account; part of the DAO's deposit.
+    /// What the Guard's code locks on each Guard account; part of the DAO's deposit. A global Guard stores only the
+    /// hash it points at.
     fn code_storage(&self) -> NearToken {
-        env::storage_byte_cost().saturating_mul(self.guard_code_len as u128)
+        let bytes = if self.guard_code_global() { GLOBAL_CODE_REF_BYTES } else { self.guard_code_len as u128 };
+        env::storage_byte_cost().saturating_mul(bytes)
+    }
+
+    /// True when the current Guard code is the one published as a global contract.
+    fn guard_code_global(&self) -> bool {
+        env::storage_read(GLOBAL_HASH_KEY).is_some_and(|h| h == self.guard_code_hash)
     }
 
     fn count_for(&self, dao_id: &AccountId) -> u32 {

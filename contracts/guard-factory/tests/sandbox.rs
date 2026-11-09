@@ -41,6 +41,10 @@ fn yocto(t: NearToken) -> String {
 /// A Sputnik DAO with one council member, and the factory initialised with the Guard code. The factory account
 /// only locks the storage for the code it keeps; each Guard's copy is paid by the DAO that creates it.
 async fn setup() -> anyhow::Result<Env> {
+    setup_with(&std::fs::read(FACTORY_WASM).expect("build the factory wasm first")).await
+}
+
+async fn setup_with(factory_wasm: &[u8]) -> anyhow::Result<Env> {
     let worker = near_workspaces::sandbox().await?;
     let root = worker.root_account()?;
     let sub = |name: &'static str, near: u128| root.create_subaccount(name).initial_balance(NearToken::from_near(near)).transact();
@@ -60,7 +64,7 @@ async fn setup() -> anyhow::Result<Env> {
     let policy: Value = dao.view("get_policy").await?.json()?;
     let bond = policy["proposal_bond"].as_str().unwrap().parse::<u128>()?;
 
-    let factory = factory.deploy(&std::fs::read(FACTORY_WASM).expect("build the factory wasm first")).await?.into_result()?;
+    let factory = factory.deploy(factory_wasm).await?.into_result()?;
     let code = std::fs::read(GUARD_WASM).expect("build the Guard wasm first (contracts/guard)");
     // `new` takes the code as borsh `Vec<u8>`: u32 length, then the bytes.
     let mut args = (code.len() as u32).to_le_bytes().to_vec();
@@ -527,4 +531,98 @@ fn local_hash(state: &near_workspaces::ContractState) -> String {
         near_workspaces::ContractState::LocalHash(h) => h.to_string(),
         other => panic!("expected a deployed contract, got {other:?}"),
     }
+}
+
+// #81 spike: NEP-591. The factory publishes the Guard code once as a global contract by hash; a Guard made after
+// that points at it, locks a few bytes instead of the whole wasm, and still pays Auto and holds Pending.
+#[tokio::test]
+async fn after_a_global_publish_a_guard_uses_the_code_by_hash_and_locks_only_a_few_bytes() -> anyhow::Result<()> {
+    let e = setup().await?;
+    let code_len = std::fs::read(GUARD_WASM)?.len() as u128;
+    let hash: String = e.factory.view("get_code_hash").await?.json()?;
+    assert_eq!(e.dao_creates("copy", NearToken::from_near(2)).await?, "Approved");
+    let copy = e.worker.view_account(&e.guard_id("copy").parse()?).await?;
+
+    // The publish burns 10x the storage price of the code; the factory account pays it.
+    let burn_room = NearToken::from_near(code_len * 10 / 100_000 + 5);
+    e.worker.root_account()?.transfer_near(e.factory.id(), burn_room).await?.into_result()?;
+    let before = e.factory.view_account().await?.balance.as_yoctonear();
+    let published: bool =
+        e.factory.as_account().call(e.factory.id(), "publish_guard_code_global").max_gas().transact().await?.into_result()?.json()?;
+    assert!(published, "the callback saw the publish succeed");
+    let spent = before - e.factory.view_account().await?.balance.as_yoctonear();
+    println!("COST global publish of {code_len} bytes = {:.4} NEAR burnt by the factory", spent as f64 / 1e24);
+    let meta: Value = e.factory.view("kd_factory_metadata").await?.json()?;
+    assert_eq!(meta["guard_code_global"], true, "{meta}");
+    assert_eq!(e.code_storage().await?, 32 * 10u128.pow(19), "the dashboard's deposit drops with it");
+
+    assert_eq!(e.dao_creates("acme", NearToken::from_near(2)).await?, "Approved");
+    let gid: near_workspaces::AccountId = e.guard_id("acme").parse()?;
+    let global = e.worker.view_account(&gid).await?;
+    match &global.contract_state {
+        near_workspaces::ContractState::GlobalHash(h) => assert_eq!(h.to_string(), hash, "the code the DAO can check"),
+        other => panic!("expected a global contract by hash, got {other:?}"),
+    }
+    println!(
+        "COST guard storage: own copy {} bytes ({:.4} NEAR locked), global {} bytes ({:.4} NEAR locked)",
+        copy.storage_usage,
+        copy.storage_usage as f64 / 1e5,
+        global.storage_usage,
+        global.storage_usage as f64 / 1e5
+    );
+    assert!(copy.storage_usage - global.storage_usage >= code_len as u64 - 100, "the Guard holds no copy of the code");
+    assert!(e.worker.view_access_keys(&gid).await?.is_empty(), "still locked from birth");
+    let config: Value = e.factory.as_account().view(&gid, "get_config").await?.json()?;
+    assert_eq!(config["dao_id"], e.dao.id().as_str());
+
+    assert_eq!(e.dao_adds_role(gid.as_str()).await?, "Approved");
+    e.worker.root_account()?.transfer_near(e.dao.id(), NearToken::from_near(5)).await?.into_result()?;
+    let request = |id: &'static str, to: &Account| {
+        e.agent
+            .call(&gid, "request_transfer")
+            .args_json(json!({ "request_id": id, "receiver_id": to.id(), "amount": yocto(NearToken::from_millinear(100)), "memo": "global" }))
+            .gas(REQUEST_GAS)
+            .transact()
+    };
+    let auto: Value = request("auto-0001", &e.receiver).await?.into_result()?.json()?;
+    assert_eq!(auto["status"], "AutoApproved", "{auto}");
+    let pending: Value = request("pend-0001", &e.stranger).await?.into_result()?.json()?;
+    assert_eq!(pending["status"], "Pending", "{pending}");
+    Ok(())
+}
+
+// The live factory (`keydoctor-guards-v2.testnet`) already has Guards. It must take the global-contract code in place,
+// as `factory-update.sh` redeploys it: same state, no init. Needs the factory wasm built from before that change
+// (commit 49095c9) in KD_OLD_FACTORY_WASM; without it the test says so and passes.
+#[tokio::test]
+async fn a_factory_built_before_global_contracts_upgrades_in_place_and_keeps_its_guards() -> anyhow::Result<()> {
+    let Ok(old_path) = std::env::var("KD_OLD_FACTORY_WASM") else {
+        println!("SKIP set KD_OLD_FACTORY_WASM to the factory wasm built from 49095c9");
+        return Ok(());
+    };
+    let e = setup_with(&std::fs::read(old_path)?).await?;
+    let hash: String = e.factory.view("get_code_hash").await?.json()?;
+    assert_eq!(e.dao_creates("early", NearToken::from_near(2)).await?, "Approved");
+
+    let new_wasm = std::fs::read(FACTORY_WASM)?;
+    e.factory.as_account().deploy(&new_wasm).await?.into_result()?;
+    let meta: Value = e.factory.view("kd_factory_metadata").await?.json()?;
+    assert_eq!((meta["guard_code_hash"].as_str(), meta["guards"].as_u64()), (Some(hash.as_str()), Some(1)), "{meta}");
+    assert_eq!(meta["guard_code_global"], false, "nothing published yet");
+    let listed = e.guards_of(e.dao.id().as_str()).await?;
+    assert_eq!(listed[0]["guard_id"], e.guard_id("early"), "{listed}");
+
+    let code_len = std::fs::read(GUARD_WASM)?.len() as u128;
+    let burn_room = NearToken::from_near(code_len * 10 / 100_000 + 5);
+    e.worker.root_account()?.transfer_near(e.factory.id(), burn_room).await?.into_result()?;
+    let published: bool =
+        e.factory.as_account().call(e.factory.id(), "publish_guard_code_global").max_gas().transact().await?.into_result()?.json()?;
+    assert!(published);
+    assert_eq!(e.dao_creates("late", NearToken::from_near(2)).await?, "Approved");
+    let late = e.worker.view_account(&e.guard_id("late").parse()?).await?;
+    assert!(matches!(late.contract_state, near_workspaces::ContractState::GlobalHash(h) if h.to_string() == hash));
+    let early = e.worker.view_account(&e.guard_id("early").parse()?).await?;
+    assert_eq!(local_hash(&early.contract_state), hash, "a Guard made before keeps its own copy");
+    assert_eq!(e.guards_of(e.dao.id().as_str()).await?.as_array().unwrap().len(), 2);
+    Ok(())
 }
