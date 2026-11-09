@@ -1,12 +1,21 @@
 # Key Doctor On Call
 
-Key Doctor checks the access keys of a NEAR account, or of every council member of a Sputnik DAO, and scores the risk with fixed rules. It also stays on call: when a member who just voted on a pending DAO proposal has a freshly added full-access key, the council's Telegram group gets a warning **before the final vote**.
+Key Doctor is built around one thing: the shared fund of a **Sputnik DAO**, the money a team, a club or a grants council holds together and moves only by vote. It does not rebuild the multisig. It covers what a council does with the fund, and every money move stays a DAO proposal that members sign in their own wallets:
 
-Built at NEAR HACKATHON (first commit 2026-10-29, see [Hackathon disclosure](#hackathon-disclosure)). Tracks: `social` (Sputnik DAO and treasury councils) and `security` (access keys, function-call keys). The design documents are in `docs/` (in Vietnamese; `docs/final-idea.md` is the main one).
+- **Check the council.** Every access key of every council member, scored with fixed rules.
+- **On Call.** When a member who just voted on a pending proposal has a freshly added full-access key, the council's Telegram group gets a warning **before the final vote**.
+- **Give an AI agent a capped budget.** The Agent Guard contract joins the DAO as a member. An agent's payment request becomes a DAO transfer proposal, and the Guard approves it only within the limits the DAO set; anything else waits for the council.
+- **Strategies.** Scheduled payouts and DCA (NEAR to USDT on Rhea) are Guard plans that a DAO proposal starts; a keeper with no privilege only triggers due steps. Yield shows Rhea Lend rates for the fund's stablecoins, as data for the council.
+
+Key Doctor also checks a single NEAR account's keys, with the same rules.
+
+Built at NEAR HACKATHON (first commit 2026-10-29, see [Hackathon disclosure](#hackathon-disclosure)). Tracks: `social` (shared funds on Sputnik DAO: council keys, agent budgets, strategies) and `security` (access keys, function-call keys, spending limits). The design documents are in `docs/` (in Vietnamese; `docs/final-idea.md` is the main one).
 
 ## The problem
 
-On NEAR every public key of every account is public. When someone takes over a council member's account, a common move is to **add a full-access key of their own**, then approve a payout or a rule change. Wallets show only your own account. They do not watch DAO proposals, and they do not connect a new key to a vote.
+A Sputnik DAO's fund is only as safe as its council's accounts and the proposals they approve. On NEAR every public key of every account is public. When someone takes over a council member's account, a common move is to **add a full-access key of their own**, then approve a payout or a rule change. Wallets show only your own account. They do not watch DAO proposals, and they do not connect a new key to a vote.
+
+A council that wants an AI agent to pay for services, or wants regular payouts or DCA, has two bad options today: give the agent a key that can spend everything, or vote on every small payment by hand.
 
 Network-wide numbers come from one reproducible command (`pnpm stats`, see below). They go here once the script has run against live mainnet RPC.
 
@@ -18,6 +27,9 @@ Network-wide numbers come from one reproducible command (`pnpm stats`, see below
 | On Call | A warning before the final vote when a voter has a new full-access key. Warnings for proposals that change members, policy or contract code. A daily key-change message | Telegram bot (cron every 15 minutes and at 02:00 UTC) |
 | Clean up | A step-by-step plan in a safe order, ticked from chain data when you rescan. Revoke or Delete one key at a time | Dashboard (`view=cleanup`), each change signed by you in Meteor, Here or HOT Wallet (your pick) |
 | Compare | What changed since the last baseline | Telegram `/changes`, MCP `compare` |
+| Agent Guard | A contract the DAO adds as a member: it turns an agent's payment into a transfer proposal and approves it only within the per-payment, per-recipient and 24-hour limits the DAO set. The page builds the two proposals (create the Guard, give it its role) for an existing council | [Agent Guard](#agent-guard-contract) contract, dashboard `?page=guard&dao=<dao>`, the agent through [Guard MCP](#guard-mcp-agent-side) |
+| Agent Budget | A new Sputnik DAO with one owner, its own Guard and an agent, set up in two signatures; then Top up, Withdraw, rules and recipients | Dashboard `?page=budget` ([details](#agent-budget-page-dashboard-testnet)) |
+| Strategies | Scheduled payouts (live on testnet) and DCA (testnet, not run live yet), each a Guard plan the DAO starts by proposal; the keeper runs due steps and reports each run in Telegram | Dashboard Agent Budget → Strategies, MCP `strategies_list` / `plans_status` in Guard MCP |
 | Yield | Rhea Lend supply rates for a DAO's stablecoins, capped at the free balance (balance minus open transfer proposals), next to the council's key status. Data for the council, not financial advice: the council decides and signs | Telegram `/yield`, opt-in push `/yield_watch` (every 15 minutes), MCP `yield_suggestions` |
 
 Fixed rules make every conclusion. Key Doctor **never signs transactions or holds keys**. The one exception is the optional Guard MCP (`apps/guard-mcp`), which runs on the agent owner's machine and signs only Guard requests with the agent's limited function-call key.
@@ -317,11 +329,12 @@ Invoice demo: put the four invoices in `demo/invoices/` (see its README for anot
 
 ### Agent Budget page (dashboard, testnet)
 
-The dashboard's **Agent Budget** page (`?page=budget`) gives one person's agent a spending limit without a council: the Budget is a Sputnik DAO that only its owner controls, with its own Guard and agent.
+The dashboard's **Agent Budget** page (`?page=budget`) creates a new fund for an agent: a Sputnik DAO with one owner, its own Guard and an agent. Every action on it is still a DAO proposal, which the owner's vote approves. The page works for that one owner only; a council with several members puts a Guard on its existing DAO through the [Agent Guard page](#agent-guard-page-dashboard-factory-on-testnet) instead. Strategies (Scheduled payouts, DCA) are set up from this page today.
 
 - **Create.** Pick Cautious (1 NEAR per request, 5 NEAR per 24 hours), Balanced (5 / 20) or Custom. Signature 1 creates the DAO. Signature 2 is one transaction of four calls: the Guard from the factory `keydoctor-guards-v2.testnet`, the agent account with one function-call key (receiver the Guard, methods `request_transfer` and `sync_request` only) and the Guard's role. The page reads the chain back after each signature. The agent key is made in the browser and downloaded as a file; the page asks before you leave while it has not been downloaded.
 - **Run.** Top up, Withdraw, change the rules, add an agent, edit the recipient list, and approve or reject a waiting request. Each button says how many signatures it takes. `?page=budget&help=agent` explains to the agent's owner how the agent connects (key file, the `claude mcp add guard` line).
 - **Live on testnet, 2026-11-08** (Budgets `payroll-1` and `payroll-2.sputnik-v2.testnet`): created with a wallet, topped up 25 NEAR, withdrew 1 NEAR. Through `apps/guard-mcp`, 0.1 NEAR to a listed recipient was paid at once, and 0.2 NEAR to another account waited for the owner with `NOT_WHITELISTED`. The [example agent on NEAR AI Cloud](#example-agent-on-near-ai-cloud-not-part-of-key-doctor) then paid 0.1 NEAR within the limits. Chats watching the Budgets got the waiting request (`payroll-2`) and the Withdraw (`payroll-1`) in Telegram on the next cron.
+- **Scheduled payouts (live on testnet, 2026-11-09).** Strategies → Scheduled payouts: a recipient from the list, an amount, every N minutes, hours or days, a number of runs; a review step shows totals and any shortfall before the two signatures. Each plan has Pause, Resume and Cancel. Plan 1 on `payroll-2` paid 0.1 NEAR three times and ended `completed`.
 - **DCA (testnet, not run live yet).** Strategies → DCA walks a checklist: Update your Budget to Guard 1.3.0, Allow swaps, Enable USDT (each a DAO request the owner signs), then a form: NEAR per run, every N minutes, a number of runs or an end date, and 0.5, 1 or 2 % slippage. The keeper runs each step: the Guard asks Rhea for a quote, sets the minimum USDT from the slippage, and the DAO wraps the NEAR and swaps it. Telegram tells each run with the USDT received and the average price, or that the run was skipped because the price moved more than the slippage allows.
 
 The deploy workflow builds the dashboard with `KD_BUDGET_FACTORY=keydoctor-guards-v2.testnet` (repo variable overrides); a local build without it cannot create a Budget.
@@ -359,11 +372,12 @@ V1 alerts and suggests; it never moves funds. The plan is in [`docs/stories/epic
 
 ## Roadmap
 
-- Show the exact time each key was added, from the NearBlocks indexer (`/v1/account/{id}/keys` returns `created` / `deleted`), next to the nonce-based estimate. See `docs/data-sources-benchmark.md`.
+- Show the exact time each key was added, from the NearBlocks indexer (its API v1 key endpoint was retired on 2026-11-05; the v3 equivalent is not checked yet), next to the nonce-based estimate. See `docs/data-sources-benchmark.md`.
 - Backtest the proposal rules on 12 months of history (`kd.backtest.v1`), using NearBlocks for keys added and later removed.
 - Exact key creation dates from NearBlocks, and more rules.
 - **Agent Guard:** Guard checks in the council report (`/check`).
-- **Agent Budget keeper (GĐ29):** a Worker job that calls due plan steps with an unprivileged testnet key and reports each run in Telegram (ADR 0005). The code and its tests are in `apps/worker`. It has been deployed on testnet since 2026-11-06 and cycles every 15 minutes. Two Budgets exist (2026-11-08) but neither has a plan, so it has never executed a step. See [`apps/worker/README.md`](apps/worker/README.md).
+- **Strategies for a multi-member council:** set up Scheduled payouts and DCA from the Agent Guard page, so the whole council votes on each plan. Today only the Agent Budget page (one owner) offers them.
+- **Agent Budget keeper (GĐ29):** a Worker job that calls due plan steps with an unprivileged testnet key and reports each run in Telegram (ADR 0005). The code and its tests are in `apps/worker`. It has been deployed on testnet since 2026-11-06 and cycles every 15 minutes. First live plan 2026-11-09 on `payroll-2`: 0.1 NEAR × 3 to a listed recipient every 15 minutes, run to `completed` by the keeper (the recipient's balance read over RPC). The Telegram plan messages have not been confirmed yet. See [`apps/worker/README.md`](apps/worker/README.md).
 - **Hosted Guard agent (after the hackathon):** each DAO adds its own Telegram bot; a separate Worker turns allowed members' chat into Guard `request_transfer` calls through a model on NEAR AI Cloud. Secrets encrypted per DAO, council-signed registration, the Guard limits and the council vote still decide every payment. It would put an LLM and agent keys in a hosted service, which Key Doctor avoids today, so it is a plan only: `docs/stories/epics/guard/hosted-agent-plan.md`.
 - **Yield agent:** a tiny mainnet run of the dashboard proposal builder (YD4b), after the testnet path passes. Later (V2), the agent supplies within council-set limits by itself, through a Guard-style contract. Other protocols and chains (Chain Signatures) after a feasibility check.
 - Link a Telegram user to a NEAR account by signature to mention voters by name. Discord and email alerts. Near-real-time watching through an indexer.
