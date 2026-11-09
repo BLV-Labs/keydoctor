@@ -3,7 +3,7 @@
 import { dcaPrice, DCA_TESTNET, formatUnits, type Network } from "key-doctor";
 import { parseRecipientLines, planBudget, setupErrorText, SPUTNIK_FACTORY, WIZARD_STEPS, type RecipientRow, type SetupError } from "./budget-create.ts";
 import { DCA_DEFAULT_SLIPPAGE, DCA_SLIPPAGE_CHOICES, DCA_STRATEGY, DCA_UNITS, dcaFromForm, PLAN_UNITS, planFromForm, planTotals, type DcaUnit, type PlanUnit } from "./budget-flow.ts";
-import { guardNeedsUpdate, TOP_UP_TEXT, topUpBlocks, type BudgetLive, type DcaReadiness, type BudgetPlan, type BudgetProposal, type BudgetRequest } from "./budget-read.ts";
+import { guardNeedsUpdate, TOP_UP_TEXT, topUpBlocks, withdrawMaxYocto, type BudgetLive, type DcaReadiness, type BudgetPlan, type BudgetProposal, type BudgetRequest } from "./budget-read.ts";
 import { formatUtc, nearToYocto, plural, yoctoToNear } from "./format.ts";
 import { KEEPER_ACCOUNT } from "./guard-form.ts";
 import { hasSwapRights, NEW_AGENT_DEPOSIT } from "./guard-proposals.ts";
@@ -28,6 +28,29 @@ export const signatures = (n: 1 | 2): string => (n === 1 ? "1 signature" : "2 si
 /** What every pop-up that signs says before its button: how many times the wallet will ask. */
 export const inWallet = (n: 1 | 2): string => `${signatures(n)} in your wallet`;
 const sigLine = (n: 1 | 2): Html => html`<p class="sig-line">${icon.wallet()}<span>${inWallet(n)}</span></p>`;
+
+/**
+ * An owner change in two signatures, in words. Signature 1 adds a request to the budget and the wallet shows only the
+ * refundable deposit it carries, which reads like a payment of the wrong amount unless the page says so first.
+ * `withdraw` names the amount signature 2 sends; elsewhere signature 2 only applies the change.
+ */
+export function twoSignatureSteps(bondYocto: string, withdraw: Html | null = null): Html {
+  const deposit = near(bondYocto);
+  return html`<div class="sig-steps">${sigLine(2)}
+    <ol class="small muted">
+      <li>Signature 1: your wallet shows <strong>${deposit}</strong> going to the budget. That is a refundable deposit that opens the request, not ${withdraw === null ? "a payment" : "the withdrawal"}.</li>
+      <li>Signature 2: ${withdraw === null ? html`the change applies and the budget returns the ${deposit} deposit.` : html`the budget sends <strong>${withdraw}</strong> to you and returns the ${deposit} deposit.`}</li>
+    </ol></div>`;
+}
+
+/** The Withdraw "Agents keep working with…" line: a warning once nothing would be left to spend. */
+export function withdrawLeftText(b: BudgetLive, amount: string): { text: string; empty: boolean } {
+  const left = balanceAfter(b, "withdraw", amount);
+  const max = withdrawMaxYocto(b);
+  const typed = nearToYocto(amount);
+  const empty = max !== null && typed !== null && BigInt(typed) > 0n && BigInt(typed) >= BigInt(max);
+  return { text: empty ? "Your agents will have nothing left to spend until you top up." : `Agents keep working with what is left: ${left}.`, empty };
+}
 
 /**
  * The fence in one sentence, from the policy. `perDay` and `perTx` are already worded ("5 NEAR"), so the Edit the fence
@@ -527,13 +550,27 @@ export function renderBudgetPanel(panel: BudgetPanel, b: BudgetLive, error: stri
             <button type="button" class="btn btn-secondary btn-start" data-action="copy-command" data-command="${b.dao.dao}"><span data-copy-label>Copy budget account</span></button>`}
         ${sigLine(1)}`, "Top up", { disabled: blocked !== "" });
     }
-    case "withdraw":
+    case "withdraw": {
+      const max = withdrawMaxYocto(b);
+      const maxNear = max === null ? null : yoctoToNear(max);
+      const left = withdrawLeftText(b, v("amount"));
+      const typed = v("amount").trim();
       return form(`Withdraw from ${b.dao.dao}`, "Move NEAR back to your wallet.", html`
-        ${field("amount", "Amount", v("amount"), "1", { unit: true, hint: b.withdrawable === null ? undefined : `Up to ${near(b.withdrawable)}` })}
-        ${b.withdrawable === null ? "" : html`<button type="button" class="btn btn-ghost btn-start" data-action="budget-full" data-amount="${yoctoToNear(b.withdrawable)}">Use everything I can</button>`}
+        <div class="stack-xs">
+          <label class="label" for="bp-amount">Amount</label>
+          <div class="input-unit">
+            <input id="bp-amount" name="amount" type="text" class="input" value="${v("amount")}" placeholder="1" autocomplete="off" spellcheck="false" inputmode="decimal"${maxNear === null ? "" : html` aria-describedby="bp-amount-hint${error ? " bp-error" : ""}"`}>
+            ${maxNear === null ? "" : html`<button type="button" class="btn btn-ghost btn-max" data-action="budget-full" data-amount="${maxNear}" aria-label="Withdraw the most you can, ${maxNear} NEAR">Max</button>`}
+            <span class="muted">NEAR</span>
+          </div>
+          ${maxNear === null
+            ? ""
+            : html`<p id="bp-amount-hint" class="small muted">Up to <button type="button" class="link-btn" data-action="budget-full" data-amount="${maxNear}">${maxNear} NEAR</button>. Requests waiting for you keep their deposit in the budget.</p>`}
+        </div>
         <div class="sum-box">${sumRow("To", html`<span class="mono">${v("to", "your connected wallet")}</span>`)}</div>
-        <p class="small muted">Agents keep working with what is left: <span id="bp-after">${balanceAfter(b, "withdraw", v("amount"))}</span>.</p>
-        ${sigLine(2)}`, "Withdraw");
+        <p id="bp-left" class="small ${left.empty ? "tone-cleanup" : "muted"}">${left.text}</p>
+        ${twoSignatureSteps(b.dao.policy.proposal_bond, html`<span id="bp-echo">${typed === "" ? "the amount above" : `${typed} NEAR`}</span>`)}`, "Withdraw");
+    }
     case "rules": {
       const was = (yocto: string | undefined) => (yocto === undefined ? undefined : `${yoctoToNear(yocto)} NEAR`);
       const agents = b.guard?.agents?.length ?? b.guard?.config?.agents ?? null;
@@ -550,14 +587,14 @@ export function renderBudgetPanel(panel: BudgetPanel, b: BudgetLive, error: stri
         </div>
         <p id="bp-fence-error" class="field-error" role="alert" hidden>Per payment cannot be more than per day.</p>
         <p id="bp-summary" class="budget-summary" data-agents="${agents ?? ""}" data-recipients="${recipients ?? ""}">${fenceSentence(agents, `${perDay} NEAR`, `${perTx} NEAR`, recipients)}</p>
-        ${sigLine(2)}`, "Save changes", { disabled: !changed });
+        ${twoSignatureSteps(b.dao.policy.proposal_bond)}`, "Save changes", { disabled: !changed });
     }
     case "add-agent":
       return form("Add an agent", "It follows the same fence.", html`
         ${field("label", "Agent name", v("label"), "payroll bot")}
         ${agentLimits(b.dao.dao)}
         <p class="small muted">This page makes the agent's key and its own account. ${yoctoToNear(NEW_AGENT_DEPOSIT)} NEAR leaves the Budget: 0.5 NEAR is the agent's gas, the rest pays for storage and what is not used comes back. You then get the key file and the command for your agent.</p>
-        ${sigLine(2)}`, "Add agent");
+        ${twoSignatureSteps(b.dao.policy.proposal_bond)}`, "Add agent");
     case "recipients":
       return form("Who agents can pay", "Payments to anyone else wait for you.", html`
         ${recipientList(b.guard?.whitelist ?? null)}
@@ -565,7 +602,7 @@ export function renderBudgetPanel(panel: BudgetPanel, b: BudgetLive, error: stri
         ${field("label", "Name (optional)", v("label"), "vendor")}
         ${field("cap", "Limit per payment (optional)", v("cap"), "2", { unit: true, hint: "Leave empty to use the fence limit." })}
         <p class="small muted">Each add or remove is its own request. A small storage deposit leaves the Budget when you add one; what is not used comes back.</p>
-        ${sigLine(2)}`, "Add recipient");
+        ${twoSignatureSteps(b.dao.policy.proposal_bond)}`, "Add recipient");
     case "plan":
       return planPanel(b, error, values, now, field, err);
     case "dca":
@@ -674,7 +711,7 @@ function dcaPanel(b: BudgetLive, error: string | null, values: Record<string, st
       ${checklistHtml(items)}
       <p class="small muted">Each run counts against the same 24-hour limit as your agents' payments. Key Doctor fee: free during testing. Prices can change. This is not investment advice.</p>
       <p class="small muted">0.01 NEAR storage deposit leaves the Budget; what is not used comes back.</p>
-      ${sigLine(2)}`,
+      ${twoSignatureSteps(b.dao.policy.proposal_bond)}`,
       html`<button type="button" class="btn btn-secondary" data-action="budget-dca-edit">Back</button><button type="submit" class="btn btn-primary"${ready ? "" : " disabled"}>Start selling</button>`);
   }
   const body = html`<input type="hidden" name="step" value="edit">
@@ -698,7 +735,7 @@ function dcaPanel(b: BudgetLive, error: string | null, values: Record<string, st
     <div class="stack-xs"><label class="label" for="bp-start">First run (your local time, optional)</label>
       <input id="bp-start" name="start" type="datetime-local" class="input" value="${v("start")}"><p class="small muted">Empty or past: the first run is due right away.</p></div>
     <p class="small muted">If the price drops more than the max between the quote and the swap, that run is skipped. Runs must fit your fence: ${near(g?.policy?.max_per_tx)} per payment, ${near(g?.policy?.max_per_day)} a day.</p>
-    ${sigLine(2)}`;
+    ${twoSignatureSteps(b.dao.policy.proposal_bond)}`;
   return shell(body, html`${CANCEL}<button type="submit" class="btn btn-primary">Review</button>`);
 }
 
@@ -744,7 +781,7 @@ function planPanel(b: BudgetLive, error: string | null, values: Record<string, s
       ${overDay ? html`<p class="banner banner-cleanup">${icon.alertSmall()}<span>Up to ${t.runs_per_day} runs fall in one 24 hours (${near(t.per_day)}), above your 24-hour limit of ${near(maxDay)}. A run over the limit moves to the next slot; it is not lost.</span></p>` : ""}
       <p class="small muted">Each run counts against the same 24-hour limit as your agents' payments. Key Doctor fee: free during testing. Prices can change. This is not investment advice.</p>
       <p class="small muted">0.01 NEAR storage deposit leaves the Budget; what is not used comes back.</p>
-      ${sigLine(2)}`,
+      ${twoSignatureSteps(b.dao.policy.proposal_bond)}`,
       html`<button type="button" class="btn btn-secondary" data-action="budget-plan-edit">Back</button><button type="submit" class="btn btn-primary">Start schedule</button>`);
   }
   const list = (rules.whitelist ?? []).filter((w) => w.account_id !== KEEPER_ACCOUNT);
@@ -768,7 +805,7 @@ function planPanel(b: BudgetLive, error: string | null, values: Record<string, s
         <div class="stack-xs"><label class="label" for="bp-start">First payment (your local time, optional)</label>
           <input id="bp-start" name="start" type="datetime-local" class="input" value="${start}"><p class="small muted">Empty or past: the first payment is due right away.</p></div>
         <p class="small muted">Each payment is made when it is due. Payments must fit your fence: ${near(g?.policy?.max_per_tx)} per payment, ${near(g?.policy?.max_per_day)} a day.</p>
-        ${sigLine(2)}`;
+        ${twoSignatureSteps(b.dao.policy.proposal_bond)}`;
   return shell(html`<input type="hidden" name="step" value="edit">${body}`,
     html`${CANCEL}<button type="submit" class="btn btn-primary"${list.length === 0 ? " disabled" : ""}>Review</button>`);
 }

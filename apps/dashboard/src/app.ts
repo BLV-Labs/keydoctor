@@ -13,6 +13,7 @@ import { renderAccount, renderCouncil } from "./report.ts";
 import { budgetHref, guardHref, homeHref, parseRoute, resolveInput, routeHref, settledHref, suffixNetwork, yieldHref, yieldNewHref, type Page, type Route, type RouteLink } from "./route.ts";
 import { renderAgentGuide } from "./agent-guide.ts";
 import { yoctoToNear } from "./format.ts";
+import { whenSlow } from "./wallet-hint.ts";
 import { formToInput, isAccountId, validateGuardForm, type GuardFormError } from "./guard-form.ts";
 import { agentKeyFile, agentKeyProblem, agentKeyUnsaved, budgetCheckFailures, firstSignatureProblem, parseRecipientLines, planBudget, recipientLines, savedSetupKey, secondSignatureCalls, SETUP_FIELDS, setupErrorText, sputnikCreateArgs, SPUTNIK_FACTORY, stepOfField, unfinishedBudgetOwner, validateSetupStep, type BudgetChain, type BudgetPlan, type RecipientRow, type SetupError } from "./budget-create.ts";
 import {
@@ -39,7 +40,7 @@ import {
   type ConfirmedProposal,
   type VoteAction,
 } from "./budget-flow.ts";
-import { budgetRpc, guardNeedsUpdate, proposalLabel, readBalance, readBudget, readDcaQuote, readDcaReadiness, readProposal, topUpBlocks, TOP_UP_TEXT, type BudgetLive, type DcaReadiness } from "./budget-read.ts";
+import { budgetRpc, guardNeedsUpdate, proposalLabel, readBalance, withdrawMaxYocto, readBudget, readDcaQuote, readDcaReadiness, readProposal, topUpBlocks, TOP_UP_TEXT, type BudgetLive, type DcaReadiness } from "./budget-read.ts";
 import {
   BALANCED_RULES,
   CAUTIOUS_RULES,
@@ -63,6 +64,7 @@ import {
   renderBudgetStart,
   fenceSentence,
   isModalPanel,
+  withdrawLeftText,
   type BudgetPanel,
   type DcaView,
 } from "./budget-view.ts";
@@ -591,9 +593,9 @@ function startTwoSignatures(args: AddProposalArgs, agent: NewAgent | null = null
   budgetSign2 = null;
   const next = document.getElementById("budget-next");
   if (next) next.innerHTML = "";
-  status.textContent = `Waiting for ${walletLabel(walletId)}. Signature 1 of 2: check the transaction there before you approve.`;
+  status.textContent = `Waiting for ${walletLabel(walletId)}. Signature 1 of 2: the wallet shows a ${yoctoToNear(state.dao.policy.proposal_bond)} NEAR refundable deposit, not ${args.proposal.kind && "Transfer" in args.proposal.kind ? "the withdrawal" : "a payment"}. Check it there before you approve.`;
   import("./wallet.ts")
-    .then((w) => w.signAddProposalOutcome(account, network, state.dao.dao, state.dao.policy.proposal_bond, args, walletId, (t) => (status.textContent = t)))
+    .then((w) => withWalletHint(status, w.signAddProposalOutcome(account, network, state.dao.dao, state.dao.policy.proposal_bond, args, walletId, (t) => (status.textContent = t))))
     .then(async (outcome) => {
       status.textContent = "Signature 1 done. Reading the request back from the chain…";
       try {
@@ -624,9 +626,12 @@ function signSecondSignature(button: HTMLButtonElement): void {
   status.textContent = `Waiting for ${walletLabel(walletId)}. Signature 2 of 2: check the transaction there before you approve.`;
   import("./wallet.ts")
     .then((w) =>
-      batch === null
-        ? w.signActProposal(account, budgetNetwork(), state.dao.dao, actProposalArgs(confirmed, "VoteApprove"), walletId, (t) => (status.textContent = t))
-        : w.signActProposals(account, budgetNetwork(), state.dao.dao, batch.map((c) => ({ id: c.id, proposal: c.kind })), walletId, (t) => (status.textContent = t)),
+      withWalletHint(
+        status,
+        batch === null
+          ? w.signActProposal(account, budgetNetwork(), state.dao.dao, actProposalArgs(confirmed, "VoteApprove"), walletId, (t) => (status.textContent = t))
+          : w.signActProposals(account, budgetNetwork(), state.dao.dao, batch.map((c) => ({ id: c.id, proposal: c.kind })), walletId, (t) => (status.textContent = t)),
+      ),
     )
     .then(async () => {
       // A several-in-one approval is judged by its last request: the votes ran in one transaction.
@@ -719,7 +724,7 @@ function actOnPending(button: HTMLButtonElement): void {
     .then((confirmed) => {
       status.textContent = `Waiting for ${walletLabel(walletId)}. ${action === "VoteApprove" ? "Approve" : "Reject"} request #${id}: ${describeKind(confirmed.kind)}.`;
       return import("./wallet.ts")
-        .then((w) => w.signActProposal(account, network, state.dao.dao, actProposalArgs(confirmed, action), walletId, (t) => (status.textContent = t)))
+        .then((w) => withWalletHint(status, w.signActProposal(account, network, state.dao.dao, actProposalArgs(confirmed, action), walletId, (t) => (status.textContent = t))))
         .then(() => statusAfterVote(network, state.dao.dao, id))
         .then((after) => statusWithButton(status, voteResultText(id, action, confirmed.kind, after), "rescan", "Reload"));
     })
@@ -748,7 +753,7 @@ function pauseBudget(button: HTMLButtonElement): void {
   button.disabled = true;
   status.textContent = `Waiting for ${walletLabel(walletId)}. Check the transaction there before you approve.`;
   import("./wallet.ts")
-    .then((w) => w.signGuardPause(account, budgetNetwork(), guard.guard_id, walletId, (t) => (status.textContent = t)))
+    .then((w) => withWalletHint(status, w.signGuardPause(account, budgetNetwork(), guard.guard_id, walletId, (t) => (status.textContent = t))))
     .then(() => statusWithButton(status, "Paused. Every payment your agents ask for is rejected until you resume.", "rescan", "Reload"))
     .catch((e: unknown) => {
       button.disabled = false;
@@ -848,7 +853,7 @@ function signYieldProposal(panel: YieldPanel, amountText: string, trigger: HTMLE
   const dao = state.report.dao;
   status.textContent = `Waiting for ${walletLabel(walletId)}. Check the transaction there before you approve.`;
   import("./wallet.ts")
-    .then((w) => w.signAddProposals(account, yieldNetwork(dao), dao, policy.proposal_bond, [built], walletId, (t) => (status.textContent = t)))
+    .then((w) => withWalletHint(status, w.signAddProposals(account, yieldNetwork(dao), dao, policy.proposal_bond, [built], walletId, (t) => (status.textContent = t))))
     .then(() => statusWithButton(status, "Asked the council. They vote on it under History; funds move only when it passes.", "rescan", "Reload"))
     .catch((e: unknown) => notDone(status, e));
 }
@@ -882,7 +887,7 @@ function voteYield(button: HTMLButtonElement): void {
       }
       status.textContent = `Waiting for ${walletLabel(walletId)}. ${action === "VoteApprove" ? "Approve" : "Reject"} move #${id}.`;
       return import("./wallet.ts")
-        .then((w) => w.signActProposal(account, network, dao, actProposalArgs(confirmed, action), walletId, (t) => (status.textContent = t)))
+        .then((w) => withWalletHint(status, w.signActProposal(account, network, dao, actProposalArgs(confirmed, action), walletId, (t) => (status.textContent = t))))
         .then(() => statusAfterVote(network, dao, id))
         .then((after) => statusWithButton(status, voteResultText(id, action, confirmed.kind, after), "rescan", "Reload"));
     })
@@ -1262,7 +1267,42 @@ function showBudgetDrawer(content: Html, trigger: HTMLElement, modal = false): v
 }
 
 /** Status lines live on the page, so the drawer closes before signing starts. */
-const closeBudgetDrawer = (): void => (document.getElementById("budget-action") as HTMLDialogElement | null)?.close();
+const closeBudgetDrawer = (): void => {
+  (document.getElementById("budget-action") as HTMLDialogElement | null)?.close();
+  revealStatus(budgetStatus());
+};
+
+/** Bring a status line into view: after a pop-up closes, what happens next is written there, not in the pop-up. */
+function revealStatus(status: HTMLElement | null): void {
+  if (status === null) return;
+  const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // After the dialog's own focus return, so that does not scroll the line away again.
+  requestAnimationFrame(() => status.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "nearest" }));
+}
+
+/** How long a wallet may stay silent before the page suggests a reload. */
+const WALLET_HINT_MS = 20_000;
+
+/**
+ * Waits on a wallet call and, if it stays silent for WALLET_HINT_MS, says how to recover under `status`. A wallet
+ * extension that restarted while the tab was open leaves a dead content script ("Extension context invalidated"):
+ * the call then never settles and only a page reload helps. The call is not cancelled: the owner may be reading.
+ */
+function withWalletHint<T>(status: HTMLElement, call: Promise<T>): Promise<T> {
+  return whenSlow(call, WALLET_HINT_MS, () => {
+    const hint = document.createElement("p");
+    hint.className = "small banner banner-cleanup wallet-hint";
+    hint.setAttribute("role", "status");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn btn-tint";
+    btn.dataset.action = "reload-page";
+    btn.textContent = "Reload this page";
+    hint.append("Wallet not opening? Your wallet extension may have restarted. Reload this page, then try again. ", btn);
+    status.after(hint);
+    return () => hint.remove();
+  });
+}
 
 const budgetPanelTo = (): Record<string, string> => (connected?.accounts[0] === undefined ? {} : { to: connected.accounts[0] });
 
@@ -1334,8 +1374,19 @@ function syncBudgetAfter(): void {
   const input = document.getElementById("bp-amount") as HTMLInputElement | null;
   const after = document.getElementById("bp-after");
   const panel = input?.form?.dataset.panel;
-  if (input === null || after === null || budgetState === null || !(panel === "topup" || panel === "withdraw")) return;
-  after.textContent = balanceAfter(budgetState, panel, input.value);
+  if (input === null || budgetState === null || !(panel === "topup" || panel === "withdraw")) return;
+  if (panel === "withdraw") {
+    const left = document.getElementById("bp-left");
+    const echo = document.getElementById("bp-echo");
+    const { text, empty } = withdrawLeftText(budgetState, input.value);
+    if (left !== null) {
+      left.textContent = text;
+      left.className = `small ${empty ? "tone-cleanup" : "muted"}`;
+    }
+    if (echo !== null) echo.textContent = input.value.trim() === "" ? "the amount above" : `${input.value.trim()} NEAR`;
+    return;
+  }
+  if (after !== null) after.textContent = balanceAfter(budgetState, panel, input.value);
 }
 
 /** Resume is `unpause`, which only the DAO may call: a Guard change proposal, two signatures. */
@@ -1566,7 +1617,7 @@ async function enableUsdt(): Promise<void> {
     const first = Number(await rpc.callFunction(dao, height, "get_last_proposal_id", {}));
     if (!Number.isInteger(first)) throw new BudgetFlowError("PROPOSAL_UNREADABLE", "The next request number could not be read.");
     const w = await import("./wallet.ts");
-    await w.signAddProposalBatch(account, network, dao, state.dao.policy.proposal_bond, proposals, walletId, (t) => (status.textContent = t));
+    await withWalletHint(status, w.signAddProposalBatch(account, network, dao, state.dao.policy.proposal_bond, proposals, walletId, (t) => (status.textContent = t)));
     status.textContent = "Signature 1 done. Reading the requests back from the chain…";
     const confirmed: ConfirmedProposal[] = [];
     for (const [i, p] of proposals.entries()) {
@@ -1607,7 +1658,13 @@ function submitBudgetPanel(form: HTMLFormElement): void {
   const state = budgetState;
   const panel = form.dataset.panel;
   const status = budgetStatus();
-  if (state === null || state.guard === null || status === null || !isBudgetPanel(panel)) return;
+  if (!isBudgetPanel(panel)) return;
+  if (state === null || state.guard === null || status === null) {
+    // Never a dead button: say why in the pop-up the owner is looking at.
+    form.querySelector("#bp-error")?.remove();
+    form.querySelector(".drawer-body")?.insertAdjacentHTML("beforeend", '<p id="bp-error" class="field-error" role="alert">This budget could not be read right now. Reload the page and try again.</p>');
+    return;
+  }
   const values = Object.fromEntries([...new FormData(form).entries()].map(([k, v]) => [k, String(v)]));
   const reject = (error: string) => {
     form.outerHTML = (panel === "dca" ? renderDcaPanel(error, values) : renderBudgetPanel(panel, state, error, { ...values, ...budgetPanelTo() })).value;
@@ -1663,7 +1720,7 @@ function submitBudgetPanel(form: HTMLFormElement): void {
     startTwoSignatures(result.value);
     return;
   }
-  const amount = amountFromForm(values.amount ?? "", panel === "withdraw" ? state.withdrawable : null);
+  const amount = amountFromForm(values.amount ?? "", panel === "withdraw" ? withdrawMaxYocto(state) : null);
   if (!amount.ok) return reject(amount.error);
   closeBudgetDrawer();
   if (panel === "withdraw") {
@@ -1695,7 +1752,7 @@ async function topUpBudget(state: BudgetLive, guardId: string, amount: { yocto: 
     }
     status.textContent = `Waiting for ${walletLabel(walletId)}. Check the transfer there before you approve.`;
     const wallet = await import("./wallet.ts");
-    await wallet.signTopUp(sender, network, state.dao.dao, amount.yocto, walletId, (t) => (status.textContent = t));
+    await withWalletHint(status, wallet.signTopUp(sender, network, state.dao.dao, amount.yocto, walletId, (t) => (status.textContent = t)));
     statusWithButton(status, `Done: ${amount.near} NEAR sent to ${state.dao.dao}.`, "rescan", "Reload");
   } catch (e) {
     notDone(status, e);
@@ -1923,7 +1980,7 @@ async function signBudgetCreate(button: HTMLButtonElement): Promise<void> {
   status.textContent = `Waiting for ${walletLabel(walletId)}. Signature 1 of 2: check the transaction there before you approve.`;
   try {
     const { signBudgetDao } = await import("./wallet.ts");
-    await signBudgetDao(account, network, SPUTNIK_FACTORY, sputnikCreateArgs(plan.name, account), plan.firstDepositYocto, walletId, (step) => (status.textContent = step));
+    await withWalletHint(status, signBudgetDao(account, network, SPUTNIK_FACTORY, sputnikCreateArgs(plan.name, account), plan.firstDepositYocto, walletId, (step) => (status.textContent = step)));
   } catch (e) {
     button.disabled = false;
     notDone(status, e);
@@ -1981,7 +2038,7 @@ async function signBudgetGuard(button: HTMLButtonElement): Promise<void> {
   status.textContent = `Waiting for ${walletLabel(walletId)}. Signature 2 of 2: check the transaction there before you approve.`;
   let signError: unknown = null;
   try {
-    await signBudgetCalls(account, network, plan.dao, calls, walletId, (step) => (status.textContent = step));
+    await withWalletHint(status, signBudgetCalls(account, network, plan.dao, calls, walletId, (step) => (status.textContent = step)));
   } catch (e) {
     signError = e instanceof Error ? e : new Error("the wallet did not sign.");
   }
@@ -2176,7 +2233,7 @@ function pauseGuard(button: HTMLButtonElement): void {
   button.disabled = true;
   status.textContent = `Waiting for ${walletLabel(walletId)}. Check the transaction there before you approve.`;
   import("./wallet.ts")
-    .then((w) => w.signGuardPause(account, network, guardId, walletId, (t) => (status.textContent = t)))
+    .then((w) => withWalletHint(status, w.signGuardPause(account, network, guardId, walletId, (t) => (status.textContent = t))))
     .then(() => {
       status.textContent = "Paused. Every request now fails with PAUSED until the DAO passes unpause. Reload to see the status.";
     })
@@ -2214,7 +2271,7 @@ function signGuardProposals(button: HTMLButtonElement): void {
   button.disabled = true;
   status.textContent = `Waiting for ${walletLabel(walletId)}. Check the transaction there before you approve.`;
   import("./wallet.ts")
-    .then((w) => w.signAddProposals(account, network, state.dao, state.policy.proposal_bond, preview.proposals, walletId, (t) => (status.textContent = t)))
+    .then((w) => withWalletHint(status, w.signAddProposals(account, network, state.dao, state.policy.proposal_bond, preview.proposals, walletId, (t) => (status.textContent = t))))
     .then(() => {
       status.innerHTML = renderGuardSubmitted(state.dao).value;
     })
@@ -2310,7 +2367,7 @@ function signPlan(button: HTMLButtonElement, status: HTMLElement, plan: DeletePl
   status.textContent = `Waiting for ${walletLabel(walletId)}. Check the transaction there before you approve.`;
   // Loaded on demand: the wallet SDK is large and only needed when someone signs.
   import("./wallet.ts")
-    .then((w) => w.signDeleteKeys(account, network, plan, walletId, (t) => (status.textContent = t)))
+    .then((w) => withWalletHint(status, w.signDeleteKeys(account, network, plan, walletId, (t) => (status.textContent = t))))
     .then(() => {
       status.textContent = "Approved. Waiting for the chain to show the change…";
       return waitForRemoval(plan);
@@ -2387,7 +2444,7 @@ function connectWallet(status: HTMLElement, walletId: WalletId): void {
   }
   status.textContent = `Check the ${walletLabel(walletId)} window.`;
   import("./wallet.ts")
-    .then((w) => w.openWallet(currentNetwork(), walletId))
+    .then((w) => withWalletHint(status, w.openWallet(currentNetwork(), walletId)))
     .then((accounts) => {
       connected = { walletId, accounts };
       rememberConnected(currentNetwork(), { walletId, accounts });
@@ -2627,6 +2684,9 @@ root.addEventListener("click", (event) => {
       syncBudgetAfter();
       break;
     }
+    case "reload-page":
+      location.reload();
+      break;
     case "budget-full": {
       const input = document.getElementById("bp-amount") as HTMLInputElement | null;
       if (input !== null) input.value = el.dataset.amount ?? "";

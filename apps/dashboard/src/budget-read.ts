@@ -139,6 +139,23 @@ export function withdrawableYocto(amount: string, storageBytes: number): string 
   return (free > 0n ? free : 0n).toString();
 }
 
+/**
+ * Room left for the storage the Withdraw request itself adds to the DAO: signature 1 stores a new proposal, so a
+ * transfer of everything `withdrawable` showed before it would fail at signature 2 for lack of storage balance.
+ */
+export const WITHDRAW_STORAGE_MARGIN_YOCTO = 10n ** 22n;
+
+/**
+ * The most a Withdraw may ask for: the spendable balance minus the bond every open request still holds (the DAO
+ * returns it when the owner approves or rejects) and the margin above. Null when the balance is unread.
+ */
+export function withdrawMaxYocto(b: Pick<BudgetLive, "withdrawable" | "proposals" | "dao">): string | null {
+  if (b.withdrawable === null) return null;
+  const held = BigInt(b.proposals?.length ?? 0) * BigInt(b.dao.policy.proposal_bond);
+  const max = BigInt(b.withdrawable) - held - WITHDRAW_STORAGE_MARGIN_YOCTO;
+  return (max > 0n ? max : 0n).toString();
+}
+
 /** The account's NEAR balance at `height`; any failure is null (shown as unknown, never as zero). */
 export async function readBalance(account: string, height: number, network: Network): Promise<{ balance: string; withdrawable: string } | null> {
   for (const url of DEFAULT_RPC_URLS[network]) {

@@ -440,6 +440,10 @@ li:last-child > .member-row { border-bottom: 0; }
 .input-unit { position: relative; }
 .input-unit .input { width: 100%; padding-right: 72px; }
 .input-unit span { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: var(--kd-fs-sm); }
+/* Withdraw: a Max button inside the field, left of the unit. */
+.input-unit:has(.btn-max) .input { padding-right: 136px; }
+.input-unit .btn-max { position: absolute; right: 64px; top: 50%; transform: translateY(-50%); min-height: 32px; padding: 4px 10px; font-size: var(--kd-fs-sm); font-weight: 600; color: var(--kd-primary); }
+.sig-steps ol { margin: 4px 0 0; padding-left: 20px; display: grid; gap: 4px; }
 .sum-box { display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid var(--kd-border); border-radius: var(--kd-radius-md); background: var(--kd-surface-muted); }
 .sum-row { display: flex; justify-content: space-between; gap: 16px; font-size: var(--kd-fs-sm); }
 .sum-value { font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }

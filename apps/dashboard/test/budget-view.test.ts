@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { addAgentProblem, addAgentProposal, agentProposal, amountFromForm, freshAgentAccount, rulesProposal } from "../src/budget-flow.ts";
-import { parsePlan, topUpBlocks, withdrawableYocto, type BudgetLive, type BudgetPlan, type BudgetProposal, type BudgetRequest } from "../src/budget-read.ts";
+import { parsePlan, topUpBlocks, withdrawableYocto, withdrawMaxYocto, type BudgetLive, type BudgetPlan, type BudgetProposal, type BudgetRequest } from "../src/budget-read.ts";
 import {
   BALANCED_RULES,
   CAUTIOUS_RULES,
@@ -21,6 +21,7 @@ import {
   renderAgentKeyReady,
   renderBudgetPause,
   renderBudgetPanel,
+  withdrawLeftText,
   renderBudgetSetup,
   renderBudgetStart,
   renderRecipientList,
@@ -465,10 +466,33 @@ describe("Budget views the owner decides from", () => {
     assert.deepEqual(plain(live({ withdrawable: NEAR(12) }))?.slice(1), ["12 NEAR", "enough for 12 days at today&#39;s pace"]);
     assert.deepEqual(plain(live({ withdrawable: null }))?.slice(1), ["unknown", "Top up any time"]);
   });
-  it("Withdraw offers exactly what the chain says can leave, and names the connected wallet", () => {
+  it("Withdraw offers what can leave once the waiting deposits and the new request's storage stay, and names the wallet", () => {
+    // WHY: signature 1 stores a proposal on the DAO; a transfer of every spendable yocto then fails at signature 2.
+    // 11 spendable − 1 waiting request × 0.1 bond − 0.01 storage margin = 10.89.
     const out = renderBudgetPanel("withdraw", live(), null, { to: "owner.testnet" }).value;
-    assert.match(out, /data-amount="11"/);
+    assert.match(out, /class="btn btn-ghost btn-max" data-action="budget-full" data-amount="10\.89"/);
+    assert.match(out, /Up to <button type="button" class="link-btn" data-action="budget-full" data-amount="10\.89">10\.89 NEAR<\/button>/);
+    assert.doesNotMatch(out, /Use everything I can/);
     assert.match(out, /owner\.testnet/);
+    assert.equal(withdrawMaxYocto(live()), (BigInt(NEAR(11)) - 10n ** 23n - 10n ** 22n).toString());
+    assert.equal(withdrawMaxYocto(live({ withdrawable: null })), null);
+    assert.equal(withdrawMaxYocto(live({ withdrawable: "1" })), "0");
+  });
+  it("Withdraw says the wallet shows the deposit at signature 1, and the withdrawal comes at signature 2", () => {
+    // WHY: Meteor showed "Send 0.1 NEAR" for a 1 NEAR withdrawal and the owner took it for a bug.
+    const out = renderBudgetPanel("withdraw", live(), null, { amount: "1" }).value;
+    assert.match(out, /Signature 1: your wallet shows <strong>0\.1 NEAR<\/strong> going to the budget\. That is a refundable deposit that opens the request, not the withdrawal\./);
+    assert.match(out, /Signature 2: the budget sends <strong><span id="bp-echo">1 NEAR<\/span><\/strong> to you and returns the 0\.1 NEAR deposit\./);
+    const rules = renderBudgetPanel("rules", live()).value;
+    assert.match(rules, /not a payment\./);
+    assert.match(rules, /the change applies and the budget returns the 0\.1 NEAR deposit\./);
+  });
+  it("Withdraw warns once nothing would be left for the agents", () => {
+    assert.equal(withdrawLeftText(live(), "1").empty, false);
+    assert.match(withdrawLeftText(live(), "1").text, /^Agents keep working with what is left: /);
+    const all = withdrawLeftText(live(), "10.89");
+    assert.equal(all.empty, true);
+    assert.equal(all.text, "Your agents will have nothing left to spend until you top up.");
   });
   it("the page without a Budget explains itself to a visitor and keeps the form for a connected owner", () => {
     const out = renderBudgetCreate(renderBudgetSetup(true)).value;
