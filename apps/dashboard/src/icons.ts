@@ -9,7 +9,7 @@ const svg = (size: number, body: string, width = 2) =>
 
 export const icon = {
   // Keyfence mark: a key whose teeth are fence pickets (docs/design/keyfence/logo.svg).
-  logo: () => svg(20, '<circle cx="6.5" cy="9" r="4"></circle><path d="M10.5 9H21"></path><path d="M13.5 9v8.5l1 1.5 1-1.5V9M18 9v8.5l1 1.5 1-1.5V9"></path>'),
+  logo: () => svg(20, '<path d="M8 3.5H7A3.5 3.5 0 003.5 7v10A3.5 3.5 0 007 20.5h10a3.5 3.5 0 003.5-3.5V7A3.5 3.5 0 0017 3.5h-1"></path><circle cx="9.5" cy="12" r="2.5"></circle><path d="M12 12h5M15 12v2.5"></path>'),
   search: () => svg(18, '<circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path>'),
   rescan: () => svg(16, '<path d="M21 12a9 9 0 11-3-6.7L21 8"></path><path d="M21 3v5h-5"></path>'),
   bell: () => svg(16, '<path d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.9 1.9 0 003.4 0"></path>'),

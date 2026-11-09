@@ -8,7 +8,7 @@ Keyfence is the new name for the dashboard: spending limits for AI agents on NEA
 | `mockup/K-*.dc.html` | Source of each screen from the design canvas: layout, copy and states. They need the canvas runtime (`support.js`) to render, so read them as reference, not as code to ship. |
 | `mockup/canvas.json` | Screen list and order. |
 | `tokens-keyfence.css` | Brand layer: load after `../dashboard/tokens.css`. It swaps navy for Keyfence teal in both themes; nothing else changes. |
-| `logo.svg` | The mark used in the header (option A on `K-Logo`, a key whose teeth are fence pickets). The logo choice is still open; `K-Logo` shows three options. |
+| `logo.svg` | The mark used in the header (option C on `K-Logo`, a key in a ring fence). Chosen by the owner on 2026-11-09. |
 
 The mockups use their own `--k-*` variables so the canvas can switch themes. In code use the existing `--kd-*` tokens: the names map one to one (`--k-primary` is `--kd-primary`, `--k-text-muted` is `--kd-text-muted`, and so on).
 
@@ -86,6 +86,6 @@ New work the design assumes:
 
 ## Open items
 
-- Logo: three options on `K-Logo` (A key with fence teeth, B fence with keyhole, C key in a ring fence). The header uses A until chosen.
+- Logo: three options on `K-Logo` (A key with fence teeth, B fence with keyhole, C key in a ring fence). The owner chose C (2026-11-09); the header and favicon use it.
 - K4 does not yet draw the DAO-council owner path (today's `?page=guard`).
 - Mockup numbers are sample data, not testnet values.
