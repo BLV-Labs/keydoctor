@@ -1,11 +1,11 @@
 // The Agent Budget page, pure. Everything shown is read from the chain (budget-read.ts); the owner's actions go
 // through the owner's wallet, and each button says how many signatures it takes (docs/final-idea.md §11.10.5).
 import type { Network } from "key-doctor";
-import { SPUTNIK_FACTORY } from "./budget-create.ts";
+import { parseRecipientLines, planBudget, setupErrorText, SPUTNIK_FACTORY, WIZARD_STEPS, type RecipientRow, type SetupError } from "./budget-create.ts";
 import { PLAN_UNITS, planFromForm, planTotals, type PlanUnit } from "./budget-flow.ts";
 import { TOP_UP_TEXT, topUpBlocks, type BudgetLive, type BudgetPlan, type BudgetProposal, type BudgetRequest } from "./budget-read.ts";
 import { formatUtc, nearToYocto, plural, yoctoToNear } from "./format.ts";
-import { GUARD_FORM_TEXT, KEEPER_ACCOUNT, type GuardFormError } from "./guard-form.ts";
+import { KEEPER_ACCOUNT } from "./guard-form.ts";
 import { NEW_AGENT_DEPOSIT } from "./guard-proposals.ts";
 import type { GuardLive } from "./guard-read.ts";
 import { html, type Html } from "./html.ts";
@@ -403,11 +403,12 @@ export function budgetStatusPill(g: GuardLive): Html {
 }
 
 /** The live page for one DAO that has a Guard. */
-export function renderBudget(b: BudgetLive, network: Network, setup: Html | "" = "", now: number = Date.now()): Html {
+export function renderBudget(b: BudgetLive, network: Network, setup: Html | "" = "", now: number = Date.now(), unfinished: UnfinishedSetup | null = null): Html {
   const g = b.guard;
   if (g === null) {
     return html`${head("This account has no Agent Budget yet.")}
       <section class="stack-sm"><p>Account <a class="mono" href="${routeHref(b.dao.dao)}" data-nav>${b.dao.dao}</a> · ${network}</p></section>
+      ${unfinished === null ? "" : unfinishedCard(unfinished)}
       <section class="card pad stack-xs"><p class="muted">No finished Agent Budget was found for this account.</p><p class="small"><a href="${guardHref(b.dao.dao)}" data-nav>Team council? Use the council setup page.</a></p></section>
       ${setup}`;
   }
@@ -754,15 +755,6 @@ function agentConnect(agent: string, guardId: string, dao: string, network: Netw
     </ol>`;
 }
 
-/** After the last signature of a new Budget. */
-export function renderBudgetKey(agent: string, guardId: string, dao: string, network: Network, problem: string | null): Html {
-  return html`<div class="stack-sm">
-    <p>${problem === null ? "Your budget is created and checked against the chain." : `Signature 2 went through, but the chain does not show a finished budget: ${problem}.`}</p>
-    ${agentConnect(agent, guardId, dao, network)}
-    <div class="actions"><a class="btn btn-tint" href="${budgetHref(dao)}" data-nav>Open the budget to top up</a></div>
-  </div>`;
-}
-
 /** After the last signature of Add an agent. */
 export function renderAgentAdded(agent: string, guardId: string, dao: string, network: Network, problem: string | null): Html {
   return html`<section class="card pad stack-sm" aria-labelledby="aa-title">
@@ -778,68 +770,207 @@ export const BALANCED_RULES: Readonly<Record<string, string>> = { maxPerTx: "5",
 /** §10.3 names this preset without numbers: these are a quarter of Balanced's 24-hour limit, with a tight per-request one. */
 export const CAUTIOUS_RULES: Readonly<Record<string, string>> = { maxPerTx: "1", maxPerDay: "5", maxPendingPerAgent: "2", minReserve: "1", funding: "5" };
 
-const RULE_FIELDS: ReadonlyArray<readonly [string, string]> = [
-  ["maxPerTx", "Per request (NEAR)"],
-  ["maxPerDay", "Rolling 24 hours (NEAR)"],
-  ["maxPendingPerAgent", "Waiting items per agent"],
-  ["minReserve", "Reserve kept (NEAR)"],
-  ["funding", "Set aside for waiting requests (NEAR)"],
-];
-
 const STEPS: ReadonlyArray<readonly [string, string]> = [
   ["Create", "Pick rules for how much your agent can spend."],
   ["Top up", "Move only what the agent may use. Withdraw anytime."],
   ["Connect your agent", "Small payments go through. Larger ones wait for you."],
 ];
 
-/** The allowed recipients added so far, one line each of `account, label, cap` in the hidden whitelist field. */
-export function renderRecipients(raw: string): Html {
-  const lines = raw.split("\n").map((l) => l.trim()).filter((l) => l !== "");
-  if (lines.length === 0) return html`<p class="banner banner-cleanup">${icon.info()}<span>No recipients yet: every payment your agent asks for will wait for your approval.</span></p>`;
-  return html`<ul class="plain-list">${lines.map((line, i) => html`<li class="recipient-row"><span class="mono wrap">${line}</span>
-    <button type="button" class="btn btn-ghost" data-action="budget-recipient-remove" data-line="${i}" aria-label="Remove ${line}">Remove</button></li>`)}</ul>`;
+const WIZARD_LEAD = "About 2 minutes. You sign twice in your wallet at the end; nothing is created before that.";
+
+/** The fields a step shows. The others ride along as hidden inputs, so one form always holds the whole wizard. */
+const STEP_FIELDS: Record<number, readonly string[]> = {
+  1: ["name", "maxPerTx", "maxPerDay", "maxPendingPerAgent", "minReserve", "funding"],
+  2: [],
+  3: ["agentLabel"],
+  4: [],
+};
+const CARRIED = ["name", "maxPerTx", "maxPerDay", "maxPendingPerAgent", "minReserve", "funding", "agentLabel"];
+const FENCE_LABELS: ReadonlyArray<readonly [string, string]> = [
+  ["maxPerTx", "Per payment (NEAR)"],
+  ["maxPerDay", "Per day (NEAR)"],
+  ["maxPendingPerAgent", "Waiting payments per agent"],
+  ["minReserve", "Kept in reserve (NEAR)"],
+];
+
+const nearAmount = (v: string): string => `${v.trim()} NEAR`;
+
+/** The plain sentence at the top of Review. */
+export function reviewSentence(agent: string, perPay: string, perDay: string, recipients: number): string {
+  const to = recipients === 0 ? "only to accounts you approve each time" : `only to ${plural(recipients, "recipient")}`;
+  return `${agent} can spend up to ${nearAmount(perPay)} per payment and ${nearAmount(perDay)} a day, ${to}.`;
 }
 
-/** The create form for a DAO with no Budget. `available` is false while the Agent Budget Guard factory is not deployed. */
-export function renderBudgetSetup(available: boolean, values: Record<string, string> = {}, errors: GuardFormError[] = [], result: string | null = null): Html {
-  const errorFor = (name: string) => errors.filter((e) => e.field === name || e.field.startsWith(`${name}.`));
-  const message = (e: GuardFormError) => {
-    const at = /\.(\d+)/.exec(e.field);
-    return `${at ? `Line ${Number(at[1]) + 1}: ` : ""}${GUARD_FORM_TEXT[e.code].en}`;
-  };
+/** A recipient row. Its account is checked against the chain as it is typed. */
+function recipientRow(r: RecipientRow, i: number, errors: SetupError[]): Html {
+  const own = errors.filter((e) => e.field.startsWith(`whitelist.${i}.`));
+  const bad = (part: string) => (own.some((e) => e.field.endsWith(part)) ? html` aria-invalid="true"` : "");
+  return html`<div class="rcpt-row" data-rcpt>
+    <div class="rcpt-cell rcpt-account"><input name="r-account" class="input mono" value="${r.account}" placeholder="vendor.testnet" aria-label="Account" autocomplete="off" autocapitalize="none" spellcheck="false"${bad("account_id")}>
+      <span class="rcpt-check small" role="status"></span></div>
+    <input name="r-label" class="input" value="${r.label}" placeholder="Name" aria-label="Name" autocomplete="off"${bad("label")}>
+    <input name="r-cap" class="input" value="${r.cap}" placeholder="No limit" inputmode="decimal" aria-label="Limit in NEAR (optional)" autocomplete="off"${bad("max_per_tx")}>
+    <button type="button" class="icon-btn" data-action="budget-recipient-remove" data-row="${i}" aria-label="Remove recipient ${i + 1}">${icon.close()}</button>
+    ${own.length > 0 ? html`<p class="field-error rcpt-error">${own.map(setupErrorText).join(" ")}</p>` : ""}</div>`;
+}
+
+/** What sits inside the recipient list: the empty note, or a header and one row each. */
+export function renderRecipientList(rows: readonly RecipientRow[], errors: SetupError[] = []): Html {
+  if (rows.length === 0) return html`<p class="banner banner-cleanup">${icon.info()}<span>No recipients yet. Every payment your agents ask for will wait for you.</span></p>`;
+  return html`<div class="rcpt-head small muted" aria-hidden="true"><span>Account</span><span>Name</span><span>Limit (optional)</span><span></span></div>${rows.map((r, i) => recipientRow(r, i, errors))}
+    ${errors.filter((e) => e.field === "whitelist").map((e) => html`<p class="field-error">${setupErrorText(e)}</p>`)}`;
+}
+
+/** The wizard for a new Budget: Fence, Recipients, Agent, Review. `available` is false while the factory is not deployed. */
+export function renderBudgetSetup(available: boolean, values: Record<string, string> = {}, errors: SetupError[] = [], result: string | null = null, at: number = 1): Html {
+  const step = Math.min(4, Math.max(1, Math.trunc(at) || 1));
+  const val = (name: string): string => values[name] ?? BALANCED_RULES[name] ?? "";
+  const errorFor = (name: string) => errors.filter((e) => e.field === name);
   const invalid = (name: string) => (errorFor(name).length > 0 ? html` aria-invalid="true" aria-describedby="bs-${name}-error"` : "");
-  const fieldError = (name: string) => (errorFor(name).length > 0 ? html`<p id="bs-${name}-error" class="field-error">${errorFor(name).map(message).join(" ")}</p>` : "");
-  const field = (name: string, label: string, placeholder = "") =>
+  const fieldError = (name: string) => (errorFor(name).length > 0 ? html`<p id="bs-${name}-error" class="field-error">${errorFor(name).map(setupErrorText).join(" ")}</p>` : "");
+  const field = (name: string, label: string, placeholder = "", hint: Html | "" = "") =>
     html`<div class="stack-xs"><label class="label" for="bs-${name}">${label}</label>
-      <input id="bs-${name}" name="${name}" type="text" class="input" value="${values[name] ?? BALANCED_RULES[name] ?? ""}" placeholder="${placeholder}" autocomplete="off" spellcheck="false"${invalid(name)}>${fieldError(name)}</div>`;
-  const custom = values.preset === "custom" || RULE_FIELDS.some(([n]) => errorFor(n).length > 0);
+      <input id="bs-${name}" name="${name}" type="text" class="input${name === "name" ? " mono" : ""}" value="${val(name)}" placeholder="${placeholder}" autocomplete="off" autocapitalize="none" spellcheck="false"${invalid(name)}>${hint}${fieldError(name)}</div>`;
+  const rows = parseRecipientLines(values.whitelist ?? "");
+  const agent = (values.agentLabel ?? "").trim();
+  const custom = values.preset === "custom" || FENCE_LABELS.some(([n]) => errorFor(n).length > 0);
   const chosen = custom ? "custom" : values.preset === "cautious" ? "cautious" : "balanced";
-  const presetNote = (r: Readonly<Record<string, string>>) => `${r.maxPerTx} NEAR per request, ${r.maxPerDay} NEAR per 24 hours`;
+  const presetNote = (r: Readonly<Record<string, string>>) => `${r.maxPerTx} NEAR per payment · ${r.maxPerDay} NEAR a day`;
   const preset = (id: string, title: string, note: string, on: boolean) =>
     html`<button type="button" class="preset" data-action="budget-preset" data-preset="${id}" aria-pressed="${String(on)}"><span class="strong">${title}</span><span class="small muted">${note}</span></button>`;
-  const whitelist = values.whitelist ?? "";
-  return html`<form id="budget-setup-form" class="card setup-card budget-narrow" novalidate aria-label="Create an Agent Budget">
-    ${errors.length > 0 ? html`<p class="field-error" role="alert">Fix the fields marked below.</p>` : ""}
-    <div class="stack-xs"><label class="label" for="bs-name">Budget name</label>
-      <div class="name-row"><input id="bs-name" name="name" type="text" class="input mono" value="${values.name ?? ""}" placeholder="payroll" autocomplete="off" autocapitalize="none" spellcheck="false"${invalid("name")}><span class="mono small muted">.${SPUTNIK_FACTORY}</span></div>
-      <p id="b-name-msg" class="small" role="status"></p>${fieldError("name")}</div>
-    <fieldset class="stack-sm plain-field"><legend class="setup-h">Spending rules</legend>
-      <input type="hidden" name="preset" value="${chosen}">
-      <div class="presets">${preset("cautious", "Cautious", presetNote(CAUTIOUS_RULES), chosen === "cautious")}${preset("balanced", "Balanced", presetNote(BALANCED_RULES), chosen === "balanced")}${preset("custom", "Custom", "Set your own limits", custom)}</div>
-      <div id="bs-custom" class="grid-2"${custom ? "" : " hidden"}>${RULE_FIELDS.map(([n, l]) => field(n, l))}</div>
+
+  const fence = html`<h2 id="bs-h" class="wiz-h" tabindex="-1">Build the fence</h2>
+    <p class="muted">How much may your agents spend without asking you?</p>
+    ${field("name", "Budget name", "payroll", html`<p class="small muted">Only you see this name. The account will be <span id="bs-account" class="mono wrap">${(val("name").trim() || "name") + "." + SPUTNIK_FACTORY}</span></p><p id="b-name-msg" class="small" role="status"></p>`)}
+    <fieldset class="stack-sm plain-field"><legend class="label">How careful should it be?</legend>
+      <div class="presets">${preset("cautious", "Cautious", presetNote(CAUTIOUS_RULES), chosen === "cautious")}${preset("balanced", "Balanced", presetNote(BALANCED_RULES), chosen === "balanced")}${preset("custom", "Custom", "Set every number yourself", custom)}</div>
+      <div id="bs-custom" class="grid-2"${custom ? "" : " hidden"}>${FENCE_LABELS.map(([n, l]) => field(n, l))}</div>
     </fieldset>
-    ${field("agentLabel", "First agent name", "payroll bot")}
-    <div class="stack-xs"><label class="label" for="bs-recipient">Allowed recipients (optional)</label>
-      <div class="input-row"><input id="bs-recipient" type="text" class="input mono" placeholder="vendor.kdoncall.testnet" autocomplete="off" autocapitalize="none" spellcheck="false"${invalid("whitelist")}>
-        <button type="button" class="btn btn-secondary" data-action="budget-recipient-add">${icon.plus()}Add</button></div>
-      <textarea name="whitelist" hidden>${whitelist}</textarea>
-      <div id="bs-recipients">${renderRecipients(whitelist)}</div>${fieldError("whitelist")}</div>
-    <div class="sum-box"><p class="strong">${signatures(2)} now, 1 more to top up</p>
-      <p class="small muted">${available ? "This creates a new Budget that only your account controls, with one agent. It takes 2 signatures." : html`Creating a budget is not available yet: the Agent Budget factory <span class="mono">${BUDGET_FACTORY_NAME}</span> is not deployed. You can fill in the form to check your rules.`}</p></div>
-    <p class="banner banner-cleanup">${icon.alertSmall()}<span>Testnet only. The contracts are unaudited.</span></p>
-    <div class="actions"><button type="submit" class="btn btn-primary">Create Agent Budget</button></div>
-    <div id="budget-setup-status" class="small" role="status">${result ?? ""}</div>
+    ${field("funding", "Starting balance (NEAR)", "", html`<p class="small muted">You can top up at any time.</p>`)}`;
+
+  const recipients = html`<h2 id="bs-h" class="wiz-h" tabindex="-1">Who may your agents pay?</h2>
+    <p class="muted">Payments to these accounts go through inside the fence. Payments to anyone else always wait for you.</p>
+    <div id="bs-rcpts" class="rcpt-list">${renderRecipientList(rows, errors)}</div>
+    <div class="actions"><button type="button" class="btn btn-secondary" data-action="budget-recipient-add">${icon.plus()}Add recipient</button></div>`;
+
+  const can = ["Pay your recipients inside the fence", "Ask you for anything bigger", "See its own limits and history"];
+  const cannot = ["Touch your wallet or other accounts", "Change its own limits", "Pay anyone you did not list without you"];
+  const agentStep = html`<h2 id="bs-h" class="wiz-h" tabindex="-1">Your first agent</h2>
+    <p class="muted">The agent gets its own key. That key can only ask this budget for payments.</p>
+    ${field("agentLabel", "Agent name", "payroll bot")}
+    <div class="grid-2 can-cards">
+      <section class="card pad stack-xs" aria-labelledby="bs-can"><h3 id="bs-can" class="strong">It can</h3><ul class="can-list">${can.map((t) => html`<li><span class="text-ok">${icon.check()}</span>${t}</li>`)}</ul></section>
+      <section class="card pad stack-xs" aria-labelledby="bs-cannot"><h3 id="bs-cannot" class="strong">It cannot</h3><ul class="can-list">${cannot.map((t) => html`<li><span class="text-high">${icon.close()}</span>${t}</li>`)}</ul></section>
+    </div>`;
+
+  let review: Html;
+  {
+    const planned = planBudget((n) => values[n] ?? BALANCED_RULES[n] ?? "", null, BUDGET_FACTORY_NAME, "0");
+    const sum = (label: string, body: Html | string) => html`<div class="sum-row"><dt class="muted">${label}</dt><dd>${body}</dd></div>`;
+    const name = val("name").trim();
+    const count = rows.length;
+    const cost = planned.ok ? `About ${yoctoToNear(planned.plan.firstDepositYocto)} NEAR in signature 1. The 0.2 NEAR of bonds in signature 2 come back.` : "Fix the earlier steps to see it.";
+    review = html`<h2 id="bs-h" class="wiz-h" tabindex="-1">Review and create</h2>
+      <p class="strong">${reviewSentence(agent === "" ? "Your agent" : agent, val("maxPerTx"), val("maxPerDay"), count)}</p>
+      <dl class="sum-box review-rows">
+        ${sum("Budget", html`<span class="strong">${name}</span> <span class="mono small muted wrap">${name}.${SPUTNIK_FACTORY}</span>`)}
+        ${sum("Starting balance", nearAmount(val("funding")))}
+        ${sum("Limits", `${nearAmount(val("maxPerTx"))} per payment · ${nearAmount(val("maxPerDay"))} a day`)}
+        ${sum("Recipients", count === 0 ? "None. Every payment waits for you." : plural(count, "recipient"))}
+        ${sum("Agent", agent)}
+        ${sum("One-time cost", cost)}
+      </dl>
+      <section class="stack-xs" aria-labelledby="bs-next"><h3 id="bs-next" class="strong">What happens next</h3>
+        <ol class="plain-list wiz-next"><li>Signature 1 creates the budget account.</li><li>Signature 2 adds the spending contract and your agent.</li><li>You download the agent's key and paste one command into your agent tool.</li></ol></section>
+      <p class="banner banner-cleanup">${icon.alertSmall()}<span>Testnet only. The contracts are unaudited.</span></p>
+      ${available ? sigLine(2) : html`<p class="small muted">Creating a budget is not available yet: the Agent Budget factory <span class="mono">${BUDGET_FACTORY_NAME}</span> is not deployed. Your rules can still be checked.</p>`}`;
+  }
+
+  const body = step === 1 ? fence : step === 2 ? recipients : step === 3 ? agentStep : review;
+  const carried = CARRIED.filter((n) => !STEP_FIELDS[step]!.includes(n)).map((n) => html`<input type="hidden" name="${n}" value="${val(n)}">`);
+  const whitelistCarrier = step === 2 ? "" : html`<input type="hidden" name="whitelist" value="${values.whitelist ?? ""}">`;
+  return html`<form id="budget-setup-form" class="card setup-card budget-narrow" novalidate aria-label="New agent budget" data-step="${step}">
+    <ol class="wiz-steps" aria-label="Steps">${WIZARD_STEPS.map((t, i) => html`<li class="wiz-step" data-state="${i + 1 < step ? "done" : i + 1 === step ? "now" : "todo"}"${i + 1 === step ? html` aria-current="step"` : ""}><span class="step-dot">${i + 1 < step ? icon.check() : i + 1}</span><span>${t}</span></li>`)}</ol>
+    <input type="hidden" name="step" value="${step}"><input type="hidden" name="preset" value="${chosen}">${carried}${whitelistCarrier}
+    ${errors.length > 0 ? html`<p class="field-error" role="alert">Fix the fields marked below.</p>` : ""}
+    <div class="wiz-body stack-sm">${body}</div>
+    <div class="wiz-foot" id="bs-actions">
+      ${step > 1 ? html`<button type="button" class="btn btn-secondary" data-action="budget-setup-back" id="bs-back">Back</button>` : html`<span></span>`}
+      <button type="submit" class="btn btn-primary" id="bs-primary">${step < 4 ? "Continue" : "Create budget · sign 1 of 2"}</button>
+    </div>
+    <div id="budget-setup-status" class="small" role="status" aria-live="polite">${result ?? ""}</div>
   </form>`;
+}
+
+/** Shown on the Budget page of a DAO that sign 1 made and sign 2 never finished. */
+export interface UnfinishedSetup {
+  /** The values the wizard saved after sign 1; without them the owner starts the form again with the same name. */
+  canFinish: boolean;
+}
+
+function unfinishedCard(u: UnfinishedSetup): Html {
+  return html`<section class="card pad stack-xs" aria-labelledby="bu-title">
+    <h2 id="bu-title" class="h2">Setup not finished</h2>
+    <p>This budget account was created, but its spending contract and your agent were not added yet.</p>
+    ${u.canFinish
+      ? html`${sigLine(1)}<div class="actions"><button type="button" class="btn btn-primary" data-action="budget-finish-setup">Finish setup · sign 2 of 2</button></div>`
+      : html`<p class="small muted">Fill in the form below with the same budget name. It picks up where it stopped, and signature 1 is not repeated.</p>`}
+  </section>`;
+}
+
+/** The head of a centred pop-up; `close` is the data-action of its × button. */
+function modalHead(id: string, title: string, note: string, close: string): Html {
+  return html`<div class="drawer-head">
+    <div class="drawer-title"><h2 id="${id}" class="drawer-h wrap">${title}</h2><p class="small muted">${note}</p></div>
+    <button type="button" class="icon-btn" data-action="${close}" aria-label="Close">${icon.close()}</button></div>`;
+}
+
+export interface AgentKeyReady {
+  /** The name the owner gave the agent. */
+  label: string;
+  /** The agent's account: the key file is named after it. */
+  account: string;
+  budget: string;
+  guardId: string;
+  dao: string;
+  network: Network;
+  /** Set when the chain does not show a finished budget after signature 2. */
+  problem: string | null;
+}
+
+const CONNECT_TABS: ReadonlyArray<readonly [string, string]> = [["claude", "Claude Code"], ["mcp", "Other MCP app"], ["script", "Script"]];
+
+/** P2: the one time the agent's key can be saved, then how to plug the agent in. */
+export function renderAgentKeyReady(a: AgentKeyReady): Html {
+  const keyPath = `$HOME/.config/key-doctor/${a.account}.json`;
+  const move = `mkdir -p ~/.config/key-doctor && mv ~/Downloads/${a.account}.json ~/.config/key-doctor/ && chmod 600 ~/.config/key-doctor/${a.account}.json`;
+  const env = `NEAR_NETWORK=${a.network}\nGUARD_CONTRACT_ID=${a.guardId}\nAGENT_ACCOUNT_ID=${a.account}\nAGENT_KEY_PATH=${keyPath}`;
+  return html`<div class="drawer-form">${modalHead("ak-title", `${a.label} is ready`, "Save its key now. Keyfence cannot show it again.", "budget-key-done")}
+    <div class="drawer-body stack-sm">
+      ${a.problem === null ? "" : html`<p class="banner banner-high" role="alert">${icon.alert()}<span>Signature 2 went through, but the chain does not show a finished budget: ${a.problem}.</span></p>`}
+      <p class="banner banner-note">${icon.key()}<span>This key can only ask ${a.budget} for payments. It cannot touch your wallet.</span></p>
+      <section class="stack-xs" aria-labelledby="ak-1"><h3 id="ak-1" class="strong">1 · Download the key</h3>
+        <div class="actions"><button type="button" id="ak-download" class="btn btn-primary" data-action="budget-key">Download key</button></div>
+        <p class="small muted">Saved as <span class="mono wrap">${a.account}.json</span>. Do not send this file to anyone.</p></section>
+      <section class="stack-xs" aria-labelledby="ak-2"><h3 id="ak-2" class="strong">2 · Connect your agent</h3>
+        <div class="chips" role="group" aria-label="Agent tool">${CONNECT_TABS.map(([id, label], i) => html`<button type="button" class="chip" data-action="budget-connect-tab" data-tab="${id}" aria-pressed="${String(i === 0)}">${label}</button>`)}</div>
+        <div data-tab-panel="claude" class="stack-xs"><p class="small muted">Move the key where the agent reads it, then run this inside a clone of the Key Doctor repo.</p>${copyRow(move)}${copyRow(guardMcpCommand(a.network, a.guardId, a.account))}</div>
+        <div data-tab-panel="mcp" class="stack-xs" hidden><p class="small muted">Start the agent's MCP server with these settings from the Key Doctor repo.</p>${copyRow(env)}${copyRow("pnpm --silent --filter guard-mcp start")}</div>
+        <div data-tab-panel="script" class="stack-xs" hidden><p class="small muted">Read the key file and ask the budget for a payment with its <span class="mono">request_transfer</span> call. Use these settings.</p>${copyRow(env)}</div></section>
+      <section class="stack-xs" aria-labelledby="ak-3"><h3 id="ak-3" class="strong">3 · Try it</h3><p class="small muted">Ask your agent:</p>${copyRow(AGENT_TEST_PROMPT)}</section>
+    </div>
+    <div class="drawer-foot"><a class="small" href="${agentGuideHref(a.dao)}" target="_blank" rel="noopener">How your agent works</a>
+      <button type="button" class="btn btn-primary" data-action="budget-key-done">Done</button></div>
+  </div>`;
+}
+
+/** The confirm before anything drops an agent key that was never downloaded. */
+export function renderLeaveKey(agent: string): Html {
+  return html`<div class="drawer-form">${modalHead("lk-title", "Leave without the agent key?", `${agent} · not downloaded yet`, "budget-leave-stay")}
+    <div class="drawer-body"><p>The key is shown only once. Without it, ${agent} cannot connect, and you would remove it and add a new agent.</p></div>
+    <div class="drawer-foot"><button type="button" class="btn btn-secondary" data-action="budget-leave-anyway">Leave anyway</button>
+      <button type="button" class="btn btn-primary" data-action="budget-leave-download" autofocus>Download key</button></div>
+  </div>`;
 }
 
 /** The page without a Budget: what it is until a wallet is connected, then the form. `syncWallet` picks which half shows. */
@@ -852,8 +983,7 @@ export function renderBudgetCreate(form: Html): Html {
         <div class="strategy-grid">${STRATEGIES.map(([name, note]) => html`<article class="card strategy-card"><div class="strategy-head"><h3 class="strategy-h">${name}</h3><span class="pill pill-note">${name === PAYOUTS ? "After setup" : "Coming soon"}</span></div><p class="small muted">${note}</p></article>`)}</div></section>
     </div>
     <div class="stack" data-wallet-on hidden>
-      <section class="stack-xs"><h1 class="h1">Create Agent Budget</h1><p class="muted budget-lead">${LEAD}</p></section>
-      <ol class="plain setup-steps" aria-label="Setup steps">${STEPS.map(([title], i) => html`<li><span class="step-dot">${i + 1}</span><span class="strong">${title}</span></li>`)}</ol>
+      <section class="stack-xs"><h1 class="h1">New agent budget</h1><p class="muted budget-lead">${WIZARD_LEAD}</p></section>
       ${form}
     </div>`;
 }
