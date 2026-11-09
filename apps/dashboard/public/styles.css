@@ -75,8 +75,29 @@ summary:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3
 .eyebrow { font-size: var(--kd-fs-sm); font-weight: 600; color: var(--kd-text-muted); }
 .lead { font-size: var(--kd-fs-md); color: var(--kd-text-2); }
 .meta { font-size: var(--kd-fs-sm); color: var(--kd-text-muted); }
-.hero { max-width: 760px; padding: 24px 0 8px; }
 .home-try { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.tone-ok { color: var(--kd-ok); }
+.home-hero { display: flex; flex-wrap: wrap; gap: 32px; align-items: center; padding: 24px 0 8px; }
+.home-hero-text { flex: 1 1 520px; min-width: 0; }
+.home-hero-text .lead { max-width: 600px; }
+.home-eyebrow { color: var(--kd-primary); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
+.home-preview { flex: 1 1 360px; min-width: 0; padding: 20px; border-radius: 16px; }
+.home-preview-head { display: flex; align-items: center; gap: 10px; color: var(--kd-primary); }
+.home-preview-head strong { color: var(--kd-text); }
+.home-preview-row { display: flex; justify-content: space-between; gap: 8px; font-size: var(--kd-fs-sm); color: var(--kd-text-muted); }
+.home-bar { height: 8px; border-radius: 999px; background: var(--kd-note-bg); overflow: hidden; margin-top: 6px; }
+.home-bar span { display: block; height: 100%; background: var(--kd-primary); }
+.home-preview-line { display: flex; align-items: flex-start; gap: 8px; font-size: var(--kd-fs-sm); overflow-wrap: anywhere; }
+.home-preview-line > span:first-child { flex: none; margin-top: 2px; }
+.home-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 20px; }
+.home-step { display: flex; gap: 14px; align-items: flex-start; min-width: 0; }
+.home-tile { flex: none; width: 40px; height: 40px; border-radius: 10px; background: var(--kd-primary-tint); color: var(--kd-primary); display: inline-flex; align-items: center; justify-content: center; }
+.home-paths { display: flex; flex-wrap: wrap; gap: 16px; }
+.home-path { flex: 1 1 300px; min-width: 0; padding: 20px; }
+.home-path-cta { margin-top: auto; }
+.home-trust { display: flex; flex-wrap: wrap; gap: 8px 28px; color: var(--kd-text-2); }
+.home-trust li { display: flex; gap: 8px; align-items: flex-start; flex: 1 1 260px; min-width: 0; }
+.home-trust svg { flex: none; margin-top: 3px; color: var(--kd-ok); }
 .label { font-size: var(--kd-fs-sm); font-weight: 600; color: var(--kd-text-2); }
 .form-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 
