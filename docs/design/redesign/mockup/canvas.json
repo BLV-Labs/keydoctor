@@ -1,0 +1,296 @@
+{
+  "v": 3,
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-10-29T15:10:00Z"
+  },
+  "title": "Key Doctor Dashboard",
+  "launch": {
+    "view": "canvas"
+  },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 1560,
+      "title": "1 · Enter an account or DAO",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Council.dc.html": {
+      "x": 1520,
+      "y": 0,
+      "w": 1440,
+      "h": 2900,
+      "title": "2 · Council report",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Account.dc.html": {
+      "x": 3040,
+      "y": 0,
+      "w": 1440,
+      "h": 2200,
+      "title": "3 · Account profile (Delete / Revoke keys)",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Cleanup.dc.html": {
+      "x": 4560,
+      "y": 0,
+      "w": 1440,
+      "h": 2400,
+      "title": "4 · Key cleanup plan (UC8)",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Watch.dc.html": {
+      "x": 6080,
+      "y": 0,
+      "w": 1440,
+      "h": 980,
+      "title": "5 · Get Telegram alerts (any account or DAO)",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "DeleteKey.dc.html": {
+      "x": 7600,
+      "y": 0,
+      "w": 1440,
+      "h": 1000,
+      "title": "6 · Delete a full-access key (sign in Meteor)",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "RevokeKey.dc.html": {
+      "x": 9120,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "7 · Revoke an app key (sign in Meteor)",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "WalletDialog.dc.html": {
+      "x": 10640,
+      "y": 0,
+      "w": 1440,
+      "h": 760,
+      "title": "8 · Choose a wallet (Meteor / Here / HOT)",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "KeyDetail.dc.html": {
+      "x": 12160,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "9 · Key details (View)",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Logo.dc.html": {
+      "x": 13680,
+      "y": 0,
+      "w": 1440,
+      "h": 1000,
+      "title": "Logo · three directions"
+    },
+    "Brand.dc.html": {
+      "x": 15200,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "New name · agents that farm on a budget"
+    },
+    "PaddockLogo.dc.html": {
+      "x": 16720,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Paddock Agents · logo"
+    },
+    "K-Home.dc.html": {
+      "x": 0,
+      "y": 3400,
+      "w": 1440,
+      "h": 1700,
+      "title": "K1 · Home (signed out)",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "K-Agents.dc.html": {
+      "x": 1520,
+      "y": 3400,
+      "w": 1440,
+      "h": 1300,
+      "title": "K2 · Your agents (inbox + budgets)",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "K-Budget.dc.html": {
+      "x": 3040,
+      "y": 3400,
+      "w": 1440,
+      "h": 1500,
+      "title": "K3 · One budget",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "K-Create.dc.html": {
+      "x": 4560,
+      "y": 3400,
+      "w": 1440,
+      "h": 1100,
+      "title": "K4 · New budget (4-step wizard)",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "K-Approve.dc.html": {
+      "x": 6080,
+      "y": 3400,
+      "w": 1440,
+      "h": 900,
+      "title": "K5 · Approve a payment",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "K-Keys.dc.html": {
+      "x": 7600,
+      "y": 3400,
+      "w": 1440,
+      "h": 1500,
+      "title": "K6 · Key check (verdict first)",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "K-YieldCreate.dc.html": {
+      "x": 0,
+      "y": 5600,
+      "w": 1440,
+      "h": 1100,
+      "title": "K7 · New yield agent (5 steps)",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "K-Yield.dc.html": {
+      "x": 1520,
+      "y": 5600,
+      "w": 1440,
+      "h": 1300,
+      "title": "K8 · Yield agent",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "K-Cleanup.dc.html": {
+      "x": 3040,
+      "y": 5600,
+      "w": 1440,
+      "h": 1200,
+      "title": "K9 · Clean up keys",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "K-Council.dc.html": {
+      "x": 4560,
+      "y": 5600,
+      "w": 1440,
+      "h": 1100,
+      "title": "K10 · Council check",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "K-Connect.dc.html": {
+      "x": 6080,
+      "y": 5600,
+      "w": 1440,
+      "h": 1300,
+      "title": "K11 · Connect an agent",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "K-States.dc.html": {
+      "x": 7600,
+      "y": 5600,
+      "w": 1440,
+      "h": 900,
+      "title": "K12 · Empty, loading, error"
+    },
+    "K-Popups-Money.dc.html": {
+      "x": 9120,
+      "y": 5600,
+      "w": 1440,
+      "h": 1700,
+      "title": "P1 · Pop-ups · money"
+    },
+    "K-Popups-Agents.dc.html": {
+      "x": 10640,
+      "y": 5600,
+      "w": 1440,
+      "h": 2200,
+      "title": "P2 · Pop-ups · agents, keys, alerts"
+    },
+    "KD-Logo.dc.html": {
+      "x": 9120,
+      "y": 3400,
+      "w": 1440,
+      "h": 1160,
+      "title": "Key Doctor · logo (cross key)"
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "Council.dc.html",
+    "Account.dc.html",
+    "Cleanup.dc.html",
+    "Watch.dc.html",
+    "DeleteKey.dc.html",
+    "RevokeKey.dc.html",
+    "WalletDialog.dc.html",
+    "KeyDetail.dc.html",
+    "Logo.dc.html",
+    "Brand.dc.html",
+    "PaddockLogo.dc.html",
+    "K-Home.dc.html",
+    "K-Agents.dc.html",
+    "K-Budget.dc.html",
+    "K-Create.dc.html",
+    "K-Approve.dc.html",
+    "K-Keys.dc.html",
+    "KD-Logo.dc.html",
+    "K-YieldCreate.dc.html",
+    "K-Yield.dc.html",
+    "K-Cleanup.dc.html",
+    "K-Council.dc.html",
+    "K-Connect.dc.html",
+    "K-States.dc.html",
+    "K-Popups-Money.dc.html",
+    "K-Popups-Agents.dc.html"
+  ],
+  "notes": {
+    "title": {
+      "x": 0,
+      "y": -300,
+      "text": "Key Doctor · dashboard (compact, light / dark themes — Tweaks › theme)",
+      "kind": "title1",
+      "maxW": 18160
+    },
+    "keyfence": {
+      "x": 0,
+      "y": 3100,
+      "text": "Key Doctor · user-first redesign",
+      "kind": "title1",
+      "maxW": 10560
+    },
+    "keyfence2": {
+      "x": 0,
+      "y": 5300,
+      "text": "Key Doctor · yield, secondary screens, pop-ups",
+      "kind": "title1",
+      "maxW": 12080
+    }
+  },
+  "designSystems": []
+}

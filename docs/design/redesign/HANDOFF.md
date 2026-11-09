@@ -1,4 +1,4 @@
-# Keyfence handoff spec
+# Key Doctor redesign · handoff spec
 
 The implementation spec for every screen in `mockup/`. Read `README.md` first for the principles, the word list and the build order. This file adds what a developer would otherwise guess: tokens, components, states, data sources, edge cases, accessibility and acceptance checks.
 
@@ -10,7 +10,7 @@ Stack today: `apps/dashboard`, plain TypeScript, string templates through `html`
 
 ### 1.1 Tokens
 
-Load `docs/design/dashboard/tokens.css`, then `docs/design/keyfence/tokens-keyfence.css` (teal primary). Use variables only; no hex in components except the monogram tones and the wallet-logo plate, which are fixed on purpose.
+Load `docs/design/dashboard/tokens.css`, then `docs/design/redesign/tokens-teal.css` (teal primary). Use variables only; no hex in components except the monogram tones and the wallet-logo plate, which are fixed on purpose.
 
 | Token | Light | Dark | Usage |
 |---|---|---|---|
@@ -39,10 +39,10 @@ Spacing (no tokens exist; use these values everywhere): page padding 28px top, 6
 
 ### 1.3 Header and footer (all pages)
 
-- Left: 32px teal tile with the mark (`logo.svg`, 20px, `--kd-on-primary`) and "Keyfence" (17px, 700). Links to Home.
+- Left: 32px teal tile (`--kd-primary`, 8px radius) with the mark (`logo.svg`, 24px, stroke 2.2, `--kd-on-primary`) and "Key Doctor" (17px, 700). Links to Home. Favicon: `favicon.svg`.
 - Nav: **Agents**, **Keys**, **Alerts**. Active item: `--kd-text`, 600, 2px `--kd-primary` underline, `aria-current="page"`. Agents is active on K2, K3, K4, K7, K8, K11; Keys on K6, K9, K10. Alerts opens the Telegram dialog (P2) and is never "current".
 - Right: network pill (amber "Testnet"; on mainnet a grey "Mainnet"), theme switch (44px icon button, `aria-label="Dark theme"`, `aria-pressed`), wallet chip (green dot plus mono account; signed out it is a secondary button "Connect wallet").
-- Footer: "Testnet. Contracts are unaudited." · "Keyfence never holds your keys. Limits are enforced on-chain." · link "For developers (MCP)" to K11 `#agents-mcp`.
+- Footer: "Testnet. Contracts are unaudited." · "Key Doctor never holds your keys. Limits are enforced on-chain." · link "For developers (MCP)" to K11 `#agents-mcp`.
 
 ### 1.4 Components
 
@@ -91,7 +91,7 @@ Each screen lists data sources in today's code so the rewrite reuses the reads.
 
 ### K1 · Home (`K-Home`, route `/`)
 
-**Purpose:** say what Keyfence does and send each visitor to their job in one click.
+**Purpose:** say what Key Doctor does and send each visitor to their job in one click.
 
 **Layout:** hero (two columns: text 520px+, preview card 360px+) · "How it works" card with 3 steps · "What do you want to do?" 3 path cards · "Check any NEAR account or DAO" card (`id="check"`) · trust line (3 items).
 

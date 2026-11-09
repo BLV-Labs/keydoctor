@@ -1,14 +1,16 @@
-# Keyfence: dashboard redesign handoff
+# Key Doctor: dashboard redesign handoff
 
-Keyfence is the new name for the dashboard: spending limits for AI agents on NEAR (hackathon track `security`), with the key check kept as the second job. This folder is the user-first redesign of every screen, pop-up and state. Build `apps/dashboard` from it.
+Key Doctor keeps its name and gets a user-first redesign: spending limits for AI agents on NEAR (hackathon track `security`), with the key check kept as the second job. The new mark is the cross key (a key whose bow is a medical cross) on the redesign's teal. This folder is the user-first redesign of every screen, pop-up and state. Build `apps/dashboard` from it.
 
 | File | What it is |
 |---|---|
 | `HANDOFF.md` | Implementation spec: tokens, components, states, motion, accessibility, per-screen data sources, pop-up table, edge cases, files to change. |
 | `mockup/K-*.dc.html` | Source of each screen from the design canvas: layout, copy and states. They need the canvas runtime (`support.js`) to render, so read them as reference, not as code to ship. |
 | `mockup/canvas.json` | Screen list and order. |
-| `tokens-keyfence.css` | Brand layer: load after `../dashboard/tokens.css`. It swaps navy for Keyfence teal in both themes; nothing else changes. |
-| `logo.svg` | The mark used in the header (option A on `K-Logo`, a key whose teeth are fence pickets). The logo choice is still open; `K-Logo` shows three options. |
+| `tokens-teal.css` | Brand layer: load after `../dashboard/tokens.css`. It swaps navy for teal in both themes; nothing else changes. |
+| `logo.svg` | The mark (cross key), 24 grid, 2px stroke, `currentColor`. Use it in `icons.ts` and the header tile. `KD-Logo` shows sizes, both themes and two alternatives. |
+| `favicon.svg` | 32px teal tile with a solid bow, so it stays readable at 16px. Replaces `public/favicon.svg`. |
+| `app-icon.svg`, `app-icon-512.png` | Full-bleed square for the Telegram bot avatar (Telegram crops it to a circle) and app icons. |
 
 The mockups use their own `--k-*` variables so the canvas can switch themes. In code use the existing `--kd-*` tokens: the names map one to one (`--k-primary` is `--kd-primary`, `--k-text-muted` is `--kd-text-muted`, and so on).
 
@@ -68,17 +70,17 @@ Exists today, needs the new layout and words only:
 
 New work the design assumes:
 1. **Cross-budget inbox and activity** (K2). Today each budget is read alone and only its last 10 requests (`budget-read.ts`).
-2. **Agent key without shell commands** (P2 "Agent key ready"). Today the user runs `mkdir`/`mv` and must clone the repo. The design assumes a published package, shown as `npx keyfence-agent --key <file>`: the package name is a placeholder.
+2. **Agent key without shell commands** (P2 "Agent key ready"). Today the user runs `mkdir`/`mv` and must clone the repo. The design assumes a published package, shown as `npx key-doctor-agent --key <file>`: the package name is a placeholder.
 3. **Account check on Recipients** ("Account exists" as you type, backlog C12).
 4. **"That was me"** on a new master key (K6): mark it as known so the banner goes away. Store per browser.
 5. **Runway estimate** ("enough for 3 days at today's pace") on K3.
 6. **Yield agent settings** (K7, K8): most to put to work, keep ready, minimum rate, check interval, and a Pause. Today suggestions are capped at the free balance only and are not stored per agent. "Move on its own" stays disabled: there is no token spending fence on chain.
 7. **Leaving without the key** dialog replaces `window.confirm` (`app.ts`).
-8. **Rename**: header, titles, footer and bot name. On-chain names (`keydoctor-guards-v2.testnet`, `keydoctor-keeper.testnet`), schema ids `kd.*` and the Worker URL stay; show them only in Technical details.
+8. **New mark and teal**: header tile, favicon, bot avatar. The name stays Key Doctor everywhere, so on-chain names, schema ids `kd.*`, the Worker URL and @KeyDoctorOnCallBot stay as they are.
 
 ## Suggested order before the deadline
 
-1. Tokens and rename (`tokens-keyfence.css`, header, words table): small, touches every screen.
+1. Tokens and logo (`tokens-teal.css`, `logo.svg`, `favicon.svg`, words table): small, touches every screen.
 2. K3 Budget, K5 Approve, P1 money pop-ups: the security demo.
 3. K2 Agents inbox (start with one budget if the cross-budget read is not ready).
 4. K4 Create wizard and P2 "Agent key ready".
@@ -86,6 +88,6 @@ New work the design assumes:
 
 ## Open items
 
-- Logo: three options on `K-Logo` (A key with fence teeth, B fence with keyhole, C key in a ring fence). The header uses A until chosen.
+- Logo: cross key is the pick in every mockup; `KD-Logo` keeps two alternatives (pulse key, diagonal cross key) in case you prefer one.
 - K4 does not yet draw the DAO-council owner path (today's `?page=guard`).
 - Mockup numbers are sample data, not testnet values.

@@ -1,6 +1,6 @@
 /*
- * Keyfence brand layer. Load after docs/design/dashboard/tokens.css: it only replaces the navy primary with
- * Keyfence teal in both themes. Every other token (status colors, type scale, radii) stays as it is.
+ * Key Doctor teal layer. Load after docs/design/dashboard/tokens.css: it only replaces the navy primary with
+ * teal in both themes. Every other token (status colors, type scale, radii) stays as it is.
  * Contrast: white on #0F5F5C 7.5:1, #0F5F5C on #E3F1F0 6.4:1; dark: #0B1017 on #7CD4CF 11.1:1, #7CD4CF on #12302F 8.2:1.
  */
 :root {
