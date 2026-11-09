@@ -262,13 +262,15 @@ The script creates the council and demo accounts with the testnet faucet, a 3-me
 claude mcp add guard -e NEAR_NETWORK=testnet -e GUARD_CONTRACT_ID=<prefix>-guard.testnet -e AGENT_ACCOUNT_ID=<prefix>-agent1.testnet -e AGENT_KEY_PATH=$HOME/.config/key-doctor/<prefix>-agent1.testnet.json -- pnpm --silent --filter guard-mcp start
 ```
 
-`NEAR_RPC_URL` overrides the default RPC (`rpc.<network>.fastnear.com`). Tools, each returning `kd.guard_result.v1`:
+`NEAR_RPC_URL` overrides the default RPC (`rpc.<network>.fastnear.com`). Tools (the three `guard_*` ones return `kd.guard_result.v1`):
 
 | Tool | Does |
 |---|---|
 | `guard_get_policy` | Read-only: limits, spent and remaining in the current 24-hour window, reset time, whitelisted receivers |
 | `guard_request_transfer` | `receiver_id`, `amount_near` (decimal string, converted to yoctoNEAR exactly), optional `memo`. Signs `request_transfer` with a new `request_id` and 200 Tgas. Returns `auto_approved` (paid), `pending` (a DAO proposal for the council, with reasons) or `rejected` (a Guard error code such as `PAUSED` or `TOO_MANY_PENDING`) |
 | `guard_get_request_status` | `request_id`; refreshes a non-final request with `sync_request` |
+| `strategies_list` | Read-only: the strategy catalog with each status; a `setup_url` to the dashboard for Scheduled payouts when the Guard has plans (1.2.0 or later). The agent cannot create a plan: it sends the link and the owner signs |
+| `plans_status` | Read-only: each plan's amount, runs done of total, status (with the pause reason) and next run, with a dashboard link per plan. Says so when the Guard is older than plans |
 
 The tool descriptions and messages tell the agent not to send a pending payment again and not to split it into smaller ones: over the limit is the council's call. When the outcome of a transaction is not known (`UNKNOWN_OUTCOME`), the result carries the tx hash and the agent must check the status instead of retrying.
 
