@@ -4,6 +4,7 @@ Keyfence is the new name for the dashboard: spending limits for AI agents on NEA
 
 | File | What it is |
 |---|---|
+| `HANDOFF.md` | Implementation spec: tokens, components, states, motion, accessibility, per-screen data sources, pop-up table, edge cases, files to change. |
 | `mockup/K-*.dc.html` | Source of each screen from the design canvas: layout, copy and states. They need the canvas runtime (`support.js`) to render, so read them as reference, not as code to ship. |
 | `mockup/canvas.json` | Screen list and order. |
 | `tokens-keyfence.css` | Brand layer: load after `../dashboard/tokens.css`. It swaps navy for Keyfence teal in both themes; nothing else changes. |
