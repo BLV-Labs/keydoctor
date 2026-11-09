@@ -31,6 +31,7 @@ rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist, { recursive: true });
 cpSync(join(app, "public"), dist, { recursive: true });
 cpSync(join(app, "../../docs/design/dashboard/tokens.css"), join(dist, "tokens.css"));
+cpSync(join(app, "../../docs/design/keyfence/tokens-keyfence.css"), join(dist, "tokens-keyfence.css"));
 if (workerUrl) {
   const headers = join(dist, "_headers");
   writeFileSync(headers, readFileSync(headers, "utf8").replace("connect-src ", `connect-src ${workerUrl} `));

@@ -50,8 +50,10 @@ describe("compact layout and themes", () => {
 });
 
 describe("theme tokens", () => {
-  const css = readFileSync(new URL("../../../docs/design/dashboard/tokens.css", import.meta.url), "utf8");
-  const block = (selector: string): Record<string, string> => {
+  // The Keyfence teal layer loads after the base tokens (public/index.html), so its values win in both themes.
+  const base = readFileSync(new URL("../../../docs/design/dashboard/tokens.css", import.meta.url), "utf8");
+  const brand = readFileSync(new URL("../../../docs/design/keyfence/tokens-keyfence.css", import.meta.url), "utf8");
+  const block = (css: string, selector: string): Record<string, string> => {
     const start = css.indexOf(`${selector} {`);
     const body = css.slice(start, css.indexOf("\n}", start));
     return Object.fromEntries([...body.matchAll(/--([a-z0-9-]+):\s*(#[0-9A-Fa-f]{6})/g)].map((m) => [m[1]!, m[2]!]));
@@ -64,14 +66,20 @@ describe("theme tokens", () => {
     const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
     return (x! + 0.05) / (y! + 0.05);
   };
-  const light = block(":root");
-  const dark = { ...light, ...block(':root[data-theme="dark"]') };
+  const light = { ...block(base, ":root"), ...block(brand, ":root") };
+  const dark = { ...light, ...block(base, ':root[data-theme="dark"]'), ...block(brand, ':root[data-theme="dark"]') };
   const pairs: [string, string][] = [
     ["kd-text", "kd-surface"], ["kd-text-2", "kd-surface"], ["kd-text-muted", "kd-surface"], ["kd-text-muted", "kd-surface-muted"],
     ["kd-primary", "kd-surface"], ["kd-on-primary", "kd-primary"], ["kd-primary", "kd-primary-tint"],
     ["kd-high", "kd-high-bg"], ["kd-high-text", "kd-high-bg"], ["kd-cleanup", "kd-cleanup-bg"], ["kd-ok", "kd-ok-bg"],
     ["kd-note", "kd-note-bg"], ["kd-info", "kd-info-bg"], ["kd-high", "kd-surface"], ["kd-cleanup", "kd-surface"],
+    ["kd-on-primary", "kd-primary-hover"], ["kd-primary", "kd-page"],
   ];
+
+  it("the teal layer really replaces the navy primary in both themes", () => {
+    assert.equal(light["kd-primary"], "#0F5F5C");
+    assert.equal(dark["kd-primary"], "#7CD4CF");
+  });
 
   for (const [name, theme] of [["light", light], ["dark", dark]] as const) {
     it(`${name}: every text/background pair passes WCAG AA (4.5:1)`, () => {

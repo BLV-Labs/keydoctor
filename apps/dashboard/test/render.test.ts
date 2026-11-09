@@ -324,23 +324,32 @@ describe("proposal list (C7)", () => {
 });
 
 describe("nav and the alerts / MCP pages", () => {
-  const nav = (page: "check" | "budget" | "my-agents") => renderLayout(html`<p>x</p>`, "testnet", page).value.match(/<nav[\s\S]*?<\/nav>/)![0];
+  const nav = (page: "check" | "budget" | "my-agents" | "yield" | "mcp") => renderLayout(html`<p>x</p>`, "testnet", page).value.match(/<nav[\s\S]*?<\/nav>/)![0];
 
-  it("has Key Check, My Agents and Agent Budget, marks only the current page, and no longer links out to t.me", () => {
-    for (const [page, label] of [["check", "Key Check"], ["my-agents", "My Agents"], ["budget", "Agent Budget"]] as const) {
+  it("has Agents, Keys and an Alerts button; marks one item, so every budget and yield page stays under Agents", () => {
+    for (const [page, label] of [["check", "Keys"], ["my-agents", "Agents"], ["budget", "Agents"], ["yield", "Agents"], ["mcp", "Agents"]] as const) {
       const n = nav(page);
-      assert.equal((n.match(/<a /g) ?? []).length, 3);
+      assert.equal((n.match(/<a /g) ?? []).length, 2);
       assert.equal((n.match(/aria-current="page"/g) ?? []).length, 1);
       assert.match(n, new RegExp(`aria-current="page">${label}<`));
+      assert.match(n, /<button type="button" class="nav-btn" data-action="alerts-open">Alerts<\/button>/);
       assert.ok(!n.includes("t.me"));
     }
   });
 
-  it("keeps the MCP page reachable from the footer of every page, since it left the nav", () => {
+  it("shows the network in the header, so a mainnet page never passes for testnet", () => {
+    assert.match(renderLayout(html`x`, "testnet").value, /class="pill pill-cleanup net-pill">Testnet</);
+    assert.match(renderLayout(html`x`, "mainnet").value, /class="pill pill-note net-pill">Mainnet</);
+  });
+
+  it("names the product Keyfence and keeps the MCP page reachable from the footer of every page", () => {
     const layout = renderLayout(html`<p>x</p>`, "testnet", "check").value;
+    assert.match(layout, /class="brand">[\s\S]*<span>Keyfence<\/span><\/a>/);
+    assert.ok(!layout.includes("Key Doctor"));
     const footer = layout.match(/<footer[\s\S]*?<\/footer>/)![0];
     assert.ok(footer.includes("page=mcp"));
-    assert.ok(footer.includes("For AI agents (MCP)"));
+    assert.ok(footer.includes("For developers (MCP)"));
+    assert.ok(footer.includes("Keyfence never holds your keys. Limits are enforced on-chain."));
   });
 
   it("the old pages stay valid links: what is published must not land on an empty page (§10.1)", () => {

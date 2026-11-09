@@ -74,7 +74,7 @@ function stepCard(step: Step, m: Member, report: KdReport, blocked: string | nul
       <span class="pill pill-sm ${step.done ? "pill-ok" : "pill-note"}">${step.done ? "Done" : "To do"}</span>
     </div>
     ${!step.done && step.keys.length > 0 ? html`<p class="small muted">${step.keys.length === 1 ? "1 key" : `${step.keys.length} keys`}, in this order:</p>${keyList(step, m, report, blocked ? null : `sign-status-${step.id}`, paging)}` : ""}
-    ${step.keep ? html`<p class="small"><strong>Keep:</strong> <span class="mono">${truncateKey(step.keep.public_key)}</span> (${formatInt(step.keep.use_count ?? 0)} uses). Key Doctor never lists the last full-access key.</p>` : ""}
+    ${step.keep ? html`<p class="small"><strong>Keep:</strong> <span class="mono">${truncateKey(step.keep.public_key)}</span> (${formatInt(step.keep.use_count ?? 0)} uses). Keyfence never lists the last full-access key.</p>` : ""}
     ${!step.done ? html`<p>${HOW[step.id]}</p>` : ""}
     ${!step.done && blocked ? html`<p class="small field-hint">${blocked}</p>` : ""}
     ${!step.done && step.keys.length > 0 && !blocked ? html`<p class="small muted" id="sign-status-${step.id}" role="status"></p>` : ""}
@@ -142,5 +142,5 @@ export function renderCleanup(report: KdReport, from: string | null, level: Leve
       ${steps.map((s) => stepCard(s, m, report, s.id === "delete_remaining_ed25519" && !steps.slice(0, 4).every((x) => x.done) ? "Still needed: finish steps 1 to 4 first." : null, paging))}
     </ol>
     ${keyDialogShell()}
-    <p class="small muted">${firstOpen ? `Next: step ${firstOpen.number}.` : "All steps are done."} Key Doctor never signs transactions or holds keys: every change happens in your wallet, and this page reads the result from the chain when you rescan.</p>`;
+    <p class="small muted">${firstOpen ? `Next: step ${firstOpen.number}.` : "All steps are done."} Keyfence never signs transactions or holds keys: every change happens in your wallet, and this page reads the result from the chain when you rescan.</p>`;
 }

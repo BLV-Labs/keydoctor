@@ -9,22 +9,25 @@ import { alertLines, watchCommand } from "./watch.ts";
 export const EXAMPLE_DAO = "kdoncall.sputnik-v2.testnet";
 export const EXAMPLE_ACCOUNT = "kdoncall-p.testnet";
 
-const NAV: ReadonlyArray<readonly [Page, string]> = [["check", "Key Check"], ["my-agents", "My Agents"], ["budget", "Agent Budget"]];
-/** Pages the header does not list stay one click away in the footer. */
-const FOOTER_NAV: ReadonlyArray<readonly [Page, string]> = [["mcp", "For AI agents (MCP)"]];
+/** Each nav item and the pages it stays current on (Keyfence handoff §1.3). Alerts is a button, never current. */
+const NAV: ReadonlyArray<readonly [Page, string, ReadonlyArray<Page>]> = [
+  ["my-agents", "Agents", ["my-agents", "budget", "yield", "guard", "mcp"]],
+  ["check", "Keys", ["check"]],
+];
 
 export function renderLayout(content: Html, network: Network = "testnet", page: Page = "check"): Html {
-  const link = ([p, label]: readonly [Page, string]) =>
-    html`<a href="${pageHref(p, network)}" data-nav${p === page ? html` aria-current="page"` : ""}>${label}</a>`;
+  const link = ([p, label, current]: readonly [Page, string, ReadonlyArray<Page>]) =>
+    html`<a href="${pageHref(p, network)}" data-nav${current.includes(page) ? html` aria-current="page"` : ""}>${label}</a>`;
   return html`<a class="skip" href="#main">Skip to content</a>
     <header class="site-header">
       <div class="container header-inner">
-        <a href="${pageHref("check", network)}" data-nav class="brand">${icon.logo()}<span>Key Doctor</span></a>
+        <a href="${pageHref("check", network)}" data-nav class="brand"><span class="brand-tile">${icon.logo()}</span><span>Keyfence</span></a>
         <nav aria-label="Main" class="main-nav">
           ${NAV.map(link)}
+          <button type="button" class="nav-btn" data-action="alerts-open">Alerts</button>
         </nav>
         <div class="header-tools">
-          <button type="button" class="icon-btn" data-action="alerts-open" aria-label="Alerts">${icon.bellNav()}</button>
+          ${network === "testnet" ? html`<span class="pill pill-cleanup net-pill">Testnet</span>` : html`<span class="pill pill-note net-pill">Mainnet</span>`}
           <button type="button" class="icon-btn theme-toggle" data-action="theme" aria-label="Dark theme" aria-pressed="false">
             <span class="theme-moon">${icon.moon()}</span><span class="theme-sun">${icon.sun()}</span>
           </button>
@@ -35,9 +38,9 @@ export function renderLayout(content: Html, network: Network = "testnet", page: 
     <main id="main" tabindex="-1" class="container page">${content}</main>
     <footer class="site-footer">
       <div class="container footer-inner">
-        <span>${network === "testnet" ? "Testnet. Contracts are unaudited." : "Mainnet. Your wallet signs, never Key Doctor."}</span>
-        <nav aria-label="More pages" class="footer-nav">${FOOTER_NAV.map(link)}</nav>
-        <span>MIT licensed · built at NEAR HACKATHON</span>
+        <span>${network === "testnet" ? "Testnet. Contracts are unaudited." : "Mainnet. Your wallet signs, never Keyfence."}</span>
+        <span>Keyfence never holds your keys. Limits are enforced on-chain.</span>
+        <nav aria-label="More pages" class="footer-nav"><a href="${pageHref("mcp", network)}" data-nav${page === "mcp" ? html` aria-current="page"` : ""}>For developers (MCP)</a></nav>
       </div>
     </footer>
     <dialog id="alerts-drawer" class="drawer" aria-labelledby="alerts-title"></dialog>
@@ -56,7 +59,7 @@ const BOT_COMMANDS: ReadonlyArray<readonly [string, string]> = [
 /** The bell's drawer, which is also what `?page=oncall` opens. The dashboard never writes subscriptions, so it only shows how to subscribe in the bot. */
 export function renderAlertsDrawer(target: string | null): Html {
   return html`<div class="drawer-head">
-      <div class="drawer-title"><h2 id="alerts-title" class="drawer-h">Alerts</h2><p class="small muted">Key Doctor stays on call in Telegram.</p></div>
+      <div class="drawer-title"><h2 id="alerts-title" class="drawer-h">Alerts</h2><p class="small muted">Keyfence stays on call in Telegram.</p></div>
       <button type="button" class="icon-btn" data-action="close-dialog" aria-label="Close">${icon.close()}</button>
     </div>
     <div class="drawer-body">
@@ -106,8 +109,8 @@ export function renderHome(value: string, error: string | null, network: Network
   return html`<section class="hero stack">
       <div class="stack-sm">
         <p class="eyebrow">Key health for NEAR accounts and DAO councils</p>
-        <h1 class="display">Key Doctor checks your keys, and stays on call while you sleep.</h1>
-        <p class="lead">Enter your own NEAR account, or a Sputnik DAO to check its whole council. Key Doctor reads the public keys on chain, scores the risk with fixed rules, and explains each key. No sign-in needed to check. Connecting a wallet is only for removing your own keys. Key Doctor never holds anyone's keys.</p>
+        <h1 class="display">Keyfence checks your keys, and stays on call while you sleep.</h1>
+        <p class="lead">Enter your own NEAR account, or a Sputnik DAO to check its whole council. Keyfence reads the public keys on chain, scores the risk with fixed rules, and explains each key. No sign-in needed to check. Connecting a wallet is only for removing your own keys. Keyfence never holds anyone's keys.</p>
       </div>
       <form id="check-form" class="stack-sm" novalidate>
         <div class="form-head">
@@ -167,7 +170,7 @@ export function renderAgents(workerUrl = ""): Html {
   const prompts = AGENT_PROMPTS.map((p) => html`<li>${p}</li>`);
   return html`<section class="page-head"><div class="stack-sm grow">
       <p class="eyebrow">Agents</p>
-      <h1 class="h1">Use Key Doctor from your AI agent</h1>
+      <h1 class="h1">Use Keyfence from your AI agent</h1>
       <p class="lead">Fixed rules make every verdict, no AI. MCP holds no NEAR keys.</p>
     </div></section>
     ${endpoint === ""
