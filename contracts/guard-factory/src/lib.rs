@@ -52,8 +52,7 @@ trait SputnikDao {
 #[near(contract_state)]
 #[derive(PanicOnDefault)]
 pub struct Factory {
-    /// sha256 of the Guard code (the `code_hash` every Guard account shows), fixed at init. A new Guard version
-    /// means a new factory.
+    /// sha256 of the Guard code (the `code_hash` every Guard account shows). Set at init and by `set_guard_code`.
     guard_code_hash: CryptoHash,
     guard_code_len: u64,
     /// Guard account -> record; a record exists from `create` until the Guard is made or the attempt fails.
@@ -77,6 +76,17 @@ impl Factory {
             guards: IterableMap::new(StorageKey::Guards),
             by_dao: LookupMap::new(StorageKey::ByDao),
         }
+    }
+
+    /// Replaces the stored Guard code: new Guards get it, and `upgrade(code_source = this factory, code_hash)` can
+    /// move existing ones. Guards already created keep their code. Private: only the factory's own full-access key
+    /// calls it, so the code a DAO votes on is never changed by anyone else. The factory account pays any extra storage.
+    #[private]
+    pub fn set_guard_code(&mut self, #[serializer(borsh)] guard_code: Vec<u8>) {
+        self.guard_code_hash = env::sha256_array(&guard_code);
+        self.guard_code_len = guard_code.len() as u64;
+        env::storage_write(GUARD_CODE_KEY, &guard_code);
+        emit("guard_code_set", json!({ "code_hash": Base58CryptoHash::from(self.guard_code_hash), "len": self.guard_code_len }));
     }
 
     /// Called by a DAO through a FunctionCall proposal. The caller becomes the Guard's `dao_id`, so a DAO can

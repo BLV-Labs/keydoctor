@@ -70,7 +70,7 @@ fn ask(g: &mut Guard, now: u64, rid: &str, to: &str, amount: u128) {
 
 fn added(g: &mut Guard, now: u64, rid: &str, result: Result<u64, PromiseError>) {
     env_as(GUARD, now);
-    let _ = g.on_proposal_added(rid.into(), result);
+    let _ = g.on_proposal_added(rid.into(), None, result);
 }
 
 fn voted(g: &mut Guard, now: u64, rid: &str, result: Result<(), PromiseError>) {
@@ -1199,13 +1199,13 @@ fn a_new_plan_waits_for_its_start_time_and_reads_as_section_4_11() {
 }
 
 #[test]
-fn a_swap_plan_does_not_parse_before_it_can_run() {
-    // GĐ31 adds `swap`. Storing one now would give the owner a plan that can only fail.
+fn a_swap_plan_parses_now_that_it_can_run() {
+    // GĐ31 added `swap`: it must parse, with the fields the dashboard sends.
     let input = near_sdk::serde_json::json!({
         "action": { "type": "swap", "pool_id": 1, "token_out": "wrap.testnet", "max_slippage_bps": 50 },
         "strategy_id": "dca", "token_in": "", "amount_per_run": "1", "interval_sec": 60, "runs_total": 1, "start_at": "0",
     });
-    assert!(near_sdk::serde_json::from_value::<PlanInput>(input).is_err());
+    assert!(near_sdk::serde_json::from_value::<PlanInput>(input).is_ok());
 }
 
 #[test]

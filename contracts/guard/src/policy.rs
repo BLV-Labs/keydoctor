@@ -14,6 +14,15 @@ pub const MAX_PLAN_ARGS_BYTES: usize = 2048;
 /// Inside `act_proposal`'s 80 Tgas, with room for the DAO's own work.
 pub const MAX_PLAN_CALL_GAS: u64 = 50_000_000_000_000;
 
+/// Slippage choices of the DCA form (0.5 / 1 / 2 %).
+pub const SWAP_SLIPPAGE_BPS: [u16; 3] = [50, 100, 200];
+
+/// `(wrap, exchange)` of the Guard's network, from its own account suffix. The keeper passes only a plan id, so
+/// nobody but this constant picks the contracts a swap calls. `None` off testnet: no swap there.
+pub fn dex_for(guard: &AccountId) -> Option<(&'static str, &'static str)> {
+    guard.as_str().ends_with(".testnet").then_some(("wrap.testnet", "ref-finance-101.testnet"))
+}
+
 /// Auto when every condition holds, otherwise Pending with the full list of reasons, in spec order.
 pub fn decide(p: &GuardPolicy, wl: Option<&WhitelistEntry>, spent: u128, amount: u128) -> (Decision, Vec<String>) {
     let mut reasons = vec![];
@@ -117,13 +126,25 @@ pub fn check_plan(plan: &PlanInput, guard: &AccountId, dao: &AccountId, factory:
             return Err("INVALID_CALL_GAS");
         }
     }
+    if let PlanAction::Swap { token_out, max_slippage_bps, .. } = &plan.action {
+        let Some((wrap, exchange)) = dex_for(guard) else {
+            return Err("SWAP_NOT_SUPPORTED");
+        };
+        if !SWAP_SLIPPAGE_BPS.contains(max_slippage_bps) {
+            return Err("INVALID_SLIPPAGE");
+        }
+        let t = token_out.as_str();
+        if t == wrap || t == exchange || token_out == guard || token_out == dao || factory == Some(t) {
+            return Err("INVALID_TOKEN_OUT");
+        }
+    }
     Ok(())
 }
 
-/// The agent limits, which hold for a plan too. A `call` has no receiver to whitelist.
+/// The agent limits, which hold for a plan too. A `call` or `swap` has no receiver to whitelist.
 pub fn plan_reasons(p: &GuardPolicy, action: &PlanAction, wl: Option<&WhitelistEntry>, spent: u128, amount: u128) -> Vec<String> {
     let (_, mut reasons) = decide(p, wl, spent, amount);
-    if matches!(action, PlanAction::Call { .. }) {
+    if matches!(action, PlanAction::Call { .. } | PlanAction::Swap { .. }) {
         reasons.retain(|r| r != "NOT_WHITELISTED");
     }
     reasons
