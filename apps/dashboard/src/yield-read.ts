@@ -1,7 +1,7 @@
 // Read-only chain data for the Yield agent page: the library's kd.yield.v1 scan, plus what the scan does not read
 // yet: the DAO's policy, its registration and position on Rhea Lend, and its yield proposals. Every extra read is
 // pinned to the scan's block. A failed extra read leaves its field null (shown as unknown, never as zero).
-import { createRpc, DEFAULT_RPC_URLS, scanVault, type KdYieldReport, type Network, type Rpc } from "key-doctor";
+import { createRpc, DEFAULT_RPC_URLS, parseRheaPool, scanVault, type KdYieldReport, type Network, type RheaPool, type Rpc } from "key-doctor";
 import { GUARD_ROLE, type RawPolicy } from "./guard-proposals.ts";
 import { YIELD_ALLOWLIST, YIELD_PREFIX } from "./yield-proposals.ts";
 
@@ -29,6 +29,8 @@ export interface YieldLive {
   registered: boolean | null;
   /** Supplied balances of allowlisted tokens; null when unread. */
   positions: YieldPosition[] | null;
+  /** Rhea Lend's pool state per allowlisted token, for the rate-after previews; null when unread. */
+  pools: RheaPool[] | null;
   /** The DAO's yield proposals among the newest it has, newest first; null when unread. */
   proposals: YieldProposal[] | null;
 }
@@ -107,15 +109,23 @@ export function councilAccounts(policy: RawPolicy, accounts: readonly string[]):
   return accounts.filter((a) => members.has(a));
 }
 
-async function readPositions(rpc: Rpc, lend: string, dao: string, height: number, tokens: readonly string[]): Promise<YieldPosition[] | null> {
+interface LendRead {
+  positions: YieldPosition[] | null;
+  pools: RheaPool[];
+}
+
+async function readPositions(rpc: Rpc, lend: string, dao: string, height: number, tokens: readonly string[]): Promise<LendRead | null> {
   const extra = new Map<string, number>();
+  const pools: RheaPool[] = [];
   for (const t of tokens) {
     const asset = await rpc.callFunction(lend, height, "get_asset", { token_id: t });
     const ex = isRecord(asset) && isRecord(asset.config) ? asset.config.extra_decimals : undefined;
     if (typeof ex !== "number" || !Number.isSafeInteger(ex) || ex < 0) return null;
     extra.set(t, ex);
+    const pool = parseRheaPool(asset);
+    if (pool !== null) pools.push(pool);
   }
-  return parsePositions(await rpc.callFunction(lend, height, "get_account", { account_id: dao }), tokens, extra);
+  return { positions: parsePositions(await rpc.callFunction(lend, height, "get_account", { account_id: dao }), tokens, extra), pools };
 }
 
 async function readProposals(rpc: Rpc, dao: string, height: number, network: Network): Promise<YieldProposal[] | null> {
@@ -137,7 +147,8 @@ export async function readYieldPositions(dao: string, network: Network): Promise
   const list = YIELD_ALLOWLIST[network];
   if (list === null) return null;
   const rpc = createRpc({ url: DEFAULT_RPC_URLS[network] });
-  return read(async () => readPositions(rpc, list.lend, dao, (await rpc.block()).height, list.tokens.map((t) => t.token_id)));
+  const got = await read(async () => readPositions(rpc, list.lend, dao, (await rpc.block()).height, list.tokens.map((t) => t.token_id)));
+  return got?.positions ?? null;
 }
 
 /** Throws what scanVault throws (a KdError: not a DAO, RPC down). The extra reads never fail the page. */
@@ -147,13 +158,13 @@ export async function readYield(dao: string, network: Network): Promise<YieldLiv
   const height = report.chain.block_height;
   const list = YIELD_ALLOWLIST[network];
   const tokens = list?.tokens.map((t) => t.token_id) ?? [];
-  const [policy, registered, positions, proposals] = await Promise.all([
+  const [policy, registered, lend, proposals] = await Promise.all([
     read(async () => parsePolicy(await rpc.callFunction(dao, height, "get_policy", {}))),
     list === null ? null : read(async () => (await rpc.callFunction(list.lend, height, "storage_balance_of", { account_id: dao })) !== null),
     list === null ? null : read(() => readPositions(rpc, list.lend, dao, height, tokens)),
     read(() => readProposals(rpc, dao, height, network)),
   ]);
-  return { report, policy, registered, positions, proposals };
+  return { report, policy, registered, positions: lend?.positions ?? null, pools: lend?.pools ?? null, proposals };
 }
 
 /** Yield DAOs this browser opened, newest first. Storage can be blocked: then the list is empty. */

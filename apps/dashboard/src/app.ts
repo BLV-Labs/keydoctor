@@ -89,9 +89,9 @@ import { avatar } from "./ui.ts";
 import { readAgentBudgets, readMyAgents, readWalletDaos, type BudgetCard, type MyAgents } from "./agents-read.ts";
 import { hydrateDaoPicker, openedDaos, rememberOpenedDao, unhydrateDaoPicker } from "./dao-picker.ts";
 import { renderMyAgents, renderMyAgentsError, renderMyAgentsLoading, renderMyAgentsSignedOut } from "./agents-view.ts";
-import { allowedYieldKind, registerProposal, supplyProposal, tokenAmount, tokenRaw, withdrawAllProposal, YIELD_ALLOWLIST, YieldProposalError } from "./yield-proposals.ts";
+import { allowedYieldKind, registerProposal, supplyProposal, tokenAmount, tokenRaw, withdrawProposal, YIELD_ALLOWLIST, YieldProposalError } from "./yield-proposals.ts";
 import { councilAccounts, readYield, rememberYieldDao, seenYieldDaos, type YieldLive } from "./yield-read.ts";
-import { renderYield, renderYieldLimits, type LimitErrors, renderYieldLoading, renderYieldPanel, renderYieldStart, type YieldPanel } from "./yield-view.ts";
+import { renderYield, renderYieldLimits, type LimitErrors, renderYieldLoading, renderYieldPanel, renderYieldStart, yieldPreview, type YieldPanel } from "./yield-view.ts";
 import { suggest, suggestedAmount } from "./yield-agent.ts";
 import { renderYieldCreate, type CreateView, type FundRow, type FundsView } from "./yield-create.ts";
 import { CHECK_EVERY, loadSettings, saveSettings, validateSettings, type CheckEvery, type LimitInput, type YieldSettings } from "./yield-settings.ts";
@@ -816,7 +816,16 @@ function yieldProposalFor(panel: YieldPanel, amountText: string): AddProposalArg
   try {
     if (panel === "register") return registerProposal(network);
     if (token === undefined) return "Yield works on testnet only for now.";
-    if (panel === "withdraw") return withdrawAllProposal(network, token.token_id);
+    if (panel === "withdraw") {
+      const supplied = suppliedOf(state, network);
+      if (supplied === null) return "The amount on Rhea Lend could not be read. Reload and try again.";
+      if (amountText.trim() === "") return withdrawProposal(network, token.token_id, null, supplied);
+      const pool = state.pools?.find((p) => p.token_id === token.token_id);
+      if (pool !== undefined && pool.extra_decimals !== token.extra_decimals) return "Rhea Lend now stores this token differently, so only taking all of it back is safe. Leave the amount empty.";
+      const part = tokenRaw(amountText, token.decimals);
+      if (part === null) return `Enter an amount like 12.5, with at most ${token.decimals} decimals, or leave it empty to take all back.`;
+      return withdrawProposal(network, token.token_id, part, supplied);
+    }
     const raw = tokenRaw(amountText, token.decimals);
     if (raw === null) return `Enter an amount like 12.5, with at most ${token.decimals} decimals.`;
     const available = state.report.holdings.find((h) => h.token_id === token.token_id)?.available ?? null;
@@ -857,8 +866,37 @@ function signYieldProposal(panel: YieldPanel, amountText: string, trigger: HTMLE
   status.textContent = `Waiting for ${walletLabel(walletId)}. Check the transaction there before you approve.`;
   import("./wallet.ts")
     .then((w) => withWalletHint(status, w.signAddProposals(account, yieldNetwork(dao), dao, policy.proposal_bond, [built], walletId, (t) => (status.textContent = t))))
-    .then(() => statusWithButton(status, "Asked the council. They vote on it under History; funds move only when it passes.", "rescan", "Reload"))
+    .then(() => refreshYield(status, dao, "Asked the council. They vote on it under History; funds move only when it passes."))
     .catch((e: unknown) => notDone(status, e));
+}
+
+/** How long to wait after a signature before re-reading: the scan reads the final block, which trails by a second or two. */
+const YIELD_REFRESH_MS = 2500;
+
+/** After a signature, re-read the treasury quietly so the new vote or balance shows without a Reload button. */
+function refreshYield(status: HTMLElement, dao: string, text: string): Promise<void> {
+  status.textContent = `${text} Updating the page…`;
+  const seq = scanSeq;
+  return new Promise((done) => setTimeout(done, YIELD_REFRESH_MS))
+    .then(() => readYield(dao, yieldNetwork(dao)))
+    .then((live) => {
+      if (seq !== scanSeq || yieldState?.report.dao !== dao) return;
+      yieldState = live;
+      repaintYield();
+      const fresh = yieldStatus();
+      if (fresh !== null) fresh.textContent = text;
+    })
+    .catch(() => statusWithButton(status, text, "rescan", "Reload"));
+}
+
+/** The line under the drawer's amount: rate and yearly earnings after the move, as typed. */
+function syncYieldPreview(): void {
+  const input = document.getElementById("yp-amount") as HTMLInputElement | null;
+  const out = document.getElementById("yp-preview");
+  const panel = input?.closest<HTMLFormElement>("#yield-panel-form")?.dataset.panel;
+  const state = yieldState;
+  if (input === null || out === null || state === null || (panel !== "supply" && panel !== "withdraw")) return;
+  out.textContent = yieldPreview(panel, state, yieldNetwork(state.report.dao), input.value);
 }
 
 /** Approve or Reject a yield proposal: re-read it first and stop if it is no longer what the page showed. */
@@ -892,7 +930,7 @@ function voteYield(button: HTMLButtonElement): void {
       return import("./wallet.ts")
         .then((w) => withWalletHint(status, w.signActProposal(account, network, dao, actProposalArgs(confirmed, action), walletId, (t) => (status.textContent = t))))
         .then(() => statusAfterVote(network, dao, id))
-        .then((after) => statusWithButton(status, voteResultText(id, action, confirmed.kind, after), "rescan", "Reload"));
+        .then((after) => refreshYield(status, dao, voteResultText(id, action, confirmed.kind, after)));
     })
     .catch((e: unknown) => {
       button.disabled = false;
@@ -902,7 +940,7 @@ function voteYield(button: HTMLButtonElement): void {
 
 
 /** The token this page acts on and its zero state, for wizard views before any read. */
-const yieldToken = (network: Network) => YIELD_ALLOWLIST[network]?.tokens[0] ?? { token_id: "", symbol: "USDC (test)", decimals: 6 };
+const yieldToken = (network: Network) => YIELD_ALLOWLIST[network]?.tokens[0] ?? { token_id: "", symbol: "USDC (test)", decimals: 6, extra_decimals: 0 };
 
 const holdingOf = (live: YieldLive, network: Network) => live.report.holdings.find((h) => h.token_id === yieldToken(network).token_id) ?? null;
 const suppliedOf = (live: YieldLive, network: Network): string | null =>
@@ -2648,10 +2686,11 @@ root.addEventListener("click", (event) => {
       const input = document.getElementById("yp-amount") as HTMLInputElement | null;
       if (input !== null) input.value = el.dataset.amount ?? "";
       input?.focus();
+      syncYieldPreview();
       break;
     }
     case "yield-sign":
-      signYieldProposal(el.dataset.panel === "register" ? "register" : "withdraw", "", el);
+      signYieldProposal("register", "", el);
       break;
     case "yield-vote":
       voteYield(el as HTMLButtonElement);
@@ -2905,6 +2944,7 @@ root.addEventListener(
 root.addEventListener("input", (event) => {
   const el = event.target as HTMLElement;
   if (el.id === "bp-amount") syncBudgetAfter();
+  if (el.id === "yp-amount") syncYieldPreview();
   if (el.id === "bs-name") {
     const hint = document.getElementById("bs-account");
     const name = (el as HTMLInputElement).value.trim();
@@ -2957,7 +2997,7 @@ root.addEventListener("submit", (event) => {
   }
   if (form.id === "yield-panel-form") {
     event.preventDefault();
-    signYieldProposal("supply", String(new FormData(form).get("amount") ?? ""), form);
+    signYieldProposal(form.dataset.panel === "withdraw" ? "withdraw" : "supply", String(new FormData(form).get("amount") ?? ""), form);
     return;
   }
   if (form.id === "budget-panel-form") {

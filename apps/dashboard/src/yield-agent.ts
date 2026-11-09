@@ -1,5 +1,6 @@
 // What the Yield agent says and suggests, pure. The limits shape the display only: the council still votes on
 // every move, and yield-proposals.ts still checks any amount against the real available balance.
+import { bestSupply, type RheaPool } from "key-doctor";
 import type { RawPolicy } from "./guard-proposals.ts";
 import { GUARD_ROLE } from "./guard-proposals.ts";
 import { CHECK_EVERY_LONG, type YieldSettings } from "./yield-settings.ts";
@@ -16,7 +17,8 @@ export function suggestedAmount(idle: bigint, supplied: bigint, limits: { maxPut
   return least > 0n ? least : 0n;
 }
 
-export type Suggestion = { kind: "register"; amount: string } | { kind: "supply"; amount: string } | { kind: "nothing"; reason: string };
+/** `all` is set only when the amount was lowered to the best one: what putting everything in would have been. */
+export type Suggestion = { kind: "register" | "supply"; amount: string; all?: string } | { kind: "nothing"; reason: string };
 
 export interface SuggestInput {
   settings: YieldSettings | null;
@@ -27,13 +29,16 @@ export interface SuggestInput {
   /** Already on Rhea Lend, raw; null when unread. */
   supplied: string | null;
   registered: boolean | null;
+  /** Rhea Lend's pool for the token; with it the amount is capped at what earns the treasury the most. */
+  pool?: RheaPool | null;
   decimals: number;
   symbol: string;
 }
 
 /**
  * The next move, or why there is none. Reasons are checked in a fixed order so the card always names the first
- * thing in the way: paused, rate below the floor, nothing idle beyond what is kept ready, limit reached.
+ * thing in the way: paused, rate below the floor, nothing idle beyond what is kept ready, limit reached, more would
+ * earn less. Each deposit lowers the rate for the whole pool, so past a point more money earns the treasury less.
  */
 export function suggest(i: SuggestInput): Suggestion {
   const s = i.settings;
@@ -51,7 +56,13 @@ export function suggest(i: SuggestInput): Suggestion {
     if (amount <= 0n) return nothing("your limit on what to put to work is reached.");
   }
   if (i.registered === null) return nothing("registration with Rhea Lend could not be read.");
-  return { kind: i.registered ? "supply" : "register", amount: amount.toString() };
+  const kind = i.registered ? "supply" : "register";
+  if (i.pool != null && i.supplied !== null) {
+    const best = bestSupply(i.pool, BigInt(i.supplied), amount, i.decimals);
+    if (best === 0n) return nothing("putting more in would lower what the treasury earns. Each deposit lowers the rate for the whole pool.");
+    if (best < amount) return { kind, amount: best.toString(), all: amount.toString() };
+  }
+  return { kind, amount: amount.toString() };
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);

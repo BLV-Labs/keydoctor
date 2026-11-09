@@ -14,6 +14,7 @@ export { DCA_TESTNET, dcaPrice, formatUnits } from "./dca.ts";
 export { createRpc, DEFAULT_RPC_URLS, type Rpc } from "./rpc.ts";
 export { scanVault, availableAmount, shouldPushYield, type ScanVaultOptions } from "./yield/vault.ts";
 export { readRheaLend, filterCandidates, type RheaRow } from "./yield/rhea.ts";
+export { bestSupply, parseRheaPool, supplyAprAfter, yearlyEarnings, type RheaPool } from "./yield/rate-model.ts";
 export { YIELD_RULESET_VERSION, YIELD_TOKENS, YIELD_LIMITS, YIELD_ADVICE } from "./yield/thresholds.ts";
 export { YIELD_TEE_MODELS, YIELD_MODEL_CHAIN, isTeeModel, type TeeModel } from "./yield/models.ts";
 export {

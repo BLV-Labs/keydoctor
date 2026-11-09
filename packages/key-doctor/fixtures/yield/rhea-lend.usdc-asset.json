@@ -1,0 +1,44 @@
+{
+  "token_id": "usdc.fakes.testnet",
+  "supplied": {
+    "shares": "743334222051279784880291",
+    "balance": "2268608145769611982528993"
+  },
+  "borrowed": {
+    "shares": "108751434840278583745708",
+    "balance": "446710855933659922323654"
+  },
+  "reserved": "82680843798871841113983",
+  "prot_fee": "0",
+  "last_update_timestamp": "1794246274085792659",
+  "config": {
+    "reserve_ratio": 2500,
+    "prot_ratio": 0,
+    "target_utilization": 8000,
+    "target_utilization_rate": "1000000000002440418605283556",
+    "max_utilization_rate": "1000000000039724853136740579",
+    "volatility_ratio": 9500,
+    "extra_decimals": 12,
+    "can_deposit": true,
+    "can_withdraw": true,
+    "can_use_as_collateral": true,
+    "can_borrow": true,
+    "net_tvl_multiplier": 10000
+  },
+  "supply_apr": "0.00272398392298983157061604",
+  "borrow_apr": "0.018444897960446916899936185",
+  "farms": [
+    {
+      "farm_id": {
+        "Supplied": "usdc.fakes.testnet"
+      },
+      "rewards": {}
+    },
+    {
+      "farm_id": {
+        "Borrowed": "usdc.fakes.testnet"
+      },
+      "rewards": {}
+    }
+  ]
+}
