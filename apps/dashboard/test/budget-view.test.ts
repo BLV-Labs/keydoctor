@@ -425,6 +425,12 @@ describe("Budget views the owner decides from", () => {
     assert.match(done, /ops paid/);
     assert.match(done, /<\/svg>Paid automatically</);
   });
+  it("Activity names a plan step a Scheduled payout: the Guard records itself as the agent, and its account is a technical name", () => {
+    const step = request({ agent: "g1.guards.testnet", decision: "Auto", reasons: [], status: "Executed", proposal_id: null });
+    const out = renderBudgetActivity(live({ requests: [step] }), "all", NOW).value;
+    assert.match(out, /Scheduled payout paid/);
+    assert.doesNotMatch(out, /g1\.guards\.testnet/);
+  });
   it("Needs you lists the proposal that expires first at the top, and the tile quotes that same one", () => {
     const base = dated();
     const older = { ...base.proposals![0]!, id: 3, submission_time: nanos(NOW - 40 * HOUR) };

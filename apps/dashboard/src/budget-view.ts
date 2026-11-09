@@ -123,6 +123,8 @@ function ago(nanos: string | null, now: number): string {
 }
 
 const agentName = (g: GuardLive | null, account: string): string => {
+  // A plan step is recorded with the Guard as its agent: name it for what it is, not by the Guard's account.
+  if (g !== null && account === g.guard_id) return "Scheduled payout";
   const label = g?.agents?.find((a) => a.account_id === account)?.label ?? "";
   return label === "" ? account : label;
 };
