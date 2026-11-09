@@ -74,10 +74,11 @@ import {
 import { readGuardDao, type GuardDao } from "./guard-read.ts";
 import { renderGuardCreate, renderGuardDao, renderGuardLoading, renderGuardPreview, renderGuardStart, renderGuardSubmitted, type GuardPreview } from "./guard-view.ts";
 import { avatar } from "./ui.ts";
-import { readAgentBudgets, readMyAgents, type BudgetCard, type MyAgents } from "./agents-read.ts";
+import { readAgentBudgets, readMyAgents, readWalletDaos, type BudgetCard, type MyAgents } from "./agents-read.ts";
+import { hydrateDaoPicker, openedDaos, rememberOpenedDao, unhydrateDaoPicker } from "./dao-picker.ts";
 import { renderMyAgents, renderMyAgentsError, renderMyAgentsLoading, renderMyAgentsSignedOut } from "./agents-view.ts";
 import { allowedYieldKind, registerProposal, supplyProposal, tokenRaw, withdrawAllProposal, YIELD_ALLOWLIST, YieldProposalError } from "./yield-proposals.ts";
-import { councilAccounts, readYield, rememberYieldDao, type YieldLive } from "./yield-read.ts";
+import { councilAccounts, readYield, rememberYieldDao, seenYieldDaos, type YieldLive } from "./yield-read.ts";
 import { renderYield, renderYieldLoading, renderYieldPanel, renderYieldStart, type YieldPanel } from "./yield-view.ts";
 import { renderWatchDialog, renderWatchLinks } from "./watch.ts";
 import { isWalletId, walletLabel, type WalletId } from "./wallets.ts";
@@ -262,6 +263,47 @@ function restoreConnected(network: Network): void {
 
 const viewerRoleNow = (): Role => viewerRole(connected?.accounts ?? null, lastReport?.target.id ?? "");
 
+/** The DAOs each wallet sits on, per (accounts, network, form kind); cleared when a DAO is opened. */
+const walletDaos = new Map<string, Promise<string[]>>();
+
+/** A DAO opened on the Guard, Yield or Budget page joins the pickers' candidates. */
+function rememberOpened(dao: string): void {
+  rememberOpenedDao(dao);
+  walletDaos.clear();
+}
+
+/** Turns the Guard, Yield and Budget DAO inputs into a select of the connected wallet's DAOs. Never blocks painting. */
+function hydrateDaoPickers(): void {
+  for (const form of root.querySelectorAll<HTMLFormElement>("#guard-dao-form, #yield-dao-form, #budget-dao-form")) {
+    const accounts = connected?.accounts ?? [];
+    if (accounts.length === 0) {
+      unhydrateDaoPicker(form);
+      continue;
+    }
+    const budget = form.id === "budget-dao-form";
+    const typed = form.querySelector<HTMLInputElement>('input[name="dao"]')?.value ?? "";
+    const network = budget ? budgetNetwork() : form.id === "guard-dao-form" ? (suffixNetwork(GUARD_FACTORY) ?? "testnet") : (suffixNetwork(typed.trim()) ?? "testnet");
+    const key = `${form.id}|${network}|${accounts.join(",")}`;
+    if (form.dataset.pickerFor === key) continue;
+    let read = walletDaos.get(key);
+    if (read === undefined) {
+      read = budget
+        ? readWalletDaos(accounts, network, [BUDGET_READ_FACTORY], [])
+        : readWalletDaos(accounts, network, [GUARD_FACTORY, BUDGET_READ_FACTORY], [...seenYieldDaos(), ...openedDaos()]);
+      walletDaos.set(key, read);
+    }
+    read.then(
+      (daos) => {
+        if (form.isConnected && (connected?.accounts ?? []).join(",") === accounts.join(",")) hydrateDaoPicker(form, daos, key);
+      },
+      (e: unknown) => {
+        walletDaos.delete(key);
+        console.error("wallet DAO list failed", { error: e });
+      },
+    );
+  }
+}
+
 /** Revoke and Delete work only when the connected wallet holds the account on screen. View is never touched.
  *  Also shows the wallet name and Disconnect in place of Connect Wallet while a wallet is connected. */
 function syncWallet(): void {
@@ -271,6 +313,7 @@ function syncWallet(): void {
   const shown = root.querySelector<HTMLElement>("[data-agents-for]")?.dataset.agentsFor ?? null;
   const now = (connected?.accounts ?? []).join(",");
   if (route.target === null && route.page === "my-agents" && shown !== null && shown !== now) void render(false);
+  hydrateDaoPickers();
   const role = viewerRoleNow();
   const id = lastReport?.target.id ?? "";
   for (const b of root.querySelectorAll<HTMLButtonElement>('[data-action="delete-key"]')) {
@@ -394,6 +437,7 @@ async function renderBudgetPage(dao: string | null, focusMain: boolean, seq: num
     const state = await readBudget(dao, BUDGET_READ_FACTORY, network);
     if (seq !== scanSeq) return;
     budgetState = state;
+    rememberOpened(dao);
     // Sign 1 made this account and sign 2 never came: the page offers to finish instead of starting over.
     const unfinished =
       state.guard === null && dao.endsWith(`.${SPUTNIK_FACTORY}`) && unfinishedBudgetOwner(state.dao.policy) !== null ? { canFinish: loadSetup(dao) !== null } : null;
@@ -686,6 +730,7 @@ async function renderYieldPage(dao: string | null, focusMain: boolean, seq: numb
     if (seq !== scanSeq) return;
     yieldState = live;
     rememberYieldDao(dao);
+    rememberOpened(dao);
     paint(renderYield(live, network), `${dao} · Yield agent · Keyfence`, false, network, "my-agents");
   } catch (e) {
     if (seq !== scanSeq) return;
@@ -1522,6 +1567,7 @@ async function renderGuard(dao: string | null, focusMain: boolean, seq: number):
     const state = await readGuardDao(dao, GUARD_FACTORY, network);
     if (seq !== scanSeq) return;
     guardState = state;
+    rememberOpened(dao);
     paint(renderGuardDao(state, network), `${dao} · Agent Guard`, false, network, "guard");
   } catch (e) {
     if (seq !== scanSeq) return;

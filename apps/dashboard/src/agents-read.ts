@@ -1,7 +1,7 @@
 // Read-only chain data for My Agents: the agents of every DAO where a connected wallet account sits on the council.
 // Payment agents come from the Guard factory's `list_guards`; Yield agents from the DAOs this browser opened on
 // the Yield page (a Yield agent has no contract to list). One unreadable DAO never hides the others.
-import { createRpc, DEFAULT_RPC_URLS, type Network } from "key-doctor";
+import { createRpc, DEFAULT_RPC_URLS, type Network, type Rpc } from "key-doctor";
 import { readBudget, type BudgetLive } from "./budget-read.ts";
 import { readGuardDao, type GuardDao } from "./guard-read.ts";
 import { suffixNetwork } from "./route.ts";
@@ -105,12 +105,10 @@ export async function readAgentBudgets(daos: readonly string[], factory: string,
   });
 }
 
-/** Throws `FACTORY_UNREADABLE` when `list_guards` fails. An empty factory reads only the Yield DAOs. */
-export async function readMyAgents(accounts: readonly string[], factory: string, network: Network): Promise<MyAgents> {
-  const rpc = createRpc({ url: DEFAULT_RPC_URLS[network] });
-  const { height } = await rpc.block();
+/** Every `list_guards` row of a factory, paged. Throws `FACTORY_UNREADABLE` when a page cannot be read. */
+export async function listGuardRows(rpc: Rpc, factory: string, height: number): Promise<unknown[]> {
   const listed: unknown[] = [];
-  for (let page = 0; factory !== "" && page < MAX_PAGES; page += 1) {
+  for (let page = 0; page < MAX_PAGES; page += 1) {
     const rows = await rpc.callFunction(factory, height, "list_guards", { from_index: page * PAGE, limit: PAGE }).catch((e: unknown) => {
       console.error("guard factory read failed", { factory, error: e });
       throw new Error("FACTORY_UNREADABLE");
@@ -119,6 +117,14 @@ export async function readMyAgents(accounts: readonly string[], factory: string,
     listed.push(...rows);
     if (rows.length < PAGE) break;
   }
+  return listed;
+}
+
+/** Throws `FACTORY_UNREADABLE` when `list_guards` fails. An empty factory reads only the Yield DAOs. */
+export async function readMyAgents(accounts: readonly string[], factory: string, network: Network): Promise<MyAgents> {
+  const rpc = createRpc({ url: DEFAULT_RPC_URLS[network] });
+  const { height } = await rpc.block();
+  const listed = factory === "" ? [] : await listGuardRows(rpc, factory, height);
   const guarded = new Set(guardDaoIds(listed));
   const yieldDaos = new Set(seenYieldDaos().filter((d) => suffixNetwork(d) === network));
   const all = [...new Set([...guarded, ...yieldDaos])];
@@ -159,4 +165,34 @@ export async function readMyAgents(accounts: readonly string[], factory: string,
   const byDao = (a: { dao: string }, b: { dao: string }) => (order.get(a.dao) ?? 0) - (order.get(b.dao) ?? 0);
   const budgetDaos = daos.filter((d) => guarded.has(d.dao)).sort(byDao).map((d) => d.dao);
   return { network, daos: daos.sort(byDao), rows: rows.sort(byDao), budgetDaos, unread };
+}
+
+/** Unique, non-empty DAO ids on `network`, in the order given. */
+export function pickerCandidates(lists: readonly (readonly string[])[], network: Network): string[] {
+  return [...new Set(lists.flat().filter((d) => d !== "" && suffixNetwork(d) === network))];
+}
+
+/** The candidates whose council holds one of `accounts`, in order. A DAO whose policy cannot be read is dropped. */
+export async function councilCandidates(candidates: readonly string[], accounts: readonly string[], getPolicy: (dao: string) => Promise<unknown>): Promise<string[]> {
+  const kept = await Promise.all(
+    candidates.map(async (dao) => {
+      const policy = parsePolicy(await getPolicy(dao).catch(() => null));
+      return policy !== null && councilAccounts(policy, accounts).length > 0;
+    }),
+  );
+  return candidates.filter((_, i) => kept[i]);
+}
+
+/**
+ * The DAOs the connected wallet sits on, for the DAO pickers: Guard DAOs of `factories` plus `extra` ids this browser
+ * knows. A factory that cannot be read adds nothing. Never throws.
+ */
+export async function readWalletDaos(accounts: readonly string[], network: Network, factories: readonly string[], extra: readonly string[]): Promise<string[]> {
+  const rpc = createRpc({ url: DEFAULT_RPC_URLS[network] });
+  const { height } = await rpc.block();
+  const guarded = await Promise.all(
+    [...new Set(factories.filter((f) => f !== ""))].map((f) => listGuardRows(rpc, f, height).then(guardDaoIds, () => [] as string[])),
+  );
+  const candidates = pickerCandidates([...guarded, extra], network);
+  return councilCandidates(candidates, accounts, (dao) => rpc.callFunction(dao, height, "get_policy", {}));
 }
