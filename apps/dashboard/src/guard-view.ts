@@ -28,7 +28,7 @@ export function renderGuardStart(dao: string, error: string | null, factory: str
       <section class="card pad stack-sm"><p class="strong">No Guard factory in this build</p>
         <p class="small muted">Build the dashboard with <span class="mono">KD_GUARD_FACTORY=&lt;factory account&gt;</span>. See the README.</p></section>`;
   }
-  return html`${head("A council member proposes the Guard here. The council votes in its usual DAO UI. Key Doctor signs nothing; your wallet signs the proposals.")}
+  return html`${head("A council member proposes the Guard here. The council votes in its usual DAO UI. Keyfence signs nothing; your wallet signs the proposals.")}
     <form id="guard-dao-form" class="card pad stack-sm" novalidate>
       <label for="guard-dao" class="label">Sputnik DAO</label>
       <div class="input-row">

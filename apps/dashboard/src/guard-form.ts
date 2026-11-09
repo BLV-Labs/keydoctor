@@ -76,7 +76,7 @@ export const GUARD_FORM_TEXT: Record<GuardFormCode, { vi: string; en: string }> 
   TOO_MANY_WHITELIST: { vi: `Tối đa ${MAX_WHITELIST} người nhận.`, en: `At most ${MAX_WHITELIST} receivers.` },
   TOO_MANY_GUARDIANS: { vi: `Tối đa ${MAX_GUARDIANS} guardian.`, en: `At most ${MAX_GUARDIANS} guardians.` },
   INVALID_ACCOUNT: { vi: "Không phải account id NEAR hợp lệ.", en: "Not a valid NEAR account id." },
-  KEEPER_RECIPIENT: { vi: "Keeper không được là người nhận.", en: "The Key Doctor keeper cannot be a recipient." },
+  KEEPER_RECIPIENT: { vi: "Keeper không được là người nhận.", en: "The Keyfence keeper cannot be a recipient." },
   LABEL_TOO_LONG: { vi: `Nhãn tối đa ${MAX_LABEL_CHARS} ký tự.`, en: `Labels are at most ${MAX_LABEL_CHARS} characters.` },
 };
 

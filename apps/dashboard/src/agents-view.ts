@@ -30,7 +30,7 @@ export function renderMyAgentsSignedOut(): Html {
   return html`${head([])}
     <section class="card pad stack-xs budget-narrow">
       <p class="strong">Wallet not connected</p>
-      <p class="small muted">Connect the wallet you use on your DAO council to see its agents. Key Doctor only reads; your wallet signs.</p>
+      <p class="small muted">Connect the wallet you use on your DAO council to see its agents. Keyfence only reads; your wallet signs.</p>
       <button type="button" class="btn btn-primary btn-start" data-action="open-wallet">Connect wallet</button>
       <p class="small"><a href="${pageHref("budget")}" data-nav>Or open one DAO by name</a></p>
     </section>`;
@@ -183,7 +183,7 @@ export function renderMyAgents(data: MyAgents, accounts: readonly string[]): Htm
     <section class="card" aria-labelledby="ma-list">
       <div class="b-head"><div><h2 id="ma-list" class="b-h">Agents</h2><p class="small muted">Sorted by what needs you first.</p></div></div>
       ${list}
-      <p class="small muted pad footnote">A payment agent shows here when its Guard lists it. A yield agent shows here for a DAO you sit on once its Yield page was opened in this browser. Key Doctor never holds an agent's key.</p>
+      <p class="small muted pad footnote">A payment agent shows here when its Guard lists it. A yield agent shows here for a DAO you sit on once its Yield page was opened in this browser. Keyfence never holds an agent's key.</p>
     </section>
     ${daoList(data)}`;
 }

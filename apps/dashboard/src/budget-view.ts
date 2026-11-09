@@ -489,7 +489,7 @@ function planPanel(b: BudgetLive, error: string | null, values: Record<string, s
           ? html`<p class="banner banner-cleanup">${icon.alertSmall()}<span>The Budget is ${near(t.short)} short of all runs. The plan still starts; it pauses and alerts you when the money runs out.${t.partial !== null && BigInt(t.partial) > 0n ? ` Top up at least ${near(t.partial)} to cover the next ${plan.runs < 2 ? "run" : "2 runs"}.` : ""}</span></p>`
           : ""}
       ${overDay ? html`<p class="banner banner-cleanup">${icon.alertSmall()}<span>Up to ${t.runs_per_day} runs fall in one 24 hours (${near(t.per_day)}), above your 24-hour limit of ${near(maxDay)}. A run over the limit moves to the next slot; it is not lost.</span></p>` : ""}
-      <p class="small muted">Each run counts against the same 24-hour limit as your agents' payments. Key Doctor fee: free during testing. Prices can change. This is not investment advice.</p>
+      <p class="small muted">Each run counts against the same 24-hour limit as your agents' payments. Keyfence fee: free during testing. Prices can change. This is not investment advice.</p>
       <p class="small muted">${signatures(2)}: a request to start the plan, then your approval once the page has checked it. 0.01 NEAR storage deposit leaves the Budget; what is not used comes back.</p>`,
       html`<button type="button" class="btn btn-secondary" data-action="budget-plan-edit">Back</button><button type="submit" class="btn btn-primary">Start plan <span class="sig">${signatures(2)}</span></button>`);
   }

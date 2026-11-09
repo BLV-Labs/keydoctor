@@ -200,7 +200,7 @@ function scan(route: Route & { target: string; network: Network }): Promise<KdRe
 }
 
 function paintHome(value: string, error: string | null, network: Network, focusMain: boolean): void {
-  paint(renderHome(value, error, network), "Key Doctor · Check keys", focusMain, network);
+  paint(renderHome(value, error, network), "Keyfence · Spending limits for AI agents", focusMain, network);
 }
 
 /** Paints a scanned report for the route; DAO reports then fill in the proposal page. */
@@ -212,7 +212,7 @@ function paintReport(report: KdReport, route: Route, paging: Paging, seq: number
       : route.view === "cleanup"
         ? renderCleanup(report, route.from, route.level, paging)
         : renderAccount(report, route.from, paging);
-  paint(body, `${target} · Key Doctor`, false, report.chain.network);
+  paint(body, `${target} · Keyfence`, false, report.chain.network);
   root.insertAdjacentHTML("beforeend", renderWatchDialog(target, report.target.type, WORKER_URL).value);
   syncWallet();
   if (report.target.type === "dao") void paintProposals(report.target.id, report.chain.network, pageOf(paging, PROPOSALS_LIST), paging, seq);
@@ -298,7 +298,7 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
     return;
   }
   if (route.target === null && route.page === "mcp") {
-    paint(renderAgents(WORKER_URL), "For AI agents · Key Doctor", focusMain, route.network ?? storedNetwork(), "mcp");
+    paint(renderAgents(WORKER_URL), "For AI agents · Keyfence", focusMain, route.network ?? storedNetwork(), "mcp");
     return;
   }
   if (route.target === null) {
@@ -310,7 +310,7 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
   }
   const target = route.target;
   const network = route.network ?? "testnet";
-  paint(renderScanning(target, route.from), `Scanning ${target} · Key Doctor`, focusMain, network);
+  paint(renderScanning(target, route.from), `Scanning ${target} · Keyfence`, focusMain, network);
   try {
     const report = await scan({ ...route, target, network });
     if (seq !== scanSeq) return;
@@ -321,7 +321,7 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
   } catch (e) {
     if (seq !== scanSeq) return;
     if (!isKdError(e)) console.error("scan failed", { target, error: e });
-    paint(renderError(target, route.from, isKdError(e) ? e.kd : UNKNOWN_ERROR, network), `${target} · Key Doctor`, false, network);
+    paint(renderError(target, route.from, isKdError(e) ? e.kd : UNKNOWN_ERROR, network), `${target} · Keyfence`, false, network);
   }
 }
 
@@ -330,13 +330,13 @@ const budgetNetwork = (): Network => suffixNetwork(BUDGET_READ_FACTORY) ?? "test
 /** The Agent Budget page: the DAO form, or the DAO's Budget read live from the chain. Nothing here is sample data. */
 async function renderBudgetPage(dao: string | null, focusMain: boolean, seq: number, link: RouteLink | null, help: boolean): Promise<void> {
   const network = budgetNetwork();
-  const title = "Agent Budget · Key Doctor";
+  const title = "Budget · Keyfence";
   budgetState = null;
   budgetSign2 = null;
   budgetCreation = null;
   budgetNewAgent = null;
   if (help) {
-    paint(renderAgentGuide(dao), "How your agent works · Key Doctor", focusMain, network, "budget");
+    paint(renderAgentGuide(dao), "How your agent works · Keyfence", focusMain, network, "budget");
     return;
   }
   const start = (value: string, error: string | null) => {
@@ -362,7 +362,7 @@ async function renderBudgetPage(dao: string | null, focusMain: boolean, seq: num
     const state = await readBudget(dao, BUDGET_READ_FACTORY, network);
     if (seq !== scanSeq) return;
     budgetState = state;
-    paint(renderBudget(state, network, renderBudgetSetup(BUDGET_FACTORY !== "")), `${dao} · Agent Budget`, false, network, "budget");
+    paint(renderBudget(state, network, renderBudgetSetup(BUDGET_FACTORY !== "")), `${dao} · Keyfence`, false, network, "budget");
     if (link !== null && state.guard !== null) followBudgetLink(link, state);
   } catch (e) {
     if (seq !== scanSeq) return;
@@ -638,7 +638,7 @@ const yieldStatus = (): HTMLElement | null => document.getElementById("yield-sta
 
 /** The Yield agent page: the DAO form, or the DAO's treasury, Rhea Lend rates and yield proposals read live. */
 async function renderYieldPage(dao: string | null, focusMain: boolean, seq: number): Promise<void> {
-  const title = "Yield agent · Key Doctor";
+  const title = "Yield agent · Keyfence";
   yieldState = null;
   if (dao === null) {
     paint(renderYieldStart("", null), title, focusMain, "testnet", "my-agents");
@@ -651,7 +651,7 @@ async function renderYieldPage(dao: string | null, focusMain: boolean, seq: numb
     if (seq !== scanSeq) return;
     yieldState = live;
     rememberYieldDao(dao);
-    paint(renderYield(live, network), `${dao} · Yield agent`, false, network, "my-agents");
+    paint(renderYield(live, network), `${dao} · Yield agent · Keyfence`, false, network, "my-agents");
   } catch (e) {
     if (seq !== scanSeq) return;
     if (!isKdError(e)) console.error("yield read failed", { dao, error: e });
@@ -768,7 +768,7 @@ function voteYield(button: HTMLButtonElement): void {
 /** My Agents: needs a connected wallet, then reads every council DAO of its accounts. */
 async function renderMyAgentsPage(focusMain: boolean, seq: number): Promise<void> {
   const network = budgetNetwork();
-  const title = "My Agents · Key Doctor";
+  const title = "Your agents · Keyfence";
   const accounts = connected?.accounts ?? [];
   if (accounts.length === 0) {
     paint(renderMyAgentsSignedOut(), title, focusMain, network, "my-agents");
@@ -1253,7 +1253,7 @@ async function renderGuard(dao: string | null, focusMain: boolean, seq: number):
   const network = suffixNetwork(GUARD_FACTORY) ?? "testnet";
   guardState = null;
   guardPreview = null;
-  const title = "Agent Guard · Key Doctor";
+  const title = "Agent Guard · Keyfence";
   if (dao === null || GUARD_FACTORY === "") {
     paint(renderGuardStart("", null, GUARD_FACTORY), title, focusMain, network, "guard");
     return;
