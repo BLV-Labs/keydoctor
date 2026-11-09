@@ -294,3 +294,50 @@ fn the_deposit_must_also_pay_each_agent_accounts_gas_fund() {
     });
     assert!(msg.contains("DEPOSIT_TOO_LOW"), "{msg}");
 }
+
+// ---- set_guard_code (GĐ31 S1, D1)
+
+const NEW_CODE: &[u8] = b"\0asm guard 1.3.0 with a swap step";
+
+#[test]
+fn set_guard_code_replaces_the_code_hash_length_and_the_bytes_a_guard_upgrade_pulls() {
+    // D1: this factory is the code source for `upgrade`, which hashes exactly the bytes `get_guard_code` returns
+    // against what the DAO approved. A hash that moved without the bytes (or the reverse) would make every upgrade fail.
+    let mut f = factory();
+    let old_hash = f.get_code_hash();
+    env_as(FACTORY, 0);
+    f.set_guard_code(NEW_CODE.to_vec());
+    assert_ne!(f.get_code_hash(), old_hash);
+    assert_eq!(f.guard_code_hash, env::sha256_array(NEW_CODE));
+    assert_eq!(f.guard_code_len, NEW_CODE.len() as u64);
+    assert_ne!(NEW_CODE.len(), CODE.len(), "the fixture must tell a stale length from the new one");
+    assert_eq!(env::storage_read(GUARD_CODE_KEY).as_deref(), Some(NEW_CODE));
+    assert!(get_logs().iter().any(|l| l.contains("guard_code_set")), "indexers follow this event");
+}
+
+#[test]
+fn create_after_set_guard_code_deploys_the_new_code_and_a_guard_made_before_keeps_the_old() {
+    let mut f = factory();
+    let deployed = |name: &str| -> Vec<u8> {
+        get_created_receipts()
+            .into_iter()
+            .filter(|r| r.receiver_id == guard_id(name))
+            .flat_map(|r| r.actions)
+            .find_map(|a| match a {
+                MockAction::DeployContract { code, .. } => Some(code),
+                _ => None,
+            })
+            .expect("a deploy action")
+    };
+    let make = |f: &mut Factory, name: &str| {
+        let _ = create(f, DAO, name, 5 * NEAR);
+        env_callback(PromiseResult::Successful(b"{}".to_vec()));
+        let _ = f.on_dao_checked(guard_id(name), id(DAO), U128(5 * NEAR), U128(4 * NEAR), json!({}));
+        deployed(name)
+    };
+    assert_eq!(make(&mut f, "before"), CODE);
+    env_as(FACTORY, 0);
+    f.set_guard_code(NEW_CODE.to_vec());
+    assert_eq!(make(&mut f, "after"), NEW_CODE, "new Guards get the new code");
+    assert_eq!(f.get_guard(guard_id("before")).map(|g| g.dao_id), Some(id(DAO)), "the registry is untouched");
+}
