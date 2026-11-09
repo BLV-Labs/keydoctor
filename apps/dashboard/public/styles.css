@@ -609,3 +609,7 @@ a.agent-card:focus-visible { outline: 2px solid var(--kd-primary); outline-offse
   .tidy-row { padding: 12px 16px; }
   .council-cols { gap: 16px; }
 }
+/* Create Agent Budget, step 1: the fee set-aside and the contract's own NEAR sit under Advanced. */
+.setup-advanced { border: 1px solid var(--kd-border); border-radius: var(--kd-radius-md); padding: 12px; }
+.setup-advanced > summary { cursor: pointer; min-height: var(--kd-touch); display: flex; align-items: center; }
+.setup-advanced[open] > summary { margin-bottom: 8px; }

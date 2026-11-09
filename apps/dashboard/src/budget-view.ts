@@ -1,7 +1,7 @@
 // The Agent Budget page, pure. Everything shown is read from the chain (budget-read.ts); the owner's actions go
 // through the owner's wallet, and each button says how many signatures it takes (docs/final-idea.md §11.10.5).
 import { dcaPrice, DCA_TESTNET, formatUnits, type Network } from "key-doctor";
-import { parseRecipientLines, planBudget, setupErrorText, SPUTNIK_FACTORY, WIZARD_STEPS, type RecipientRow, type SetupError } from "./budget-create.ts";
+import { applyAutoFunding, createCost, fundingMinYocto, parseRecipientLines, planBudget, setupErrorText, SPUTNIK_FACTORY, WIZARD_STEPS, type RecipientRow, type SetupError } from "./budget-create.ts";
 import { DCA_DEFAULT_SLIPPAGE, DCA_SLIPPAGE_CHOICES, DCA_STRATEGY, DCA_UNITS, dcaFromForm, PLAN_UNITS, planFromForm, planTotals, type DcaUnit, type PlanUnit } from "./budget-flow.ts";
 import { guardNeedsUpdate, TOP_UP_TEXT, topUpBlocks, withdrawMaxYocto, type BudgetLive, type DcaReadiness, type BudgetPlan, type BudgetProposal, type BudgetRequest } from "./budget-read.ts";
 import { formatUtc, nearToYocto, plural, yoctoToNear } from "./format.ts";
@@ -316,7 +316,7 @@ function fenceCard(b: BudgetLive, g: GuardLive): Html {
           ${row("Per payment", near(p.max_per_tx))}
           ${row("Per day", near(p.max_per_day))}
           ${row("Requests that can wait per agent", p.max_pending_per_agent)}
-          ${row("Always keep in budget", near(p.min_reserve))}
+          ${row("Contract keeps for its fees", near(p.min_reserve))}
         </dl>`}</section>`;
 }
 
@@ -583,7 +583,7 @@ export function renderBudgetPanel(panel: BudgetPanel, b: BudgetLive, error: stri
           ${field("maxPerTx", "Per payment", perTx, "", { unit: true, was: was(p?.max_per_tx) })}
           ${field("maxPerDay", "Per day", perDay, "", { unit: true, was: was(p?.max_per_day), hint: "Rolling 24 hours." })}
           ${field("maxPending", "Requests that can wait per agent", v("maxPending", p === null ? "" : String(p.max_pending_per_agent)), "", { hint: "Extra requests are refused until you answer.", was: p === null ? undefined : String(p.max_pending_per_agent) })}
-          ${field("minReserve", "Always keep in budget", v("minReserve", near2(p?.min_reserve)), "", { unit: true, was: was(p?.min_reserve), hint: "Agents can never spend this." })}
+          ${field("minReserve", "Contract keeps for its fees", v("minReserve", near2(p?.min_reserve)), "", { unit: true, was: was(p?.min_reserve), hint: "NEAR the spending contract keeps for itself. Not budget money; 0 is fine." })}
         </div>
         <p id="bp-fence-error" class="field-error" role="alert" hidden>Per payment cannot be more than per day.</p>
         <p id="bp-summary" class="budget-summary" data-agents="${agents ?? ""}" data-recipients="${recipients ?? ""}">${fenceSentence(agents, `${perDay} NEAR`, `${perTx} NEAR`, recipients)}</p>
@@ -946,9 +946,9 @@ export function renderAgentAdded(agent: string, guardId: string, dao: string, ne
 }
 
 /** The Balanced preset (docs/final-idea.md example). Custom opens these same fields. */
-export const BALANCED_RULES: Readonly<Record<string, string>> = { maxPerTx: "5", maxPerDay: "20", maxPendingPerAgent: "3", minReserve: "1", funding: "5" };
+export const BALANCED_RULES: Readonly<Record<string, string>> = { maxPerTx: "5", maxPerDay: "20", maxPendingPerAgent: "3", minReserve: "0" };
 /** §10.3 names this preset without numbers: these are a quarter of Balanced's 24-hour limit, with a tight per-request one. */
-export const CAUTIOUS_RULES: Readonly<Record<string, string>> = { maxPerTx: "1", maxPerDay: "5", maxPendingPerAgent: "2", minReserve: "1", funding: "5" };
+export const CAUTIOUS_RULES: Readonly<Record<string, string>> = { maxPerTx: "1", maxPerDay: "5", maxPendingPerAgent: "2", minReserve: "0" };
 
 const STEPS: ReadonlyArray<readonly [string, string]> = [
   ["Create", "Pick rules for how much your agent can spend."],
@@ -960,18 +960,25 @@ const WIZARD_LEAD = "About 2 minutes. You sign twice in your wallet at the end; 
 
 /** The fields a step shows. The others ride along as hidden inputs, so one form always holds the whole wizard. */
 const STEP_FIELDS: Record<number, readonly string[]> = {
-  1: ["name", "maxPerTx", "maxPerDay", "maxPendingPerAgent", "minReserve", "funding"],
+  1: ["name", "maxPerTx", "maxPerDay", "maxPendingPerAgent", "minReserve", "funding", "fundingAuto"],
   2: [],
   3: ["agentLabel"],
   4: [],
 };
-const CARRIED = ["name", "maxPerTx", "maxPerDay", "maxPendingPerAgent", "minReserve", "funding", "agentLabel"];
-const FENCE_LABELS: ReadonlyArray<readonly [string, string]> = [
-  ["maxPerTx", "Per payment (NEAR)"],
-  ["maxPerDay", "Per day (NEAR)"],
-  ["maxPendingPerAgent", "Waiting payments per agent"],
-  ["minReserve", "Kept in reserve (NEAR)"],
+const CARRIED = ["name", "maxPerTx", "maxPerDay", "maxPendingPerAgent", "minReserve", "funding", "fundingAuto", "agentLabel"];
+/** The rule fields of step 1 with the one line under each that says what to type. */
+const FENCE_LABELS: ReadonlyArray<readonly [string, string, string]> = [
+  ["maxPerTx", "Per payment (NEAR)", "The biggest single payment your agent can make without asking you. Anything bigger waits for your approval."],
+  ["maxPerDay", "Per day (NEAR)", "The most your agents can pay in any 24 hours without asking you. Scheduled payouts count too."],
+  ["maxPendingPerAgent", "Waiting payments per agent", "How many payments can wait for your approval at once. Each one holds a 0.1 NEAR deposit you get back."],
 ];
+
+/** Step 1's money line: what signature 1 sends, before any spending money. Null code storage: not read yet. */
+export function setupCostText(values: Record<string, string>, codeStorageYocto: string | null): string {
+  const cost = createCost(values.funding ?? "", codeStorageYocto);
+  if (cost === null) return "Creating this budget costs about 10 NEAR in signature 1. The exact amount shows once it is read from the chain.";
+  return `Creating this budget costs about ${yoctoToNear(cost.total)} NEAR in signature 1: ${yoctoToNear(cost.account)} NEAR for the budget account's storage, ${yoctoToNear(cost.contract)} NEAR for the spending contract and ${yoctoToNear(cost.fees)} NEAR set aside for fees. Spending money comes later, with Top up.`;
+}
 
 const nearAmount = (v: string): string => `${v.trim()} NEAR`;
 
@@ -1002,20 +1009,25 @@ export function renderRecipientList(rows: readonly RecipientRow[], errors: Setup
 }
 
 /** The wizard for a new Budget: Fence, Recipients, Agent, Review. `available` is false while the factory is not deployed. */
-export function renderBudgetSetup(available: boolean, values: Record<string, string> = {}, errors: SetupError[] = [], result: string | null = null, at: number = 1): Html {
+export function renderBudgetSetup(available: boolean, values: Record<string, string> = {}, errors: SetupError[] = [], result: string | null = null, at: number = 1, codeStorageYocto: string | null = null): Html {
   const step = Math.min(4, Math.max(1, Math.trunc(at) || 1));
-  const val = (name: string): string => values[name] ?? BALANCED_RULES[name] ?? "";
+  const all = applyAutoFunding({ ...BALANCED_RULES, ...values });
+  const val = (name: string): string => all[name] ?? "";
   const errorFor = (name: string) => errors.filter((e) => e.field === name);
   const invalid = (name: string) => (errorFor(name).length > 0 ? html` aria-invalid="true" aria-describedby="bs-${name}-error"` : "");
   const fieldError = (name: string) => (errorFor(name).length > 0 ? html`<p id="bs-${name}-error" class="field-error">${errorFor(name).map(setupErrorText).join(" ")}</p>` : "");
   const field = (name: string, label: string, placeholder = "", hint: Html | "" = "") =>
     html`<div class="stack-xs"><label class="label" for="bs-${name}">${label}</label>
       <input id="bs-${name}" name="${name}" type="text" class="input${name === "name" ? " mono" : ""}" value="${val(name)}" placeholder="${placeholder}" autocomplete="off" autocapitalize="none" spellcheck="false"${invalid(name)}>${hint}${fieldError(name)}</div>`;
+  const hintText = (name: string, text: string) => html`<p id="bs-${name}-hint" class="small muted">${text}</p>`;
   const rows = parseRecipientLines(values.whitelist ?? "");
   const agent = (values.agentLabel ?? "").trim();
   const custom = values.preset === "custom" || FENCE_LABELS.some(([n]) => errorFor(n).length > 0);
+  const auto = all.fundingAuto !== "0";
+  const advancedOpen = !auto || errorFor("funding").length > 0 || errorFor("minReserve").length > 0;
+  const min = fundingMinYocto(val("maxPendingPerAgent"), val("minReserve"));
   const chosen = custom ? "custom" : values.preset === "cautious" ? "cautious" : "balanced";
-  const presetNote = (r: Readonly<Record<string, string>>) => `${r.maxPerTx} NEAR per payment · ${r.maxPerDay} NEAR a day`;
+  const presetNote = (r: Readonly<Record<string, string>>) => `${r.maxPerTx} NEAR per payment · ${r.maxPerDay} NEAR a day · ${r.maxPendingPerAgent} can wait for you`;
   const preset = (id: string, title: string, note: string, on: boolean) =>
     html`<button type="button" class="preset" data-action="budget-preset" data-preset="${id}" aria-pressed="${String(on)}"><span class="strong">${title}</span><span class="small muted">${note}</span></button>`;
 
@@ -1024,9 +1036,16 @@ export function renderBudgetSetup(available: boolean, values: Record<string, str
     ${field("name", "Budget name", "payroll", html`<p class="small muted">Only you see this name. The account will be <span id="bs-account" class="mono wrap">${(val("name").trim() || "name") + "." + SPUTNIK_FACTORY}</span></p><p id="b-name-msg" class="small" role="status"></p>`)}
     <fieldset class="stack-sm plain-field"><legend class="label">How careful should it be?</legend>
       <div class="presets">${preset("cautious", "Cautious", presetNote(CAUTIOUS_RULES), chosen === "cautious")}${preset("balanced", "Balanced", presetNote(BALANCED_RULES), chosen === "balanced")}${preset("custom", "Custom", "Set every number yourself", custom)}</div>
-      <div id="bs-custom" class="grid-2"${custom ? "" : " hidden"}>${FENCE_LABELS.map(([n, l]) => field(n, l))}</div>
+      <div id="bs-custom" class="grid-2"${custom ? "" : " hidden"}>${FENCE_LABELS.map(([n, l, h]) => field(n, l, "", hintText(n, h)))}</div>
     </fieldset>
-    ${field("funding", "Starting balance (NEAR)", "", html`<p class="small muted">You can top up at any time.</p>`)}`;
+    <details id="bs-advanced" class="setup-advanced"${advancedOpen ? " open" : ""}><summary class="strong">Advanced</summary>
+      <div class="grid-2">
+        ${field("funding", "Set aside for fees (NEAR)", "", html`<p id="bs-funding-hint" class="small muted">Not spending money. Pays the 0.1 NEAR deposit of each waiting payment and your agent's network fees. <span id="bs-funding-min">${min === null ? "" : auto ? `Filled in for your rules: at least ${yoctoToNear(min.toString())} NEAR.` : `At least ${yoctoToNear(min.toString())} NEAR for your rules.`}</span>${auto ? "" : html` <button type="button" class="link-btn" data-action="budget-funding-auto">Use the minimum</button>`}</p>`)}
+        ${field("minReserve", "Contract keeps for its fees (NEAR)", "0", hintText("minReserve", "NEAR the spending contract keeps for itself, never budget money. 0 is fine."))}
+      </div>
+      <input type="hidden" name="fundingAuto" value="${auto ? "1" : "0"}">
+    </details>
+    <p id="bs-cost" class="banner banner-note small">${icon.info()}<span>${setupCostText(all, codeStorageYocto)}</span></p>`;
 
   const recipients = html`<h2 id="bs-h" class="wiz-h" tabindex="-1">Who may your agents pay?</h2>
     <p class="muted">Payments to these accounts go through inside the fence. Payments to anyone else always wait for you.</p>
@@ -1045,16 +1064,21 @@ export function renderBudgetSetup(available: boolean, values: Record<string, str
 
   let review: Html;
   {
-    const planned = planBudget((n) => values[n] ?? BALANCED_RULES[n] ?? "", null, BUDGET_FACTORY_NAME, "0");
+    const planned = codeStorageYocto === null ? null : planBudget((n) => all[n] ?? "", null, BUDGET_FACTORY_NAME, codeStorageYocto);
     const sum = (label: string, body: Html | string) => html`<div class="sum-row"><dt class="muted">${label}</dt><dd>${body}</dd></div>`;
     const name = val("name").trim();
     const count = rows.length;
-    const cost = planned.ok ? `About ${yoctoToNear(planned.plan.firstDepositYocto)} NEAR in signature 1. The 0.2 NEAR of bonds in signature 2 come back.` : "Fix the earlier steps to see it.";
+    const cost =
+      planned === null
+        ? "Not read from the chain yet. Your wallet shows the exact amount before you approve."
+        : planned.ok
+          ? `About ${yoctoToNear(planned.plan.firstDepositYocto)} NEAR in signature 1: the budget account's storage, the spending contract and the fee set-aside. The 0.2 NEAR of deposits in signature 2 come back.`
+          : "Fix the earlier steps to see it.";
     review = html`<h2 id="bs-h" class="wiz-h" tabindex="-1">Review and create</h2>
       <p class="strong">${reviewSentence(agent === "" ? "Your agent" : agent, val("maxPerTx"), val("maxPerDay"), count)}</p>
       <dl class="sum-box review-rows">
         ${sum("Budget", html`<span class="strong">${name}</span> <span class="mono small muted wrap">${name}.${SPUTNIK_FACTORY}</span>`)}
-        ${sum("Starting balance", nearAmount(val("funding")))}
+        ${sum("Set aside for fees", nearAmount(val("funding")))}
         ${sum("Limits", `${nearAmount(val("maxPerTx"))} per payment · ${nearAmount(val("maxPerDay"))} a day`)}
         ${sum("Recipients", count === 0 ? "None. Every payment waits for you." : plural(count, "recipient"))}
         ${sum("Agent", agent)}

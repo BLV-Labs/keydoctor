@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  applyAutoFunding,
   budgetPolicy,
+  createCost,
+  fundingMinYocto,
   parseRecipientLines,
   planBudget,
   recipientLines,
@@ -10,7 +13,7 @@ import {
   unfinishedBudgetOwner,
   validateSetupStep,
 } from "../src/budget-create.ts";
-import { renderAgentKeyReady, renderBudget, renderBudgetSetup, renderLeaveKey } from "../src/budget-view.ts";
+import { BALANCED_RULES, CAUTIOUS_RULES, renderAgentKeyReady, renderBudget, renderBudgetSetup, renderLeaveKey, setupCostText } from "../src/budget-view.ts";
 import type { BudgetLive } from "../src/budget-read.ts";
 
 const FACTORY = "keydoctor-guards-v2.testnet";
@@ -32,13 +35,15 @@ const shown = (page: string) => page.replace(/<details class="card tech">[\s\S]*
 const jargon = /\bDAO\b|\b[Pp]roposals?\b|\bGuard\b|[Pp]olicy|[Ww]hitelist|yocto/;
 
 describe("wizard steps render their fields", () => {
-  it("step 1: name, presets, starting balance; the other steps' answers ride along hidden", () => {
+  it("step 1: name, presets, the fee set-aside under Advanced; the other steps' answers ride along hidden", () => {
     const out = renderBudgetSetup(true, GOOD, [], null, 1).value;
     assert.match(out, /Build the fence/);
     assert.match(out, /name="name"/);
     assert.match(out, /data-preset="cautious"/);
     assert.match(out, /data-preset="custom"/);
-    assert.match(out, /Starting balance \(NEAR\)/);
+    assert.match(out, /<details id="bs-advanced" class="setup-advanced"><summary/);
+    assert.match(out, /Set aside for fees \(NEAR\)/);
+    assert.doesNotMatch(out, /Starting balance|Kept in reserve/);
     assert.match(out, /type="hidden" name="agentLabel"/);
     assert.doesNotMatch(out, /name="r-account"/);
   });
@@ -58,7 +63,7 @@ describe("wizard steps render their fields", () => {
   });
   it("step 4: the review rows and the first-signature button", () => {
     const out = renderBudgetSetup(true, GOOD, [], null, 4).value;
-    for (const row of ["Budget", "Starting balance", "Limits", "Recipients", "Agent", "One-time cost"]) assert.match(out, new RegExp(`<dt[^>]*>${row}</dt>`));
+    for (const row of ["Budget", "Set aside for fees", "Limits", "Recipients", "Agent", "One-time cost"]) assert.match(out, new RegExp(`<dt[^>]*>${row}</dt>`));
     assert.match(out, /What happens next/);
     assert.match(out, /Create budget · sign 1 of 2/);
     assert.match(out, /Payroll bot/);
@@ -70,6 +75,48 @@ describe("wizard steps render their fields", () => {
   });
   it("the stepper marks the current step", () => {
     assert.match(renderBudgetSetup(true, GOOD, [], null, 3).value, /data-state="now" aria-current="step"/);
+  });
+});
+
+describe("step 1 explains every number and fills in the fees", () => {
+  // WHY: the owner could not tell what to type, and "Starting balance" and "Kept in reserve" were not budget money.
+  it("every rule field has a line under it that says what it is", () => {
+    const out = renderBudgetSetup(true, { ...GOOD, preset: "custom" }, [], null, 1).value;
+    for (const name of ["maxPerTx", "maxPerDay", "maxPendingPerAgent", "funding", "minReserve"]) assert.match(out, new RegExp(`id="bs-${name}-hint"`));
+    assert.match(out, /Not spending money/);
+    assert.match(out, /never budget money/);
+  });
+  it("presets keep no reserve, set no fee amount, and name every number", () => {
+    for (const r of [BALANCED_RULES, CAUTIOUS_RULES]) {
+      assert.equal(r.minReserve, "0");
+      assert.equal(r.funding, undefined);
+    }
+    assert.match(renderBudgetSetup(true, {}, [], null, 1).value, /1 NEAR per payment · 5 NEAR a day · 2 can wait for you/);
+  });
+  it("the fee set-aside follows the rules until the owner types their own", () => {
+    // 3 waiting × 0.1 + 0.5 agent fees + 0 reserve + 0.5 contract floor.
+    assert.equal(fundingMinYocto("3", "0"), 13n * 10n ** 23n);
+    assert.equal(applyAutoFunding({ maxPendingPerAgent: "3", minReserve: "0", funding: "0.1" }).funding, "1.3");
+    assert.equal(applyAutoFunding({ maxPendingPerAgent: "3", minReserve: "0", funding: "4", fundingAuto: "0" }).funding, "4");
+    const out = renderBudgetSetup(true, { ...GOOD, minReserve: "0", funding: "0.1" }, [], null, 1).value;
+    assert.match(out, /name="funding"[^>]*value="1\.3"|value="1\.3"[^>]*name="funding"/);
+    assert.match(out, /name="fundingAuto" value="1"/);
+    assert.match(renderBudgetSetup(true, { ...GOOD, fundingAuto: "0" }, [], null, 1).value, /<details id="bs-advanced" class="setup-advanced" open>/);
+  });
+  it("a fee set-aside below the minimum names the number", () => {
+    const e = validateSetupStep(1, getter({ funding: "0.6", minReserve: "0", fundingAuto: "0" }), FACTORY).find((x) => x.field === "funding");
+    assert.ok(e);
+    assert.match(setupErrorText(e), /^Set aside at least 1\.3 NEAR for these rules/);
+  });
+  it("the cost line counts the account, the contract code and the fees, and says so when the code cost is unread", () => {
+    const code = "3334590000000000000000000";
+    const cost = createCost("1.3", code);
+    assert.ok(cost);
+    assert.equal(cost.total, (6n * 10n ** 24n + BigInt(code) + 10n ** 22n + 13n * 10n ** 23n).toString());
+    assert.match(setupCostText({ funding: "1.3" }, code), /^Creating this budget costs about 10\.64459 NEAR in signature 1: 6 NEAR for the budget account's storage, 3\.34459 NEAR for the spending contract and 1\.3 NEAR set aside for fees\./);
+    assert.match(setupCostText({ funding: "1.3" }, null), /exact amount shows once it is read/);
+    assert.match(renderBudgetSetup(true, GOOD, [], null, 4, code).value, /About 1\d\.\d+ NEAR in signature 1/);
+    assert.match(renderBudgetSetup(true, GOOD, [], null, 4, null).value, /Not read from the chain yet/);
   });
 });
 

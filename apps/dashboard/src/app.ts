@@ -15,7 +15,7 @@ import { renderAgentGuide } from "./agent-guide.ts";
 import { yoctoToNear } from "./format.ts";
 import { whenSlow } from "./wallet-hint.ts";
 import { formToInput, isAccountId, validateGuardForm, type GuardFormError } from "./guard-form.ts";
-import { agentKeyFile, agentKeyProblem, agentKeyUnsaved, budgetCheckFailures, firstSignatureProblem, parseRecipientLines, planBudget, recipientLines, savedSetupKey, secondSignatureCalls, SETUP_FIELDS, setupErrorText, sputnikCreateArgs, SPUTNIK_FACTORY, stepOfField, unfinishedBudgetOwner, validateSetupStep, type BudgetChain, type BudgetPlan, type RecipientRow, type SetupError } from "./budget-create.ts";
+import { agentKeyFile, agentKeyProblem, agentKeyUnsaved, applyAutoFunding, budgetCheckFailures, firstSignatureProblem, fundingMinYocto, parseRecipientLines, planBudget, recipientLines, savedSetupKey, secondSignatureCalls, SETUP_FIELDS, setupErrorText, sputnikCreateArgs, SPUTNIK_FACTORY, stepOfField, unfinishedBudgetOwner, validateSetupStep, type BudgetChain, type BudgetPlan, type RecipientRow, type SetupError } from "./budget-create.ts";
 import {
   actProposalArgs,
   addAgentProblem,
@@ -64,6 +64,7 @@ import {
   renderBudgetStart,
   fenceSentence,
   isModalPanel,
+  setupCostText,
   withdrawLeftText,
   type BudgetPanel,
   type DcaView,
@@ -456,7 +457,8 @@ async function renderBudgetPage(dao: string | null, focusMain: boolean, seq: num
         : `Budgets are read from ${BUDGET_READ_FACTORY} on ${network}.`;
     const note = link === null ? read : `This link needs a Budget: open yours here, then do it from the page. ${read}`;
     const open = renderBudgetStart(value, error, note);
-    const create = renderBudgetCreate(renderBudgetSetup(BUDGET_FACTORY !== ""));
+    const create = renderBudgetCreate(renderBudgetSetup(BUDGET_FACTORY !== "", {}, [], null, 1, budgetCodeStorage));
+    void loadBudgetCodeStorage(network);
     paint(error === null ? html`${create}${open}` : html`${open}${create}`, title, focusMain, network, "budget");
   };
   if (dao === null || BUDGET_READ_FACTORY === "") {
@@ -476,7 +478,8 @@ async function renderBudgetPage(dao: string | null, focusMain: boolean, seq: num
     // Sign 1 made this account and sign 2 never came: the page offers to finish instead of starting over.
     const unfinished =
       state.guard === null && dao.endsWith(`.${SPUTNIK_FACTORY}`) && unfinishedBudgetOwner(state.dao.policy) !== null ? { canFinish: loadSetup(dao) !== null } : null;
-    paint(renderBudget(state, network, renderBudgetSetup(BUDGET_FACTORY !== ""), Date.now(), unfinished), `${dao} · Key Doctor`, false, network, "budget");
+    paint(renderBudget(state, network, renderBudgetSetup(BUDGET_FACTORY !== "", {}, [], null, 1, budgetCodeStorage), Date.now(), unfinished), `${dao} · Key Doctor`, false, network, "budget");
+    void loadBudgetCodeStorage(network);
     if (link !== null && state.guard !== null) followBudgetLink(link, state);
   } catch (e) {
     if (seq !== scanSeq) return;
@@ -1408,10 +1411,10 @@ function chooseBudgetPreset(button: HTMLElement): void {
   if (fields !== null) fields.hidden = !custom;
   if (custom) return;
   for (const [name, value] of Object.entries(chosen === "cautious" ? CAUTIOUS_RULES : BALANCED_RULES)) {
-    if (name === "funding") continue;
     const input = form.elements.namedItem(name) as HTMLInputElement | null;
     if (input !== null) input.value = value;
   }
+  syncSetupMoney();
 }
 
 /** The address of the wizard without its `step`: while the page stands on it, Back and Forward move between steps in place. */
@@ -1442,14 +1445,73 @@ function readSetup(form: HTMLFormElement): Record<string, string> {
   const values: Record<string, string> = {};
   for (const [key, value] of new FormData(form).entries()) if (!key.startsWith("r-")) values[key] = String(value);
   if (form.querySelector("#bs-rcpts") !== null) values.whitelist = recipientLines(recipientRows(form));
-  return values;
+  return applyAutoFunding(values);
+}
+
+/** What one Guard's copy of the code locks, from the Budget factory; read once per page load, null until then. */
+let budgetCodeStorage: string | null = null;
+
+async function loadBudgetCodeStorage(network: Network): Promise<void> {
+  if (budgetCodeStorage !== null || BUDGET_FACTORY === "") return;
+  try {
+    const rpc = budgetRpc(network);
+    const { height } = await rpc.block();
+    const meta = (await rpc.callFunction(BUDGET_FACTORY, height, "kd_factory_metadata", {})) as { guard_code_storage?: unknown };
+    if (typeof meta.guard_code_storage !== "string" || !/^\d+$/.test(meta.guard_code_storage)) return;
+    budgetCodeStorage = meta.guard_code_storage;
+    syncSetupMoney();
+  } catch {
+    // The cost line keeps saying it is not read yet; the wallet still shows the exact amount.
+  }
+}
+
+/**
+ * Step 1's money, live: the fee set-aside follows the rules while it is automatic, the minimum next to it, and the
+ * cost of signature 1. Typing in the set-aside makes it the owner's own number.
+ */
+function syncSetupMoney(typedFunding = false): void {
+  const form = document.getElementById("budget-setup-form");
+  if (!(form instanceof HTMLFormElement)) return;
+  const auto = form.elements.namedItem("fundingAuto") as HTMLInputElement | null;
+  if (typedFunding && auto !== null) auto.value = "0";
+  const values = readSetup(form);
+  const funding = form.elements.namedItem("funding") as HTMLInputElement | null;
+  if (funding !== null && values.fundingAuto !== "0" && funding.value !== values.funding) funding.value = values.funding ?? "";
+  const min = fundingMinYocto(values.maxPendingPerAgent ?? "", values.minReserve ?? "0");
+  const minText = document.getElementById("bs-funding-min");
+  if (minText !== null) minText.textContent = min === null ? "" : `${values.fundingAuto === "0" ? "At least" : "Filled in for your rules: at least"} ${yoctoToNear(min.toString())} NEAR.`;
+  const cost = document.querySelector("#bs-cost span");
+  if (cost !== null) cost.textContent = setupCostText(values, budgetCodeStorage);
+}
+
+/** On leaving a step-1 field: that field's error now, instead of only after Continue. */
+function checkSetupField(input: HTMLInputElement): void {
+  const form = input.form;
+  if (form === null || form.id !== "budget-setup-form" || Number(new FormData(form).get("step")) !== 1) return;
+  const values = readSetup(form);
+  const name = input.name;
+  const errors = validateSetupStep(1, (n) => values[n] ?? "", BUDGET_FACTORY || BUDGET_FACTORY_NAME).filter((e) => e.field === name);
+  const id = `bs-${name}-error`;
+  document.getElementById(id)?.remove();
+  if (errors.length === 0) {
+    input.removeAttribute("aria-invalid");
+    input.setAttribute("aria-describedby", document.getElementById(`bs-${name}-hint`) ? `bs-${name}-hint` : "");
+    return;
+  }
+  const p = document.createElement("p");
+  p.id = id;
+  p.className = "field-error";
+  p.textContent = errors.map(setupErrorText).join(" ");
+  input.setAttribute("aria-invalid", "true");
+  input.setAttribute("aria-describedby", id);
+  (input.parentElement?.querySelector(`#bs-${name}-hint`) ?? input).after(p);
 }
 
 /** Repaints the wizard at `step` and moves focus to its heading, or to the first field with a problem. */
 function paintSetup(values: Record<string, string>, step: number, errors: SetupError[] = [], result: string | null = null): void {
   const current = document.getElementById("budget-setup-form");
   if (current === null) return;
-  current.outerHTML = renderBudgetSetup(BUDGET_FACTORY !== "", values, errors, result, step).value;
+  current.outerHTML = renderBudgetSetup(BUDGET_FACTORY !== "", values, errors, result, step, budgetCodeStorage).value;
   const target = errors.length > 0 ? document.querySelector<HTMLElement>('#budget-setup-form [aria-invalid="true"]') : null;
   (target ?? document.getElementById("bs-h"))?.focus();
 }
@@ -1876,7 +1938,8 @@ function finishBudgetSetup(): void {
   const dao = budgetState?.dao.dao;
   const saved = dao === undefined ? null : loadSetup(dao);
   if (saved === null) return;
-  paintSetup(saved, 4);
+  // Sign 1 already sent this exact fee set-aside to the DAO: a setup saved before it was automatic keeps its number.
+  paintSetup({ fundingAuto: "0", ...saved }, 4);
   const form = document.getElementById("budget-setup-form");
   if (form instanceof HTMLFormElement) void submitBudgetSetup(form, true);
 }
@@ -2684,6 +2747,14 @@ root.addEventListener("click", (event) => {
       syncBudgetAfter();
       break;
     }
+    case "budget-funding-auto": {
+      const form = document.getElementById("budget-setup-form");
+      const auto = form instanceof HTMLFormElement ? (form.elements.namedItem("fundingAuto") as HTMLInputElement | null) : null;
+      if (auto !== null) auto.value = "1";
+      el.remove();
+      syncSetupMoney();
+      break;
+    }
     case "reload-page":
       location.reload();
       break;
@@ -2840,6 +2911,7 @@ root.addEventListener("input", (event) => {
     if (hint !== null) hint.textContent = `${name || "name"}.${SPUTNIK_FACTORY}`;
   }
   if (el.getAttribute("name") === "r-account") scheduleRecipientCheck(el as HTMLInputElement);
+  if (el.closest("#budget-setup-form") !== null && ["maxPendingPerAgent", "minReserve", "funding"].includes(el.getAttribute("name") ?? "")) syncSetupMoney(el.id === "bs-funding");
   const fence = el.closest<HTMLFormElement>('#budget-panel-form[data-panel="rules"]');
   if (fence !== null) syncBudgetFence(fence);
   if (el.id === "approve-check") {
@@ -2852,6 +2924,7 @@ root.addEventListener("input", (event) => {
 root.addEventListener("change", (event) => {
   const el = event.target as HTMLElement;
   if (el.id === "bs-name") void checkBudgetName(el as HTMLInputElement);
+  if (el instanceof HTMLInputElement && el.id.startsWith("bs-") && el.id !== "bs-name") checkSetupField(el);
 });
 
 root.addEventListener("submit", (event) => {

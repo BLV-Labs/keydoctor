@@ -2,8 +2,8 @@
 // transaction of four calls that makes its Guard, the agent and the Guard's role. Pure: the page reads and signs.
 import type { KeyPermission } from "key-doctor";
 import { actProposalArgs } from "./budget-flow.ts";
-import { nearToYocto } from "./format.ts";
-import { formToInput, guardAccountId, MAX_NAME_LEN, validateGuardForm, type GuardCreateArgs, type GuardFormError } from "./guard-form.ts";
+import { nearToYocto, yoctoToNear } from "./format.ts";
+import { formToInput, guardAccountId, MAX_NAME_LEN, RECORD_STORAGE_YOCTO, validateGuardForm, type GuardCreateArgs, type GuardFormError } from "./guard-form.ts";
 import { addGuardRoleProposal, AGENT_GAS_FUND_YOCTO, base64Json, BUDGET_GUARD_PERMISSIONS, createGuardProposal, GUARD_ROLE, type AddProposalArgs, type RawPolicy } from "./guard-proposals.ts";
 
 export const SPUTNIK_FACTORY = "sputnik-v2.testnet";
@@ -32,6 +32,49 @@ export function budgetPolicy(owner: string): RawPolicy {
 /** The arguments of `sputnik-v2.testnet` `create`. */
 export function sputnikCreateArgs(name: string, owner: string): { name: string; args: string } {
   return { name, args: base64Json({ config: { name, purpose: "Agent Budget", metadata: "" }, policy: budgetPolicy(owner) }) };
+}
+
+/**
+ * The least the Guard must be given for one agent and these rules, from the two rule fields that move it. Null while
+ * either is not a valid number. Same sum as `budgetFundingYocto`, which needs the full create args.
+ */
+export function fundingMinYocto(maxPendingPerAgent: string, minReserve: string): bigint | null {
+  const pendingText = maxPendingPerAgent.trim();
+  const pending = /^\d+$/.test(pendingText) ? BigInt(pendingText) : null;
+  const reserve = nearToYocto(minReserve.trim() === "" ? "0" : minReserve);
+  if (pending === null || pending < 1n || reserve === null) return null;
+  return pending * PROPOSAL_BOND_YOCTO + AGENT_GAS_FUND_YOCTO + BigInt(reserve) + MIN_GUARD_BALANCE_YOCTO;
+}
+
+/**
+ * "Set aside for fees" fills itself in: unless the owner typed their own (`fundingAuto` "0"), `funding` is the
+ * minimum the rules need, so it follows Waiting payments and the reserve as they change. Pure; returns a copy.
+ */
+export function applyAutoFunding(values: Record<string, string>): Record<string, string> {
+  if (values.fundingAuto === "0") return values;
+  const min = fundingMinYocto(values.maxPendingPerAgent ?? "", values.minReserve ?? "0");
+  return min === null ? values : { ...values, funding: yoctoToNear(min.toString()) };
+}
+
+/** What signature 1 sends, in parts: the budget account's storage, the spending contract's code, the fee set-aside. */
+export interface CreateCost {
+  account: string;
+  contract: string;
+  fees: string;
+  total: string;
+}
+
+/** Null while the code storage is unread or the fee set-aside is not a number: no number is better than a wrong one. */
+export function createCost(funding: string, codeStorageYocto: string | null): CreateCost | null {
+  const fees = nearToYocto(funding);
+  if (codeStorageYocto === null || fees === null) return null;
+  const contract = BigInt(codeStorageYocto) + RECORD_STORAGE_YOCTO;
+  return {
+    account: DAO_STORAGE_YOCTO.toString(),
+    contract: contract.toString(),
+    fees,
+    total: (DAO_STORAGE_YOCTO + contract + BigInt(fees)).toString(),
+  };
 }
 
 /** What the Guard must hold so the agent is not refused at once: every waiting bond, its gas, the reserve, its own floor. */
@@ -238,9 +281,13 @@ export function validateSetupStep(step: 1 | 2 | 3, get: (name: string) => string
   const planned = planBudget(read, null, factory, "0");
   if (!planned.ok) {
     const fields = step === 1 ? FENCE_FIELDS : step === 2 ? null : ["agentLabel"];
+    const min = fundingMinYocto(get("maxPendingPerAgent"), get("minReserve"));
     for (const e of planned.errors) {
       const here = fields === null ? e.field.startsWith("whitelist") : fields.includes(e.field);
-      if (here && !errors.some((x) => x.field === e.field)) errors.push(e);
+      if (!here || errors.some((x) => x.field === e.field)) continue;
+      // Name the number: "start with more" alone sent the owner guessing.
+      const short = e.field === "funding" && min !== null && (e.code === "FUNDING_UNDER_MINIMUM" || e.code === "FUNDING_TOO_LOW" || e.code === "FUNDING_BELOW_RESERVE");
+      errors.push(short ? { ...e, text: `Set aside at least ${yoctoToNear(min.toString())} NEAR for these rules: 0.1 NEAR per waiting payment, 0.5 NEAR of agent fees, the contract's own 0.5 NEAR and what it keeps.` } : e);
     }
   }
   if (step === 3) {
@@ -290,5 +337,5 @@ export function unfinishedBudgetOwner(policy: RawPolicy): string | null {
 }
 
 /** Where the wizard keeps what was typed once sign 1 is through, so Finish setup can pick up. Never a key. */
-export const SETUP_FIELDS = ["name", "preset", "maxPerTx", "maxPerDay", "maxPendingPerAgent", "minReserve", "funding", "whitelist", "agentLabel"] as const;
+export const SETUP_FIELDS = ["name", "preset", "maxPerTx", "maxPerDay", "maxPendingPerAgent", "minReserve", "funding", "fundingAuto", "whitelist", "agentLabel"] as const;
 export const savedSetupKey = (dao: string): string => `kd.budget.setup.${dao}`;
