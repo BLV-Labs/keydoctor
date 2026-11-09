@@ -330,10 +330,8 @@ fn report(label: &str, outcome: &ExecutionFinalResult) {
     }
 }
 
-// BLOCKED by an S1 bug, see the commit message: on_voted reads the act_proposal result as `()`, but a swap's last
-// receipt returns the ft_transfer_call amount, so the callback panics. Remove the ignore once on_voted takes a Value.
+// A swap's act_proposal returns the ft_transfer_call amount, not nothing: on_voted must still record AutoApproved.
 #[tokio::test]
-#[ignore = "S1 bug: on_voted cannot deserialize the U128 that a swap's act_proposal returns"]
 async fn a_swap_plan_step_sells_near_for_usdt_on_the_real_contracts() -> anyhow::Result<()> {
     let e = Dca::new().await?;
     e.create_swap_plan(milli(100), 100, 2).await?;

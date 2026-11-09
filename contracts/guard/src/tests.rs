@@ -75,7 +75,7 @@ fn added(g: &mut Guard, now: u64, rid: &str, result: Result<u64, PromiseError>) 
 
 fn voted(g: &mut Guard, now: u64, rid: &str, result: Result<(), PromiseError>) {
     env_as(GUARD, now);
-    g.on_voted(rid.into(), result);
+    g.record_vote(rid.into(), result.is_ok());
 }
 
 fn synced(g: &mut Guard, now: u64, rid: &str, status: &str, submitted: u64) {

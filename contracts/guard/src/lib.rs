@@ -290,22 +290,12 @@ impl Guard {
     }
 
     #[private]
-    pub fn on_voted(&mut self, request_id: String, #[callback_result] voted: Result<(), PromiseError>) -> RequestRecord {
-        let mut r = self.record(&request_id);
-        let now = env::block_timestamp();
-        if r.status.is_final() {
-            // A sync_request between act_proposal and this callback already saw the final DAO status.
-            return r;
-        }
-        if voted.is_err() {
-            self.finish(&mut r, RequestStatus::Failed, now);
-            emit("request_failed", with_note(&r, "act_proposal failed; the proposal stays InProgress for the council"));
-        } else {
-            // The final Executed / Failed comes from sync_request.
-            self.finish(&mut r, RequestStatus::AutoApproved, now);
-            emit("request_auto_approved", record_event(&r));
-        }
-        self.save(r)
+    pub fn on_voted(&mut self, request_id: String) -> RequestRecord {
+        // act_proposal returns what the executed proposal returns: nothing for a transfer, the
+        // ft_transfer_call amount for a swap (ADR 0007). Only success matters, so the bytes are not read;
+        // TooLong means it succeeded with a non-empty value.
+        let voted = !matches!(env::promise_result_checked(0, 0), Err(PromiseError::Failed));
+        self.record_vote(request_id, voted)
     }
 
     /// Anyone may call. Reads the proposal from the DAO and records the final status.
@@ -793,6 +783,25 @@ impl Guard {
 }
 
 impl Guard {
+    /// The body of `on_voted`, split out so tests can pass the vote's outcome.
+    pub(crate) fn record_vote(&mut self, request_id: String, voted: bool) -> RequestRecord {
+        let mut r = self.record(&request_id);
+        let now = env::block_timestamp();
+        if r.status.is_final() {
+            // A sync_request between act_proposal and this callback already saw the final DAO status.
+            return r;
+        }
+        if !voted {
+            self.finish(&mut r, RequestStatus::Failed, now);
+            emit("request_failed", with_note(&r, "act_proposal failed; the proposal stays InProgress for the council"));
+        } else {
+            // The final Executed / Failed comes from sync_request.
+            self.finish(&mut r, RequestStatus::AutoApproved, now);
+            emit("request_auto_approved", record_event(&r));
+        }
+        self.save(r)
+    }
+
     fn assert_dao(&self) {
         require!(env::predecessor_account_id() == self.dao_id, "ONLY_DAO");
     }
