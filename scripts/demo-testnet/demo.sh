@@ -6,7 +6,7 @@
 #
 #   scripts/demo-testnet/demo.sh accounts     # create members a, b, c with the testnet faucet
 #   scripts/demo-testnet/demo.sh dao          # a creates <prefix>.sputnik-v2.testnet (council a, b, c)
-#   (in Telegram: add the bot to a group and send /watch <dao>)
+#   (in Telegram: add the bot to a group and send /watch <dao> now; proposals made before /watch never alert)
 #   scripts/demo-testnet/demo.sh transfer     # b proposes "transfer 1 NEAR to c"
 #   scripts/demo-testnet/demo.sh compromise   # a gets a new full-access key ("the attacker's")
 #   scripts/demo-testnet/demo.sh vote         # a approves the transfer
