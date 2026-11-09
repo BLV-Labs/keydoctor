@@ -82,6 +82,7 @@ const SYSTEM_PROMPT = [
   "Weigh yield against risk: TVL, withdrawable liquidity, price peg, warnings, and how much of the DAO's free balance it is.",
   "Every candidate id appears exactly once in `order`, best first. Use only ids from the data.",
   "Each reason may use only numbers from its own candidate, written as given or rounded. No other numbers: no dates, durations or targets.",
+  "apr_pct is an APR: call it APR, never APY. Only reward_apy_pct is an APY.",
   "Do not tell anyone to act, do not promise returns, no links, no account names.",
   "reason_vi is in Vietnamese, reason_en is in English, each at most 300 characters.",
   'Reply with JSON only: {"order":[{"opportunity_id":"...","reason_vi":"...","reason_en":"..."}]}',
@@ -125,14 +126,31 @@ function parseJson(raw: unknown): unknown {
 }
 
 /**
- * The values of that candidate's evidence a reason may quote. A number before "%" must be one of its percents; any
- * other number may also be a balance or a dollar value at the scales people write (25k, $12.8M).
+ * The values of that candidate's evidence a reason may quote. A number before "%" must be one of its percents, and
+ * before "% APR" / "% APY" the percent of that name; any other number may also be a balance or a dollar value at the
+ * scales people write (25k, $12.8M).
  */
-function evidence(c: AdviceCandidate, rank: number): { percent: number[]; any: number[] } {
-  const percent = c.reward_apy_pct === null ? [c.apr_pct] : [c.apr_pct, c.reward_apy_pct];
+interface Evidence {
+  percent: number[];
+  apr: number[];
+  apy: number[];
+  any: number[];
+}
+
+function evidence(c: AdviceCandidate, rank: number): Evidence {
+  const apy = c.reward_apy_pct === null ? [] : [c.reward_apy_pct];
+  const percent = [c.apr_pct, ...apy];
   const values: number[] = [c.dao_free, c.open_transfers, rank];
   for (const v of [c.tvl_usd, c.liquidity_usd, c.price_usd, c.dao_balance]) if (v !== null) values.push(v);
-  return { percent, any: [...percent, ...values.flatMap((v) => YIELD_ADVICE.scales.map((s) => v / s))] };
+  return { percent, apr: [c.apr_pct], apy, any: [...percent, ...values.flatMap((v) => YIELD_ADVICE.scales.map((s) => v / s))] };
+}
+
+/** The percents a number may be, from the text after it: "% APR" and "% APY" name one, a bare "%" any percent. */
+function percentPool(after: string, known: Evidence): number[] | null {
+  const m = /^\s*%(?:\s*(APR|APY)\b)?/i.exec(after);
+  if (m === null) return null;
+  const label = m[1]?.toUpperCase();
+  return label === "APR" ? known.apr : label === "APY" ? known.apy : known.percent;
 }
 
 /** The values a written number could mean, with its decimals: "8,96" is Vietnamese for 8.96, "1,250" may be 1250. */
@@ -162,12 +180,14 @@ function fits(value: number, decimals: number, known: readonly number[]): boolea
 /** Text a reason must not carry into a Telegram message: links, handles, control and bidi characters. */
 const UNSAFE = /https?:|www\.|t\.me\/|@|\.near\b|\.testnet\b|[\u0000-\u001f\u007f‪-‮⁦-⁩]/i;
 
-function cleanReason(raw: unknown, known: ReturnType<typeof evidence>): string | null {
+function cleanReason(raw: unknown, known: Evidence): string | null {
   if (typeof raw !== "string") return null;
   const s = raw.replace(/\s+/g, " ").trim();
   if (s === "" || s.length > YIELD_ADVICE.max_reason_chars || UNSAFE.test(s)) return null;
+  // Y5 live: the model called a supply APR an "APY". A candidate with no reward APY has no APY to name.
+  if (known.apy.length === 0 && /\bAPY\b/i.test(s)) return null;
   for (const m of s.matchAll(/\d+(?:[.,]\d+)*/g)) {
-    const pool = /^\s*%/.test(s.slice((m.index ?? 0) + m[0].length)) ? known.percent : known.any;
+    const pool = percentPool(s.slice((m.index ?? 0) + m[0].length), known) ?? known.any;
     if (!readings(m[0]).some((r) => fits(r.value, r.decimals, pool))) return null;
   }
   return s;
