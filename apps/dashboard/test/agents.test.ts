@@ -66,7 +66,7 @@ function proposal(id: number, ageHours: number): BudgetProposal {
   return { id, proposer: "g.guards.testnet", description: "pay", kind: { Transfer: { receiver_id: "v.testnet", amount: NEAR(2), token_id: "" } }, status: "InProgress", submission_time: nanos(NOW - ageHours * HOUR) };
 }
 function request(id: number, agent: string, receiver: string, reasons: string[], proposalId: number | null, ageHours: number): BudgetRequest {
-  return { request_id: String(id), agent, receiver_id: receiver, amount: NEAR(2), memo: "", decision: "Pending", reasons, proposal_id: proposalId, status: "Pending", created_at: nanos(NOW - ageHours * HOUR) };
+  return { request_id: String(id), agent, receiver_id: receiver, amount: NEAR(2), memo: "", decision: "Pending", reasons, proposal_id: proposalId, plan_id: null, status: "Pending", created_at: nanos(NOW - ageHours * HOUR) };
 }
 function budget(dao: string, proposals: BudgetProposal[] | null, requests: BudgetRequest[] = []): BudgetLive {
   return {
