@@ -2224,6 +2224,19 @@ root.addEventListener("click", (event) => {
   }
   const dialog = document.getElementById("watch-dialog") as HTMLDialogElement | null;
   switch (el.dataset.action) {
+    case "jump-check": {
+      // Same-page jump to the check card: navigate() would scroll to the top and repaint the home page.
+      event.preventDefault();
+      const input = document.getElementById("target") as HTMLInputElement | null;
+      if (input === null) break;
+      if (el.dataset.placeholder) input.placeholder = el.dataset.placeholder;
+      const own = connected?.accounts[0];
+      if (el.dataset.fill === "wallet" && input.value.trim() === "" && own !== undefined) input.value = own;
+      const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      document.getElementById("check")?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
+      input.focus({ preventScroll: true });
+      break;
+    }
     case "network": {
       // Re-render the home page on the chosen network, keeping what the user typed.
       const network: Network = el.dataset.network === "mainnet" ? "mainnet" : "testnet";

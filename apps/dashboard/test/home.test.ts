@@ -57,6 +57,20 @@ describe("K1 home", () => {
     assert.match(text(renderHome("", null)), /What do you want to do\?/);
   });
 
+  it("links down to the check card without data-nav, so a click scrolls instead of repainting the top", () => {
+    // WHY: a data-nav link runs navigate(), which scrolls to the top and repaints: the council and own-keys buttons did nothing.
+    const out = renderHome("", null).value;
+    const jumps = out.match(/<a [^>]*href="#check"[^>]*>/g) ?? [];
+    assert.equal(jumps.length, 3);
+    for (const a of jumps) {
+      assert.match(a, /data-action="jump-check"/);
+      assert.doesNotMatch(a, /data-nav/);
+    }
+    assert.match(out, /data-placeholder="kdoncall\.sputnik-v2\.testnet">Check a council</);
+    assert.match(out, /data-placeholder="kdoncall-p\.testnet" data-fill="wallet">Check my keys</);
+    assert.match(renderHome("", null, "mainnet").value, /data-placeholder="your-name\.near"/);
+  });
+
   it("uses no internal words outside the check card", () => {
     // WHY: handoff README "Words": a first-time visitor must not meet Guard, DAO, proposal or chain jargon.
     for (const signedIn of [false, true]) {

@@ -112,12 +112,20 @@ function homeStep(n: number, title: string, body: string, glyph: Html): Html {
     <div class="stack-xs"><p class="eyebrow">Step ${n}</p><h3 class="h3">${title}</h3><p class="small muted">${body}</p></div></li>`;
 }
 
-function homePath(glyph: Html, title: string, lead: string, points: string[], href: string, cta: string): Html {
+/**
+ * A link down to the check card on the same page. Not `data-nav`: navigate() scrolls to the top and repaints, so the
+ * click handler scrolls to the card and focuses its input instead. `placeholder` tells the input what to expect.
+ */
+function jumpToCheck(cta: Html | string, placeholder = "", fillWallet = false): Html {
+  return html`<a class="btn btn-secondary" href="#check" data-action="jump-check"${placeholder ? html` data-placeholder="${placeholder}"` : ""}${fillWallet ? html` data-fill="wallet"` : ""}>${cta}</a>`;
+}
+
+function homePath(glyph: Html, title: string, lead: string, points: string[], cta: Html): Html {
   return html`<article class="card pad stack-sm home-path">
       <span class="home-tile" aria-hidden="true">${glyph}</span>
       <h3 class="h3">${title}</h3><p class="small muted">${lead}</p>
       <ul class="list small">${points.map((p) => html`<li>${p}</li>`)}</ul>
-      <div class="home-path-cta"><a class="btn btn-secondary" href="${href}" data-nav>${cta}</a></div>
+      <div class="home-path-cta">${cta}</div>
     </article>`;
 }
 
@@ -140,7 +148,7 @@ export function renderHome(value: string, error: string | null, network: Network
         <p class="eyebrow home-eyebrow">Spending limits for AI agents on NEAR</p>
         <h1 class="display">Give your AI agent money, not your keys.</h1>
         <p class="lead">Key Doctor puts each agent behind a fence: a daily budget, a limit per payment and a list of who it may pay. Anything outside the fence waits for you.</p>
-        <div class="actions">${primary}<a class="btn btn-secondary" href="#check">${icon.key()}Check an account's keys</a></div>
+        <div class="actions">${primary}${jumpToCheck(html`${icon.key()}Check an account's keys`)}</div>
       </div>
       ${HOME_PREVIEW}
     </section>
@@ -155,9 +163,9 @@ export function renderHome(value: string, error: string | null, network: Network
     <section aria-labelledby="who" class="stack-sm">
       <h2 id="who" class="h2">What do you want to do?</h2>
       <div class="home-paths">
-        ${homePath(icon.list(), "Run an AI agent", "Let it pay for APIs, tools and services without access to your wallet.", ["Daily budget and limit per payment", "Allowed recipients", "Scheduled payouts"], pageHref("budget"), "Set up an agent budget")}
-        ${homePath(icon.users(), "Protect a council", "Know before the final vote if a council member's account was taken over.", ["Checks every council member's keys", "Telegram warning before the final vote", "Let an agent earn on idle funds, within limits"], "#check", "Check a council")}
-        ${homePath(icon.user(), "Check my own keys", "See every key on your account, what each one can do, and remove the ones you don't use.", ["One plain sentence per key", "Safe step-by-step cleanup", "Alert when a key is added"], "#check", "Check my keys")}
+        ${homePath(icon.list(), "Run an AI agent", "Let it pay for APIs, tools and services without access to your wallet.", ["Daily budget and limit per payment", "Allowed recipients", "Scheduled payouts"], html`<a class="btn btn-secondary" href="${pageHref("budget")}" data-nav>Set up an agent budget</a>`)}
+        ${homePath(icon.users(), "Protect a council", "Know before the final vote if a council member's account was taken over.", ["Checks every council member's keys", "Telegram warning before the final vote", "Let an agent earn on idle funds, within limits"], jumpToCheck("Check a council", network === "mainnet" ? "your-dao.sputnik-dao.near" : EXAMPLE_DAO))}
+        ${homePath(icon.user(), "Check my own keys", "See every key on your account, what each one can do, and remove the ones you don't use.", ["One plain sentence per key", "Safe step-by-step cleanup", "Alert when a key is added"], jumpToCheck("Check my keys", network === "mainnet" ? "your-name.near" : EXAMPLE_ACCOUNT, true))}
       </div>
     </section>
 
