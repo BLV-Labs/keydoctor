@@ -24,7 +24,11 @@ import {
   BudgetFlowError,
   confirmFirstSignature,
   confirmProposal,
+  createPlanProposal,
   freshAgentAccount,
+  PAYOUT_STRATEGY,
+  planChangeProposal,
+  planFromForm,
   rulesProposal,
   voteResultText,
   withdrawProposal,
@@ -385,6 +389,23 @@ function followBudgetLink(link: RouteLink, state: BudgetLive): void {
     const values: Record<string, string> = budgetPanelTo();
     if (error === null && link.amount !== null) values.amount = link.amount;
     showBudgetDrawer(renderBudgetPanel("topup", state, error, values), main);
+  }
+  if (link.kind === "strategy") {
+    if (link.id === PAYOUT_STRATEGY && state.plans !== null) openBudgetPanel("plan", main);
+    else {
+      const status = budgetStatus();
+      if (status !== null) status.textContent = link.id === PAYOUT_STRATEGY ? "Scheduled payouts cannot be set up here right now: the plans could not be read." : `Strategy ${link.id} is not available yet.`;
+    }
+  }
+  if (link.kind === "plan") {
+    const row = document.getElementById(`plan-${link.id}`);
+    if (row !== null) {
+      row.scrollIntoView({ block: "center" });
+      row.focus({ preventScroll: true });
+    } else {
+      const status = budgetStatus();
+      if (status !== null) status.textContent = `Plan ${link.id} was not found on this Budget.`;
+    }
   }
   if (link.kind === "approve") {
     const row = document.querySelector<HTMLElement>(`[data-action="budget-approve"][data-id="${link.id}"]`);
@@ -791,7 +812,7 @@ function openAlerts(trigger: HTMLElement): void {
 function openBudgetPanel(panel: BudgetPanel, trigger: HTMLElement): void {
   if (budgetState === null) return;
   showBudgetDrawer(renderBudgetPanel(panel, budgetState, null, budgetPanelTo()), trigger);
-  document.querySelector<HTMLElement>("#budget-panel-form input")?.focus();
+  document.querySelector<HTMLElement>("#budget-panel-form :is(input:not([type=hidden]), select)")?.focus();
 }
 
 /** Opens the Budget drawer with `content`. */
@@ -904,7 +925,7 @@ async function checkBudgetName(input: HTMLInputElement): Promise<void> {
   }
 }
 
-const isBudgetPanel = (v: unknown): v is BudgetPanel => v === "topup" || v === "withdraw" || v === "rules" || v === "add-agent" || v === "recipients";
+const isBudgetPanel = (v: unknown): v is BudgetPanel => v === "topup" || v === "withdraw" || v === "rules" || v === "add-agent" || v === "recipients" || v === "plan";
 
 /** The owner-action form: validates, then starts the one-signature Top up or the two-signature flow. */
 function submitBudgetPanel(form: HTMLFormElement): void {
@@ -915,9 +936,22 @@ function submitBudgetPanel(form: HTMLFormElement): void {
   const values = Object.fromEntries([...new FormData(form).entries()].map(([k, v]) => [k, String(v)]));
   const reject = (error: string) => {
     form.outerHTML = renderBudgetPanel(panel, state, error, { ...values, ...budgetPanelTo() }).value;
-    document.querySelector<HTMLElement>("#budget-panel-form input")?.focus();
+    document.querySelector<HTMLElement>("#budget-panel-form :is(input:not([type=hidden]), select)")?.focus();
   };
   const guardId = state.guard.guard_id;
+  if (panel === "plan") {
+    const now = Date.now();
+    const result = planFromForm(values, state.guard, now);
+    if (!result.ok) return reject(result.error);
+    if (values.step !== "confirm") {
+      form.outerHTML = renderBudgetPanel("plan", state, null, { ...values, step: "confirm" }, now).value;
+      document.querySelector<HTMLElement>('#budget-panel-form [type="submit"]')?.focus();
+      return;
+    }
+    closeBudgetDrawer();
+    startTwoSignatures(createPlanProposal(guardId, result.value));
+    return;
+  }
   if (panel === "add-agent") {
     void addBudgetAgent(state, guardId, (values.label ?? "").trim(), reject);
     return;
@@ -1726,6 +1760,20 @@ root.addEventListener("click", (event) => {
       closeBudgetDrawer();
       changeBudgetAgent(el as HTMLButtonElement);
       break;
+    case "budget-plan": {
+      const guardId = budgetState?.guard?.guard_id;
+      const proposal = guardId === undefined ? null : planChangeProposal(guardId, el.dataset.op ?? "", Number(el.dataset.plan));
+      if (proposal !== null) startTwoSignatures(proposal);
+      break;
+    }
+    case "budget-plan-edit": {
+      const form = el.closest("form");
+      if (form === null || budgetState === null) break;
+      const values = Object.fromEntries([...new FormData(form).entries()].map(([k, v]) => [k, String(v)]));
+      form.outerHTML = renderBudgetPanel("plan", budgetState, null, { ...values, step: "edit" }).value;
+      document.querySelector<HTMLElement>("#bp-receiver")?.focus();
+      break;
+    }
     case "budget-recipient-drop":
       closeBudgetDrawer();
       dropBudgetRecipient(el.dataset.account ?? "");

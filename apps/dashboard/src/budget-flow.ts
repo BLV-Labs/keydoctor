@@ -200,3 +200,117 @@ export function agentProposal(guardId: string, op: string, account: string): Add
   if (op === "disable" || op === "enable") return guardChangeProposal(guardId, "set_agent_enabled", { account_id: account, enabled: op === "enable" });
   return null;
 }
+
+/** The catalog id of the one strategy that runs for real (§11.11.1). */
+export const PAYOUT_STRATEGY = "scheduled-payouts";
+export const MAX_PLAN_RUNS = 1000;
+export const PLAN_UNITS = { minutes: 60, hours: 3_600, days: 86_400 } as const;
+export type PlanUnit = keyof typeof PLAN_UNITS;
+/** `MIN_PLAN_INTERVAL_SEC` in contracts/guard. */
+const MIN_PLAN_INTERVAL_SEC = 60;
+const MAX_PLAN_INTERVAL_SEC = 365 * 86_400;
+const DAY_SEC = 86_400;
+
+/** A Scheduled payout the owner typed, checked. Amounts yoctoNEAR, times milliseconds. */
+export interface PayoutPlan {
+  receiver: string;
+  amount: { yocto: string; near: string };
+  interval_sec: number;
+  runs: number;
+  /** When the first run is due; a time already past is `now`, which the Guard runs at the first keeper cycle. */
+  start_ms: number;
+  /** True when no future start time was typed. */
+  starts_now: boolean;
+}
+
+/** What the Guard reads at `create_plan`: the limits and the recipient list. */
+export type PlanRules = { policy: { max_per_tx: string; max_per_day: string } | null; whitelist: { account_id: string; max_per_tx: string | null }[] | null };
+
+const DATETIME_LOCAL = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+
+/**
+ * The setup form to a plan, refused here for everything the Guard's `create_plan` refuses (`check_plan`,
+ * `plan_limit_failure` with nothing spent): Sputnik shows a FunctionCall the Guard refused as Approved, so the
+ * owner would see a plan that does not exist. The keeper is refused too: it signs for every Budget (ADR 0005 K1).
+ */
+export function planFromForm(v: Record<string, string>, rules: PlanRules, nowMs: number): FormResult<PayoutPlan> {
+  const receiver = (v.receiver ?? "").trim();
+  const runsText = (v.runs ?? "").trim();
+  const everyText = (v.every ?? "").trim();
+  const unit = v.unit as PlanUnit;
+  const startText = (v.start ?? "").trim();
+  if (rules.policy === null || rules.whitelist === null) return fail("Could not read your rules or recipients, so the plan cannot be checked. Reload and try again.");
+  if (receiver === KEEPER_ACCOUNT) return fail(GUARD_FORM_TEXT.KEEPER_RECIPIENT.en);
+  const entry = rules.whitelist.find((w) => w.account_id === receiver);
+  if (entry === undefined) return fail("Pick a recipient from your list. Add the account under Manage recipients first.");
+  const amount = amountFromForm(v.amount ?? "", null);
+  if (!amount.ok) return amount;
+  const yocto = BigInt(amount.value.yocto);
+  if (yocto > BigInt(rules.policy.max_per_tx)) return fail(`Amount per run is above your per-request limit (${yoctoToNear(rules.policy.max_per_tx)} NEAR). Lower it or edit your rules.`);
+  if (entry.max_per_tx !== null && yocto > BigInt(entry.max_per_tx)) return fail(`Amount per run is above this recipient's limit (${yoctoToNear(entry.max_per_tx)} NEAR).`);
+  if (yocto > BigInt(rules.policy.max_per_day)) return fail(`Amount per run is above your 24-hour limit (${yoctoToNear(rules.policy.max_per_day)} NEAR). Lower it or edit your rules.`);
+  if (!(unit in PLAN_UNITS) || !/^\d{1,6}$/.test(everyText)) return fail("Every: a whole number of minutes, hours or days.");
+  const interval = Number(everyText) * PLAN_UNITS[unit];
+  if (interval < MIN_PLAN_INTERVAL_SEC) return fail("Runs must be at least 1 minute apart.");
+  if (interval > MAX_PLAN_INTERVAL_SEC) return fail("Runs can be at most 365 days apart.");
+  if (!/^\d{1,4}$/.test(runsText) || Number(runsText) < 1 || Number(runsText) > MAX_PLAN_RUNS) return fail(`Number of runs: a whole number from 1 to ${MAX_PLAN_RUNS}.`);
+  let start = nowMs;
+  if (startText !== "") {
+    const typed = DATETIME_LOCAL.test(startText) ? new Date(startText).getTime() : NaN;
+    if (Number.isNaN(typed)) return fail("Start: pick a date and time, or leave it empty to start now.");
+    start = Math.max(typed, nowMs);
+  }
+  return { ok: true, value: { receiver, amount: amount.value, interval_sec: interval, runs: Number(runsText), start_ms: start, starts_now: start === nowMs } };
+}
+
+/** `create_plan(plan)` on the Guard. The deposit pays the plan's storage; the Guard sends back what is not used. */
+export function createPlanProposal(guardId: string, plan: PayoutPlan): AddProposalArgs {
+  return guardChangeProposal(guardId, "create_plan", {
+    plan: {
+      action: { type: "transfer", receiver_id: plan.receiver },
+      strategy_id: PAYOUT_STRATEGY,
+      token_in: "",
+      amount_per_run: plan.amount.yocto,
+      interval_sec: plan.interval_sec,
+      runs_total: plan.runs,
+      start_at: (BigInt(plan.start_ms) * 1_000_000n).toString(),
+    },
+  });
+}
+
+/** Pause, resume or cancel one plan; null for an unknown op. */
+export function planChangeProposal(guardId: string, op: string, planId: number): AddProposalArgs | null {
+  const method = op === "pause" ? "pause_plan" : op === "resume" ? "resume_plan" : op === "cancel" ? "cancel_plan" : null;
+  return method === null || !Number.isSafeInteger(planId) || planId < 0 ? null : guardChangeProposal(guardId, method, { plan_id: planId });
+}
+
+/** §11.11.4 partial top-up: enough for the next `k` runs. */
+const PARTIAL_RUNS = 2n;
+
+/** The numbers under the setup form (§11.11.4), in yoctoNEAR. `spendable` null means the balance is unknown. */
+export interface PlanTotals {
+  total: string;
+  /** max(0, total − spendable); null when the balance is unknown. */
+  short: string | null;
+  /** max(0, 2 × amount − spendable): enough for the next two runs; null when the balance is unknown. */
+  partial: string | null;
+  /** The most runs that fall inside one rolling 24 hours, and what they spend of the shared daily limit. */
+  runs_per_day: number;
+  per_day: string;
+  last_run_ms: number;
+}
+
+export function planTotals(plan: PayoutPlan, spendable: string | null): PlanTotals {
+  const amount = BigInt(plan.amount.yocto);
+  const total = amount * BigInt(plan.runs);
+  const left = (need: bigint) => (spendable === null ? null : (need > BigInt(spendable) ? need - BigInt(spendable) : 0n).toString());
+  const runsPerDay = Math.min(plan.runs, Math.floor((DAY_SEC - 1) / plan.interval_sec) + 1);
+  return {
+    total: total.toString(),
+    short: left(total),
+    partial: left(amount * (BigInt(plan.runs) < PARTIAL_RUNS ? BigInt(plan.runs) : PARTIAL_RUNS)),
+    runs_per_day: runsPerDay,
+    per_day: (amount * BigInt(runsPerDay)).toString(),
+    last_run_ms: plan.start_ms + (plan.runs - 1) * plan.interval_sec * 1000,
+  };
+}

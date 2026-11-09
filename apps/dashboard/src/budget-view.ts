@@ -2,9 +2,10 @@
 // through the owner's wallet, and each button says how many signatures it takes (docs/final-idea.md §11.10.5).
 import type { Network } from "key-doctor";
 import { SPUTNIK_FACTORY } from "./budget-create.ts";
-import type { BudgetLive, BudgetProposal, BudgetRequest } from "./budget-read.ts";
-import { nearToYocto, yoctoToNear } from "./format.ts";
-import { GUARD_FORM_TEXT, type GuardFormError } from "./guard-form.ts";
+import { PLAN_UNITS, planFromForm, planTotals, type PlanUnit } from "./budget-flow.ts";
+import type { BudgetLive, BudgetPlan, BudgetProposal, BudgetRequest } from "./budget-read.ts";
+import { formatUtc, nearToYocto, yoctoToNear } from "./format.ts";
+import { GUARD_FORM_TEXT, KEEPER_ACCOUNT, type GuardFormError } from "./guard-form.ts";
 import { NEW_AGENT_DEPOSIT } from "./guard-proposals.ts";
 import type { GuardLive } from "./guard-read.ts";
 import { html, type Html } from "./html.ts";
@@ -18,7 +19,7 @@ import { avatar } from "./ui.ts";
 export const BUDGET_FACTORY_NAME = "keydoctor-guards-v2.testnet";
 const EXAMPLE_BUDGET_DAO = "kdoncall.sputnik-v2.testnet";
 
-export type BudgetPanel = "topup" | "withdraw" | "rules" | "add-agent" | "recipients";
+export type BudgetPanel = "topup" | "withdraw" | "rules" | "add-agent" | "recipients" | "plan";
 export type ActivityFilter = "all" | "waiting" | "auto" | "rejected";
 
 /** Wording of the signature count on a button or note. */
@@ -281,9 +282,49 @@ const STRATEGIES: ReadonlyArray<readonly [string, string]> = [
   ["Take profit", "Sell part of your NEAR at a price you pick."],
 ];
 
-const STRATEGIES_CARD = html`<section class="card" aria-labelledby="b-later">
-    <div class="b-head"><div><h2 id="b-later" class="b-h">Strategies</h2><p class="small muted">Not available yet: strategies, scheduled plans and USDC balances are not built in this version.</p></div></div>
-    <ul class="plain-list">${STRATEGIES.map(([name]) => html`<li class="strategy-row"><span>${name}</span><span class="small muted">Coming soon</span></li>`)}</ul></section>`;
+/** The strategy that runs for real; the others are labelled Coming soon. */
+const PAYOUTS = "Scheduled payouts";
+
+const nsToUtc = (ns: string): string => formatUtc(new Date(Number(BigInt(ns) / 1_000_000n)).toISOString());
+
+/** "5 minutes", "2 hours", "1 day": the largest unit that divides the interval. */
+export function everyText(sec: number): string {
+  const [unit, size] = sec % PLAN_UNITS.days === 0 ? ["day", PLAN_UNITS.days] : sec % PLAN_UNITS.hours === 0 ? ["hour", PLAN_UNITS.hours] : sec % PLAN_UNITS.minutes === 0 ? ["minute", PLAN_UNITS.minutes] : ["second", 1];
+  const n = sec / size;
+  return `${n} ${unit}${n === 1 ? "" : "s"}`;
+}
+
+const PAUSE_TEXT: Record<string, string> = {
+  owner: "Paused by you",
+  insufficient_balance: "Paused: the Budget ran out of NEAR",
+  guard_low_near: "Paused: the Guard needs NEAR for the proposal bond",
+  failures: "Paused: it no longer fits your rules, or runs kept failing",
+};
+
+export function planStatus(p: BudgetPlan): string {
+  if (p.status === "paused") return (p.pause_reason !== null && PAUSE_TEXT[p.pause_reason]) || "Paused";
+  return p.status === "active" ? "Active" : p.status === "completed" ? "Completed" : "Cancelled";
+}
+
+/** One plan with its two-signature Pause / Resume / Cancel. Row id `plan-<id>` is the `&plan=` deep link target. */
+function planRow(p: BudgetPlan): Html {
+  const what = p.receiver_id === null ? `Plan #${p.plan_id} (${p.action_type})` : `${near(p.amount_per_run)} to ${p.receiver_id} every ${everyText(p.interval_sec)}`;
+  const meta = [`Run ${p.runs_done} of ${p.runs_total}`, planStatus(p), p.next_run_at === null ? "" : `next ${nsToUtc(p.next_run_at)}`].filter((t) => t !== "").join(" · ");
+  const btn = (op: string, label: string) => html`<button type="button" class="btn btn-ghost" data-action="budget-plan" data-op="${op}" data-plan="${p.plan_id}">${label} <span class="sig">${signatures(2)}</span></button>`;
+  const open = p.status === "active" || p.status === "paused";
+  return html`<li id="plan-${p.plan_id}" class="recipient-row" tabindex="-1"><span class="stack-xs grow-min"><span class="wrap">${what}</span><span class="small muted wrap">${meta}</span></span>
+    ${open ? html`<span class="actions">${p.status === "active" ? btn("pause", "Pause") : btn("resume", "Resume")}${btn("cancel", "Cancel")}</span>` : ""}</li>`;
+}
+
+/** Scheduled payouts can be set up only once the Guard's plans were read: that read is the proof the Guard has plans. */
+function strategiesCard(b: BudgetLive): Html {
+  const plans = b.plans;
+  const note = plans === null ? "Could not read scheduled plans from this Budget, so they cannot be set up here right now." : "Scheduled payouts run on testnet. The other strategies are coming soon.";
+  return html`<section class="card" aria-labelledby="b-later">
+    <div class="b-head"><div><h2 id="b-later" class="b-h">Strategies</h2><p class="small muted">${note}</p></div></div>
+    <ul class="plain-list">${STRATEGIES.map(([name]) => html`<li class="strategy-row"><span>${name}</span>${name === PAYOUTS && plans !== null ? html`<button type="button" class="btn btn-ghost" data-action="budget-open" data-panel="plan">Set up <span class="sig">${signatures(2)}</span></button>` : html`<span class="small muted">Coming soon</span>`}</li>`)}</ul>
+    ${plans === null || plans.length === 0 ? "" : html`<h3 class="small strong pad-row">Your plans</h3><ul class="plain-list">${plans.map(planRow)}</ul>`}</section>`;
+}
 
 const ALERTS_CARD = html`<section class="card" aria-labelledby="b-alerts">
     <div class="b-head"><h2 id="b-alerts" class="b-h">Alerts</h2><button type="button" class="btn btn-ghost" data-action="alerts-open">Manage</button></div>
@@ -328,7 +369,7 @@ export function renderBudget(b: BudgetLive, network: Network, setup: Html | "" =
     <div id="budget-next"></div>
     <div class="budget-cols">
       <div class="budget-main">${pendingCard(b, now)}${renderBudgetActivity(b, "all", now)}</div>
-      <aside class="budget-side" aria-label="Budget setup">${rulesCard(b, g)}${agentsCard(g)}${STRATEGIES_CARD}${ALERTS_CARD}</aside>
+      <aside class="budget-side" aria-label="Budget setup">${rulesCard(b, g)}${agentsCard(g)}${strategiesCard(b)}${ALERTS_CARD}</aside>
     </div>
     ${technical(b, g, network)}
     <dialog id="budget-action" class="drawer" aria-labelledby="bp-title"></dialog>`;
@@ -358,7 +399,7 @@ export function balanceAfter(b: BudgetLive, panel: "topup" | "withdraw", amount:
 }
 
 /** The drawer for one owner action, with its signature count in plain words. `values.to` is the connected account. */
-export function renderBudgetPanel(panel: BudgetPanel, b: BudgetLive, error: string | null = null, values: Record<string, string> = {}): Html {
+export function renderBudgetPanel(panel: BudgetPanel, b: BudgetLive, error: string | null = null, values: Record<string, string> = {}, now: number = Date.now()): Html {
   const v = (name: string, fallback = "") => values[name] ?? fallback;
   const p = b.guard?.policy ?? null;
   const field = (name: string, label: string, value: string, placeholder = "", opts: { mono?: boolean; unit?: boolean } = {}) => {
@@ -403,7 +444,78 @@ export function renderBudgetPanel(panel: BudgetPanel, b: BudgetLive, error: stri
         ${field("label", "Name (optional)", v("label"), "vendor")}
         ${field("cap", "Limit per payment for this recipient (optional)", v("cap"), "2", { unit: true })}
         <p class="small muted">${signatures(2)} for each add or remove. A small storage deposit leaves the Budget when you add one; what is not used comes back.</p>`, "Add recipient");
+    case "plan":
+      return planPanel(b, error, values, now, field, err);
   }
+}
+
+type Field = (name: string, label: string, value: string, placeholder?: string, opts?: { mono?: boolean; unit?: boolean }) => Html;
+
+const PLAN_UNIT_LABELS: Record<PlanUnit, string> = { minutes: "minutes", hours: "hours", days: "days" };
+
+/**
+ * Scheduled payouts setup (§11.11.4): the form, then a review the owner checks before signing. A balance short of all
+ * runs does not block: the plan starts and pauses with an alert when the money runs out. The review re-checks the
+ * form, and a form that no longer passes goes back to the edit step with the reason.
+ */
+function planPanel(b: BudgetLive, error: string | null, values: Record<string, string>, now: number, field: Field, err: Html | ""): Html {
+  const v = (name: string, fallback = "") => values[name] ?? fallback;
+  const g = b.guard;
+  const rules = { policy: g?.policy ?? null, whitelist: g?.whitelist ?? null };
+  const checked = values.step === "confirm" && error === null ? planFromForm(values, rules, now) : null;
+  const shell = (body: Html, foot: Html) => html`<form id="budget-panel-form" class="drawer-form" data-panel="plan" novalidate>${drawerHead("Scheduled payouts", "Pay a recipient the same amount on a schedule.")}
+      <div class="drawer-body">${body}${checked !== null && !checked.ok ? html`<p id="bp-error" class="field-error" role="alert">${checked.error}</p>` : err}</div>
+      <div class="drawer-foot">${foot}</div></form>`;
+  if (checked !== null && checked.ok) {
+    const plan = checked.value;
+    const t = planTotals(plan, b.withdrawable);
+    const hidden = ["receiver", "amount", "every", "unit", "runs", "start"].map((k) => html`<input type="hidden" name="${k}" value="${v(k)}">`);
+    const maxDay = g?.policy?.max_per_day ?? null;
+    const overDay = maxDay !== null && BigInt(t.per_day) > BigInt(maxDay);
+    return shell(html`<input type="hidden" name="step" value="confirm">${hidden}
+      <div class="sum-box">
+        ${sumRow("To", html`<span class="mono">${plan.receiver}</span>`)}
+        ${sumRow("Amount per run", `${plan.amount.near} NEAR`)}
+        ${sumRow("Every", everyText(plan.interval_sec))}
+        ${sumRow("Runs", String(plan.runs))}
+        ${sumRow("First run", plan.starts_now ? "Right away" : formatUtc(new Date(plan.start_ms).toISOString()))}
+        ${sumRow("Last run", formatUtc(new Date(t.last_run_ms).toISOString()))}
+        ${sumRow("Total", near(t.total))}
+        ${sumRow("Spendable now", near(b.withdrawable))}
+      </div>
+      ${t.short === null
+        ? html`<p class="check-line">${icon.alert()}<span>Could not read the balance, so the page cannot tell whether it covers every run.</span></p>`
+        : BigInt(t.short) > 0n
+          ? html`<p class="banner banner-cleanup">${icon.alertSmall()}<span>The Budget is ${near(t.short)} short of all runs. The plan still starts; it pauses and alerts you when the money runs out.${t.partial !== null && BigInt(t.partial) > 0n ? ` Top up at least ${near(t.partial)} to cover the next ${plan.runs < 2 ? "run" : "2 runs"}.` : ""}</span></p>`
+          : ""}
+      ${overDay ? html`<p class="banner banner-cleanup">${icon.alertSmall()}<span>Up to ${t.runs_per_day} runs fall in one 24 hours (${near(t.per_day)}), above your 24-hour limit of ${near(maxDay)}. A run over the limit moves to the next slot; it is not lost.</span></p>` : ""}
+      <p class="small muted">Each run counts against the same 24-hour limit as your agents' payments. Key Doctor fee: free during testing. Prices can change. This is not investment advice.</p>
+      <p class="small muted">${signatures(2)}: a request to start the plan, then your approval once the page has checked it. 0.01 NEAR storage deposit leaves the Budget; what is not used comes back.</p>`,
+      html`<button type="button" class="btn btn-secondary" data-action="budget-plan-edit">Back</button><button type="submit" class="btn btn-primary">Start plan <span class="sig">${signatures(2)}</span></button>`);
+  }
+  const list = (rules.whitelist ?? []).filter((w) => w.account_id !== KEEPER_ACCOUNT);
+  const to = v("receiver", list[0]?.account_id ?? "");
+  const unit = v("unit", "days");
+  const start = v("start");
+  const body = rules.whitelist === null
+    ? html`<p class="check-line">${icon.alert()}<span>Could not read your recipients right now. Reload and try again.</span></p>`
+    : list.length === 0
+      ? html`<p class="banner banner-cleanup">${icon.info()}<span>A plan pays one of your allowed recipients. Add one first.</span></p>
+        <button type="button" class="btn btn-ghost btn-start" data-action="budget-open" data-panel="recipients">Manage recipients <span class="sig">${signatures(2)}</span></button>`
+      : html`<div class="stack-xs"><label class="label" for="bp-receiver">Pay to</label>
+          <select id="bp-receiver" name="receiver" class="input mono">${list.map((w) => html`<option value="${w.account_id}"${w.account_id === to ? " selected" : ""}>${w.label === "" ? w.account_id : `${w.label} (${w.account_id})`}</option>`)}</select></div>
+        ${field("amount", "Amount per run", v("amount"), "1", { unit: true })}
+        <div class="grid-2">
+          <div class="stack-xs"><label class="label" for="bp-every">Every</label>
+            <div class="input-unit"><input id="bp-every" name="every" type="text" inputmode="numeric" class="input" value="${v("every", "1")}" autocomplete="off">
+              <select name="unit" class="input" aria-label="Unit">${(Object.keys(PLAN_UNITS) as PlanUnit[]).map((u) => html`<option value="${u}"${u === unit ? " selected" : ""}>${PLAN_UNIT_LABELS[u]}</option>`)}</select></div></div>
+          ${field("runs", "Number of runs", v("runs", "3"))}
+        </div>
+        <div class="stack-xs"><label class="label" for="bp-start">Start (your local time, optional)</label>
+          <input id="bp-start" name="start" type="datetime-local" class="input" value="${start}"><p class="small muted">Empty or past: the first run is due right away.</p></div>
+        <p class="small muted">The Guard runs each payment when it is due and files it as an approved request. Payments must fit your rules: ${near(g?.policy?.max_per_tx)} per request, ${near(g?.policy?.max_per_day)} in any 24 hours.</p>`;
+  return shell(html`<input type="hidden" name="step" value="edit">${body}`,
+    html`${CANCEL}<button type="submit" class="btn btn-primary"${list.length === 0 ? " disabled" : ""}>Review</button>`);
 }
 
 /** What is on the list now, each with its own two-signature Remove. Unknown is said, never shown as an empty list. */
@@ -601,7 +713,7 @@ export function renderBudgetCreate(form: Html): Html {
         <button type="button" class="btn btn-primary" data-action="open-wallet">${icon.wallet()}Connect wallet</button></section>
       <ol class="plain how-steps">${STEPS.map(([title, note], i) => html`<li><span class="step-dot">${i + 1}</span><div class="stack-xs"><strong>${title}</strong><p class="small muted">${note}</p></div></li>`)}</ol>
       <section class="stack-sm" aria-labelledby="b-strategies"><h2 id="b-strategies" class="h2">Strategies</h2>
-        <div class="strategy-grid">${STRATEGIES.map(([name, note]) => html`<article class="card strategy-card"><div class="strategy-head"><h3 class="strategy-h">${name}</h3><span class="pill pill-note">Coming soon</span></div><p class="small muted">${note}</p></article>`)}</div></section>
+        <div class="strategy-grid">${STRATEGIES.map(([name, note]) => html`<article class="card strategy-card"><div class="strategy-head"><h3 class="strategy-h">${name}</h3><span class="pill pill-note">${name === PAYOUTS ? "After setup" : "Coming soon"}</span></div><p class="small muted">${note}</p></article>`)}</div></section>
     </div>
     <div class="stack" data-wallet-on hidden>
       <section class="stack-xs"><h1 class="h1">Create Agent Budget</h1><p class="muted budget-lead">${LEAD}</p></section>

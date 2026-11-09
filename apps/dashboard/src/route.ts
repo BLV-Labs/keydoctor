@@ -10,7 +10,9 @@ export type RouteLink =
   | { kind: "alerts" }
   | { kind: "add-agent" }
   | { kind: "approve"; id: number }
-  | { kind: "topup"; token: string; amount: string | null };
+  | { kind: "topup"; token: string; amount: string | null }
+  | { kind: "strategy"; id: string }
+  | { kind: "plan"; id: number };
 
 export interface Route {
   /** The nav page: `?page=` without a target; any `?target=` is the Check page. */
@@ -61,6 +63,10 @@ function parseLink(p: string | null, params: URLSearchParams): RouteLink | null 
   if (p !== "budget") return null;
   const approve = params.get("approve");
   if (approve !== null && /^\d{1,15}$/.test(approve)) return { kind: "approve", id: Number(approve) };
+  const plan = params.get("plan");
+  if (plan !== null && /^\d{1,9}$/.test(plan)) return { kind: "plan", id: Number(plan) };
+  const strategy = params.get("strategy");
+  if (strategy !== null && /^[a-z0-9-]{1,64}$/.test(strategy)) return { kind: "strategy", id: strategy };
   const token = params.get("topup");
   if (token === null || token.trim() === "") return null;
   const amount = params.get("amount");

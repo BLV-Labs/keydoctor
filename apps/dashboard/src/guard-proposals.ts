@@ -106,8 +106,11 @@ export type GuardMethod = (typeof GUARD_METHODS)[number];
 
 export const isGuardMethod = (m: unknown): m is GuardMethod => (GUARD_METHODS as readonly unknown[]).includes(m);
 
+/** The DAO-only plan methods (§11.11.2). Only the Agent Budget page proposes them, so the council form does not list them. */
+export type PlanMethod = "create_plan" | "pause_plan" | "resume_plan" | "cancel_plan";
+
 /** Methods that add an entry: the Guard refuses them without a deposit for the storage and refunds the rest to the DAO. */
-const STORAGE_METHODS: readonly GuardMethod[] = ["add_agent", "add_whitelist", "add_guardian"];
+const STORAGE_METHODS: readonly (GuardMethod | PlanMethod)[] = ["add_agent", "add_whitelist", "add_guardian", "create_plan"];
 export const GUARD_STORAGE_DEPOSIT = "10000000000000000000000";
 /** `AGENT_GAS_FUND` in contracts/guard: what the Guard gives a new agent account. */
 export const AGENT_GAS_FUND_YOCTO = 5n * 10n ** 23n;
@@ -115,7 +118,7 @@ export const AGENT_GAS_FUND_YOCTO = 5n * 10n ** 23n;
 export const NEW_AGENT_DEPOSIT = (BigInt(GUARD_STORAGE_DEPOSIT) + AGENT_GAS_FUND_YOCTO).toString();
 
 /** A FunctionCall proposal DAO → Guard, the only way to change a locked Guard. */
-export function guardChangeProposal(guardId: string, method: GuardMethod, args: object, deposit: string = STORAGE_METHODS.includes(method) ? GUARD_STORAGE_DEPOSIT : "0"): AddProposalArgs {
+export function guardChangeProposal(guardId: string, method: GuardMethod | PlanMethod, args: object, deposit: string = STORAGE_METHODS.includes(method) ? GUARD_STORAGE_DEPOSIT : "0"): AddProposalArgs {
   return {
     proposal: {
       description: `Agent Guard ${guardId}: ${method}`,
