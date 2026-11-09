@@ -1,11 +1,12 @@
 // Read-only chain data for My Agents: the agents of every DAO where a connected wallet account sits on the council.
-// Payment agents come from the Guard factory's `list_guards`; Yield agents from the DAOs this browser opened on
-// the Yield page (a Yield agent has no contract to list). One unreadable DAO never hides the others.
+// Payment agents come from the Guard factory's `list_guards`; Yield agents from the DAOs this browser created one for
+// with "Earn on idle funds" (a Yield agent has no contract to list). One unreadable DAO never hides the others.
 import { createRpc, DEFAULT_RPC_URLS, type Network, type Rpc } from "key-doctor";
 import { readBudget, type BudgetLive } from "./budget-read.ts";
 import { readGuardDao, type GuardDao } from "./guard-read.ts";
 import { suffixNetwork } from "./route.ts";
 import { councilAccounts, parsePolicy, readYieldPositions, seenYieldDaos, type YieldPosition } from "./yield-read.ts";
+import { loadSettings } from "./yield-settings.ts";
 
 export type AgentStatus = "on" | "off" | "waiting" | "farming" | "idle" | "unknown";
 
@@ -90,6 +91,14 @@ export function yieldRow(dao: string, positions: YieldPosition[] | null): AgentR
   };
 }
 
+/**
+ * The DAOs on `network` that have a Yield agent: opened on the Yield page and given limits (Create in "Earn on idle
+ * funds", or Set limits on the agent page). Only opening a DAO's Yield page reads it; it does not create an agent.
+ */
+export function createdYieldDaos(seen: readonly string[], network: Network, hasSettings: (dao: string) => boolean): string[] {
+  return seen.filter((d) => suffixNetwork(d) === network && hasSettings(d));
+}
+
 /** One budget on the Your agents page. `live` is null when its read failed, so only its card says so. */
 export interface BudgetCard {
   dao: string;
@@ -126,7 +135,7 @@ export async function readMyAgents(accounts: readonly string[], factory: string,
   const { height } = await rpc.block();
   const listed = factory === "" ? [] : await listGuardRows(rpc, factory, height);
   const guarded = new Set(guardDaoIds(listed));
-  const yieldDaos = new Set(seenYieldDaos().filter((d) => suffixNetwork(d) === network));
+  const yieldDaos = new Set(createdYieldDaos(seenYieldDaos(), network, (d) => loadSettings(d) !== null));
   const all = [...new Set([...guarded, ...yieldDaos])];
   let unread = 0;
   const council = (
