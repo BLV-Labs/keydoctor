@@ -28,3 +28,4 @@ Add a new record when:
 | [0003](0003-public-read-only-mcp.md) | Open `/mcp`, no shared token | 2026-10-30 | Accepted |
 | [0005](0005-unprivileged-keeper-key.md) | Unprivileged keeper key in the Worker | 2026-11-06 | Accepted |
 | [0006](0006-guard-plan-actions-and-dao-upgrade.md) | Guard plan actions and DAO-only upgrade | 2026-11-06 | Accepted |
+| [0007](0007-dca-swap-step.md) | DCA swap step in the Guard | 2026-11-09 | Accepted |

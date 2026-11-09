@@ -51,7 +51,7 @@ interface Sent {
 const METHOD_NOT_FOUND = Symbol("MethodNotFound");
 
 /** A fake NEAR RPC for the Guard: views from `views`, the access key, and send_tx answered by `onSend`. */
-function chain(opts: { views?: Record<string, (args: any) => unknown>; permission?: unknown; onSend?: (s: Sent) => unknown } = {}) {
+function chain(opts: { views?: Record<string, (args: any) => unknown>; permission?: unknown; onSend?: (s: Sent) => unknown; network?: "mainnet" | "testnet" } = {}) {
   let nonce = 42n;
   const sent: Sent[] = [];
   const views: Record<string, (args: any) => unknown> = {
@@ -87,7 +87,7 @@ function chain(opts: { views?: Record<string, (args: any) => unknown>; permissio
     throw new Error(`unexpected RPC ${method}`);
   }) as unknown as typeof fetch;
   const guard = createGuard({
-    config: { network: "testnet", rpcUrl: "https://rpc.test", guardId: GUARD, agentId: AGENT, keyPath: "/unused" },
+    config: { network: opts.network ?? "testnet", rpcUrl: "https://rpc.test", guardId: GUARD, agentId: AGENT, keyPath: "/unused" },
     rpc: new Rpc("https://rpc.test", fetchFn),
     key: KEY,
     newRequestId: () => UUID,
@@ -329,6 +329,7 @@ describe("plans_status", () => {
       strategy_id: "scheduled-payouts",
       action: "transfer",
       receiver_id: "vendor.testnet",
+      token_out: null,
       amount_per_run_near: "0.1",
       interval_sec: 3600,
       runs_done: 1,
@@ -340,6 +341,15 @@ describe("plans_status", () => {
       url: "https://key-doctor-dashboard.pages.dev/?page=budget&dao=dao.sputnik-v2.testnet&plan=0",
     });
     assert.equal(sent.length, 0, "a status read must never sign a transaction");
+  });
+
+  // An owner asking "what does this plan buy" needs the token, not a receiver: a swap has none.
+  it("names the token a swap plan buys and no receiver", async () => {
+    const swap = plan(3, { strategy_id: "dca-near", action: { type: "swap", pool_id: 57, token_out: "usdt.fakes.testnet", max_slippage_bps: 100 } });
+    const [row] = (await chain({ views: { get_plans: () => [swap] } }).guard.plansStatus()).plans;
+    assert.equal(row!.action, "swap");
+    assert.equal(row!.token_out, "usdt.fakes.testnet");
+    assert.equal(row!.receiver_id, null);
   });
 
   it("says why a plan is paused and gives no next run for one that will not run", async () => {
@@ -368,19 +378,28 @@ describe("plans_status", () => {
 });
 
 describe("strategies_list", () => {
-  it("links only the live strategy, to the owner's setup drawer for this DAO", async () => {
+  it("links only the live strategies, to the owner's setup drawer for this DAO", async () => {
     const { guard, sent } = chain({ views: { get_plans: () => [] } });
     const r = await guard.strategiesList();
     assert.deepEqual(r.strategies.map((s) => s.id), ["scheduled-payouts", "dca-near", "auto-stake", "rebalance", "take-profit", "custom"]);
-    const [payouts, ...rest] = r.strategies;
+    const [payouts, dca, ...rest] = r.strategies;
     assert.equal(payouts!.status, "live");
     assert.equal(payouts!.setup_url, "https://key-doctor-dashboard.pages.dev/?page=budget&dao=dao.sputnik-v2.testnet&strategy=scheduled-payouts");
+    assert.equal(dca!.status, "live");
+    assert.equal(dca!.setup_url, "https://key-doctor-dashboard.pages.dev/?page=budget&dao=dao.sputnik-v2.testnet&strategy=dca-near");
     // A link to a strategy that cannot be set up would look usable and do nothing (§11.11.1).
     for (const s of rest) assert.equal(s.setup_url, null, s.id);
     assert.equal(r.strategies.find((s) => s.id === "custom")!.status, "contact");
     assert.match(r.strategies.find((s) => s.id === "dca-near")!.summary, /This is not investment advice/);
     assert.match(r.note, /You cannot set up a strategy/);
     assert.equal(sent.length, 0);
+  });
+
+  // The Guard refuses a swap plan off testnet (ADR 0007), so a mainnet link would lead to a setup that cannot start.
+  it("gives DCA no setup link on mainnet, but keeps payouts", async () => {
+    const r = await chain({ network: "mainnet", views: { get_plans: () => [] } }).guard.strategiesList();
+    assert.equal(r.strategies.find((s) => s.id === "dca-near")!.setup_url, null);
+    assert.ok(r.strategies.find((s) => s.id === "scheduled-payouts")!.setup_url);
   });
 
   it("gives no setup link on a Guard that cannot run plans", async () => {
