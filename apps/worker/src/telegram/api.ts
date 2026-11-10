@@ -28,6 +28,7 @@ export interface Button {
 }
 
 export interface Outgoing {
+  /** Telegram HTML: every value inside is escaped with `esc`. */
   text: string;
   buttons?: Button[];
 }
@@ -54,15 +55,37 @@ async function call(token: string, method: string, body: Record<string, unknown>
   throw new TelegramError(res.status, description, migrateTo);
 }
 
-/** Plain text (no parse_mode), so chain text can never inject markup. URL buttons go in an inline keyboard. */
-export function sendMessage(token: string, chatId: string, msg: Outgoing): Promise<void> {
-  const text = msg.text.length > MAX_TEXT ? `${msg.text.slice(0, MAX_TEXT - 1)}…` : msg.text;
-  return call(token, "sendMessage", {
+/** Escapes text for Telegram HTML. Every chain or user value goes through it, so it can never inject markup. */
+export function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** The HTML message as plain text: tags dropped, entities read back. */
+export function toPlain(html: string): string {
+  return html.replace(/<[^>]*>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+}
+
+const cut = (s: string): string => (s.length > MAX_TEXT ? `${s.slice(0, MAX_TEXT - 1)}…` : s);
+
+/**
+ * `msg.text` is Telegram HTML (renderers escape every value with `esc`). A message too long to cut safely, or one
+ * Telegram cannot parse, goes as plain text instead, so a formatting slip never loses an alert.
+ * URL buttons go in an inline keyboard.
+ */
+export async function sendMessage(token: string, chatId: string, msg: Outgoing): Promise<void> {
+  const base = {
     chat_id: chatId,
-    text,
     link_preview_options: { is_disabled: true },
     ...(msg.buttons && msg.buttons.length > 0 && { reply_markup: { inline_keyboard: msg.buttons.map((b) => [b]) } }),
-  });
+  };
+  const plain = () => call(token, "sendMessage", { ...base, text: cut(toPlain(msg.text)) });
+  if (msg.text.length > MAX_TEXT) return plain();
+  try {
+    await call(token, "sendMessage", { ...base, text: msg.text, parse_mode: "HTML" });
+  } catch (e) {
+    if (e instanceof TelegramError && e.status === 400 && /can't parse entities/i.test(e.description)) return plain();
+    throw e;
+  }
 }
 
 export function sendTyping(token: string, chatId: string): Promise<void> {

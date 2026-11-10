@@ -502,7 +502,7 @@ describe("GĐ29 keeper: messages (UC18)", () => {
     await runKeeperJob(env);
     assert.equal(sends(chain).length, 2);
     const paused = sends(chain)[1]!;
-    assert.match(String(paused.body.text), /Plan paused: the Budget is short of funds\.\nTop up, then press Resume/);
+    assert.match(String(paused.body.text), /Plan paused: the Budget is short of funds\.\n👉 Top up, then press Resume/);
     assert.deepEqual(buttons(paused).map((b) => b.text), ["View transaction", "Top up"]);
 
     plan.status = "active"; // the owner tops up and resumes
