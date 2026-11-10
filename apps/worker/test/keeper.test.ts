@@ -389,6 +389,23 @@ describe("GĐ29 keeper: what it signs", () => {
     assert.deepEqual(guards.map((g) => g.calls.length > 0), [true, true, true, true, true]);
     assert.equal(rows(env.DB as TestD1, "SELECT guard_cursor FROM keeper_state")[0].guard_cursor, 0, "wraps around");
   });
+
+  it("does not waste a cycle when the Guard count is a multiple of the page size", async (t) => {
+    // Three Guards fill the page, so the cursor lands on 3, past the end. The next cycle must wrap to 0 at once,
+    // or a plan due every 15 minutes runs only every 30 (seen live on payroll-2, 2026-11-09).
+    const guards = [0, 1, 2].map((i) => new FakeGuard(`g${i}.kd-guards.testnet`, `d${i}.sputnik-dao.testnet`));
+    const { env, chain } = setup(t, guards);
+    chain.views.get_policy = () => bytes({ roles: [] });
+    guards.forEach((g) => g.plan());
+    await runKeeperJob(env);
+    assert.equal(rows(env.DB as TestD1, "SELECT guard_cursor FROM keeper_state")[0].guard_cursor, 3);
+    nextHour(chain);
+    const r = await runKeeperJob(env);
+    assert.equal(r.targets_checked, 3);
+    const steps = (g: FakeGuard) => g.calls.filter((c) => c.method === "execute_plan_step").length;
+    assert.deepEqual(guards.map(steps), [2, 2, 2], "every Guard runs its next step in the very next cycle");
+    assert.equal(rows(env.DB as TestD1, "SELECT guard_cursor FROM keeper_state")[0].guard_cursor, 3);
+  });
 });
 
 describe("GĐ29 keeper: K1, no privileged keeper", () => {

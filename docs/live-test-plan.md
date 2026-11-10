@@ -74,7 +74,7 @@ Notes from the 2026-11-09 run:
 | B4 | `/list`, then `/unwatch <dao>`, then `/list` | the DAO is listed, then gone | **open** |
 | B5 | a plain message naming `x.testnet` in private | the same as `/check x.testnet`. In a group with no name, no reply | **open** |
 | B6 | dashboard check page, **Watch in Telegram** | the link opens the bot. `/start <code>` subscribes once. The same code a second time is refused | **open** |
-| B7 | `/yield <dao>`, `/yield_watch <dao>`, `/yield_unwatch <dao>` on a DAO from Y1 | suggestions, then a subscription, then none | **open** |
+| B7 | `/yield <dao>`, `/yield_watch <dao>`, `/yield_unwatch <dao>` on a DAO from Y1 | suggestions, then a subscription, then none | `/yield` pass 2026-11-10 on `payroll-1` (0 test USDC: no suggestion, no model call) and on `kdy1794161239.sputnik-v2.testnet` (one suggestion with model reasons, see Y5). `/yield_watch` and `/yield_unwatch` still **open** |
 | B8 | remove the bot from a test group that watches the demo DAO, make a new proposal, then run W2 | the send to that chat fails and its subscriptions are deleted | **open** |
 
 ### Worker jobs (`/run-check`, owner holds the token)
@@ -125,9 +125,10 @@ Notes from the 2026-11-09 run:
 |---|---|---|---|
 | Y1 | [yield spike](yield-spike-2026-11-09.md): `check`, `dao`, `fund`, register, supply, withdraw | each proposal Approved. The DAO gets its tokens back, and Rhea Lend shows no supply | done 2026-11-09 on `kdy1794161239.sputnik-v2.testnet` (PR #58) |
 | Y2 | `yield_suggestions` (M9) and the dashboard yield page on the Y1 DAO | code-built candidates with their numbers | done 2026-11-09: MCP and the page agree (one candidate, 10.55% APR). The page's Rhea API read was blocked by the CSP, fixed in PR #59 |
-| Y3 | dashboard yield page: supply and withdraw signed by the owner | the proposals pass, as in Y1 | **open** |
-| Y4 | vote on a yield proposal from the page | only for a kind the page builds | **open** |
-| Y5 | a Worker model call on the Y1 DAO | reasons from the TEE model. Every number matches the code-built candidate | **open** |
+| Y3 | dashboard yield page: supply and withdraw signed by the owner | the proposals pass, as in Y1 | done 2026-11-09 on the Y1 DAO: supply #3 and #5 and withdraw-all #4 asked and approved from the page in the owner's wallet |
+| Y3b | partial withdraw: Take it back with an amount (PR for the APR preview) | `Withdraw {token_id, amount}` with the amount in Rhea Lend's inner units (raw × 10^12); only that part comes back | done 2026-11-10 on the Y1 DAO: #6 took 1,300,000 of 1,800,020 USDC back (`withdraw_succeeded`, tx `GxZya33VyMeEGQ1e592xBXiY61aXbmqoAREzsrqr2DYE`). Args from the dashboard builder, signed with near-cli. 500,020 stays supplied. The rate went 0.27% → 1.4432%; the drawer's preview said 1.44% |
+| Y4 | vote on a yield proposal from the page | only for a kind the page builds | done 2026-11-09: votes on #3–#5 from the page. #6 (partial withdraw) shows its amount and an Approve button |
+| Y5 | a Worker model call on the Y1 DAO | reasons from the TEE model. Every number matches the code-built candidate | pass 2026-11-10: `/yield` in Telegram called `Qwen/Qwen3.6-35B-A3B-FP8`, generation `21c7611681a2408f84990e0558759869`. MCP then served the cached advice (`by` model, no fallback). APR 10.56% and `max_amount` `2000020009655` equal the code facts. Found: the reason calls the 10.56% APR an "APY"; `validateAdvice` checks numbers only, not their label |
 | Y6 | `NEAR_AI_API_KEY=... scripts/yield-setup/verify-tee.sh` | exit 0, with the result written to `docs/yield-tee-verify.md` | **open** |
 
 ### Other

@@ -29,7 +29,7 @@ function live(network: "testnet" | "mainnet" = "testnet", over: Partial<YieldLiv
   };
   const kind = supplyProposal("testnet", USDC, "1000000", "20000000").proposal.kind as Record<string, unknown>;
   const proposals = [{ id: 7, proposer: "alice.testnet", description: `${YIELD_PREFIX} supply 1 USDC (test) to Rhea Lend`, status: "InProgress", kind, approvals: 0, submission_time: null }];
-  return { report, policy: null, registered: true, positions: [], proposals, ...over };
+  return { report, policy: null, registered: true, positions: [], pools: null, proposals, ...over };
 }
 
 const view = (over: Partial<CreateView> = {}): CreateView => ({

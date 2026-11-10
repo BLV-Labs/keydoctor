@@ -150,6 +150,22 @@ describe("YD2: validateAdvice", () => {
     assert.equal(got?.[0]?.reason, null);
   });
 
+  it("drops a reason that calls the supply APR an APY: the council would read it as a compounded yield (Y5 live)", () => {
+    const live = "This is the only option with a 8.96% APY and no warnings, despite being a testnet environment.";
+    assert.equal(validateAdvice(out([item(A, "Ổn.", live)]), c)?.[0]?.reason, null);
+    assert.equal(validateAdvice(out([item(A, "APY 8,96%.", "Fine.")]), c)?.[0]?.reason, null, "vi");
+    assert.notEqual(validateAdvice(out([item(A, "Ổn.", live.replace("APY", "APR"))]), c)?.[0]?.reason, null);
+  });
+
+  it("with a reward APY, each percent must match the name next to it", () => {
+    const withReward = report({ opportunities: [{ ...opp(A, "usdc.fakes.testnet", "USDC (test)", 0.0896, 12_800_000, 1_860_000), apy_reward: 0.015 }] });
+    const cr = adviceCandidates(withReward);
+    const reason = (en: string) => validateAdvice(out([item(A, "Ổn.", en)]), cr)?.[0]?.reason;
+    assert.notEqual(reason("8.96% APR plus 1.5% APY in rewards."), null);
+    assert.equal(reason("8.96% APY."), null, "APR named APY");
+    assert.equal(reason("1.5% APR."), null, "APY named APR");
+  });
+
   it("rejects unknown and repeated ids and puts the left-out candidates after, in rule order", () => {
     const got = validateAdvice(out([item("rhea-lend:evil.testnet:supply", "x", "x"), item(B, "Ổn.", "Fine."), item(B, "Lặp.", "Again.")]), c);
     assert.deepEqual(got?.map((x) => x.opportunity_id), [B, A]);

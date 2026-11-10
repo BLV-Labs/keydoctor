@@ -7,13 +7,14 @@ import { base64Json, type AddProposalArgs } from "./guard-proposals.ts";
 /** Where YD0 sends funds on each network; null means the builder is off there. */
 export interface YieldAllowlist {
   lend: string;
-  tokens: ReadonlyArray<{ token_id: string; symbol: string; decimals: number }>;
+  /** extra_decimals: Rhea Lend keeps balances with this many more decimals than the token (checked on the chain). */
+  tokens: ReadonlyArray<{ token_id: string; symbol: string; decimals: number; extra_decimals: number }>;
 }
 
 export const YIELD_ALLOWLIST: Record<Network, YieldAllowlist | null> = {
   testnet: {
     lend: "contract.1638481328.burrow.testnet",
-    tokens: [{ token_id: "usdc.fakes.testnet", symbol: "USDC (test)", decimals: 6 }],
+    tokens: [{ token_id: "usdc.fakes.testnet", symbol: "USDC (test)", decimals: 6, extra_decimals: 12 }],
   },
   // YD4b: opens only after a tiny supply and withdraw on a real DAO (plan Y13).
   mainnet: null,
@@ -91,7 +92,13 @@ export function allowedYieldKind(network: Network, kind: Record<string, unknown>
   if (receiver === list.lend && a.method_name === "execute") {
     if (!sameKeys(args, ["actions"]) || !Array.isArray(args.actions) || args.actions.length !== 1) return false;
     const w: unknown = args.actions[0];
-    return isObj(w) && sameKeys(w, ["Withdraw"]) && isObj(w.Withdraw) && sameKeys(w.Withdraw, ["token_id"]) && isToken(w.Withdraw.token_id);
+    if (!isObj(w) || !sameKeys(w, ["Withdraw"]) || !isObj(w.Withdraw)) return false;
+    const t = list.tokens.find((x) => x.token_id === (w.Withdraw as Record<string, unknown>).token_id);
+    if (t === undefined) return false;
+    if (sameKeys(w.Withdraw, ["token_id"])) return true;
+    // A part: a whole number of token units in Rhea's inner precision, so the page can say exactly how much.
+    const amount = w.Withdraw.amount;
+    return sameKeys(w.Withdraw, ["token_id", "amount"]) && typeof amount === "string" && /^[1-9]\d*$/.test(amount) && BigInt(amount) % 10n ** BigInt(t.extra_decimals) === 0n;
   }
   return false;
 }
@@ -128,10 +135,26 @@ export function supplyProposal(network: Network, tokenId: string, amount: string
   return yieldCall(network, `supply ${tokenAmount(amount, t.decimals)} ${t.symbol} to Rhea Lend`, t.token_id, "ft_transfer_call", { receiver_id: lend, amount, msg: "" }, ONE_YOCTO, MOVE_GAS);
 }
 
-/** Withdraw the whole supplied balance, interest included (no max_amount, as YD0 runs it). */
+/** Withdraw the whole supplied balance, interest included (no amount, as YD0 runs it). */
 export function withdrawAllProposal(network: Network, tokenId: string): AddProposalArgs {
   const t = token(network, tokenId);
   return yieldCall(network, `withdraw all ${t.symbol} from Rhea Lend`, allowlist(network).lend, "execute", { actions: [{ Withdraw: { token_id: t.token_id } }] }, ONE_YOCTO, MOVE_GAS);
+}
+
+/**
+ * Withdraw `amount` raw token units of what the DAO has supplied (`supplied`, raw). Rhea Lend reads `amount` in its
+ * inner precision, so the extra decimals are added. Null, or the whole supplied amount, withdraws all, so interest
+ * still accruing comes back too instead of staying behind as dust.
+ */
+export function withdrawProposal(network: Network, tokenId: string, amount: string | null, supplied: string): AddProposalArgs {
+  const t = token(network, tokenId);
+  if (amount === null || amount === supplied) return withdrawAllProposal(network, tokenId);
+  if (!/^[1-9]\d*$/.test(amount)) throw new YieldProposalError("BAD_AMOUNT", "Enter an amount above 0, or leave it empty to take all back.");
+  if (!/^\d+$/.test(supplied) || BigInt(amount) > BigInt(supplied)) {
+    throw new YieldProposalError("OVER_AVAILABLE", `The amount is more than the ${tokenAmount(supplied, t.decimals)} ${t.symbol} on Rhea Lend.`);
+  }
+  const inner = (BigInt(amount) * 10n ** BigInt(t.extra_decimals)).toString();
+  return yieldCall(network, `withdraw ${tokenAmount(amount, t.decimals)} ${t.symbol} from Rhea Lend`, allowlist(network).lend, "execute", { actions: [{ Withdraw: { token_id: t.token_id, amount: inner } }] }, ONE_YOCTO, MOVE_GAS);
 }
 
 /** Raw token units to a decimal string without float rounding: ("12500000", 6) → "12.5". */
@@ -150,7 +173,8 @@ export function tokenRaw(text: string, decimals: number): string | null {
   return (BigInt(m[1]!) * 10n ** BigInt(decimals) + BigInt((m[2] ?? "").padEnd(decimals, "0") || "0")).toString();
 }
 
-export type YieldMove = { kind: "register" } | { kind: "supply"; amount: string } | { kind: "withdraw" };
+/** Amounts are raw token units; a withdraw amount of null takes everything back. */
+export type YieldMove = { kind: "register" } | { kind: "supply"; amount: string } | { kind: "withdraw"; amount: string | null };
 
 /**
  * What an allowed yield proposal does, read back from its kind for plain wording. Null for anything the page
@@ -161,7 +185,11 @@ export function describeYieldKind(network: Network, kind: Record<string, unknown
   const fc = kind.FunctionCall as { actions: Array<{ method_name: string; args: string }> };
   const a = fc.actions[0]!;
   if (a.method_name === "storage_deposit") return { kind: "register" };
-  if (a.method_name === "execute") return { kind: "withdraw" };
+  if (a.method_name === "execute") {
+    const w = (decodeArgs(a.args) as { actions: Array<{ Withdraw: { token_id: string; amount?: string } }> }).actions[0]!.Withdraw;
+    const t = YIELD_ALLOWLIST[network]!.tokens.find((x) => x.token_id === w.token_id)!;
+    return { kind: "withdraw", amount: w.amount === undefined ? null : (BigInt(w.amount) / 10n ** BigInt(t.extra_decimals)).toString() };
+  }
   const args = decodeArgs(a.args) as { amount: string };
   return { kind: "supply", amount: args.amount };
 }

@@ -117,7 +117,13 @@ async function runCycle(env: Env, cfg: Config, cursor: number, result: KeeperRes
   const head = await rpc.head();
   await checkBalance(env, cfg, await rpc.balance(cfg.accountId), result);
 
-  const guards = await rpc.view<GuardView[]>(cfg.factoryId, "list_guards", { from_index: cursor, limit: cfg.maxGuards });
+  const page = (from: number) => rpc.view<GuardView[]>(cfg.factoryId, "list_guards", { from_index: from, limit: cfg.maxGuards });
+  let guards = await page(cursor);
+  // A full last page leaves the cursor at the end of the list. Wrap now, or this cycle checks nothing.
+  if (guards.length === 0 && cursor > 0) {
+    cursor = 0;
+    guards = await page(0);
+  }
   const cycle: Cycle = { env, cfg, rpc, head, result, key: null, nonce: null, canSign: true, stepsLeft: cfg.maxSteps, syncsLeft: MAX_SYNCS, sendsLeft: MAX_SENDS };
   for (const g of guards) {
     if (!g.ready) continue;

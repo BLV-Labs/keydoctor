@@ -244,6 +244,8 @@ Connect wallet → Create Agent Budget → **Update your Budget** (2) → **Allo
 3. The keeper (cron `7,22,37,52`) runs 2 steps. Check the DAO's USDT balance over RPC, the two Telegram messages (Sold … for … USDT) and the `plan_steps` rows. Record the tx hashes, the gas burnt per step and whether `send_tx` returned the Rhea receipt (S3 risk).
 4. Fill in the open items of B-Q4: registration and gas.
 
+**Result (run 2026-11-09, recorded 2026-11-10 from RPC and NearBlocks):** all four checklist steps went through on `payroll-2` (proposals 12–17). Plan 2 ran at 300 s, not 15 minutes. Two sells: 0.1 NEAR → 0.896491 USDT (proposal 18, 16:37 UTC) and 0.1 NEAR → 0.787603 USDT (proposal 19, 17:07 UTC), then `plan_completed`. Gas per sell is 39.3 / 39.4 Tgas on testnet (sandbox: 37.6) and the largest receipt is 6.7 Tgas, with 0 failed receipts. Tx hashes are in `docs/stories/backlog.md` O9. Registration stays open: the DAO is registered on all three contracts, so the run does not show whether the exchange registration is needed. Telegram (owner, 2026-11-10): the 2/2 message names 0.787603 USDT, an average price of 8.42047 and 1.684094 USDT in total, all matching the chain, so `send_tx` returned the Rhea receipt and the S3 risk did not happen. Not checked: `plan_steps` (remote D1 is unreadable from here).
+
 ## 8. S6: guard-mcp and docs
 
 - `apps/guard-mcp/src/tools.ts:124-131`: `dca-near` becomes `live`. `setup_url` follows the same rule as payouts (`tools.ts:395`). The `plans_status` row text gets a swap branch (`PlanView.action`, `tools.ts:105`). The `strategies_list` description no longer calls DCA coming soon.

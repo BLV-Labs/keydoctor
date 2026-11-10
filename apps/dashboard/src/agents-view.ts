@@ -3,7 +3,7 @@
 import type { Network } from "key-doctor";
 import type { AgentRow, BudgetCard, MyAgents } from "./agents-read.ts";
 import type { BudgetLive, BudgetProposal, BudgetRequest } from "./budget-read.ts";
-import { activityRow, agentName, ago, budgetStatusPill, describeKind, expiryText, hoursLeft, near, percent, reasonText, requestOf } from "./budget-view.ts";
+import { activityRow, agentName, ago, budgetStatusPill, describeKind, expiryText, hoursLeft, near, nearShort, percent, reasonText, requestOf } from "./budget-view.ts";
 import { plural, yoctoToNear } from "./format.ts";
 import { html, type Html } from "./html.ts";
 import { icon } from "./icons.ts";
@@ -136,7 +136,7 @@ function budgetCard(card: BudgetCard): Html {
   return html`<a class="agent-card" href="${budgetHref(card.dao)}" data-nav>
     <div class="agent-card-head">${avatar(card.dao)}<span class="strong mono wrap">${card.dao}</span>${budgetStatusPill(g)}</div>
     <div class="agent-card-nums">
-      <div><p class="small muted">Balance</p><p class="agent-card-big">${near(b.withdrawable)}</p></div>
+      <div><p class="small muted">Balance</p><p class="agent-card-big">${nearShort(b.withdrawable)}</p></div>
       <div class="grow-min"><p class="small muted">Spent today</p>
         <p class="strong">${w === null ? "unknown" : p === null ? near(w.spent_in_window) : `${yoctoToNear(w.spent_in_window)} of ${near(p.max_per_day)}`}</p>
         ${w !== null && p !== null ? html`<progress class="progress" max="100" value="${percent(w.spent_in_window, p.max_per_day)}" aria-label="Share of the daily limit spent"></progress>` : ""}</div>
@@ -164,12 +164,12 @@ const NEW_CARD = html`<div class="agent-card agent-card-new">${icon.plus()}<span
 /** The newest events across budgets, each worded by its own budget's agents. */
 function recentActivity(cards: readonly BudgetCard[], now: number): Html {
   const events = cards
-    .flatMap(({ live }) => (live?.requests ?? []).map((r) => ({ r, g: live?.guard ?? null })))
+    .flatMap(({ live }) => (live?.requests ?? []).map((r) => ({ r, g: live?.guard ?? null, plans: live?.plans ?? null })))
     .sort((a, b) => (BigInt(a.r.created_at ?? "0") < BigInt(b.r.created_at ?? "0") ? 1 : BigInt(a.r.created_at ?? "0") > BigInt(b.r.created_at ?? "0") ? -1 : 0))
     .slice(0, ACTIVITY_SHOWN);
   return html`<section class="card" aria-labelledby="ma-activity">
     <div class="b-head"><h2 id="ma-activity" class="b-h">Recent activity</h2></div>
-    ${events.length === 0 ? html`<p class="muted pad-row">No requests yet.</p>` : html`<ul class="plain-list">${events.map((e) => activityRow(e.r, e.g, now))}</ul>`}</section>`;
+    ${events.length === 0 ? html`<p class="muted pad-row">No requests yet.</p>` : html`<ul class="plain-list">${events.map((e) => activityRow(e.r, e.g, e.plans, now))}</ul>`}</section>`;
 }
 
 const ALERTS = html`<section id="alerts" class="card" aria-labelledby="ma-alerts">

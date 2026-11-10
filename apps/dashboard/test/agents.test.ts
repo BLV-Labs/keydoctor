@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { guardDaoIds, paymentRows, readAgentBudgets, yieldRow, type AgentRow, type BudgetCard, type MyAgents } from "../src/agents-read.ts";
+import { createdYieldDaos, guardDaoIds, paymentRows, readAgentBudgets, yieldRow, type AgentRow, type BudgetCard, type MyAgents } from "../src/agents-read.ts";
 import type { BudgetLive, BudgetProposal, BudgetRequest } from "../src/budget-read.ts";
 import { NEEDS_SHOWN, renderMyAgents, renderMyAgentsError, renderMyAgentsSignedOut, waitingItems } from "../src/agents-view.ts";
 import type { GuardDao, GuardLive } from "../src/guard-read.ts";
@@ -42,6 +42,15 @@ describe("My Agents rows", () => {
     assert.equal(yieldRow(DAO, null).supplied, null);
     assert.equal(yieldRow(DAO, null).status, "unknown");
   });
+
+  // Live 2026-11-10: payroll-1 showed a budget card and a "Yield agent" card because the Yield page of payroll-1
+  // had been opened once. Viewing a treasury is not creating an agent; only a DAO given limits is one.
+  it("lists a Yield agent only for a DAO given limits, on the page's network", () => {
+    const seen = ["viewed.sputnik-v2.testnet", "made.sputnik-v2.testnet", "made.sputnik-dao.near"];
+    const created = new Set(["made.sputnik-v2.testnet", "made.sputnik-dao.near"]);
+    assert.deepEqual(createdYieldDaos(seen, "testnet", (d) => created.has(d)), ["made.sputnik-v2.testnet"]);
+    assert.deepEqual(createdYieldDaos(seen, "testnet", () => false), []);
+  });
 });
 
 describe("routes", () => {
@@ -66,7 +75,7 @@ function proposal(id: number, ageHours: number): BudgetProposal {
   return { id, proposer: "g.guards.testnet", description: "pay", kind: { Transfer: { receiver_id: "v.testnet", amount: NEAR(2), token_id: "" } }, status: "InProgress", submission_time: nanos(NOW - ageHours * HOUR) };
 }
 function request(id: number, agent: string, receiver: string, reasons: string[], proposalId: number | null, ageHours: number): BudgetRequest {
-  return { request_id: String(id), agent, receiver_id: receiver, amount: NEAR(2), memo: "", decision: "Pending", reasons, proposal_id: proposalId, status: "Pending", created_at: nanos(NOW - ageHours * HOUR) };
+  return { request_id: String(id), agent, receiver_id: receiver, amount: NEAR(2), memo: "", decision: "Pending", reasons, proposal_id: proposalId, plan_id: null, status: "Pending", created_at: nanos(NOW - ageHours * HOUR) };
 }
 function budget(dao: string, proposals: BudgetProposal[] | null, requests: BudgetRequest[] = []): BudgetLive {
   return {
@@ -123,6 +132,14 @@ describe("Your agents inbox", () => {
     assert.match(html, /data-action="agents-retry" data-dao="bad\.sputnik-v2\.testnet">Try again</);
     assert.match(html, /bot\.testnet wants to pay|Ops bot wants to pay/);
     assert.match(html, />1 waiting</);
+  });
+
+  it("a budget card shows its balance in two decimals, rounded down, like the Budget page", () => {
+    // Live on payroll-2 the card read 0.48727999999999999999998 NEAR: 24 decimals do not read, and rounding up
+    // would show NEAR the budget cannot send.
+    const b = budget("p.sputnik-v2.testnet", [], []);
+    const html = page([card("p.sputnik-v2.testnet", { ...b, withdrawable: "487279999999999999999998" })]);
+    assert.match(html, /<p class="agent-card-big">0\.48 NEAR<\/p>/);
   });
 
   it("a budget whose waiting list could not be read is called unknown, not empty", () => {

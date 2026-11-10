@@ -26,6 +26,10 @@ export interface BudgetRequest {
   status: string;
   /** When the agent asked, nanoseconds since the epoch; null when the chain did not give it. */
   created_at: string | null;
+  /** Set on a step of this plan; the Guard is then the `agent`. */
+  plan_id: number | null;
+  /** The explorer page of the transaction that made this request; null or absent when the indexer did not find it. */
+  tx_url?: string | null;
 }
 
 export interface BudgetLive {
@@ -82,6 +86,8 @@ export function parseProposal(raw: unknown): BudgetProposal | null {
   };
 }
 
+const count = (v: unknown): number | null => (typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? v : null);
+
 export function parseRequest(raw: unknown): BudgetRequest | null {
   if (!isRecord(raw) || typeof raw.request_id !== "string") return null;
   const str = (v: unknown) => (typeof v === "string" ? v : "");
@@ -96,11 +102,11 @@ export function parseRequest(raw: unknown): BudgetRequest | null {
     proposal_id: typeof raw.proposal_id === "number" ? raw.proposal_id : null,
     status: str(raw.status),
     created_at: nanos(raw.created_at),
+    plan_id: count(raw.plan_id),
   };
 }
 
 const PLAN_STATUSES: readonly BudgetPlan["status"][] = ["active", "paused", "completed", "cancelled"];
-const count = (v: unknown): number | null => (typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? v : null);
 
 /** One plan as `get_plans` returns it; null for anything malformed, so a plan is never shown half-read. */
 export function parsePlan(raw: unknown): BudgetPlan | null {
@@ -233,9 +239,72 @@ export async function readBudget(dao: string, factory: string, network: Network)
       return null;
     }
   };
-  const [funds, proposals, requests, plans] = await Promise.all([readBalance(dao, height, network), proposalsRead(), requestsRead(), plansRead()]);
+  const [funds, proposals, read, plans, txs] = await Promise.all([
+    readBalance(dao, height, network),
+    proposalsRead(),
+    requestsRead(),
+    plansRead(),
+    guard === null ? Promise.resolve([]) : readGuardTxs(guard.guard_id, network),
+  ]);
+  const requests = read === null ? null : read.map((r) => ({ ...r, tx_url: txUrl(r, txs, network) }));
   const usdt = network === "testnet" ? await readUsdtBalance(rpc, height, dao) : null;
   return { dao: state, guard, balance: funds?.balance ?? null, withdrawable: funds?.withdrawable ?? null, proposals, requests, plans, usdt };
+}
+
+// The Guard cannot know the hash of the transaction that called it, and RPC keeps no account history, so the
+// Activity links come from the NearBlocks indexer. A failed or slow read only drops the links.
+const NEARBLOCKS_API: Record<Network, string> = { testnet: "https://api-testnet.nearblocks.io", mainnet: "https://api.nearblocks.io" };
+const NEARBLOCKS_SITE: Record<Network, string> = { testnet: "https://testnet.nearblocks.io", mainnet: "https://nearblocks.io" };
+/** Enough rows for REQUEST_LIMIT requests: each one also brings its `sync_request` calls. */
+const TX_PAGE = 50;
+const TX_TIMEOUT_MS = 5_000;
+/** A request is written when its transaction's receipt runs, a block or two after the transaction lands. */
+const TX_MATCH_NS = 10_000_000_000n;
+
+export interface GuardTx {
+  hash: string;
+  signer: string;
+  method: string;
+  /** Block time of the transaction, nanoseconds since the epoch. */
+  at: string;
+}
+
+/** The rows of `GET /v3/accounts/<guard>/txns`; a malformed row is dropped. */
+export function parseGuardTxs(raw: unknown): GuardTx[] {
+  if (!isRecord(raw) || !Array.isArray(raw.data)) return [];
+  return raw.data.flatMap((t): GuardTx[] => {
+    if (!isRecord(t) || !Array.isArray(t.actions) || !isRecord(t.actions[0])) return [];
+    const { transaction_hash: hash, signer_account_id: signer, block_timestamp: at } = t;
+    const method = t.actions[0].method;
+    return typeof hash === "string" && typeof signer === "string" && typeof method === "string" && nanos(at) !== null ? [{ hash, signer, method, at: at as string }] : [];
+  });
+}
+
+async function readGuardTxs(guardId: string, network: Network): Promise<GuardTx[]> {
+  try {
+    const res = await fetch(`${NEARBLOCKS_API[network]}/v3/accounts/${encodeURIComponent(guardId)}/txns?per_page=${TX_PAGE}`, { signal: AbortSignal.timeout(TX_TIMEOUT_MS) });
+    return res.ok ? parseGuardTxs(await res.json()) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The transaction that made a request: an agent's own `request_transfer`, or the `execute_plan_step` of a plan
+ * step, landed at most TX_MATCH_NS before the request was written. The nearest wins, because the keeper runs
+ * several steps a few seconds apart.
+ */
+export function txUrl(r: BudgetRequest, txs: GuardTx[], network: Network): string | null {
+  if (r.created_at === null) return null;
+  const created = BigInt(r.created_at);
+  const method = r.plan_id === null ? "request_transfer" : "execute_plan_step";
+  let best: { hash: string; gap: bigint } | null = null;
+  for (const t of txs) {
+    if (t.method !== method || (r.plan_id === null && t.signer !== r.agent)) continue;
+    const gap = created - BigInt(t.at);
+    if (gap >= 0n && gap <= TX_MATCH_NS && (best === null || gap < best.gap)) best = { hash: t.hash, gap };
+  }
+  return best === null ? null : `${NEARBLOCKS_SITE[network]}/txns/${best.hash}`;
 }
 
 /** `ft_balance_of(usdt, dao)` in base units; null when the read failed (shown as unknown, never as zero). */
