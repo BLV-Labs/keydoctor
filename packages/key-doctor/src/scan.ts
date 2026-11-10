@@ -233,7 +233,7 @@ export async function scanDao(id: string, opts: ScanOptions = {}): Promise<KdRep
     } catch (e) {
       const code = codeOf(e);
       if (code === "NOT_FOUND") return { state: "missing" };
-      return { state: "error", code: code === "RATE_LIMITED" ? "RATE_LIMITED" : "RPC_ERROR" };
+      return { state: "error", code: code === "RATE_LIMITED" || code === "LIMIT_EXCEEDED" ? code : "RPC_ERROR" };
     }
   });
 

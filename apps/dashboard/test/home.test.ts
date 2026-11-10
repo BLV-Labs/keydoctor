@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { INVALID_NAME_MESSAGE, renderHome } from "../src/pages.ts";
+import { INVALID_NAME_MESSAGE, renderHome, renderNetworkStats } from "../src/pages.ts";
+import { NETWORK_STATS, type HomeStats } from "../src/network-stats.ts";
 
 const text = (h: { value: string }) => h.value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 /** Everything except the check card: that card keeps "DAO" and *.sputnik names because users type them there. */
@@ -78,5 +79,22 @@ describe("K1 home", () => {
       assert.doesNotMatch(t, /\b(DAO|proposal|policy|whitelist|yocto|nonce|Guard|Keyfence|sputnik)/i);
       assert.match(t, /Key Doctor/);
     }
+  });
+
+  it("network numbers come from the pnpm stats output, with their source block and the scans left out", () => {
+    // WHY: a judge reruns `pnpm stats` and must find the same numbers; a hand-typed figure on the page would drift.
+    const s: HomeStats = { ...NETWORK_STATS, scope: "all", block_height: 223787777, block_timestamp: "2026-11-09T15:49:10Z", daos_active: 716, daos_scanned: 2077, daos_failed: 35, council_size: { one_member: 1000 }, daos_single_vote_transfer: 1307, council_members: 3489, members_high: 1671, function_call_keys: 35599, function_call_keys_never_used: 31214 };
+    const t = text(renderNetworkStats(s));
+    assert.match(t, /48% of shared treasuries have a one-person council 1,000 of 2,077 treasuries/);
+    assert.match(t, /63% of shared treasuries let one account approve a payment/);
+    assert.match(t, /48% of council members are at high risk 1,671 of 3,489 members/);
+    assert.match(t, /88% of council members&#39; app keys were never used 31,214 of 35,599 app keys/);
+    assert.match(t, /All 2,077 readable council treasuries on mainnet \(716 active in the last 365 days\)/);
+    assert.match(t, /read at block 223,787,777 \(2026-11-09\)/);
+    assert.match(t, /35 treasuries could not be read and are left out/);
+    assert.match(t, /Rerun with pnpm stats --block 223787777 --all/);
+    assert.match(text(renderNetworkStats({ ...s, scope: "active", daos_scanned: 716, daos_failed: 0 })), /716 council treasuries on mainnet active in the last 365 days/);
+    // The home page shows the committed file, not a sample.
+    assert.match(text(renderHome("", null)), new RegExp(`read at block ${NETWORK_STATS.block_height.toLocaleString("en-US")}`));
   });
 });

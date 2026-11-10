@@ -3,10 +3,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { KdReport } from "../src/index.ts";
-import { aggregate, median, quantile, toMarkdown } from "../scripts/network-stats-lib.ts";
+import { aggregate, isSettled, median, quantile, toMarkdown } from "../scripts/network-stats-lib.ts";
 
 const load = (rel: string): KdReport => JSON.parse(readFileSync(join(import.meta.dirname, "..", "fixtures", rel), "utf8")) as KdReport;
-const meta = { network: "testnet", block_height: 182340111, block_timestamp: "2026-11-03T02:00:10Z", ruleset_version: "2026-11-01", active_days: 365, daos_listed: 10, daos_active: 3, daos_failed: 1 };
+const meta = { network: "testnet", scope: "active" as const, block_height: 182340111, block_timestamp: "2026-11-03T02:00:10Z", ruleset_version: "2026-11-01", active_days: 365, daos_listed: 10, daos_active: 3, daos_failed: 1, daos_failed_by_code: { NOT_A_DAO: 1 } };
 
 describe("GĐ10 network stats aggregation", () => {
   it("median and quantiles", () => {
@@ -44,7 +44,39 @@ describe("GĐ10 network stats aggregation", () => {
     assert.equal(s.members_unreadable, 1);
     const md = toMarkdown(s);
     assert.match(md, /\| Median council size \| 3 \(p90: 3\) \|/);
-    assert.match(md, /1 DAO scans failed and 1 council members could not be read/);
+    assert.match(md, /1 DAO scans failed \(NOT_A_DAO 1\) and 1 council members could not be read \(RPC_ERROR 1\)/);
     assert.doesNotMatch(JSON.stringify(s) + md, /kd-demo/);
+  });
+
+  it("says whether the numbers cover active DAOs only or every listed DAO, so a reader cannot mix the two", () => {
+    const dao = load("reports/dao-kd-demo.report.json");
+    assert.match(toMarkdown(aggregate([dao], meta)), /^Measured on 1 active Sputnik DAOs on testnet \(a proposal in the last 365 days\)/);
+    const all = aggregate([dao], { ...meta, scope: "all" });
+    assert.equal(all.scope, "all");
+    assert.match(toMarkdown(all), /^Measured on 1 of the 10 Sputnik DAOs on testnet listed by the factory \(3 of them had a proposal in the last 365 days\)/);
+  });
+
+  it("failure breakdowns come out in one key order whatever order the scans finished in, so two runs give the same file", () => {
+    const dao = load("reports/dao-kd-demo.report.json");
+    dao.members[0]!.error = "RPC_ERROR";
+    dao.members[1]!.error = "LIMIT_EXCEEDED";
+    const a = aggregate([dao], { ...meta, daos_failed: 3, daos_failed_by_code: { NOT_A_DAO: 2, LIMIT_EXCEEDED: 1 } });
+    const b = aggregate([dao], { ...meta, daos_failed: 3, daos_failed_by_code: { LIMIT_EXCEEDED: 1, NOT_A_DAO: 2 } });
+    assert.equal(JSON.stringify(a), JSON.stringify(b));
+    assert.deepEqual(Object.keys(a.daos_failed_by_code), ["LIMIT_EXCEEDED", "NOT_A_DAO"]);
+    assert.deepEqual(Object.keys(a.members_unreadable_by_code), ["LIMIT_EXCEEDED", "RPC_ERROR"]);
+    assert.match(toMarkdown(a), /3 DAO scans failed \(NOT_A_DAO 2, LIMIT_EXCEEDED 1\)/);
+  });
+
+  it("only the chain's own answers count as settled; node trouble is asked again elsewhere and never cached", () => {
+    const err = (name: string) => JSON.stringify({ jsonrpc: "2.0", id: 1, error: { name: "HANDLER_ERROR", cause: { name } } });
+    // Same on every node at a pinned block: cache it.
+    assert.equal(isSettled(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { keys: [] } })), true);
+    assert.equal(isSettled(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { error: "wasm execution failed", logs: [] } })), true);
+    for (const name of ["UNKNOWN_ACCOUNT", "NO_CONTRACT_CODE", "TOO_MANY_ACCESS_KEYS"]) assert.equal(isSettled(err(name)), true, name);
+    // About the node, not the chain: a pruned node, a timeout, a busy node, a cut body. Caching these made counts drift.
+    for (const name of ["UNKNOWN_BLOCK", "TIMEOUT_ERROR", "INTERNAL_ERROR", "NO_SYNCED_BLOCKS"]) assert.equal(isSettled(err(name)), false, name);
+    assert.equal(isSettled('{"jsonrpc":"2.0","id":1,"res'), false);
+    assert.equal(isSettled(JSON.stringify({ jsonrpc: "2.0", id: 1, error: { code: -32000, message: "Server error" } })), false);
   });
 });

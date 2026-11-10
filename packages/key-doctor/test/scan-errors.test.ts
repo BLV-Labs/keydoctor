@@ -186,6 +186,13 @@ describe("S1-AC5: follow-up and caps", () => {
     assert.equal(calls.length, 2);
   });
 
+  it("a node refusing a key list over its 100-key limit is the key cap, not a transient RPC error", async (t) => {
+    // All public mainnet RPCs answer TOO_MANY_ACCESS_KEYS for such accounts; retrying cannot change it.
+    const { kd } = await fails(t, onKeyList(rpcErr("TOO_MANY_ACCESS_KEYS")));
+    assert.deepEqual([kd.code, kd.retryable], ["LIMIT_EXCEEDED", false]);
+    assert.match(kd.message.en, new RegExp(`more than ${MAX_KEYS} keys`));
+  });
+
   it("exactly MAX_KEYS keys is scanned", async (t) => {
     installFetch(t, world({ keys: { [ID]: keys(MAX_KEYS) } }));
     const r = await scanAccount(ID);

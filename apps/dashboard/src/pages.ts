@@ -5,6 +5,7 @@ import { walletDialog } from "./cleanup-view.ts";
 import { breadcrumb, walletControls } from "./report.ts";
 import { BOT_URL, BOT_USERNAME, homeHref, pageHref, routeHref, type Page } from "./route.ts";
 import { alertLines, watchCommand } from "./watch.ts";
+import { NETWORK_STATS, type HomeStats } from "./network-stats.ts";
 
 export const EXAMPLE_DAO = "kdoncall.sputnik-v2.testnet";
 export const EXAMPLE_ACCOUNT = "kdoncall-p.testnet";
@@ -138,7 +139,30 @@ const HOME_PREVIEW = html`<div class="card pad stack-sm home-preview" aria-hidde
       <div class="home-preview-line"><span class="tone-high">${icon.close()}</span><span>You rejected 500 NEAR to <span class="mono">attacker.testnet</span></span></div>
     </div>`;
 
-export function renderHome(value: string, error: string | null, network: Network = "testnet", signedIn = false): Html {
+const share = (n: number, d: number) => (d === 0 ? "n/a" : `${Math.round((100 * n) / d)}%`);
+const count = (n: number) => n.toLocaleString("en-US");
+
+function statTile(value: string, label: string, detail: string): Html {
+  return html`<li class="home-stat"><span class="home-stat-value">${value}</span><span class="home-stat-label">${label}</span><span class="small muted">${detail}</span></li>`;
+}
+
+/** Network-wide numbers from `pnpm stats` (GĐ10). Every number and its source block come from the JSON. */
+export function renderNetworkStats(s: HomeStats): Html {
+  const date = s.block_timestamp.slice(0, 10);
+  return html`<section class="card pad stack" aria-labelledby="numbers">
+      <div class="stack-xs"><p class="eyebrow home-eyebrow">Measured on NEAR mainnet</p>
+        <h2 id="numbers" class="h2">How safe are shared treasuries on NEAR?</h2></div>
+      <ul class="plain home-stats">
+        ${statTile(share(s.council_size.one_member, s.daos_scanned), "of shared treasuries have a one-person council", `${count(s.council_size.one_member)} of ${count(s.daos_scanned)} treasuries`)}
+        ${statTile(share(s.daos_single_vote_transfer, s.daos_scanned), "of shared treasuries let one account approve a payment", `${count(s.daos_single_vote_transfer)} of ${count(s.daos_scanned)} treasuries`)}
+        ${statTile(share(s.members_high, s.council_members), "of council members are at high risk", `${count(s.members_high)} of ${count(s.council_members)} members`)}
+        ${statTile(share(s.function_call_keys_never_used, s.function_call_keys), "of council members' app keys were never used", `${count(s.function_call_keys_never_used)} of ${count(s.function_call_keys)} app keys`)}
+      </ul>
+      <p class="small muted">${s.scope === "all" ? `All ${count(s.daos_scanned)} readable council treasuries on ${s.network} (${count(s.daos_active)} active in the last ${s.active_days} days)` : `${count(s.daos_scanned)} council treasuries on ${s.network} active in the last ${s.active_days} days`}, read at block ${count(s.block_height)} (${date}), ruleset ${s.ruleset_version}. ${s.daos_failed} treasuries could not be read and are left out. Rerun with <code class="mono">pnpm stats --block ${s.block_height}${s.scope === "all" ? " --all" : ""}</code>.</p>
+    </section>`;
+}
+
+export function renderHome(value: string, error: string | null, network: Network = "testnet", signedIn = false, stats: HomeStats = NETWORK_STATS): Html {
   const suffix = network === "mainnet" ? ".near" : ".testnet";
   const primary = signedIn
     ? html`<a class="btn btn-primary" href="${pageHref("my-agents")}" data-nav>Go to your agents</a>`
@@ -152,6 +176,8 @@ export function renderHome(value: string, error: string | null, network: Network
       </div>
       ${HOME_PREVIEW}
     </section>
+
+    ${renderNetworkStats(stats)}
 
     <section class="card pad stack" aria-labelledby="how"><h2 id="how" class="h2">How it works</h2>
       <ol class="plain home-steps">

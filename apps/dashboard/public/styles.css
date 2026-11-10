@@ -89,6 +89,10 @@ summary:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3
 .home-bar span { display: block; height: 100%; background: var(--kd-primary); }
 .home-preview-line { display: flex; align-items: flex-start; gap: 8px; font-size: var(--kd-fs-sm); overflow-wrap: anywhere; }
 .home-preview-line > span:first-child { flex: none; margin-top: 2px; }
+.home-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr)); gap: 20px; }
+.home-stat { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.home-stat-value { font-size: 2.5rem; line-height: 1.1; font-weight: 600; color: var(--kd-text); font-variant-numeric: tabular-nums; }
+.home-stat-label { color: var(--kd-text-2); }
 .home-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 20px; }
 .home-step { display: flex; gap: 14px; align-items: flex-start; min-width: 0; }
 .home-tile { flex: none; width: 40px; height: 40px; border-radius: 10px; background: var(--kd-primary-tint); color: var(--kd-primary); display: inline-flex; align-items: center; justify-content: center; }
