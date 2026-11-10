@@ -87,7 +87,7 @@ Notes from the 2026-11-09 run:
 | W2 | `proposals` twice | the first run sends any new alert. The second sends nothing | done in the demo run of 2026-10-30 |
 | W3 | `daily` | a diff for each watched target. Also watch the cron at 02:00 UTC (09:00 in Vietnam) once | cron pass 2026-11-10: D1 `snapshots` has a new baseline for each of 6 targets at 02:00:21–02:00:29 UTC, and the owner got the vi + en "Key changes today" message for `kdd1793327513.sputnik-v2.testnet` (`bot2.duonghb3.testnet`: new full-access key, several full-access keys, key never used) |
 | W4 | `keeper` | `errors: []` | runs every 15 min. Steps executed on `payroll-2` (K4) |
-| W5 | `yield` | a push to chats from B7 | **open** |
+| W5 | `yield` | a push to chats from B7 | pass 2026-11-10 (owner chat): the stored top for `kdy1794161239.sputnik-v2.testnet` was set to a fake old value in D1; the 08:26:34 UTC yield cron saw the change, sent "Yield update" (vi + en, model order from `Qwen/Qwen3.6-35B-A3B-FP8`, council-key warning on top) to the watching chat and stored the real top again |
 | W6 | `run-check` without the token | 401 | 2026-11-09: pass, 401 `UNAUTHORIZED` (no token and a wrong token) |
 
 ### Attack demo (main scene, `scripts/demo-testnet/demo.sh`)
