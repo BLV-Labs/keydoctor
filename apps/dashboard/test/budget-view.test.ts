@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { addAgentProblem, addAgentProposal, agentProposal, amountFromForm, freshAgentAccount, rulesProposal } from "../src/budget-flow.ts";
-import { parseGuardTxs, parsePlan, parseRequest, topUpBlocks, txUrl, withdrawableYocto, withdrawMaxYocto, type BudgetLive, type BudgetPlan, type BudgetProposal, type BudgetRequest } from "../src/budget-read.ts";
+import { guardCanClose, parseGuardTxs, parsePlan, parseRequest, topUpBlocks, txUrl, withdrawableYocto, withdrawMaxYocto, type BudgetLive, type BudgetPlan, type BudgetProposal, type BudgetRequest } from "../src/budget-read.ts";
 import {
   BALANCED_RULES,
   CAUTIOUS_RULES,
   balanceAfter,
+  closeBlockers,
   describeKind,
   everyText,
   fenceSentence,
@@ -19,6 +20,7 @@ import {
   renderBudgetCreate,
   renderAgentAdded,
   renderAgentKeyReady,
+  renderBudgetClose,
   renderBudgetPause,
   renderBudgetPanel,
   withdrawLeftText,
@@ -46,6 +48,7 @@ const live = (over: Partial<BudgetLive> = {}): BudgetLive => ({
     name: "g1",
     ready: true,
     in_role: true,
+    closed: false,
     config: { paused: false, proposal_bond: "0", agents: 1, whitelist: 0, guardians: ["owner.testnet"] },
     policy: { max_per_tx: NEAR(1), max_per_day: NEAR(4), max_pending_per_agent: 3, min_reserve: NEAR(1) },
     window: { spent_in_window: NEAR(1), remaining: NEAR(3), resets_at: "2026-11-07T00:00:00.000Z" },
@@ -656,5 +659,75 @@ describe("budget-read: Activity transaction links", () => {
     const later = { hash: "Later111", signer: "keydoctor-keeper.testnet", method: "execute_plan_step", at: "1794242236000000000" };
     const step = req({ plan_id: 3, created_at: "1794242236700000000" });
     assert.equal(txUrl(step, [...txs, later], "testnet"), "https://testnet.nearblocks.io/txns/Later111");
+  });
+});
+
+describe("Close this Budget", () => {
+  const plan = (status: BudgetPlan["status"]): BudgetPlan => ({
+    plan_id: 1, receiver_id: "vendor.testnet", action_type: "transfer", strategy_id: "scheduled-payouts", amount_per_run: NEAR(1),
+    interval_sec: 3_600, runs_total: 3, runs_done: 1, next_run_at: null, status, pause_reason: null,
+  });
+  const withConfig = (over: Partial<NonNullable<BudgetLive["guard"]>>) => {
+    const b = live();
+    return { ...b, guard: { ...b.guard!, ...over } };
+  };
+
+  it("is offered from the Technical details of the Budget page", () => {
+    assert.match(renderBudget(live(), "testnet").value, /data-action="budget-close" data-guard="g1\.guards\.testnet"/);
+  });
+
+  // Guards before 1.4.0 have no close method: the vote would pass and the call fail.
+  it("needs Guard 1.4.0 or later", () => {
+    assert.equal(guardCanClose("1.4.0"), true);
+    assert.equal(guardCanClose("2.0.0"), true);
+    assert.equal(guardCanClose("1.3.9"), false);
+    assert.equal(guardCanClose(null), false);
+    assert.equal(guardCanClose("dev"), false);
+  });
+
+  it("on an older Guard offers only the update, in 2 signatures", () => {
+    const out = renderBudgetClose(live(), "1.3.0").value;
+    assert.match(out, /runs version 1\.3\.0/);
+    assert.match(out, /data-action="budget-close-update"/);
+    assert.match(out, /2 signatures in your wallet/);
+    assert.doesNotMatch(out, /budget-close-now/);
+  });
+
+  it("with an unread version offers nothing to sign", () => {
+    const out = renderBudgetClose(live(), null).value;
+    assert.match(out, /could not be read/);
+    assert.doesNotMatch(out, /budget-close-now|budget-close-update/);
+  });
+
+  // The Guard refuses OPEN_REQUESTS / OPEN_PLANS: the page names the cause before the owner pays a bond for a failing call.
+  it("names what the Guard would refuse: a waiting payment, an active or paused payout", () => {
+    const pending = withConfig({ agents: [{ account_id: "bot.testnet", label: "ops", enabled: true, pending: 2 }] });
+    assert.match(closeBlockers(pending, "1.4.0").join(" "), /2 payments still wait/);
+    const step: BudgetRequest = { request_id: "r1", agent: "g1.guards.testnet", receiver_id: "vendor.testnet", amount: NEAR(1), memo: "", decision: "NeedsApproval", reasons: [], proposal_id: 7, status: "Pending", created_at: null, plan_id: 1 };
+    assert.match(closeBlockers(live({ requests: [step] }), "1.4.0").join(" "), /1 payment still waits/);
+    assert.match(closeBlockers(live({ plans: [plan("active")] }), "1.4.0").join(" "), /1 scheduled payout can still run/);
+    assert.match(closeBlockers(live({ plans: [plan("paused")] }), "1.4.0").join(" "), /scheduled payout/);
+    assert.deepEqual(closeBlockers(live({ plans: [plan("completed"), plan("cancelled")] }), "1.4.0"), []);
+  });
+
+  it("says a Guard with more records than it can clear cannot be closed", () => {
+    const b = withConfig({ config: { ...live().guard!.config!, requests: "201" } });
+    assert.match(closeBlockers(b, "1.4.0").join(" "), /201 payment records/);
+    assert.deepEqual(closeBlockers(withConfig({ config: { ...live().guard!.config!, requests: "200" } }), "1.4.0"), []);
+  });
+
+  it("a blocked close has no Close button", () => {
+    const out = renderBudgetClose(live({ plans: [plan("active")] }), "1.4.0").value;
+    assert.match(out, /Before you can close it/);
+    assert.doesNotMatch(out, /budget-close-now|budget-close-update/);
+  });
+
+  it("a ready close says what is lost for good and where the NEAR goes, in 2 signatures", () => {
+    const out = renderBudgetClose(live(), "1.4.0").value;
+    assert.match(out, /data-action="budget-close-now" data-guard="g1\.guards\.testnet"/);
+    assert.match(out, /goes back to <span class="mono">team\.sputnik-v2\.testnet<\/span>/);
+    assert.match(out, /cannot be undone/);
+    assert.match(out, /2 signatures in your wallet/);
+    assert.match(out, /data-action="close-dialog" aria-label="Close" autofocus/, "the safe button has the first focus");
   });
 });

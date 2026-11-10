@@ -149,7 +149,7 @@ const UPGRADE_GAS = "200000000000000";
 /** A FunctionCall proposal DAO → Guard, the only way to change a locked Guard. */
 export function guardChangeProposal(
   guardId: string,
-  method: GuardMethod | PlanMethod | "upgrade",
+  method: GuardMethod | PlanMethod | "upgrade" | "close",
   args: object,
   deposit: string = (STORAGE_METHODS as readonly string[]).includes(method) ? GUARD_STORAGE_DEPOSIT : "0",
 ): AddProposalArgs {
@@ -169,6 +169,14 @@ export function guardChangeProposal(
 /** Update your Budget: the Guard pulls its new code from `factory` and checks it hashes to `codeHash` (read from the factory). */
 export function upgradeGuardProposal(guardId: string, factory: string, codeHash: string): AddProposalArgs {
   return guardChangeProposal(guardId, "upgrade", { code_source: factory, code_hash: codeHash });
+}
+
+/**
+ * Close the Budget (Guard 1.4.0): the Guard deletes its own account and sends all its NEAR, code storage included, to
+ * the DAO. The Guard refuses while a request waits on the council or a plan can still run.
+ */
+export function closeGuardProposal(guardId: string): AddProposalArgs {
+  return guardChangeProposal(guardId, "close", {});
 }
 
 /** A contract the Budget's account must be registered on before it can hold its token (NEP-145). */

@@ -7,6 +7,7 @@ import {
   createGuardProposal,
   GUARD_PERMISSIONS,
   GUARD_STORAGE_DEPOSIT,
+  closeGuardProposal,
   guardChangeProposal,
   missingProposePermissions,
   removeGuardRoleProposal,
@@ -209,6 +210,19 @@ describe("guardChangeProposal", () => {
       (guardChangeProposal(`payroll.${FACTORY}`, m, {}).proposal.kind.FunctionCall as Call).actions[0]!.deposit;
     for (const m of ["add_agent", "add_whitelist", "add_guardian"] as const) assert.equal(deposit(m), GUARD_STORAGE_DEPOSIT, m);
     for (const m of ["remove_agent", "unpause"] as const) assert.equal(deposit(m), "0", m);
+  });
+});
+
+describe("closeGuardProposal", () => {
+  type Call = { receiver_id: string; actions: { method_name: string; args: string; deposit: string; gas: string }[] };
+  // `close` deletes the Guard and pays the DAO; a deposit would be lost with the account, so none is attached.
+  it("asks the DAO to call close on the Guard with no args and no deposit", () => {
+    const call = closeGuardProposal(`payroll.${FACTORY}`).proposal.kind.FunctionCall as Call;
+    assert.equal(call.receiver_id, `payroll.${FACTORY}`);
+    assert.equal(call.actions[0]!.method_name, "close");
+    assert.deepEqual(decodeArgs(call.actions[0]!.args), {});
+    assert.equal(call.actions[0]!.deposit, "0");
+    assert.equal(call.actions[0]!.gas, "50000000000000");
   });
 });
 

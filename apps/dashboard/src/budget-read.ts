@@ -196,7 +196,9 @@ export const budgetRpc = (network: Network): Rpc => createRpc({ url: DEFAULT_RPC
 /** Throws what `readGuardDao` throws (a KdError, NOT_A_DAO, FACTORY_UNREADABLE). Failed side reads leave their field null. */
 export async function readBudget(dao: string, factory: string, network: Network): Promise<BudgetLive> {
   const state = await readGuardDao(dao, factory, network);
-  const guard = state.guards.find((g) => g.ready && g.in_role) ?? state.guards.find((g) => g.ready) ?? null;
+  // A closed Guard is gone from the chain but stays in the factory's list and maybe in the role: never manage it.
+  const live = state.guards.filter((g) => g.ready && !g.closed);
+  const guard = live.find((g) => g.in_role) ?? live[0] ?? null;
   const rpc = budgetRpc(network);
   const { height } = await rpc.block();
   const proposalsRead = async (): Promise<BudgetProposal[] | null> => {
@@ -335,6 +337,14 @@ export function guardNeedsUpdate(version: string | null): boolean {
   if (m === null) return false;
   const [a, b] = [Number(m[1]), Number(m[2])];
   return a < 1 || (a === 1 && b < 3);
+}
+
+/** True from Guard 1.4.0, the first version with `close`; an unread version is false. */
+export function guardCanClose(version: string | null): boolean {
+  const m = version === null ? null : /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (m === null) return false;
+  const [a, b] = [Number(m[1]), Number(m[2])];
+  return a > 1 || (a === 1 && b >= 4);
 }
 
 /** Testnet DCA checklist reads at one block: the Guard version, the factory's code hash and the NEP-145 state of each contract. */

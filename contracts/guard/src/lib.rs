@@ -665,6 +665,37 @@ impl Guard {
         Promise::new(self.dao_id.clone()).transfer(NearToken::from_yoctonear(excess))
     }
 
+    /// Deletes the Guard with the DAO as beneficiary, so its whole balance (the locked storage included) goes back to
+    /// the DAO. Refused while a request waits for a vote or a plan can still run (`Paused` can be resumed: cancel it
+    /// first). NEAR refuses to delete an account that holds over 10 KB of data, so the Guard first removes its
+    /// records; a Guard that has seen more than `MAX_RECENT` requests cannot find the older ones and stays open
+    /// (`withdraw_excess` still empties it down to its storage).
+    #[payable]
+    pub fn close(&mut self) -> Promise {
+        self.assert_dao();
+        require!(self.recent_total <= MAX_RECENT as u64, "TOO_MANY_RECORDS");
+        require!(
+            self.plans.iter().all(|p| matches!(p.status, PlanStatus::Completed | PlanStatus::Cancelled)),
+            "OPEN_PLANS"
+        );
+        let ids: Vec<String> = self.recent.iter().cloned().collect();
+        for id in &ids {
+            if let Some(r) = self.requests.remove(id) {
+                require!(!r.status.holds_pending(), "OPEN_REQUESTS");
+                if let Some(p) = r.proposal_id {
+                    self.by_proposal.remove(&p);
+                }
+            }
+        }
+        self.recent.clear();
+        self.plans.clear();
+        self.agents.clear();
+        self.whitelist.clear();
+        self.guardians.clear();
+        emit("guard_closed", json!({ "beneficiary": self.dao_id, "balance": U128(env::account_balance().as_yoctonear()) }));
+        Promise::new(env::current_account_id()).delete_account(self.dao_id.clone())
+    }
+
     // ---- views
 
     pub fn get_config(&self) -> Value {
@@ -676,6 +707,7 @@ impl Guard {
             "agents": self.agents.len(),
             "whitelist": self.whitelist.len(),
             "guardians": self.guardians.iter().collect::<Vec<_>>(),
+            "requests": U64(self.recent_total),
         })
     }
 
@@ -746,7 +778,7 @@ impl Guard {
 
     /// Key Doctor reads this to recognise a DAO member as a Guard (§5.3).
     pub fn kd_guard_info(&self) -> Value {
-        json!({ "standard": "kd_guard", "version": "1.3.0", "dao_id": self.dao_id })
+        json!({ "standard": "kd_guard", "version": "1.4.0", "dao_id": self.dao_id })
     }
 
     // ---- upgrade (§11.5.12, ADR 0006)

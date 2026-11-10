@@ -10,7 +10,7 @@ const DAO = "demo.sputnikv2.testnet";
 
 function guard(paused: boolean, agents: NonNullable<GuardLive["agents"]>): GuardLive {
   return {
-    guard_id: "ops.guards.kd-demo.testnet", name: "ops", ready: true, in_role: true,
+    guard_id: "ops.guards.kd-demo.testnet", name: "ops", ready: true, in_role: true, closed: false,
     config: { paused, proposal_bond: "0", agents: agents.length, whitelist: 0, guardians: [] },
     policy: null, window: null, agents, whitelist: null,
   };
@@ -81,7 +81,7 @@ function budget(dao: string, proposals: BudgetProposal[] | null, requests: Budge
   return {
     dao: { dao, factory: "guards.testnet", code_storage: "0", policy: { roles: [], proposal_bond: "0", proposal_period: PERIOD } as unknown as GuardDao["policy"], guards: [] },
     guard: {
-      guard_id: `g.${dao}`, name: "g", ready: true, in_role: true,
+      guard_id: `g.${dao}`, name: "g", ready: true, in_role: true, closed: false,
       config: { paused: false, proposal_bond: "0", agents: 1, whitelist: 1, guardians: [] },
       policy: { max_per_tx: NEAR(1), max_per_day: NEAR(4), max_pending_per_agent: 3, min_reserve: NEAR(1) },
       window: { spent_in_window: NEAR(1), remaining: NEAR(3), resets_at: "2026-11-10T00:00:00.000Z" },
