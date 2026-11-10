@@ -73,7 +73,7 @@ Notes from the 2026-11-09 run:
 | B3 | `/watch <dao>` in the group | a confirmation, and one row per chat and target | done earlier |
 | B4 | `/list`, then `/unwatch <dao>`, then `/list` | the DAO is listed, then gone | pass 2026-11-10 (owner, live bot) |
 | B5 | a plain message naming `x.testnet` in private | the same as `/check x.testnet`. In a group with no name, no reply | **open** |
-| B6 | dashboard check page, **Watch in Telegram** | the link opens the bot. `/start <code>` subscribes once. The same code a second time is refused | **open** |
+| B6 | dashboard check page, **Watch in Telegram** | the link opens the bot. `/start <code>` subscribes once. The same code a second time is refused | pass 2026-11-10 (owner, `payroll-1.sputnik-v2.testnet`): the link opened the bot and the code was taken; the chat already watched the DAO, so the bot replied "This chat already watches payroll-1.sputnik-v2.testnet." and added no second row |
 | B7 | `/yield <dao>`, `/yield_watch <dao>`, `/yield_unwatch <dao>` on a DAO from Y1 | suggestions, then a subscription, then none | `/yield` pass 2026-11-10 on `payroll-1` (0 test USDC: no suggestion, no model call) and on `kdy1794161239.sputnik-v2.testnet` (one suggestion with model reasons, see Y5). `/yield_watch` and `/yield_unwatch` still **open** |
 | B8 | remove the bot from a test group that watches the demo DAO, make a new proposal, then run W2 | the send to that chat fails and its subscriptions are deleted | **open** |
 
