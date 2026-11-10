@@ -75,7 +75,7 @@ Notes from the 2026-11-09 run:
 | B5 | a plain message naming `x.testnet` in private | the same as `/check x.testnet`. In a group with no name, no reply | pass 2026-11-10 (owner, live bot) |
 | B6 | dashboard check page, **Watch in Telegram** | the link opens the bot. `/start <code>` subscribes once. The same code a second time is refused | pass 2026-11-10 (owner, `payroll-1.sputnik-v2.testnet`): the link opened the bot and the code was taken; the chat already watched the DAO, so the bot replied "This chat already watches payroll-1.sputnik-v2.testnet." and added no second row |
 | B7 | `/yield <dao>`, `/yield_watch <dao>`, `/yield_unwatch <dao>` on a DAO from Y1 | suggestions, then a subscription, then none | `/yield` pass 2026-11-10 on `payroll-1` (0 test USDC: no suggestion, no model call) and on `kdy1794161239.sputnik-v2.testnet` (one suggestion with model reasons, see Y5). `/yield_watch` and `/yield_unwatch` pass 2026-11-10 (owner, live bot) |
-| B8 | remove the bot from a test group that watches the demo DAO, make a new proposal, then run W2 | the send to that chat fails and its subscriptions are deleted | **open** |
+| B8 | remove the bot from a test group that watches the demo DAO, make a new proposal, then run W2 | the send to that chat fails and its subscriptions are deleted | skipped 2026-11-10 by the owner; covered only by Worker unit tests (`apps/worker/test/jobs.test.ts`, `telegram.test.ts`: a 403 from Telegram deletes that chat's subscriptions) |
 
 ### Worker jobs (`/run-check`, owner holds the token)
 
@@ -106,7 +106,7 @@ Notes from the 2026-11-09 run:
 | G2 | T4 rows 1–6: limits and the guardian pause | `OVER_PER_TX`, `OVER_DAILY_LIMIT`, `NOT_WHITELISTED`, `TOO_MANY_PENDING`, `PAUSED` | pause **open** |
 | G3 | T5: **Propose a change**, **Pause now** with a non-guardian wallet, **Propose retire** | the `set_policy` proposal; the pause refused before the wallet opens; a `ChangePolicy` that removes only the Guard | pass 2026-11-10 (owner): pause and retire checked live. The Budget page's Pause / Resume buttons were renamed from "Pause all agents" / "Resume agents" to "Pause this Budget" / "Resume this Budget": `pause` stops every agent of that one Guard, not all of the owner's agents |
 | G4 | T6: Telegram alerts for auto, pending and failed | the three alert kinds, then nothing new on the next run | done earlier |
-| G5 | sign one Guard action with Here and one with HOT | the same result as Meteor | **open** |
+| G5 | sign one Guard action with Here and one with HOT | the same result as Meteor | skipped 2026-11-10 by the owner; the README says only Meteor was checked on testnet |
 
 ### Agent Budget (v2 factory) and keeper
 
