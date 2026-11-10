@@ -119,6 +119,7 @@ Notes from the 2026-11-09 run:
 | K5 | guardian `pause` on a Budget | one `budget_owner_action` message in its chats on the next keeper cycle | **open** |
 | K6 | My Agents page with the owner wallet | `payroll-1` and `payroll-2` with their plan and limits | **open** |
 | K7 | `scripts/guard-setup/factory-global.sh keydoctor-guards-v2.testnet --send`, then step 1 of Create on the live Budget page; then create one Budget | `kd_factory_metadata.guard_code_global` true; the Guard cost line about 0.01 NEAR; the new Guard has no code of its own (`code_hash` of a global contract) | done 2026-11-10 (backlog O10): cost line 7.31032 NEAR read live; Budget `test-new-guard`: Guard `global_contract_hash` `9X9H…dHqyo`, own `code_hash` all ones, 905 bytes of storage, 1.3.0, no keys; agent `a1` has one function-call key (`request_transfer`, `sync_request` on the Guard) |
+| K8 | on a Budget with no waiting payment and no active plan: Technical details → Close this Budget (Update first if below 1.4.0), sign both | the Guard account is gone (`UNKNOWN_ACCOUNT`), the DAO got the Guard's balance, the Budget page shows no Budget, the council page shows the Guard as Closed | **open**: factory serves 1.4.0 since 2026-11-10 (backlog O11) |
 
 ### Yield (YD0–YD4)
 
