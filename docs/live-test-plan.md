@@ -71,9 +71,9 @@ Notes from the 2026-11-09 run:
 | B1 | `/check kdoncall.sputnik-v2.testnet` in private | the summary in vi and en. D1 is not written | done earlier |
 | B2 | `/changes <dao>` twice | the same changes both times. The baseline does not move | done earlier |
 | B3 | `/watch <dao>` in the group | a confirmation, and one row per chat and target | done earlier |
-| B4 | `/list`, then `/unwatch <dao>`, then `/list` | the DAO is listed, then gone | **open** |
+| B4 | `/list`, then `/unwatch <dao>`, then `/list` | the DAO is listed, then gone | pass 2026-11-10 (owner, live bot) |
 | B5 | a plain message naming `x.testnet` in private | the same as `/check x.testnet`. In a group with no name, no reply | **open** |
-| B6 | dashboard check page, **Watch in Telegram** | the link opens the bot. `/start <code>` subscribes once. The same code a second time is refused | **open** |
+| B6 | dashboard check page, **Watch in Telegram** | the link opens the bot. `/start <code>` subscribes once. The same code a second time is refused | pass 2026-11-10 (owner, `payroll-1.sputnik-v2.testnet`): the link opened the bot and the code was taken; the chat already watched the DAO, so the bot replied "This chat already watches payroll-1.sputnik-v2.testnet." and added no second row |
 | B7 | `/yield <dao>`, `/yield_watch <dao>`, `/yield_unwatch <dao>` on a DAO from Y1 | suggestions, then a subscription, then none | `/yield` pass 2026-11-10 on `payroll-1` (0 test USDC: no suggestion, no model call) and on `kdy1794161239.sputnik-v2.testnet` (one suggestion with model reasons, see Y5). `/yield_watch` and `/yield_unwatch` still **open** |
 | B8 | remove the bot from a test group that watches the demo DAO, make a new proposal, then run W2 | the send to that chat fails and its subscriptions are deleted | **open** |
 
@@ -85,7 +85,7 @@ Notes from the 2026-11-09 run:
 |---|---|---|---|
 | W1 | `GET /` with no token | `ok` (text/plain) | 2026-11-09: pass, 200 `ok` |
 | W2 | `proposals` twice | the first run sends any new alert. The second sends nothing | done in the demo run of 2026-10-30 |
-| W3 | `daily` | a diff for each watched target. Also watch the cron at 02:00 UTC (09:00 in Vietnam) once | **cron firing open** |
+| W3 | `daily` | a diff for each watched target. Also watch the cron at 02:00 UTC (09:00 in Vietnam) once | cron pass 2026-11-10: D1 `snapshots` has a new baseline for each of 6 targets at 02:00:21–02:00:29 UTC, and the owner got the vi + en "Key changes today" message for `kdd1793327513.sputnik-v2.testnet` (`bot2.duonghb3.testnet`: new full-access key, several full-access keys, key never used) |
 | W4 | `keeper` | `errors: []` | runs every 15 min. Steps executed on `payroll-2` (K4) |
 | W5 | `yield` | a push to chats from B7 | **open** |
 | W6 | `run-check` without the token | 401 | 2026-11-09: pass, 401 `UNAUTHORIZED` (no token and a wrong token) |
@@ -104,7 +104,7 @@ Notes from the 2026-11-09 run:
 |---|---|---|---|
 | G1 | T3: invoices inv-001 to inv-004 through `apps/guard-mcp` | three `auto_approved`, inv-004 `pending` with three reasons, not split | done earlier |
 | G2 | T4 rows 1–6: limits and the guardian pause | `OVER_PER_TX`, `OVER_DAILY_LIMIT`, `NOT_WHITELISTED`, `TOO_MANY_PENDING`, `PAUSED` | pause **open** |
-| G3 | T5: **Propose a change**, **Pause now** with a non-guardian wallet, **Propose retire** | the `set_policy` proposal; the pause refused before the wallet opens; a `ChangePolicy` that removes only the Guard | pause and retire **open** |
+| G3 | T5: **Propose a change**, **Pause now** with a non-guardian wallet, **Propose retire** | the `set_policy` proposal; the pause refused before the wallet opens; a `ChangePolicy` that removes only the Guard | pass 2026-11-10 (owner): pause and retire checked live. The Budget page's Pause / Resume buttons were renamed from "Pause all agents" / "Resume agents" to "Pause this Budget" / "Resume this Budget": `pause` stops every agent of that one Guard, not all of the owner's agents |
 | G4 | T6: Telegram alerts for auto, pending and failed | the three alert kinds, then nothing new on the next run | done earlier |
 | G5 | sign one Guard action with Here and one with HOT | the same result as Meteor | **open** |
 
@@ -118,7 +118,7 @@ Notes from the 2026-11-09 run:
 | K4 | wait for the keeper (minutes 7, 22, 37, 52) or run W4 | `execute_plan_step` from `keydoctor-keeper.testnet`, the receiver paid, `runs_done` 1, then 2 on the next cycle, and nothing after | done 2026-11-09 on `payroll-2`: the keeper ran plan 1 to `completed` (3 runs) and DCA plan 2 to `completed` (2 sells, tx hashes in backlog O9) |
 | K5 | guardian `pause` on a Budget | one `budget_owner_action` message in its chats on the next keeper cycle | **open** |
 | K6 | My Agents page with the owner wallet | `payroll-1` and `payroll-2` with their plan and limits | **open** |
-| K7 | `scripts/guard-setup/factory-global.sh keydoctor-guards-v2.testnet --send`, then step 1 of Create on the live Budget page; then create one Budget | `kd_factory_metadata.guard_code_global` true; the Guard cost line about 0.01 NEAR; the new Guard has no code of its own (`code_hash` of a global contract) | publish done 2026-11-10 (backlog O10), cost line 7.31032 NEAR read live; Budget creation **open** (needs the owner's wallet) |
+| K7 | `scripts/guard-setup/factory-global.sh keydoctor-guards-v2.testnet --send`, then step 1 of Create on the live Budget page; then create one Budget | `kd_factory_metadata.guard_code_global` true; the Guard cost line about 0.01 NEAR; the new Guard has no code of its own (`code_hash` of a global contract) | done 2026-11-10 (backlog O10): cost line 7.31032 NEAR read live; Budget `test-new-guard`: Guard `global_contract_hash` `9X9H…dHqyo`, own `code_hash` all ones, 905 bytes of storage, 1.3.0, no keys; agent `a1` has one function-call key (`request_transfer`, `sync_request` on the Guard) |
 
 ### Yield (YD0–YD4)
 
@@ -130,7 +130,7 @@ Notes from the 2026-11-09 run:
 | Y3b | partial withdraw: Take it back with an amount (PR for the APR preview) | `Withdraw {token_id, amount}` with the amount in Rhea Lend's inner units (raw × 10^12); only that part comes back | done 2026-11-10 on the Y1 DAO: #6 took 1,300,000 of 1,800,020 USDC back (`withdraw_succeeded`, tx `GxZya33VyMeEGQ1e592xBXiY61aXbmqoAREzsrqr2DYE`). Args from the dashboard builder, signed with near-cli. 500,020 stays supplied. The rate went 0.27% → 1.4432%; the drawer's preview said 1.44% |
 | Y4 | vote on a yield proposal from the page | only for a kind the page builds | done 2026-11-09: votes on #3–#5 from the page. #6 (partial withdraw) shows its amount and an Approve button |
 | Y5 | a Worker model call on the Y1 DAO | reasons from the TEE model. Every number matches the code-built candidate | pass 2026-11-10: `/yield` in Telegram called `Qwen/Qwen3.6-35B-A3B-FP8`, generation `21c7611681a2408f84990e0558759869`. MCP then served the cached advice (`by` model, no fallback). APR 10.56% and `max_amount` `2000020009655` equal the code facts. Found: the reason calls the 10.56% APR an "APY"; `validateAdvice` checks numbers only, not their label |
-| Y6 | `NEAR_AI_API_KEY=... scripts/yield-setup/verify-tee.sh` | exit 0, with the result written to `docs/yield-tee-verify.md` | **open** |
+| Y6 | `NEAR_AI_API_KEY=... scripts/yield-setup/verify-tee.sh` | exit 0, with the result written to `docs/yield-tee-verify.md` | pass 2026-11-10 07:26 UTC (owner): `Qwen/Qwen3.6-35B-A3B-FP8`, hashes, signature, Intel TDX quote and NVIDIA attestation all verified |
 
 ### Other
 
@@ -138,7 +138,7 @@ Notes from the 2026-11-09 run:
 |---|---|---|---|
 | X1 | `pnpm stats` (owner, O4) | the README table, with no names | done 2026-11-10 (O4, block 223,787,777) |
 | X2 | `examples/near-ai-agent` against the hosted MCP | it calls `preflight` before it pays and stops on `block` | covered by its 8 unit tests; live run optional |
-| X3 | re-measure the 140/145 Tgas attach floor | the README gas line matches | **open** |
+| X3 | re-measure the 140/145 Tgas attach floor | the README gas line matches | pass 2026-11-10 in the sandbox (Guard 1.3.0 wasm, Sputnik v2, `request_transfer` at 140–150 Tgas, a temporary test, not kept): 140–143 fail in the first receipt (3.1 Tgas burnt, no proposal, nothing paid); 144 works for Auto only (15.0 Tgas burnt); 145 is the lowest that works for both Auto and Pending (Pending burns 8.1). README line unchanged. Not re-measured on testnet |
 
 ## 5. Order
 
