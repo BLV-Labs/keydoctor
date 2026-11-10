@@ -74,7 +74,7 @@ Notes from the 2026-11-09 run:
 | B4 | `/list`, then `/unwatch <dao>`, then `/list` | the DAO is listed, then gone | **open** |
 | B5 | a plain message naming `x.testnet` in private | the same as `/check x.testnet`. In a group with no name, no reply | **open** |
 | B6 | dashboard check page, **Watch in Telegram** | the link opens the bot. `/start <code>` subscribes once. The same code a second time is refused | **open** |
-| B7 | `/yield <dao>`, `/yield_watch <dao>`, `/yield_unwatch <dao>` on a DAO from Y1 | suggestions, then a subscription, then none | **open** |
+| B7 | `/yield <dao>`, `/yield_watch <dao>`, `/yield_unwatch <dao>` on a DAO from Y1 | suggestions, then a subscription, then none | `/yield` pass 2026-11-10 on `payroll-1` (0 test USDC: no suggestion, no model call) and on `kdy1794161239.sputnik-v2.testnet` (one suggestion with model reasons, see Y5). `/yield_watch` and `/yield_unwatch` still **open** |
 | B8 | remove the bot from a test group that watches the demo DAO, make a new proposal, then run W2 | the send to that chat fails and its subscriptions are deleted | **open** |
 
 ### Worker jobs (`/run-check`, owner holds the token)
@@ -127,7 +127,7 @@ Notes from the 2026-11-09 run:
 | Y2 | `yield_suggestions` (M9) and the dashboard yield page on the Y1 DAO | code-built candidates with their numbers | done 2026-11-09: MCP and the page agree (one candidate, 10.55% APR). The page's Rhea API read was blocked by the CSP, fixed in PR #59 |
 | Y3 | dashboard yield page: supply and withdraw signed by the owner | the proposals pass, as in Y1 | **open** |
 | Y4 | vote on a yield proposal from the page | only for a kind the page builds | **open** |
-| Y5 | a Worker model call on the Y1 DAO | reasons from the TEE model. Every number matches the code-built candidate | **open** |
+| Y5 | a Worker model call on the Y1 DAO | reasons from the TEE model. Every number matches the code-built candidate | pass 2026-11-10: `/yield` in Telegram called `Qwen/Qwen3.6-35B-A3B-FP8`, generation `21c7611681a2408f84990e0558759869`. MCP then served the cached advice (`by` model, no fallback). APR 10.56% and `max_amount` `2000020009655` equal the code facts. Found: the reason calls the 10.56% APR an "APY"; `validateAdvice` checks numbers only, not their label |
 | Y6 | `NEAR_AI_API_KEY=... scripts/yield-setup/verify-tee.sh` | exit 0, with the result written to `docs/yield-tee-verify.md` | **open** |
 
 ### Other
