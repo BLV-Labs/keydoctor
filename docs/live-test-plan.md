@@ -130,7 +130,7 @@ Notes from the 2026-11-09 run:
 | Y3b | partial withdraw: Take it back with an amount (PR for the APR preview) | `Withdraw {token_id, amount}` with the amount in Rhea Lend's inner units (raw × 10^12); only that part comes back | done 2026-11-10 on the Y1 DAO: #6 took 1,300,000 of 1,800,020 USDC back (`withdraw_succeeded`, tx `GxZya33VyMeEGQ1e592xBXiY61aXbmqoAREzsrqr2DYE`). Args from the dashboard builder, signed with near-cli. 500,020 stays supplied. The rate went 0.27% → 1.4432%; the drawer's preview said 1.44% |
 | Y4 | vote on a yield proposal from the page | only for a kind the page builds | done 2026-11-09: votes on #3–#5 from the page. #6 (partial withdraw) shows its amount and an Approve button |
 | Y5 | a Worker model call on the Y1 DAO | reasons from the TEE model. Every number matches the code-built candidate | pass 2026-11-10: `/yield` in Telegram called `Qwen/Qwen3.6-35B-A3B-FP8`, generation `21c7611681a2408f84990e0558759869`. MCP then served the cached advice (`by` model, no fallback). APR 10.56% and `max_amount` `2000020009655` equal the code facts. Found: the reason calls the 10.56% APR an "APY"; `validateAdvice` checks numbers only, not their label |
-| Y6 | `NEAR_AI_API_KEY=... scripts/yield-setup/verify-tee.sh` | exit 0, with the result written to `docs/yield-tee-verify.md` | **open** |
+| Y6 | `NEAR_AI_API_KEY=... scripts/yield-setup/verify-tee.sh` | exit 0, with the result written to `docs/yield-tee-verify.md` | pass 2026-11-10 07:26 UTC (owner): `Qwen/Qwen3.6-35B-A3B-FP8`, hashes, signature, Intel TDX quote and NVIDIA attestation all verified |
 
 ### Other
 
@@ -138,7 +138,7 @@ Notes from the 2026-11-09 run:
 |---|---|---|---|
 | X1 | `pnpm stats` (owner, O4) | the README table, with no names | done 2026-11-10 (O4, block 223,787,777) |
 | X2 | `examples/near-ai-agent` against the hosted MCP | it calls `preflight` before it pays and stops on `block` | covered by its 8 unit tests; live run optional |
-| X3 | re-measure the 140/145 Tgas attach floor | the README gas line matches | **open** |
+| X3 | re-measure the 140/145 Tgas attach floor | the README gas line matches | pass 2026-11-10 in the sandbox (Guard 1.3.0 wasm, Sputnik v2, `request_transfer` at 140–150 Tgas, a temporary test, not kept): 140–143 fail in the first receipt (3.1 Tgas burnt, no proposal, nothing paid); 144 works for Auto only (15.0 Tgas burnt); 145 is the lowest that works for both Auto and Pending (Pending burns 8.1). README line unchanged. Not re-measured on testnet |
 
 ## 5. Order
 
