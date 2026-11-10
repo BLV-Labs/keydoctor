@@ -121,7 +121,7 @@ describe("renderBudget", () => {
   });
   it("Pause asks first: Cancel has focus, the cost is stated, and no jargon shows", () => {
     const out = renderBudgetPause(live()).value;
-    assert.match(out, /Pause all agents\?/);
+    assert.match(out, /Pause this Budget\?/);
     assert.match(out, /<button[^>]*autofocus[^>]*>Cancel</);
     assert.match(out, /data-action="budget-pause-now"/);
     assert.match(out, /Resuming takes 2/);
@@ -464,7 +464,7 @@ describe("Budget views the owner decides from", () => {
   it("a paused Budget offers Resume, with 2 signatures, instead of Pause", () => {
     const base = live();
     const out = renderBudget({ ...base, guard: { ...base.guard!, config: { ...base.guard!.config!, paused: true } } }, "testnet").value;
-    assert.match(out, /Resume agents <span class="sig">2 signatures</);
+    assert.match(out, /Resume this Budget <span class="sig">2 signatures</);
     assert.match(out, /Every payment they ask for is rejected/);
     assert.doesNotMatch(out, /data-action="budget-pause"/);
   });

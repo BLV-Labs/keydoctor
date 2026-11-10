@@ -469,8 +469,8 @@ export function renderBudget(b: BudgetLive, network: Network, setup: Html | "" =
       </div>
       <div class="actions">
         ${paused
-          ? html`<button type="button" class="btn btn-primary" data-action="budget-resume">${icon.play()}Resume agents <span class="sig">${signatures(2)}</span></button>`
-          : html`<button type="button" class="btn btn-danger" data-action="budget-pause" data-guard="${g.guard_id}"${g.config === null ? " disabled" : ""}>${icon.pause()}Pause all agents</button>`}
+          ? html`<button type="button" class="btn btn-primary" data-action="budget-resume">${icon.play()}Resume this Budget <span class="sig">${signatures(2)}</span></button>`
+          : html`<button type="button" class="btn btn-danger" data-action="budget-pause" data-guard="${g.guard_id}"${g.config === null ? " disabled" : ""}>${icon.pause()}Pause this Budget</button>`}
         <button type="button" class="btn btn-secondary" data-action="budget-open" data-panel="withdraw">Withdraw</button>
         <button type="button" class="btn ${paused ? "btn-secondary" : "btn-primary"}" data-action="budget-open" data-panel="topup">Top up</button>
       </div>
@@ -505,11 +505,11 @@ export const isModalPanel = (panel: BudgetPanel): boolean => panel === "topup" |
 /** The amounts offered as one-press chips in Top up. */
 export const TOP_UP_CHIPS: readonly string[] = ["1", "5", "10", "20"];
 
-/** Pause all agents: what stops, what stays, and what undoing it costs. Cancel has the first focus. */
+/** Pause this Budget (every agent in it): what stops, what stays, and what undoing it costs. Cancel has the first focus. */
 export function renderBudgetPause(b: BudgetLive): Html {
   const g = b.guard;
   const count = g?.agents?.length ?? g?.config?.agents ?? null;
-  return html`<div class="drawer-form">${drawerHead("Pause all agents?", `${b.dao.dao}${count === null ? "" : ` · ${plural(count, "agent")}`}`)}
+  return html`<div class="drawer-form">${drawerHead("Pause this Budget?", `${b.dao.dao}${count === null ? "" : ` · ${plural(count, "agent")}`}`)}
     <div class="drawer-body">
       <ul class="list">
         <li>Agents cannot pay or ask for payments.</li>
@@ -911,7 +911,7 @@ const CHANGE_NAME: Record<string, string> = {
   set_agent_enabled: "Turn an agent on or off",
   add_whitelist: "Add a recipient",
   remove_whitelist: "Remove a recipient",
-  unpause: "Resume agents",
+  unpause: "Resume this Budget",
   upgrade: "Update your Budget",
   create_plan: "Start a plan",
 };

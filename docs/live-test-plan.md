@@ -104,7 +104,7 @@ Notes from the 2026-11-09 run:
 |---|---|---|---|
 | G1 | T3: invoices inv-001 to inv-004 through `apps/guard-mcp` | three `auto_approved`, inv-004 `pending` with three reasons, not split | done earlier |
 | G2 | T4 rows 1–6: limits and the guardian pause | `OVER_PER_TX`, `OVER_DAILY_LIMIT`, `NOT_WHITELISTED`, `TOO_MANY_PENDING`, `PAUSED` | pause **open** |
-| G3 | T5: **Propose a change**, **Pause now** with a non-guardian wallet, **Propose retire** | the `set_policy` proposal; the pause refused before the wallet opens; a `ChangePolicy` that removes only the Guard | pause and retire **open** |
+| G3 | T5: **Propose a change**, **Pause now** with a non-guardian wallet, **Propose retire** | the `set_policy` proposal; the pause refused before the wallet opens; a `ChangePolicy` that removes only the Guard | pass 2026-11-10 (owner): pause and retire checked live. The Budget page's Pause / Resume buttons were renamed from "Pause all agents" / "Resume agents" to "Pause this Budget" / "Resume this Budget": `pause` stops every agent of that one Guard, not all of the owner's agents |
 | G4 | T6: Telegram alerts for auto, pending and failed | the three alert kinds, then nothing new on the next run | done earlier |
 | G5 | sign one Guard action with Here and one with HOT | the same result as Meteor | **open** |
 
