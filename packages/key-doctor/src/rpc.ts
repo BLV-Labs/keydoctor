@@ -62,6 +62,9 @@ function unwrap(body: unknown, blockPinnedByCaller: boolean, contractFailureIsNo
     const cause = isRecord(body.error) ? body.error.cause : undefined;
     const name = isRecord(cause) && typeof cause.name === "string" ? cause.name : "";
     if (name === "UNKNOWN_ACCOUNT") throw fail("NOT_FOUND");
+    // Nodes refuse an unpaginated key list over 100 keys. Every node says the same, and Key Doctor scans at most
+    // MAX_KEYS (100) anyway, so this is the key cap, not a transient read failure.
+    if (name === "TOO_MANY_ACCESS_KEYS") throw fail("LIMIT_EXCEEDED", { variant: "keys" });
     if (name === "UNKNOWN_BLOCK") throw fail("RPC_ERROR", { retryable: !blockPinnedByCaller });
     if (contractFailureIsNotADao && (name === "NO_CONTRACT_CODE" || name === "CONTRACT_EXECUTION_ERROR")) {
       throw fail("NOT_A_DAO");

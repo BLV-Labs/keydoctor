@@ -500,12 +500,13 @@ describe("S3-AC4 member failures, missing members, order, counts", () => {
     assert.deepEqual(report.members.map((x) => x.account_id), [C, A, B], "errored members sort last");
   });
 
-  it("HTTP 429 on a member gives RATE_LIMITED; other errors give RPC_ERROR; over MAX_KEYS gives LIMIT_EXCEEDED, keys []", async () => {
+  it("HTTP 429 on a member gives RATE_LIMITED; other errors give RPC_ERROR; over MAX_KEYS (or the node's own 100-key refusal) gives LIMIT_EXCEEDED, keys []", async () => {
     const many = Array.from({ length: MAX_KEYS + 1 }, () => faKey());
     const exactly = Array.from({ length: MAX_KEYS }, () => faKey());
-    const answers = daoAnswers(DAO, councilOf([A, B, C, D]), { [C]: many, [D]: exactly }, {
+    const answers = daoAnswers(DAO, councilOf([A, B, C, D, E]), { [C]: many, [D]: exactly }, {
       [`query/view_access_key_list/${A}`]: () => http(429),
       [`query/view_access_key_list/${B}`]: causeBody("INTERNAL_ERROR"),
+      [`query/view_access_key_list/${E}`]: causeBody("TOO_MANY_ACCESS_KEYS"),
     });
     const { report, stub } = await run(answers);
     const by = Object.fromEntries(report.members.map((x) => [x.account_id, x]));
@@ -515,7 +516,9 @@ describe("S3-AC4 member failures, missing members, order, counts", () => {
     assert.deepEqual(by[C]?.keys, []);
     assert.equal(by[D]?.error, null);
     assert.equal(by[D]?.keys.length, MAX_KEYS);
-    assert.deepEqual(report.errors, [A, B, C].map((id, i) => `member ${id}: ${["RATE_LIMITED", "RPC_ERROR", "LIMIT_EXCEEDED"][i]}`));
+    // A transient RPC_ERROR would make network stats unstable; the node's key cap is the same answer on every run.
+    assert.equal(by[E]?.error, "LIMIT_EXCEEDED");
+    assert.deepEqual(report.errors, [A, B, C, E].map((id, i) => `member ${id}: ${["RATE_LIMITED", "RPC_ERROR", "LIMIT_EXCEEDED", "LIMIT_EXCEEDED"][i]}`));
     assert.ok(!kinds(stub).includes(`query/view_account/${C}`), "no follow-up for a non-empty list");
   });
 

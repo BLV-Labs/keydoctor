@@ -17,7 +17,19 @@ A Sputnik DAO's fund is only as safe as its council's accounts and the proposals
 
 A council that wants an AI agent to pay for services, or wants regular payouts or DCA, has two bad options today: give the agent a key that can spend everything, or vote on every small payment by hand.
 
-Network-wide numbers come from one reproducible command (`pnpm stats`, see below). They go here once the script has run against live mainnet RPC.
+Measured on NEAR mainnet at block 223,787,777 (2026-11-09), ruleset 2026-11-03, over every Sputnik DAO the `sputnik-dao.near` factory lists. "Active" means a proposal in the last 365 days. Aggregates only; reproduce with `pnpm stats` ([step 6](#try-it-do-x-see-y)).
+
+| Measure | All DAOs | Active DAOs |
+|---|---|---|
+| DAOs read | 2,077 of 2,112 | 716 of 716 |
+| DAOs with a one-person council | 1,000 (48%) | 455 (64%) |
+| DAOs where one account can approve a transfer | 1,307 (63%) | 572 (80%) |
+| Council members at high risk | 1,671 of 3,489 (48%) | 415 of 832 (50%) |
+| Council members' function-call keys never used | 31,214 of 35,599 (88%) | 3,741 of 4,318 (87%) |
+| Council members' full-access keys never used | 3,196 of 13,686 (23%) | 234 of 1,203 (19%) |
+| Council members with an ML-DSA key | 14 | 6 |
+
+Left out: 35 DAOs (25 over a scan cap, `LIMIT_EXCEEDED`; 10 that are not DAOs) and 281 council members (275 with more than 100 keys, 5 invalid names, 1 read error). Full output: [`data/network-stats-all.md`](data/network-stats-all.md), [`data/network-stats.md`](data/network-stats.md).
 
 ## What it does
 
@@ -119,10 +131,10 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 
    ```bash
    pnpm stats
-   pnpm stats --block <height> --rpc https://archival-rpc.mainnet.near.org
+   pnpm stats --block 223787777 --all
    ```
 
-   The first command pins the latest final block. The second reruns the scan at a fixed block. The script prints a Markdown table and writes `data/network-stats.json` and `data/network-stats.md`, with aggregates only and no account names.
+   The first command pins the latest final block and scans the DAOs with a proposal in the last 365 days. The second reruns the published scan: every DAO the factory lists, at the block the README numbers come from. Each query tries six public mainnet RPCs in turn (archival ones last; `--rpc a,b` picks your own) and keeps only answers that every node would give at that block. If any query gets no such answer, the script writes nothing and exits 1, so a rerun gives the same file byte for byte. It prints a Markdown table and writes `data/network-stats.json` / `.md` (or `network-stats-all.*` with `--all`), with aggregates only and no account names.
 
 7. **Benchmark the data sources** (NEAR RPC endpoints vs the NearBlocks API)
 
@@ -175,7 +187,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 | GĐ7 | Dashboard: check, council, proposal list, account, key detail (what a key is approved for, the dApp), alerts dialog | Deployed to Pages |
 | GĐ8 | Cleanup plan, per-key Revoke / Delete signed in Meteor Wallet | Built; Revoke and Delete verified on testnet with a real Meteor account (2026-10-30). No bulk delete |
 | GĐ9 | Daily key diff (02:00 UTC) | Built; deployed with the Worker, not yet seen firing live |
-| GĐ10 | Network stats script | Built; numbers pending a live run |
+| GĐ10 | Network stats script | Ran 2026-11-10 on mainnet at block 223,787,777 over all 2,112 factory DAOs; a second run gave a byte-identical file ([`data/network-stats-all.md`](data/network-stats-all.md)) |
 | GĐ12 | One-tap watch links: `POST /api/watch-link`, MCP `watch`, `/start <code>`, dashboard "Create links" | Deployed with the Worker; MCP `watch` is in `tools/list`, a link has not been opened live yet |
 | GĐ11, GĐ13 | History backtest, NearBlocks key dates | Not built (Roadmap) |
 | GĐ15–GĐ17 | Agent Guard contract (`contracts/guard`) | Built; `pnpm test:guard` passes 153 unit, 24 sandbox and 3 DCA sandbox tests for the Guard and 20 unit and 14 sandbox tests for the factory, sandbox against the real Sputnik v2 wasm, and for DCA the testnet wrap, Rhea and USDT wasm (2026-11-09). A spike version paid a transfer on testnet (2026-11-02) |

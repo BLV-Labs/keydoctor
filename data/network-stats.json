@@ -1,0 +1,33 @@
+{
+  "schema_version": "kd.network_stats.v1",
+  "network": "mainnet",
+  "scope": "active",
+  "block_height": 223787777,
+  "block_timestamp": "2026-11-09T15:49:10Z",
+  "ruleset_version": "2026-11-03",
+  "active_days": 365,
+  "daos_listed": 2112,
+  "daos_active": 716,
+  "daos_failed": 0,
+  "daos_failed_by_code": {},
+  "daos_scanned": 716,
+  "council_size": {
+    "median": 1,
+    "p90": 4,
+    "one_member": 455
+  },
+  "daos_single_vote_transfer": 572,
+  "council_members": 832,
+  "members_unreadable": 55,
+  "members_unreadable_by_code": {
+    "LIMIT_EXCEEDED": 55
+  },
+  "members_with_ml_dsa": 6,
+  "members_with_ml_dsa_and_ed25519_full_access": 4,
+  "members_pq_ready": 2,
+  "members_high": 415,
+  "function_call_keys": 4318,
+  "function_call_keys_never_used": 3741,
+  "full_access_keys": 1203,
+  "full_access_keys_never_used": 234
+}
