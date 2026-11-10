@@ -96,7 +96,7 @@ fn new_stores_the_guard_code_and_its_hash_without_publishing_anything() {
     let f = factory();
     assert_eq!(f.guard_code_hash, env::sha256_array(CODE));
     assert_eq!(env::storage_read(GUARD_CODE_KEY).as_deref(), Some(CODE), "every create deploys this copy");
-    // A global publish burns about 25 NEAR of the factory owner's money; each DAO pays for its own Guard instead.
+    // A global publish burns about 35 NEAR of the factory owner's money: only `publish_guard_code_global` does it.
     assert!(get_created_receipts().is_empty());
 }
 
@@ -340,4 +340,101 @@ fn create_after_set_guard_code_deploys_the_new_code_and_a_guard_made_before_keep
     f.set_guard_code(NEW_CODE.to_vec());
     assert_eq!(make(&mut f, "after"), NEW_CODE, "new Guards get the new code");
     assert_eq!(f.get_guard(guard_id("before")).map(|g| g.dao_id), Some(id(DAO)), "the registry is untouched");
+}
+
+/// `publish_guard_code_global` and its callback, as if the publish succeeded (or not).
+fn publish(f: &mut Factory, ok: bool) -> bool {
+    env_as(FACTORY, 0);
+    let _ = f.publish_guard_code_global();
+    env_callback(if ok { PromiseResult::Successful(vec![]) } else { PromiseResult::Failed });
+    f.on_guard_code_published(f.get_code_hash())
+}
+
+fn guard_actions(name: &str) -> Vec<MockAction> {
+    get_created_receipts().into_iter().filter(|r| r.receiver_id == guard_id(name)).flat_map(|r| r.actions).collect()
+}
+
+fn metadata_code_storage(f: &Factory) -> u128 {
+    f.kd_factory_metadata()["guard_code_storage"].as_str().unwrap().parse().unwrap()
+}
+
+#[test]
+fn publish_puts_the_stored_code_on_the_factory_as_a_global_contract_by_hash() {
+    let mut f = factory();
+    env_as(FACTORY, 0);
+    let _ = f.publish_guard_code_global();
+    let actions: Vec<MockAction> =
+        get_created_receipts().into_iter().filter(|r| r.receiver_id == id(FACTORY)).flat_map(|r| r.actions).collect();
+    let published = actions.iter().find_map(|a| match a {
+        MockAction::DeployGlobalContract { code, mode, .. } => Some((code.clone(), format!("{mode:?}"))),
+        _ => None,
+    });
+    // By hash, not by account id: nobody, the factory included, can later swap the code a Guard points at.
+    assert_eq!(published, Some((CODE.to_vec(), "CodeHash".to_string())));
+    assert!(!f.kd_factory_metadata()["guard_code_global"].as_bool().unwrap(), "only the callback turns it on");
+}
+
+#[test]
+fn after_a_publish_new_guards_use_the_global_code_and_lock_only_its_hash() {
+    // 200 KB of code would lock 2 NEAR on each Guard as a copy.
+    env_as(FACTORY, 0);
+    let mut f = Factory::new(vec![0; 200_000]);
+    let copy_cost = metadata_code_storage(&f);
+    assert_eq!(copy_cost, 2 * NEAR);
+    assert!(publish(&mut f, true));
+    assert!(get_logs().iter().any(|l| l.contains("guard_code_published")));
+    let meta = f.kd_factory_metadata();
+    assert_eq!(meta["guard_code_global"], true);
+    // The dashboard adds this to the deposit, so the cost it shows drops with it.
+    assert_eq!(metadata_code_storage(&f), 32 * 10u128.pow(19));
+
+    // 1 NEAR was refused before the publish (2 NEAR of code plus the 0.5 floor); now it is enough.
+    let _ = create(&mut f, DAO, "acme", NEAR);
+    env_callback(PromiseResult::Successful(b"{}".to_vec()));
+    let _ = f.on_dao_checked(guard_id("acme"), id(DAO), U128(NEAR), U128(NEAR - NEAR / 100), json!({}));
+    let actions = guard_actions("acme");
+    let hash = String::from(&Base58CryptoHash::from(env::sha256_array(vec![0u8; 200_000])));
+    assert!(
+        actions.iter().any(|a| matches!(a, MockAction::UseGlobalContract { contract_id, .. } if format!("{contract_id:?}").contains(&hash))),
+        "{actions:?}"
+    );
+    assert!(!actions.iter().any(|a| matches!(a, MockAction::DeployContract { .. })), "no copy of the code");
+    assert!(actions.iter().any(|a| matches!(a, MockAction::CreateAccount { .. })));
+    assert!(
+        !actions.iter().any(|a| matches!(a, MockAction::AddKeyWithFullAccess { .. } | MockAction::AddKeyWithFunctionCall { .. })),
+        "still locked from birth"
+    );
+}
+
+#[test]
+fn a_failed_publish_keeps_new_guards_on_their_own_copy() {
+    let mut f = factory();
+    assert!(!publish(&mut f, false));
+    assert_eq!(f.kd_factory_metadata()["guard_code_global"], false);
+    assert_eq!(metadata_code_storage(&f), CODE.len() as u128 * 10u128.pow(19));
+}
+
+#[test]
+fn a_publish_that_lands_after_set_guard_code_does_not_switch_to_the_old_code() {
+    // The callback carries the hash it published; code replaced in between must not be marked global.
+    let mut f = factory();
+    let old = f.get_code_hash();
+    env_as(FACTORY, 0);
+    f.set_guard_code(b"\0asm guard v2".to_vec());
+    env_callback(PromiseResult::Successful(vec![]));
+    assert!(!f.on_guard_code_published(old));
+    assert_eq!(f.kd_factory_metadata()["guard_code_global"], false);
+}
+
+#[test]
+fn set_guard_code_after_a_publish_goes_back_to_copies_until_the_new_code_is_published() {
+    let mut f = factory();
+    assert!(publish(&mut f, true));
+    env_as(FACTORY, 0);
+    f.set_guard_code(b"\0asm guard v2".to_vec());
+    assert_eq!(f.kd_factory_metadata()["guard_code_global"], false);
+    let _ = create(&mut f, DAO, "acme", 3 * NEAR);
+    env_callback(PromiseResult::Successful(b"{}".to_vec()));
+    let _ = f.on_dao_checked(guard_id("acme"), id(DAO), U128(3 * NEAR), U128(2 * NEAR), json!({}));
+    assert!(guard_actions("acme").iter().any(|a| matches!(a, MockAction::DeployContract { code, .. } if code == b"\0asm guard v2")));
 }
