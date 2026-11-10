@@ -20,9 +20,9 @@ Record each result in [TEST_MATRIX.md](TEST_MATRIX.md) (Evidence Format) or the 
 
 | # | Do | See | Last result |
 |---|---|---|---|
-| A1 | `pnpm test` | 5 packages, fail 0 | 2026-11-09: 896 tests (key-doctor 453, dashboard 252, worker 141, guard-mcp 42, near-ai-agent 8), fail 0, skip 0 |
+| A1 | `pnpm test` | 5 packages, fail 0 | 2026-11-10: 1,159 tests (key-doctor 492, dashboard 452, worker 155, guard-mcp 52, near-ai-agent 8), fail 0, skip 0 |
 | A2 | `pnpm typecheck` | no errors | 2026-11-09: exit 0 |
-| A3 | `pnpm test:guard` | Guard 130 unit + 24 sandbox, factory 18 unit + 12 sandbox, all pass | 2026-11-09: pass (Guard 130 + 24, factory 18 + 12) |
+| A3 | `pnpm test:guard` | Guard 130 unit + 24 sandbox, factory 18 unit + 12 sandbox, all pass | 2026-11-10: pass (Guard 153 unit + 24 sandbox + 3 DCA sandbox, factory 25 + 16) |
 | A4 | `pnpm --filter dashboard build` | `dist/` builds with no error | 2026-11-09: builds with no error |
 
 ## 2. Hosted MCP (Claude, read only, no secret)
@@ -86,7 +86,7 @@ Notes from the 2026-11-09 run:
 | W1 | `GET /` with no token | `ok` (text/plain) | 2026-11-09: pass, 200 `ok` |
 | W2 | `proposals` twice | the first run sends any new alert. The second sends nothing | done in the demo run of 2026-10-30 |
 | W3 | `daily` | a diff for each watched target. Also watch the cron at 02:00 UTC (09:00 in Vietnam) once | **cron firing open** |
-| W4 | `keeper` | `errors: []` | runs every 15 min. No step executed yet (K below) |
+| W4 | `keeper` | `errors: []` | runs every 15 min. Steps executed on `payroll-2` (K4) |
 | W5 | `yield` | a push to chats from B7 | **open** |
 | W6 | `run-check` without the token | 401 | 2026-11-09: pass, 401 `UNAUTHORIZED` (no token and a wrong token) |
 
@@ -114,10 +114,11 @@ Notes from the 2026-11-09 run:
 |---|---|---|---|
 | K1 | Budget page, Cautious preset: sign 1, sign 2, download the key file | the four checks after sign 2 pass, and the key file has one function-call key limited to the Guard | done 2026-11-08 (`payroll-1`, `payroll-2`) |
 | K2 | leave the page before downloading | the unsaved-key question | unit-tested; see it live on the next Budget creation |
-| K3 | a DAO `FunctionCall` proposal on `payroll-1`: `create_plan` on its Guard with `Transfer` to a whitelisted receiver, `amount_per_run` ≤ `max_per_tx`, `interval_sec` ≥ 60, `runs_total` 2, `start_at` in the past; approve it | `plan_created` event, and `get_plans` shows it `Active` | **open** |
-| K4 | wait for the keeper (minutes 7, 22, 37, 52) or run W4 | `execute_plan_step` from `keydoctor-keeper.testnet`, the receiver paid, `runs_done` 1, then 2 on the next cycle, and nothing after | **open, the main keeper proof** |
+| K3 | a DAO `FunctionCall` proposal on `payroll-1`: `create_plan` on its Guard with `Transfer` to a whitelisted receiver, `amount_per_run` ≤ `max_per_tx`, `interval_sec` ≥ 60, `runs_total` 2, `start_at` in the past; approve it | `plan_created` event, and `get_plans` shows it `Active` | done 2026-11-09 on `payroll-2` instead: plan 1 (Scheduled payout, 0.1 NEAR × 3) from the dashboard; plan 2 (DCA) on 2026-11-09 too (backlog O9) |
+| K4 | wait for the keeper (minutes 7, 22, 37, 52) or run W4 | `execute_plan_step` from `keydoctor-keeper.testnet`, the receiver paid, `runs_done` 1, then 2 on the next cycle, and nothing after | done 2026-11-09 on `payroll-2`: the keeper ran plan 1 to `completed` (3 runs) and DCA plan 2 to `completed` (2 sells, tx hashes in backlog O9) |
 | K5 | guardian `pause` on a Budget | one `budget_owner_action` message in its chats on the next keeper cycle | **open** |
 | K6 | My Agents page with the owner wallet | `payroll-1` and `payroll-2` with their plan and limits | **open** |
+| K7 | `scripts/guard-setup/factory-global.sh keydoctor-guards-v2.testnet --send`, then step 1 of Create on the live Budget page; then create one Budget | `kd_factory_metadata.guard_code_global` true; the Guard cost line about 0.01 NEAR; the new Guard has no code of its own (`code_hash` of a global contract) | publish done 2026-11-10 (backlog O10), cost line 7.31032 NEAR read live; Budget creation **open** (needs the owner's wallet) |
 
 ### Yield (YD0–YD4)
 
@@ -135,7 +136,7 @@ Notes from the 2026-11-09 run:
 
 | # | Do | See | Status |
 |---|---|---|---|
-| X1 | `pnpm stats` (owner, O4) | the README table, with no names | **open** |
+| X1 | `pnpm stats` (owner, O4) | the README table, with no names | done 2026-11-10 (O4, block 223,787,777) |
 | X2 | `examples/near-ai-agent` against the hosted MCP | it calls `preflight` before it pays and stops on `block` | covered by its 8 unit tests; live run optional |
 | X3 | re-measure the 140/145 Tgas attach floor | the README gas line matches | **open** |
 
