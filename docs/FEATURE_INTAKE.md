@@ -85,7 +85,7 @@ Score each item. 3+ checks in high-risk = high-risk lane.
 |---|---|
 | Governing PRD entry (vision / epic / task) | `docs/final-idea.md` (then `docs/usecase.md`) — see `docs/PRD.md` |
 | Story packet | `docs/stories/epics/<epic>/<story>.md` |
-| Product docs | `docs/product/<contract>.md` |
+| Product docs | `docs/stories/epics/<epic>/plan.md`, `docs/final-idea.md` |
 | Test matrix rows | `docs/TEST_MATRIX.md` |
 | Decision records | `docs/decisions/` |
 | Architecture rules | `docs/ARCHITECTURE.md` |

@@ -2,9 +2,13 @@
 
 The keeper (ADR 0005, GĐ29) calls Guard plan steps that are due, on testnet only. It pays gas and decides nothing: every check is in the Guard. Its code is in `src/jobs/keeper.ts` and `src/keeper/near.ts`.
 
-It runs on testnet since 2026-11-06 as `keydoctor-keeper.testnet`, every 15 minutes. Two Budgets exist since 2026-11-08 (`payroll-1`, `payroll-2`), but neither has a plan, so it has never executed a step: only a stub chain proves that path. Without the setup below it stays off and touches neither RPC nor D1.
+It runs on testnet since 2026-11-06 as `keydoctor-keeper.testnet`, every 15 minutes. Two Budgets exist since 2026-11-08 (`payroll-1`, `payroll-2`), and on 2026-11-09 the keeper ran live on `payroll-2`: Scheduled payout plan 1 (0.1 NEAR × 3) and DCA plan 2 (2 sells) both ended `completed` (`docs/live-test-plan.md` K3, K4). Without the setup below it stays off and touches neither RPC nor D1.
 
 It also tells a guardian's `pause` (GĐ28): `pause()` has no proposal for the proposal job to read, so the keeper sends one `budget_owner_action` per pause, on its own cycle. That code is deployed with the Worker since 2026-11-07; a pause has not been seen live yet.
+
+## Jobs
+
+`POST /run-check` with `{"job": "proposals" | "daily" | "keeper" | "yield", "target"?}` runs the same function as the cron. Crons (`wrangler.toml`): `proposals` `*/15 * * * *`, `daily` `0 2 * * *`, `keeper` `7,22,37,52 * * * *`, `yield` `11,26,41,56 * * * *`. The rest of this file is about the keeper.
 
 ## Turn it on (owner)
 
@@ -33,7 +37,7 @@ If the key may have leaked, delete it first and rotate after. Steps wait for the
 ## How it behaves
 
 - **Schedule:** cron `7,22,37,52 * * * *`, so a step runs up to 15 minutes late, or later with more than 3 Guards: each cycle reads 3 Guards in turn.
-- **Limits per cycle:** 3 Guards, 3 step transactions, 2 syncs, 5 Telegram sends. The busiest cycle stays within the 50 subrequests of the free plan, D1 included (`test/keeper.test.ts`). It can pass 50 only if the first RPC fails on every call, or if one Budget has more than 5 chats. A cycle cut short that way loses nothing: steps stay due, and unsent messages go out next time.
+- **Limits per cycle:** 3 Guards, 3 step transactions, 2 syncs, 4 Telegram sends (`MAX_SENDS`). The busiest cycle stays within the 50 subrequests of the free plan, D1 included (`test/keeper.test.ts`). It can pass 50 only if the first RPC fails on every call, or if one Budget has more chats than the sends left in the cycle. A cycle cut short that way loses nothing: steps stay due, and unsent messages go out next time.
 - **Overlap:** a D1 lease of 10 minutes keeps two cycles apart. A cycle that dies frees it by running out.
 - **A failed send** stops all signing for that cycle, because the transaction may still land and the nonce is unknown. The next cycle reads the chain again.
 - **Balance:** below `KEEPER_MIN_BALANCE` or above `KEEPER_MAX_BALANCE`, the alert chat gets one warning a day. The job keeps working above the maximum.

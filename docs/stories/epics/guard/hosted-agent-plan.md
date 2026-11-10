@@ -9,7 +9,7 @@ Goal: Key Doctor runs the agent as a service. A DAO brings its own Telegram bot,
 | | Today | This plan |
 |---|---|---|
 | Telegram bot | One shared Key Doctor bot (`TELEGRAM_BOT_TOKEN` in the Worker), read-only alerts and `/check` | Plus one bot per DAO, token supplied by the DAO |
-| LLM | None in the product | NEAR AI Cloud, inside the hosted agent only |
+| LLM | None in the product (one exception: the yield agent may order code-built candidates on a TEE model, ADR 0004 revived 2026-11-08) | NEAR AI Cloud, inside the hosted agent only |
 | Agent key | On the agent owner's machine (`apps/guard-mcp`, D3) | Generated and held, encrypted, by the service |
 | Who calls the Guard | The DAO's own agent (Claude, any MCP client) | The hosted agent, or the DAO's own agent; both are just Guard agents |
 
@@ -18,9 +18,9 @@ Goal: Key Doctor runs the agent as a service. A DAO brings its own Telegram bot,
 | # | Decision | Recommendation |
 |---|---|---|
 | H1 | `CLAUDE.md` "No LLM in the product" | Narrow it to "No LLM in scans, rules, diffs or alerts. The hosted agent (opt-in, per DAO) calls NEAR AI to turn chat into Guard tool calls; the Guard and the council make every money decision" |
-| H2 | D3/D4: "the Worker never holds a key" | Allow one key per DAO for the hosted agent only, in a separate Worker (H4), encrypted at rest. Key Doctor's Worker still holds none |
+| H2 | D3/D4: "the Worker never holds a key" | Allow one key per DAO for the hosted agent only, in a separate Worker (H4), encrypted at rest. Key Doctor's Worker holds no agent key (since 2026-11-08 it holds one unprivileged keeper key that signs only `execute_plan_step` and `sync_request`, ADR 0005) |
 | H3 | Who pays NEAR AI | The DAO's own API key (BYOK). No shared key: no billing, no cross-DAO quota |
-| H4 | Same Worker or a new one | New `apps/agent-worker` with its own D1 and secrets. A bug or leak there does not touch alerts, and Key Doctor's Worker stays keyless |
+| H4 | Same Worker or a new one | New `apps/agent-worker` with its own D1 and secrets. A bug or leak there does not touch alerts, and Key Doctor's Worker stays free of any agent key |
 
 ## 2. Flow
 
@@ -46,7 +46,7 @@ At runtime:
 
 ```
 DAO group → Telegram → POST /bot/<bot_id> (secret_token check, 200 at once)
-  → sender in allowed_tg_users? → decrypt keys → runAgent (NEAR AI, 3 Guard tools, max 8 steps)
+  → sender in allowed_tg_users? → decrypt keys → runAgent (NEAR AI, the 3 transfer tools of guard-mcp's 5, max 8 steps)
   → sign request_transfer / sync_request → reply with status, reasons, request_id
 ```
 
@@ -97,7 +97,7 @@ Why: without it, anyone in the group (or anyone who finds the bot) spends up to 
 
 ### 3.5 The agent loop on Workers
 
-What: reuse the `runAgent` loop from the NEAR AI demo agent plan (fake-able `chat` and `callTool`, `MAX_STEPS`), with only the three Guard tools. Port the signing in `apps/guard-mcp/src/near.ts` from `node:crypto` / `Buffer` to WebCrypto `Ed25519` and `Uint8Array`, and move it to a shared package so guard-mcp and agent-worker sign the same way.
+What: reuse the `runAgent` loop from the NEAR AI demo agent plan (fake-able `chat` and `callTool`, `MAX_STEPS`), with only the three transfer tools (`guard_get_policy`, `guard_request_transfer`, `guard_get_request_status`). guard-mcp has five tools today; `strategies_list` and `plans_status` are read-only and not needed by the loop. Port the signing in `apps/guard-mcp/src/near.ts` from `node:crypto` / `Buffer` to WebCrypto `Ed25519` and `Uint8Array`, and move it to a shared package so guard-mcp and agent-worker sign the same way.
 
 Why: guard-mcp is Node-only today (`createPrivateKey`, `readFileSync`). Two copies of transaction signing would drift.
 
@@ -160,7 +160,7 @@ CREATE TABLE used_nonces (nonce TEXT PRIMARY KEY, at TEXT NOT NULL);
 | Phase | Work | Done when |
 |---|---|---|
 | H0 | Owner decisions H1–H4, `CLAUDE.md` invariants updated | Decisions recorded here |
-| H1 | Shared signing package (WebCrypto Ed25519), guard-mcp switched to it | guard-mcp 42 tests still pass; signature matches a near-cli fixture |
+| H1 | Shared signing package (WebCrypto Ed25519), guard-mcp switched to it | guard-mcp 52 tests still pass; signature matches a near-cli fixture |
 | H2 | `apps/agent-worker`: D1 schema, `seal`/`open`, `POST /agents` with NEP-413 auth, `setWebhook` | Tests: wrong signer, non-council, replayed nonce, stale `issued_at`, swapped ciphertext all refused |
 | H3 | `POST /bot/<bot_id>`, allowlist, `runAgent` with NEAR AI, rate limit, audit | Tests with fake Telegram and fake NEAR AI: tool result fed back, `MAX_STEPS`, non-allowed user gets no LLM call, no secret in any reply or log |
 | H4 | Dashboard "Hosted agent" form on the Guard card, disable button | Render tests; testnet run: 3 invoices `auto_approved`, inv-004 `pending` |

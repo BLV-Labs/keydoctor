@@ -25,7 +25,7 @@ behavior the PRD describes. Only harness improvements skip it.
 | `docs/CODING_RULES.md` | ⏭️ | ✅ | ✅ |
 | Story packet | ⏭️ | ✅ | ✅ (4-file) |
 | `docs/decisions/` (related) | ⏭️ | ⚡ | ✅ |
-| `docs/product/` (related) | ⏭️ | ⚡ | ✅ |
+| `docs/stories/epics/<epic>/plan.md`, `docs/final-idea.md` (related) | ⏭️ | ⚡ | ✅ |
 
 ## Implementation Phase
 

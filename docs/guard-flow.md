@@ -10,6 +10,7 @@ How a DAO gets an Agent Guard and how an AI agent then spends DAO money through 
 | Guard factory (`contracts/guard-factory`) | On testnet as `keydoctor-guards.testnet` |
 | Dashboard Agent Guard page | <https://key-doctor-dashboard.pages.dev/?page=guard&dao=kdoncall.sputnik-v2.testnet> (deployed from main). Guard created through the factory on testnet (proposals #8, #9); Pause and Propose retire are render- and unit-tested only |
 | Guard MCP (`apps/guard-mcp`) | Works on testnet (invoice run 2026-11-02) |
+| Agent Budget (plans, keeper, `upgrade`, `close`; Guard 1.4.0) | Budget factory `keydoctor-guards-v2.testnet` serves 1.4.0 as global code since 2026-11-10 (a new Guard locks about 0.01 NEAR). Plans ran live on `payroll-2` (2 DCA sells, 2026-11-09). `close` is unit-tested; no live close yet (live-test K8). The Guard page below uses the v1 factory |
 | Telegram Guard alerts | Live on `@KeyDoctorOnCallBot` once the Worker is deployed from main (Deploy workflow) |
 | Guard checks in the council report (`/check`, `GUARD_*` rules) | Not built (Roadmap) |
 
@@ -164,13 +165,16 @@ A guardian is an account the DAO trusts to hit the emergency brake, usually a co
 
 Pausing does not touch proposals already in the DAO: the council still approves or rejects those.
 
-### Retire a Guard (no delete)
+### Retire a Guard, then close it
 
-A Guard cannot be deleted: it has no keys and no delete method, and the factory keeps its registry record. Its code storage (about 2.5 NEAR, paid by the DAO's create deposit) and state stay locked. To take one out of service, all by DAO proposal:
+Retiring takes a Guard out of service and keeps it on chain. Since Guard 1.4.0 the DAO can then delete it with `close`. All steps are DAO proposals:
 
 1. `ChangePolicy` removing the Guard from role `agent-guard`. This is the real cut-off: without the role the Guard cannot add any transfer proposal. Dashboard: **Propose retire** on the Guard card builds it (other Guards stay in the role; the role is dropped when this was its last Guard).
 2. `pause`.
 3. `withdraw_excess`: everything above the Guard's storage (or `min_reserve`) goes back to the DAO.
+4. Optional, 1.4.0 and later: `close`. It deletes the Guard account and sends its whole balance, the locked code storage included, to the DAO. It is refused with `OPEN_REQUESTS` (a request still waits for a vote), `OPEN_PLANS` (a plan is active or paused: cancel it first) or `TOO_MANY_RECORDS` (over 200 requests seen; use `withdraw_excess` instead). It emits `guard_closed`. A Guard on an older version has no `close`: run `upgrade` first. Dashboard: Agent Budget page, Technical details, **Close this Budget** (not yet run live).
+
+The factory registry record and the DAO role stay after a close, so remove the role (step 1) before or with it. The Guard page has no close button. Without a close, a Guard's code storage (about 2.5 NEAR on the v1 factory, paid by the DAO's create deposit) and state stay locked.
 
 ## Demo (invoice scene)
 

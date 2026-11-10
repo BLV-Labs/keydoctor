@@ -2,8 +2,8 @@
 
 - **Spec:** `docs/final-idea.md` §11.11.3 (branch 4c), §11.11.4, §11.10.5 (Enable USDT), §4.11 types, §9.5 DCA message, §13.8 row 31 ("2 sells on testnet with USDT received and a Telegram message").
 - **Spike:** `docs/dca-spike-2026-11-09.md`: `ref-finance-101.testnet`, pool 57, `wrap.testnet`, `usdt.fakes.testnet` (6 decimals), 0.1 NEAR per run.
-- **Base:** `main` at `8471b65`. Guard 1.2.0 (`contracts/guard/src/lib.rs:685`).
-- **Status:** plan, not built. Owner decisions taken 2026-11-09 (§9): D1 (b) update the factory, D2 accept, D3 (b) DAO route, D7 add the end date. The rest follow the Lead recommendation.
+- **Base:** `main` at `8471b65`. Guard 1.2.0 (`contracts/guard/src/lib.rs:685`). (Superseded 2026-11-10: 1.3.0 added swaps, 1.4.0 added `close`; the line refs here are of that base.)
+- **Status:** built (S1–S6) and merged to main; live 2-sell run passed on `payroll-2` 2026-11-09 (backlog O9). Guard is now 1.4.0 (`close`, 2026-11-10, O11). Owner decisions taken 2026-11-09 (§9): D1 (b) update the factory, D2 accept, D3 (b) DAO route, D7 add the end date. The rest follow the Lead recommendation.
 
 ## 0. Facts the plan rests on (read in the code)
 
@@ -15,13 +15,13 @@
 | F4 | `runs_done` moves when the Guard's vote succeeds. A DAO short of NEAR fails the vote receipt, because the attached deposit leaves inside `act_proposal` | `lib.rs:773-812` |
 | F5 | The installed Sputnik attaches no callback to a `FunctionCall`, so a swap that fails at Rhea still shows `Approved` and `sync_request` reads `Executed` | ADR 0006 Consequences, `lib.rs:271-292` |
 | F6 | Today's Guard role holds `transfer:AddProposal`, `transfer:VoteApprove` only. A `call` or swap step fails its vote | `apps/dashboard/src/guard-proposals.ts:7-8`, backlog C12, sandbox `a_call_plan_without_the_call_right_pauses_at_its_first_step` |
-| F7 | The factory stores the Guard code once, in `new`. It has no setter. A Guard upgrades through a DAO `FunctionCall` to `upgrade(code_source, code_hash)`. The Guard pulls `get_guard_code` from any account and checks the hash | `contracts/guard-factory/src/lib.rs:69-77,187`, `contracts/guard/src/lib.rs:693-718` |
+| F7 | The factory stores the Guard code once, in `new`. It has no setter. A Guard upgrades through a DAO `FunctionCall` to `upgrade(code_source, code_hash)`. The Guard pulls `get_guard_code` from any account and checks the hash (Superseded 2026-11-10: the factory now has `set_guard_code` (S1) and `publish_guard_code_global`, O10/O11.) | `contracts/guard-factory/src/lib.rs:69-77,187`, `contracts/guard/src/lib.rs:693-718` |
 | F8 | `migrate` reads the old layout as it is. Appending an enum variant keeps the old borsh bytes valid | `lib.rs:713-718` |
 | F9 | The keeper signs `execute_plan_step` with 200 Tgas and reads events from the `send_tx` outcome (`EXECUTED_OPTIMISTIC`). `TxOutcome` has no `executor_id` | `apps/worker/src/keeper/near.ts:11-13,137-157,217-218` |
 | F10 | `plan_steps.result_json` stores a whole `PlanStepResult`, which already has `amount_out` and `price`. `KdBudgetAlert.totals` has `received` and `avg_price` | `apps/worker/migrations/0002_keeper.sql:12-21`, `packages/key-doctor/src/types.ts:388-399,415` |
 | F11 | `checkProposals` gives no owner-action alert for a proposal whose proposer is the Budget's Guard | `packages/key-doctor/src/proposals.ts:516` |
-| F12 | The dashboard's Strategies grid marks everything except Scheduled payouts "Coming soon". The deep link `strategy=` opens the plan drawer for payouts only | `apps/dashboard/src/budget-view.ts:333-342,983`, `apps/dashboard/src/app.ts:482-487` |
-| F13 | `strategies_list` lists `dca-near` as `coming_soon`. `setup_url` is given only for `live` | `apps/guard-mcp/src/tools.ts:124-131,395` |
+| F12 | The dashboard's Strategies grid marks everything except Scheduled payouts "Coming soon". The deep link `strategy=` opens the plan drawer for payouts only (Superseded 2026-11-10: the Strategies grid and the `strategy=` deep link open the DCA drawer (S4).) | `apps/dashboard/src/budget-view.ts:333-342,983`, `apps/dashboard/src/app.ts:482-487` |
+| F13 | `strategies_list` lists `dca-near` as `coming_soon`. `setup_url` is given only for `live` (Superseded 2026-11-10: `dca-near` is `live` in `strategies_list` on testnet, `tools.ts:126`.) | `apps/guard-mcp/src/tools.ts:124-131,395` |
 
 ## 1. Slices (build order)
 
@@ -56,7 +56,7 @@ pub enum PlanAction {
 ### Change 1.2: `contracts/guard/src/policy.rs`: network constants and plan checks
 - **What:** `dex_for(guard)` returns `(wrap, exchange)` from the Guard's own account suffix. It returns `Some(("wrap.testnet", "ref-finance-101.testnet"))` for `.testnet` and `None` otherwise (D9). `check_plan` refuses a swap with:
   - `SWAP_NOT_SUPPORTED` when `dex_for` gives none,
-  - `INVALID_SLIPPAGE` unless `1 <= bps <= 500`,
+  - `INVALID_SLIPPAGE` unless `bps` is 50, 100 or 200 (`SWAP_SLIPPAGE_BPS`, `policy.rs:18`; superseded 2026-11-10: the plan's `1 <= bps <= 500` range was narrowed to these three),
   - `INVALID_TOKEN_OUT` when `token_out` is the wrap, the exchange, the Guard, the DAO or the factory.
 
   `plan_reasons` treats `Swap` like `Call` (no `NOT_WHITELISTED`). A swap still checks `max_per_tx` and `max_per_day`.

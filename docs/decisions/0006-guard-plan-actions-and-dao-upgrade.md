@@ -36,6 +36,7 @@ The roadmap adds strategies, and possibly a yield agent, on top of Agent Budget.
 - **Staging the code on the Guard in chunks**: too many signatures.
 - **Wasm as `FunctionCall` args**: leaves a permanent 250 KB proposal in the DAO.
 - **Global contracts**: about 25 NEAR per release.
+  - Update 2026-11-10: the factory now publishes the Guard code as a NEP-591 global contract by hash (issue #81, commit a078780; backlog O10/O11); new Guards lock about 0.01 NEAR. The publish fee was about 35.8 NEAR for 1.4.0. DAO global code is still not used.
 - **Keep one signature with a guessed id**: can approve an agent's over-limit proposal, because nothing checks the content.
 
 ## Consequences

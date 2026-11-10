@@ -1,6 +1,6 @@
 # Yield agent (plan)
 
-Status: 2026-11-08, plan only. Nothing is built. Owner answered Y1–Y15 on 2026-11-04, deferred the agent the same day (B-Q9), and revived it on 2026-11-08 (Y17–Y20). YD0 is the go/no-go gate.
+Status: 2026-11-10, built on testnet (YD1–YD4, see the README Status table and backlog C11). Library `scanVault` and the Rhea Lend reads, the TEE model step (Qwen 3.6 on NEAR AI Cloud, `validateAdvice`, cache table `yield_advice`, migrations `0003_yield.sql` and `0004_yield_advice.sql`), Telegram `/yield`, `/yield_watch`, `/yield_unwatch`, the 15-minute yield push, MCP `yield_suggestions`, and the dashboard Yield page and My Agents with the testnet allowlist proposal builder. Live 2026-11-10 (`docs/live-test-plan.md`): Y5 a Worker model call and `/yield` (B7), W5 the push, Y6 the TEE check, all pass. The sections below are the original plan; the "Today" column in §0 is the state before the build. Owner answered Y1–Y15 on 2026-11-04, deferred the agent the same day (B-Q9), and revived it on 2026-11-08 (Y17–Y20). YD0 is the go/no-go gate.
 
 Goal: an agent reads a DAO's treasury (the "vault"), compares it with live APR/APY from several sources, and sends the council suggestions for where stablecoins could earn yield. The council then moves the money from the DAO to Rhea and back through normal Sputnik proposals. Start with Rhea Lend on NEAR. Other chains come later.
 
