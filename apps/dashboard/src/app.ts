@@ -89,7 +89,7 @@ import { avatar } from "./ui.ts";
 import { readAgentBudgets, readMyAgents, readWalletDaos, type BudgetCard, type MyAgents } from "./agents-read.ts";
 import { hydrateDaoPicker, openedDaos, rememberOpenedDao, unhydrateDaoPicker } from "./dao-picker.ts";
 import { renderMyAgents, renderMyAgentsError, renderMyAgentsLoading, renderMyAgentsSignedOut } from "./agents-view.ts";
-import { allowedYieldKind, registerProposal, supplyProposal, tokenAmount, tokenRaw, withdrawProposal, YIELD_ALLOWLIST, YieldProposalError } from "./yield-proposals.ts";
+import { allowedYieldKind, registerProposal, supplyProposal, tokenAmount, tokenRaw, withdrawProposal as yieldWithdrawProposal, YIELD_ALLOWLIST, YieldProposalError } from "./yield-proposals.ts";
 import { councilAccounts, readYield, rememberYieldDao, seenYieldDaos, type YieldLive } from "./yield-read.ts";
 import { renderYield, renderYieldLimits, type LimitErrors, renderYieldLoading, renderYieldPanel, renderYieldStart, yieldPreview, type YieldPanel } from "./yield-view.ts";
 import { suggest, suggestedAmount } from "./yield-agent.ts";
@@ -819,12 +819,12 @@ function yieldProposalFor(panel: YieldPanel, amountText: string): AddProposalArg
     if (panel === "withdraw") {
       const supplied = suppliedOf(state, network);
       if (supplied === null) return "The amount on Rhea Lend could not be read. Reload and try again.";
-      if (amountText.trim() === "") return withdrawProposal(network, token.token_id, null, supplied);
+      if (amountText.trim() === "") return yieldWithdrawProposal(network, token.token_id, null, supplied);
       const pool = state.pools?.find((p) => p.token_id === token.token_id);
       if (pool !== undefined && pool.extra_decimals !== token.extra_decimals) return "Rhea Lend now stores this token differently, so only taking all of it back is safe. Leave the amount empty.";
       const part = tokenRaw(amountText, token.decimals);
       if (part === null) return `Enter an amount like 12.5, with at most ${token.decimals} decimals, or leave it empty to take all back.`;
-      return withdrawProposal(network, token.token_id, part, supplied);
+      return yieldWithdrawProposal(network, token.token_id, part, supplied);
     }
     const raw = tokenRaw(amountText, token.decimals);
     if (raw === null) return `Enter an amount like 12.5, with at most ${token.decimals} decimals.`;
