@@ -6,14 +6,11 @@ Sample data for tests and for building the dashboard before the scanner exists. 
 |---|---|---|
 | `reports/` | `kd.report.v1` for DAO `kd-demo.sputnik-dao.testnet` (one member each at `high`, `cleanup`, `ok`) and for account `b.kd-demo.testnet` | Hand-built to the §4.1 contract |
 | `alerts/` | `kd.alert.v1` `voter_new_full_access_key` for proposal 2 | Hand-built to the §4.4 contract |
-| `rpc/` | Raw `view_access_key_list` JSON-RPC responses | Shape from the NEAR RPC docs |
-| `corpus/` | One positive and one negative scan case per rule (26 files) plus `LIMIT_NON_GROUP_ADMIN.json`; see below | Hand-built; run by `test/corpus.test.ts` |
-| `sputnik/` | Decoded results of Sputnik v2 `get_policy`, `get_last_proposal_id` (the proposal count, so ids run 0 to 3), `get_proposal` | `get_policy` was checked live in GĐ1. The proposal shapes are not yet checked: see the GĐ5 live-run list below |
+| `rpc/` | Raw JSON-RPC responses (access keys, accounts, blocks, `get_policy`, errors) | Shape from the NEAR RPC docs |
+| `corpus/` | One positive and one negative scan case per rule (14 rules × 2 = 28 files) plus `LIMIT_NON_GROUP_ADMIN.json` (29 in all); see below | Hand-built; run by `test/corpus.test.ts` |
+| `sputnik/` | Decoded results of Sputnik v2 `get_policy`, `get_last_proposal_id` (the proposal count, so ids run 0 to 3), `get_proposal` | `get_policy` was checked live in GĐ1. The proposal shapes were checked live on 2026-10-30: see the GĐ5 live-run list below |
 
-Known placeholders, to replace in GĐ1/GĐ5 with data captured from testnet:
-
-- Sputnik `kind` labels, `vote_counts` and `submission_time` formats must be compared with the contract source.
-- `created.at` and `age_days` assume a 0.6 s block time; the real scanner reads block timestamps.
+Known placeholder, still true: `created.at` and `age_days` in the fixtures assume a 0.6 s block time (`BLOCK_TIME_MS = 600`). The scanner reads the head block's timestamp and estimates the creation time of a key from its nonce with the same constant (`age.ts`), so the assumption stands there too.
 
 ## Rule corpus (`corpus/`)
 
@@ -22,6 +19,7 @@ Each file is `{target, scan, network, rule, fires, note, responses}` (the limita
 | Rule | Positive | Negative (just under the threshold) |
 |---|---|---|
 | `FA_MANY` | 5 Ed25519 FA keys | 4 |
+| `FA_RECENT` | full-access key added exactly 288000 blocks (48 h) before head | 288001 blocks |
 | `FA_MULTIPLE` | 2 Ed25519 FA keys | 1 |
 | `PQ_PARTIAL` | ML-DSA key plus an Ed25519 FA key | ML-DSA key only |
 | `PQ_NONE` | one Ed25519 key, no ML-DSA | ML-DSA key |

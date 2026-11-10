@@ -147,12 +147,18 @@ The council changes the Guard through `FunctionCall` proposals from the DAO to t
 | Method | Args | Deposit |
 | --- | --- | --- |
 | `set_policy` | `{policy}` | |
-| `add_agent` / `remove_agent` / `set_agent_enabled` | | `add_*` needs a storage deposit; the unused part is refunded |
+| `add_agent` / `remove_agent` / `set_agent_enabled` | `add_agent`: `{account_id, label, public_key?}` | `add_*` needs a storage deposit; the unused part is refunded. With `public_key` the Guard also creates the agent account with one function-call key (`request_transfer` / `sync_request`) and a 0.5 NEAR gas fund, and the deposit covers that too |
 | `add_whitelist` / `remove_whitelist` | | storage deposit for `add_*` |
 | `add_guardian` / `remove_guardian` | | storage deposit for `add_*` |
 | `unpause` | | |
 | `refresh_bond` | | |
 | `withdraw_excess` | | |
+| `create_plan` | `{plan}` (scheduled payout or DCA swap) | storage deposit; refused when a run could never pass the limits |
+| `pause_plan` / `resume_plan` / `cancel_plan` | `{plan_id}` | |
+| `upgrade` | `{code_source, code_hash}` | Deploys code that hashes to `code_hash`, then runs `migrate` |
+| `close` | | Guard 1.4.0 and later. Deletes the Guard, balance to the DAO; refused with `OPEN_REQUESTS`, `OPEN_PLANS` or `TOO_MANY_RECORDS` |
+
+All the methods above are DAO-only. `execute_plan_step({plan_id})` is the one write anyone may call, with no deposit: it runs the step that is due (the Worker's keeper does, ADR 0005).
 
 Other parts of daily operation:
 - **Emergency stop:** a guardian or the DAO calls `pause`. Every new request then fails with `PAUSED`. Only the DAO can unpause.
@@ -165,4 +171,4 @@ Other parts of daily operation:
 
 - The 24 h window restarts at the first request after it ends, so across a reset an agent can spend up to twice `max_per_day` without the council.
 - Request records are stored at the Guard's cost and never deleted.
-- NEAR only. No fungible tokens.
+- Agent requests (`request_transfer`) are NEAR only. No fungible tokens. A DAO-written DCA swap plan can sell NEAR for a token (testnet only, through Rhea); `token_in` stays empty on every plan.

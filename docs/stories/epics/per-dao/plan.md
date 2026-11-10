@@ -71,7 +71,7 @@ export function decide(s: AlertSettings, a: KdAlert, now: Date): "send" | "hold"
 
 Routing needs nothing more: the council chat runs `/set <dao> kinds keys,governance`, the ops chat runs `/set <dao> kinds guard`.
 
-### 2.2 D1 migration `0002_alert_settings.sql` (PD1)
+### 2.2 D1 migration `0005_alert_settings.sql` (PD1)
 
 ```sql
 -- Per-subscription alert settings (docs/stories/epics/per-dao/plan.md). Only the Worker writes these tables.
@@ -154,7 +154,7 @@ entities.push({ type: "text_mention", offset, length: name.length, user: { id: N
 
 **Why.** Today the alert says `Still to vote: a.testnet, b.testnet`, which notifies nobody. The point of a pending alert (Guard `pending`, governance change) is that the right people vote before the deadline. Telegram has no way to look up a user by NEAR account, so the link must come from the member. Linking per chat (not global) keeps the Telegram↔NEAR mapping inside the group where the member made it.
 
-**D1 migration `0003_account_links.sql`:**
+**D1 migration `0006_account_links.sql`:**
 
 ```sql
 CREATE TABLE pending_links (
@@ -188,7 +188,7 @@ One NEAR account maps to one Telegram user per chat; one Telegram user may link 
 **What.** A held alert goes to `held_alerts`. The 15-minute cron sends each chat its due alerts as one digest message when its quiet window ends, then deletes the rows (send first, delete after: a crash repeats the digest, never loses it). High alerts are never held.
 
 ```sql
--- in 0002 if PD4 ships with PD1, else 0004
+-- in 0005 if PD4 ships with PD1, else 0007
 CREATE TABLE held_alerts (
   chat_id TEXT NOT NULL,
   alert_id TEXT NOT NULL,
@@ -218,9 +218,9 @@ Today is 2026-11-03; the deadline is 23:59 UTC 14 Nov. This epic is after the cr
 
 | Phase | Work | Size | Done when |
 |---|---|---|---|
-| PD1 | Migration 0002, `alert-filter.ts`, `deliver` per chat | 0.5 day | Tests in §5 pass; an existing D1 with rows migrates and behaves as before |
+| PD1 | Migration 0005, `alert-filter.ts`, `deliver` per chat | 0.5 day | Tests in §5 pass; an existing D1 with rows migrates and behaves as before |
 | PD2 | `/settings`, `/set`, admin check (also on `/unwatch`, P5), P6 warning, `/help`, README bot section | 1 day | Telegram tests pass; live: council group on `kdoncall.sputnik-v2.testnet` takes `keys,governance`, a second group takes `guard`; a Guard auto-transfer reaches only the second |
-| PD3 | O-P1, migration 0003, `/link`, `/unlink`, dashboard link page, `POST /api/link`, mentions | 1.5–2 days | Tests pass; live: a council member links in the testnet group and is mentioned on a Guard `pending` alert |
+| PD3 | O-P1, migration 0006, `/link`, `/unlink`, dashboard link page, `POST /api/link`, mentions | 1.5–2 days | Tests pass; live: a council member links in the testnet group and is mentioned on a Guard `pending` alert |
 | PD4 | `held_alerts`, `quiet` key, digest in the 15-minute cron | 0.5–1 day | Tests pass; live: a `note` held in a quiet window arrives as one digest at its end |
 | PD5 | README Limitations, `docs/TEST_MATRIX.md` rows, backlog, owner deploy | 0.5 day | Every README claim about settings runs on the deployed Worker |
 
@@ -234,7 +234,7 @@ PD1 ships only together with PD2 (PD1 alone changes nothing a user sees). **Cut 
 |---|---|
 | `decide` (unit) | Default settings send every kind and severity (a migrated row must behave exactly like today); each kind group alone; `min high` skips `cleanup` and `note` but sends `high`; quiet window wrapping midnight (`22-07`) in `Asia/Ho_Chi_Minh`; a `high` alert inside quiet hours is sent, not held (a held voter-key alert would arrive after the vote) |
 | `KIND_GROUP` | Typed as `Record<AlertKind, KindGroup>`, so a new alert kind does not compile until it has a group (otherwise it would be silently skipped by every filtered chat) |
-| Migration | A D1 with 0001 rows, then 0002: rows read as all / `note` / no quiet hours; `moveChat` keeps settings |
+| Migration | A D1 with 0001 rows, then 0005: rows read as all / `note` / no quiet hours; `moveChat` keeps settings |
 | `deliver` | Two chats with different filters on one DAO: each gets only its kinds; all chats skip → not marked sent, proposal state still saved; one chat transient-fails → alert unmarked, next run sends it only where it was not filtered out |
 | Proposal / daily jobs | Baseline still moves when every chat skips `daily_changes`; one `checkProposals` per DAO whatever the number of chats |
 | Commands | `/set` parse: every key, bad values, unknown zone, `reset`; non-admin refused; anonymous admin (sender_chat = chat) accepted; `getChatMember` failure refuses; private chat always allowed; P6 warning when no chat gets `keys`; `/unwatch` gate (P5) |

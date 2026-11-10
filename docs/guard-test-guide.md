@@ -199,13 +199,15 @@ claude mcp add guard -e NEAR_NETWORK=testnet -e GUARD_CONTRACT_ID=$P-guard.testn
 claude
 ```
 
-In Claude Code, `/mcp` lists `guard` as connected with three tools:
+In Claude Code, `/mcp` lists `guard` as connected with five tools:
 
 | Tool | Does |
 |---|---|
 | `guard_get_policy` | Limits, whitelist, spent and remaining in the window |
 | `guard_request_transfer(receiver_id, amount_near, memo)` | One payment request; returns `auto_approved` or `pending` with reasons, or `rejected` with a code |
 | `guard_get_request_status(request_id)` | `pending`, `auto_approved`, `executed`, `rejected`, `expired` or `failed` |
+| `strategies_list` | Read-only. The strategies an owner can run (scheduled payouts, DCA and others) with their status and a `setup_url`; the agent cannot create a plan |
+| `plans_status` | Read-only. The Budget's plans: what each pays, runs done of total, status and next run, with a dashboard link |
 
 To switch to another Guard later: `claude mcp remove guard`, then `claude mcp add …` again.
 
@@ -361,6 +363,16 @@ near account add-key $KD_GUARD_PREFIX-b.testnet grant-full-access autogenerate-n
 ```
 
 `/unwatch <your DAO>` at the end. Up to 5 DAOs are checked per run, so a late alert can mean many watched DAOs: note the time you waited.
+
+## T7. Close an Agent Budget (Guard 1.4.0)
+
+Not yet run live (live-test plan K8). Use a Budget with no waiting payment and no active or paused payout; the Agent Budget page, not the Guard page, has the button.
+
+| Do | Expect |
+|---|---|
+| On a Budget with a waiting payment or an active/paused payout: Technical details → **Close this Budget** | The drawer lists what blocks it (`OPEN_REQUESTS` / `OPEN_PLANS` in the contract); no **Close Budget** button |
+| Same, on a Guard below 1.4.0 | Only **Update this Budget**; sign it, reopen, the version reads 1.4.0 |
+| Clear the blockers, then **Close this Budget** → **Close Budget**, sign both wallet prompts | After the proposal passes, `UNKNOWN_ACCOUNT` for the Guard, its NEAR back on the DAO, no Budget on the page |
 
 ## Report
 

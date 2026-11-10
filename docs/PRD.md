@@ -46,4 +46,8 @@ The governing section must describe what shipped. Contract changes bump `schema_
 ## Current pillars / milestones
 
 - Critical path: GĐ0 → 1 → 3 → 4 → 5 → 6 (GĐ6 is the main demo scene). Checkpoints: 5/11 (GĐ1–4 end to end), 8/11 (GĐ6 running).
+- Scope beyond `docs/final-idea.md` §13.3 GĐ0–GĐ14 (each has its own plan under `docs/stories/epics/` and an ADR; the README Status table says what is deployed):
+  - Agent Guard (GĐ15–GĐ19, §11): a contract that approves an agent's payments within DAO limits, plus `apps/guard-mcp` for the agent.
+  - Agent Budget (GĐ25–GĐ31, §11.10, ADR 0006/0007): a DAO with its own Guard and agent, a keeper (ADR 0005), Scheduled payouts and DCA plans, Guard `close`, Guard code as global code.
+  - Yield agent (YD1–YD4, [plan](stories/epics/yield/plan.md), ADR 0004): Rhea Lend suggestions for a DAO's stablecoins, with one TEE model step.
 - Deadline: 14/11/2026 23:59 UTC.

@@ -1,6 +1,6 @@
 # Guard implementation plan: GĐ15 to GĐ24
 
-Status: 2026-11-02. Owner accepted D1–D8 as recommended. GĐ15 done: spike passed in the sandbox and on testnet (tx `AgkVkFuJhs9GijiPQ4xZGbPVmQcN3qq41tRzSU1cZAza`). Results: `docs/guard-spike-2026-11-02.md`. GĐ16 done: full contract with unit tests. GĐ17 done (11/11 go/no-go passed): 9 sandbox tests against the real Sputnik wasm cover every §13.6 case; gas and key allowance are in README "Agent Guard". GĐ18 done: owner ran `setup.sh all` on testnet. GĐ19 built: `apps/guard-mcp` and `demo/invoices`; the live invoice run waits for 2026-11-04.
+Status: 2026-11-02. Owner accepted D1–D8 as recommended. GĐ15 done: spike passed in the sandbox and on testnet (tx `AgkVkFuJhs9GijiPQ4xZGbPVmQcN3qq41tRzSU1cZAza`). Results: `docs/guard-spike-2026-11-02.md`. GĐ16 done: full contract with unit tests. GĐ17 done (11/11 go/no-go passed): 9 sandbox tests against the real Sputnik wasm cover every §13.6 case; gas and key allowance are in README "Agent Guard". GĐ18 done: owner ran `setup.sh all` on testnet. GĐ19 built: `apps/guard-mcp` and `demo/invoices`; the live invoice run waits for 2026-11-04. (Superseded 2026-11-02: the owner ran it that day with older testnet accounts, see the demo notes below. Later work, GĐ25 to GĐ31 and Guard 1.4.0, is in `docs/stories/backlog.md`.)
 
 Governing spec: `docs/final-idea.md` §4.8, §4.9, §5.3, §5.4, §11, §12, §13.6, §13.7, §16 (G-Q1 to G-Q5), and `docs/usecase.md` UC9 to UC14 plus appendices E, F, G. This plan does not change the spec. Where the spec conflicts with `CLAUDE.md`, §1 names the conflict and asks the owner.
 
@@ -24,7 +24,7 @@ Not in scope: `preflight` / `FA_RECENT` (PR 43, unrelated to the Guard contract)
 | D1 | Start GĐ15 now, while GĐ5/8/10 owner checks are still open? | Yes. Those are owner-only checks; Guard does not touch core code until GĐ20 |
 | D2 | Branch base | New branch `feat/guard-contract` from `feat/agent-guard` (it has the spec). Rebase on `main` after PR 43 merges |
 | D3 | `CLAUDE.md` says "Never sign transactions or hold keys". Spec §11.6.2 has `apps/guard-mcp` sign with the agent's function-call key on the agent's machine | Accept as the one exception: add a line to `CLAUDE.md` Invariants ("except `apps/guard-mcp`, which runs on the agent owner's machine and signs only `request_transfer` / `sync_request` with a function-call key read from `AGENT_KEY_PATH`; the Worker never holds keys") |
-| D4 | GĐ24 (emergency brake, §11.9) puts a function-call key **on the Worker**. That breaks the same invariant for the hosted product | Cut GĐ24 (it is first in the cut order). Keep it in Roadmap |
+| D4 | GĐ24 (emergency brake, §11.9) puts a function-call key **on the Worker**. That breaks the same invariant for the hosted product | Cut GĐ24 (it is first in the cut order). Keep it in Roadmap. (Superseded 2026-11-08: ADR 0005 gives the Worker an unprivileged keeper key that signs only `execute_plan_step` and `sync_request`; the brake stays cut) |
 | D5 | `Member.special` and `KdReport.dao.guards` are new optional fields. Bump `kd.report.v1`? | No bump: additive optional fields, old readers ignore them. Bump `RULESET_VERSION` (new rules). Say so in the commit |
 | D6 | Sputnik v2 wasm for sandbox tests (GĐ17) | Download the wasm that testnet DAOs actually run (`near contract download-wasm` from an existing `*.sputnik-v2.testnet` DAO), commit it under `contracts/guard/tests/res/` with its sha256. No download from a third-party mirror |
 | D7 | Testnet accounts: `kd-guard.blvlabs.testnet`, `agent1.blvlabs.testnet`, 3 council accounts | Owner creates and funds them. Claude writes the scripts; the owner runs every command that signs with an owner key |
@@ -115,7 +115,7 @@ Gaps in §11.5 settled in code (the spec is silent or ambiguous; change here if 
 | Refund | Any final status except `Executed` gives the amount back, only while the request's `created_at` is still in the current window |
 | Late `on_voted` | If `sync_request` already saw the final status, `on_voted` changes nothing |
 | `request_id` | 8–64 chars of `[A-Za-z0-9_-]` (it goes into the one-line description) |
-| Hard checks | 8 codes: §11.5.4's 7 plus `INSUFFICIENT_GUARD_BALANCE` (balance < bond + max(storage cost, `min_reserve`); GĐ17 added the storage term because request records are stored at the Guard's cost) |
+| Hard checks | 8 codes: §11.5.4's 7 plus `INSUFFICIENT_GUARD_BALANCE` (balance < bond + max(storage cost, `min_reserve`); GĐ17 added the storage term because request records are stored at the Guard's cost). Still 8 in `request_transfer`; plans and `close` add their own codes |
 | Storage | DAO methods that add data are `#[payable]`, charge the bytes they add (`INSUFFICIENT_STORAGE_DEPOSIT`) and refund the rest; `withdraw_excess` keeps max(storage cost, `min_reserve`) |
 | JSON times | `U64` nanosecond strings, so JS readers keep precision |
 
@@ -174,7 +174,7 @@ export function nearToYocto(s: string): string {
 Tests (vitest, mocked RPC): amount parsing edge cases, mapping of each contract error code to `status: "rejected"` + `error_code`, Pending mapping with reasons, `remaining_today` from `get_window`.
 
 **Result (2026-11-02).** Built; done-when ("3 invoices auto, invoice 4 Pending") still needs the live run.
-- Layout: `src/amount.ts` (the code above), `src/near.ts` (RPC, key file, borsh, signing), `src/tools.ts` (the three tools), `src/server.ts` (JSON-RPC dispatch), `src/index.ts` (stdio loop). Started with `pnpm --silent --filter guard-mcp start`; Node runs the `.ts` files directly.
+- Layout: `src/amount.ts` (the code above), `src/near.ts` (RPC, key file, borsh, signing), `src/tools.ts` (the three tools; five today: `strategies_list` and `plans_status` were added in GĐ30), `src/server.ts` (JSON-RPC dispatch), `src/index.ts` (stdio loop). Started with `pnpm --silent --filter guard-mcp start`; Node runs the `.ts` files directly.
 - No near-api-js and no MCP SDK: zero runtime dependencies. Borsh for one FunctionCall tx and ed25519 signing (`node:crypto`) are hand-written; a test compares the bytes and signature with `@near-js/transactions` 2.5.1 output.
 - Tests use `node:test` like the rest of the repo, not vitest. 42 tests: amounts, the tx bytes, key file checks, all 8 Guard panic codes → `rejected`, Pending with reasons, Auto with `remaining_today` from `get_window`, `UNKNOWN_OUTCOME` (tx hash kept, "do not resend"), `NOT_ENOUGH_ALLOWANCE`, full-access key refused, input validation, two concurrent requests get nonces 43 and 44 (signing is serialized), status sync and its fallback, the MCP handshake. Spot mutations (drop the signing lock, take `remaining_today` from `max_per_day`) each fail a test.
 - Gas: 200 Tgas for `request_transfer` (GĐ17), 50 Tgas for `sync_request` (one `get_proposal` plus a callback).
@@ -227,7 +227,7 @@ Cut per D4. Roadmap entry only.
 
 - **README** (GĐ14, but written as each phase lands): "Guard" section per §14 (problem, role setup, MCP plug-in, invoice scenario, security model §11.8, measured gas, lock state, Trezu status, "works with any MCP agent"). Anything not passing by 11/11 goes under Roadmap, per the "README must match the repo" rule.
 - **Backlog**: add GĐ15–24 rows to `docs/stories/backlog.md` and mark each per phase.
-- **Invariants kept**: testnet names only in fixtures and examples; no LLM in Guard or Key Doctor decisions; baseline / subscription write rules untouched; the Worker never holds a key (D4).
+- **Invariants kept**: testnet names only in fixtures and examples; no LLM in Guard or Key Doctor decisions; baseline / subscription write rules untouched; the Worker never holds a key (D4). (Superseded: ADR 0005 gives the Worker an unprivileged keeper key that signs only `execute_plan_step` and `sync_request`.)
 - **Security review**: run the `security-review` skill on `contracts/guard` before GĐ18 deploys it.
 
 ## 4. Risks
