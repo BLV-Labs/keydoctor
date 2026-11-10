@@ -71,7 +71,7 @@ Notes from the 2026-11-09 run:
 | B1 | `/check kdoncall.sputnik-v2.testnet` in private | the summary in vi and en. D1 is not written | done earlier |
 | B2 | `/changes <dao>` twice | the same changes both times. The baseline does not move | done earlier |
 | B3 | `/watch <dao>` in the group | a confirmation, and one row per chat and target | done earlier |
-| B4 | `/list`, then `/unwatch <dao>`, then `/list` | the DAO is listed, then gone | **open** |
+| B4 | `/list`, then `/unwatch <dao>`, then `/list` | the DAO is listed, then gone | pass 2026-11-10 (owner, live bot) |
 | B5 | a plain message naming `x.testnet` in private | the same as `/check x.testnet`. In a group with no name, no reply | **open** |
 | B6 | dashboard check page, **Watch in Telegram** | the link opens the bot. `/start <code>` subscribes once. The same code a second time is refused | **open** |
 | B7 | `/yield <dao>`, `/yield_watch <dao>`, `/yield_unwatch <dao>` on a DAO from Y1 | suggestions, then a subscription, then none | `/yield` pass 2026-11-10 on `payroll-1` (0 test USDC: no suggestion, no model call) and on `kdy1794161239.sputnik-v2.testnet` (one suggestion with model reasons, see Y5). `/yield_watch` and `/yield_unwatch` still **open** |
