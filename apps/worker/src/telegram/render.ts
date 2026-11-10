@@ -188,7 +188,7 @@ function councilLine(lang: Lang, dao: string, c: KdReport["summary"] | null): st
   if (c.status === "high") {
     return lang === "vi"
       ? `🔴 Khóa council: RỦI RO CAO (${c.members_high} người). Chạy /check ${dao} và xử lý trước khi bỏ phiếu chuyển tiền.`
-      : `🔴 Council keys: HIGH RISK (${c.members_high} members). Run /check ${dao} and fix it before any vote that moves funds.`;
+      : `🔴 Council keys: HIGH RISK (${c.members_high} ${c.members_high === 1 ? "member" : "members"}). Run /check ${dao} and fix it before any vote that moves funds.`;
   }
   return lang === "vi" ? `Khóa council: ${STATUS.vi[c.status]}` : `Council keys: ${STATUS.en[c.status]}`;
 }

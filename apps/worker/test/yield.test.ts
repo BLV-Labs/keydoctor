@@ -88,7 +88,8 @@ describe("YD3 /yield", () => {
     const { env, chain } = setup(t);
     await say(env, `/yield ${DAO}`, newChat());
     const lines = lastText(chain).split("\n");
-    assert.match(lines[1] ?? "", /^🔴 Council keys: HIGH RISK/);
+    // One high-risk member reads "1 member": the council reads this line first, so it must not look broken.
+    assert.match(lines[1] ?? "", /^🔴 Council keys: HIGH RISK \(1 member\)\. /);
     assert.match(lines[2] ?? "", /^Yield for/);
   });
 
