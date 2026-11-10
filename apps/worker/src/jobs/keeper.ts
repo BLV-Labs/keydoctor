@@ -7,7 +7,7 @@ import { RpcFailed, createKeeperRpc, guardEvents, loadKeeperKey, panicCode, sign
 import { MAX_MARKS, alertSent, clearSent, markSent, markSentMany, sentIds } from "../store/alerts.ts";
 import { acquireLease, releaseLease, saveStep, stepsFor } from "../store/plan-steps.ts";
 import { chatsFor } from "../store/subscriptions.ts";
-import { sendMessage, type Outgoing } from "../telegram/api.ts";
+import { esc, sendMessage, type Outgoing } from "../telegram/api.ts";
 import { renderBudgetAlert } from "../telegram/render.ts";
 import { alertLang, renderFor, sendToChats } from "./deliver.ts";
 import { intVar, type JobResult } from "./proposals.ts";
@@ -151,8 +151,8 @@ async function checkBalance(env: Env, cfg: Config, balance: bigint, result: Keep
     return;
   }
   const text = low
-    ? `Keeper ${cfg.accountId} holds ${near(balance)} NEAR, below the ${near(cfg.minBalance)} NEAR minimum. Top it up or plan steps will stop.`
-    : `Keeper ${cfg.accountId} holds ${near(balance)} NEAR, above the ${near(cfg.maxBalance)} NEAR maximum. Move the surplus out.`;
+    ? `Keeper <code>${esc(cfg.accountId)}</code> holds ${near(balance)} NEAR, below the ${near(cfg.minBalance)} NEAR minimum. Top it up or plan steps will stop.`
+    : `Keeper <code>${esc(cfg.accountId)}</code> holds ${near(balance)} NEAR, above the ${near(cfg.maxBalance)} NEAR maximum. Move the surplus out.`;
   try {
     await sendMessage(token, chat, { text });
     await markSent(env.DB, { alert_id: alertId });
