@@ -1,14 +1,14 @@
 // The Yield agent page, pure. Every number is read from the chain (yield-read.ts) or the library's kd.yield.v1
 // report. The page never calls the AI step: suggestions show in the rule order (highest APR first), and the
 // council's wallets sign every proposal and vote (yield plan YD4).
-import { YIELD_REASON_TEXT, type KdYieldReport, type Network, type YieldOpportunity } from "key-doctor";
+import { bestSupply, supplyAprAfter, YIELD_REASON_TEXT, yearlyEarnings, type KdYieldReport, type Network, type YieldOpportunity } from "key-doctor";
 import { formatUtc, yoctoToNear } from "./format.ts";
 import { html, type Html } from "./html.ts";
 import { icon } from "./icons.ts";
 import { copyRow } from "./pages.ts";
 import { pageHref } from "./route.ts";
 import { pctText, suggest, summarySentence, votesNeeded } from "./yield-agent.ts";
-import { allowedYieldKind, describeYieldKind, RHEA_STORAGE_YOCTO, tokenAmount, YIELD_ALLOWLIST, type YieldAllowlist, type YieldMove } from "./yield-proposals.ts";
+import { allowedYieldKind, describeYieldKind, RHEA_STORAGE_YOCTO, tokenAmount, tokenRaw, YIELD_ALLOWLIST, type YieldAllowlist, type YieldMove } from "./yield-proposals.ts";
 import type { YieldLive, YieldProposal } from "./yield-read.ts";
 import { CHECK_EVERY_TEXT, type LimitField, type LimitInput, type YieldSettings } from "./yield-settings.ts";
 
@@ -79,7 +79,8 @@ function focus(live: YieldLive, list: YieldAllowlist | null) {
   const holding = live.report.holdings.find((h) => h.token_id === t.token_id) ?? null;
   const supplied = live.positions === null ? null : (live.positions.find((p) => p.token_id === t.token_id)?.supplied ?? "0");
   const opportunity = live.report.opportunities.find((o) => o.executable && o.token_id === t.token_id) ?? null;
-  return { ...t, holding, supplied, opportunity };
+  const pool = live.pools?.find((p) => p.token_id === t.token_id) ?? null;
+  return { ...t, holding, supplied, opportunity, pool };
 }
 
 type Focus = NonNullable<ReturnType<typeof focus>>;
@@ -91,7 +92,7 @@ function moveText(m: YieldMove, network: Network): string {
   const t = tokenOf(network);
   const sym = t?.symbol ?? "";
   if (m.kind === "register") return "Register with Rhea Lend";
-  if (m.kind === "withdraw") return `Take all ${sym} back from Rhea Lend`;
+  if (m.kind === "withdraw") return m.amount === null ? `Take all ${sym} back from Rhea Lend` : `Take ${tokenAmount(m.amount, t?.decimals ?? 6)} ${sym} back from Rhea Lend`;
   return `Put ${tokenAmount(m.amount, t?.decimals ?? 6)} ${sym} on Rhea Lend`;
 }
 
@@ -105,6 +106,26 @@ function tiles(f: Focus, settings: YieldSettings | null): Html {
     ${tile("Idle now", amountValue(f.holding?.available, f.decimals, f.symbol), idleNote)}
     ${tile("Rate today", o === null ? "none" : html`${aprText(o.apr)} <span class="tile-unit">a year</span>`, o === null ? "No row on this network" : `Rhea Lend${o.test_data ? " · test data" : ""}`)}
   </section>`;
+}
+
+/** Whole tokens with thousands separators: rounding the projection is honest, it is an estimate. */
+function whole(raw: bigint, decimals: number): string {
+  const n = raw / 10n ** BigInt(decimals);
+  return n === 0n && raw > 0n ? "less than 1" : n.toLocaleString("en-US");
+}
+
+/**
+ * What the treasury's position would earn after it changes by `change` raw units (+ supply, - withdraw), from Rhea
+ * Lend's rate model. Null when the pool or the position could not be read.
+ */
+function projection(f: Focus, change: bigint): string | null {
+  if (f.pool === null || f.supplied === null) return null;
+  const left = BigInt(f.supplied) + change;
+  if (left < 0n) return null;
+  const rate = `Rate ${aprText(supplyAprAfter(f.pool, 0n))} → ${aprText(supplyAprAfter(f.pool, change))} a year`;
+  if (left === 0n) return `${rate}. Nothing of the treasury's stays on Rhea Lend.`;
+  const yearly = yearlyEarnings(f.pool, BigInt(f.supplied), change);
+  return `${rate}. The treasury's ${whole(left, f.decimals)} ${f.symbol} there would earn about ${whole(yearly, f.decimals)} ${f.symbol} a year, if borrowing stays as it is.`;
 }
 
 const fmtVotes = (approvals: number, needed: number | null) => (needed === null ? `${String(approvals)} approved` : `${String(approvals)} of ${String(needed)} needed`);
@@ -126,13 +147,18 @@ function suggestionCard(live: YieldLive, network: Network, f: Focus, settings: Y
         <button type="button" class="btn btn-primary btn-sm" data-action="yield-vote" data-id="${String(featured.id)}" data-vote="VoteApprove">Approve <span class="sig">1 signature</span></button></div>` : ""}
     </div>`;
   } else {
-    const s = suggest({ settings, apr: f.opportunity?.apr ?? null, idle: f.holding?.available ?? null, supplied: f.supplied, registered: live.registered, decimals: f.decimals, symbol: f.symbol });
+    const s = suggest({ settings, apr: f.opportunity?.apr ?? null, idle: f.holding?.available ?? null, supplied: f.supplied, registered: live.registered, pool: f.pool, decimals: f.decimals, symbol: f.symbol });
     if (s.kind === "nothing") {
       body = html`<p class="strong">Nothing to do: ${s.reason}</p>`;
     } else {
       const amount = tokenAmount(s.amount, f.decimals);
       const rate = f.opportunity === null ? "" : `Rate today ${aprText(f.opportunity.apr)} a year${f.opportunity.test_data ? " (test data)" : ""}. `;
       const keep = settings === null || BigInt(settings.keepReady) === 0n ? "" : `, with ${tokenAmount(settings.keepReady, f.decimals)} ${f.symbol} kept ready`;
+      const after = projection(f, BigInt(s.amount));
+      const allAfter = s.all === undefined ? null : projection(f, BigInt(s.all));
+      const best = s.all === undefined
+        ? ""
+        : html`<p class="small muted">${amount} ${f.symbol} earns the treasury the most: each deposit lowers the rate for the whole pool. Putting all ${tokenAmount(s.all, f.decimals)} ${f.symbol} in: ${allAfter ?? "unknown"}</p>`;
       body = s.kind === "register"
         ? html`<div class="stack-sm">
             <div class="sugg-top"><span class="strong">Register with Rhea Lend first</span></div>
@@ -140,7 +166,8 @@ function suggestionCard(live: YieldLive, network: Network, f: Focus, settings: Y
             <div class="actions"><button type="button" class="btn btn-primary btn-sm" data-action="yield-open" data-panel="register">Propose ${SIG}</button></div></div>`
         : html`<div class="stack-sm">
             <div class="sugg-top"><span class="strong">Put ${amount} ${f.symbol} on Rhea Lend</span></div>
-            <p class="small muted">${rate}${amount} ${f.symbol} is idle${keep}.</p>
+            <p class="small muted">${rate}${s.all === undefined ? `${amount} ${f.symbol} is idle${keep}.` : `${tokenAmount(s.all, f.decimals)} ${f.symbol} is idle${keep}.`}</p>
+            ${after === null ? "" : html`<p class="small">${after}</p>`}${best}
             <div class="actions"><button type="button" class="btn btn-primary btn-sm" data-action="yield-open" data-panel="supply" data-amount="${amount}">Propose ${SIG}</button></div></div>`;
     }
   }
@@ -263,7 +290,7 @@ function takeBackCard(f: Focus | null, canWithdraw: boolean): Html {
   return html`<section class="card" aria-labelledby="y-back">
     <div class="b-head"><h2 id="y-back" class="b-h">Take money back</h2></div>
     <div class="pad stack-sm">
-      <p class="small muted">${f === null || f.supplied === null || BigInt(f.supplied) === 0n ? "Nothing is working on Rhea Lend right now." : `Brings all ${tokenAmount(f.supplied, f.decimals)} ${f.symbol} back, interest included. The council votes first.`}</p>
+      <p class="small muted">${f === null || f.supplied === null || BigInt(f.supplied) === 0n ? "Nothing is working on Rhea Lend right now." : `Brings part or all of the ${tokenAmount(f.supplied, f.decimals)} ${f.symbol} back, interest included. The council votes first.`}</p>
       <button type="button" class="btn btn-secondary" data-action="yield-open" data-panel="withdraw"${canWithdraw ? "" : " disabled"}>Take it back ${SIG}</button>
     </div>
   </section>`;
@@ -355,59 +382,94 @@ function drawerHead(title: string, note: string): Html {
 
 const CANCEL = html`<button type="button" class="btn btn-secondary" data-action="close-dialog">Cancel</button>`;
 const sumRow = (label: string, value: Html | string) => html`<div class="sum-row"><span class="muted">${label}</span><span class="sum-value wrap">${value}</span></div>`;
-const NEXT = html`<div class="stack-xs"><h3 class="drawer-h3">What happens next</h3><ol class="list small">
-  <li>Your wallet signs one transaction that asks the council for this move and attaches the treasury's deposit. It moves no funds.</li>
+/** The bond is the DAO's proposal bond: the wallet that asks pays it, and the DAO pays it back once the vote ends. */
+const next = (bond: string) => html`<div class="stack-xs"><h3 class="drawer-h3">What happens next</h3><ol class="list small">
+  <li>Your wallet signs one transaction that asks the council for this move. It moves no funds. The treasury holds ${bond} from your wallet as its proposal bond and returns it when the vote passes or is rejected.</li>
   <li>The council votes. Funds move only when the vote passes.</li></ol></div>
   <p class="small muted">Receiver, method and token come from code, never from the AI step.</p>`;
+
+/**
+ * The live line under the amount: the rate and yearly earnings after the move, or "" when the amount is not one
+ * the drawer would accept. In the Take back drawer an empty amount means all of it.
+ */
+export function yieldPreview(panel: YieldPanel, live: YieldLive, network: Network, amountText: string): string {
+  const f = focus(live, YIELD_ALLOWLIST[network]);
+  if (f === null || f.supplied === null || panel === "register") return "";
+  const supplied = BigInt(f.supplied);
+  const typed = amountText.trim();
+  const raw = panel === "withdraw" && typed === "" ? f.supplied : tokenRaw(typed, f.decimals);
+  if (raw === null || BigInt(raw) === 0n) return "";
+  if (panel === "withdraw") return BigInt(raw) > supplied ? "" : (projection(f, -BigInt(raw)) ?? "");
+  return projection(f, BigInt(raw)) ?? "";
+}
 
 /** The drawer for one council action. Null when the network has no allowlist (the page shows no button then). */
 export function renderYieldPanel(panel: YieldPanel, live: YieldLive, network: Network, error: string | null = null, amount = "", cap: string | null = null): Html | null {
   const list = YIELD_ALLOWLIST[network];
   const f = focus(live, list);
   if (list === null || f === null) return null;
-  const bond = live.policy === null ? "unknown" : `${yoctoToNear(live.policy.proposal_bond)} NEAR`;
+  const bond = live.policy === null ? "the bond" : `${yoctoToNear(live.policy.proposal_bond)} NEAR`;
+  const bondRow = sumRow("Proposal bond (returned)", live.policy === null ? "unknown" : bond);
   const err = error ? html`<p id="yp-error" class="field-error" role="alert">${error}</p>` : "";
-  const sign = (kind: YieldPanel) => html`<button type="button" class="btn btn-primary" data-action="yield-sign" data-panel="${kind}">Ask the council <span class="sig">1 signature</span></button>`;
+  const preview = html`<p id="yp-preview" class="small" aria-live="polite">${yieldPreview(panel, live, network, amount)}</p>`;
+  const input = html`<div class="input-unit"><input id="yp-amount" name="amount" type="text" class="input mono" inputmode="decimal" value="${amount}" autocomplete="off" spellcheck="false"${error ? html` aria-invalid="true" aria-describedby="yp-error"` : ""}><span class="muted">${f.symbol}</span></div>`;
   if (panel === "register") {
     return html`${drawerHead("Register this treasury with Rhea Lend", "One time, before the first move")}
       <div class="drawer-body">
-        <div class="sum-box">${sumRow("The treasury pays", `${yoctoToNear(RHEA_STORAGE_YOCTO)} NEAR storage deposit`)}${sumRow("Call", html`<span class="mono">storage_deposit on ${list.lend}</span>`)}${sumRow("Deposit from your wallet", bond)}</div>
-        ${NEXT}${err}
+        <div class="sum-box">${sumRow("The treasury pays", `${yoctoToNear(RHEA_STORAGE_YOCTO)} NEAR storage deposit`)}${sumRow("Call", html`<span class="mono">storage_deposit on ${list.lend}</span>`)}${bondRow}</div>
+        ${next(bond)}${err}
       </div>
-      <div class="drawer-foot">${CANCEL}${sign("register")}</div>`;
+      <div class="drawer-foot">${CANCEL}<button type="button" class="btn btn-primary" data-action="yield-sign" data-panel="register">Ask the council <span class="sig">1 signature</span></button></div>`;
   }
+  const submit = html`<button type="submit" class="btn btn-primary">Ask the council <span class="sig">1 signature</span></button>`;
   if (panel === "withdraw") {
-    return html`${drawerHead("Take money back", "From Rhea Lend back to the treasury")}
+    const all = f.supplied === null ? "" : tokenAmount(f.supplied, f.decimals);
+    return html`<form id="yield-panel-form" class="drawer-form" data-panel="withdraw" novalidate>${drawerHead("Take money back", "From Rhea Lend back to the treasury")}
       <div class="drawer-body">
+        <div class="stack-xs">
+          <label class="label" for="yp-amount">Amount to take back</label>
+          ${input}
+          <div class="presets"><button type="button" class="filter-chip" data-action="yield-max" data-amount="${all}"${all === "" ? " disabled" : ""}>All ${all}</button></div>
+          <p class="small muted">Leave it empty to take everything back, interest included. ${all === "" ? "" : `${all} ${f.symbol} is on Rhea Lend now.`}</p>
+          ${preview}
+        </div>
         <div class="sum-box">
-          ${sumRow("Rhea Lend returns", `All ${f.supplied === null ? "" : tokenAmount(f.supplied, f.decimals)} ${f.symbol} supplied, interest included`)}
           ${sumRow("To", html`<span class="mono">${live.report.dao}</span>`)}
           ${sumRow("Call", html`<span class="mono">execute (Withdraw) on ${list.lend}</span>`)}
-          ${sumRow("Deposit from your wallet", bond)}
+          ${bondRow}
         </div>
         <p class="small muted">Take money back first when a payout needs it: the vote takes time.</p>
-        ${NEXT}${err}
+        ${next(bond)}${err}
       </div>
-      <div class="drawer-foot">${CANCEL}${sign("withdraw")}</div>`;
+      <div class="drawer-foot">${CANCEL}${submit}</div></form>`;
   }
   const available = f.holding?.available ?? null;
   const max = cap ?? (available === null ? "" : tokenAmount(available, f.decimals));
-  return html`<form id="yield-panel-form" class="drawer-form" novalidate>${drawerHead("Put money to work", `${f.symbol} on Rhea Lend${f.opportunity === null ? "" : ` · ${aprText(f.opportunity.apr)} a year${f.opportunity.test_data ? " (test data)" : ""}`}`)}
+  const maxRaw = max === "" ? null : tokenRaw(max, f.decimals);
+  const best = f.pool === null || f.supplied === null || maxRaw === null ? null : bestSupply(f.pool, BigInt(f.supplied), BigInt(maxRaw), f.decimals);
+  const bestChip = best === null || best === 0n || maxRaw === null || best >= BigInt(maxRaw)
+    ? ""
+    : html`<button type="button" class="filter-chip" data-action="yield-max" data-amount="${tokenAmount(best.toString(), f.decimals)}">Best ${tokenAmount(best.toString(), f.decimals)}</button>`;
+  const bestNote = best === 0n
+    ? " Putting more in would lower what the treasury earns: each deposit lowers the rate for the whole pool."
+    : bestChip === "" ? "" : " Best earns the treasury the most a year if borrowing stays as it is.";
+  return html`<form id="yield-panel-form" class="drawer-form" data-panel="supply" novalidate>${drawerHead("Put money to work", `${f.symbol} on Rhea Lend${f.opportunity === null ? "" : ` · ${aprText(f.opportunity.apr)} a year${f.opportunity.test_data ? " (test data)" : ""}`}`)}
     <div class="drawer-body">
       <div class="stack-xs">
-        <label class="label" for="yp-amount">Amount</label>
-        <div class="input-unit"><input id="yp-amount" name="amount" type="text" class="input mono" inputmode="decimal" value="${amount}" autocomplete="off" spellcheck="false"${error ? html` aria-invalid="true" aria-describedby="yp-error"` : ""}><span class="muted">${f.symbol}</span></div>
-        <div class="presets"><button type="button" class="filter-chip" data-action="yield-max" data-amount="${max}"${max === "" ? " disabled" : ""}>Max ${max}</button></div>
-        <p class="small muted">${cap === null ? "Available is the treasury's balance minus what open transfers promise." : "Max follows your limits. The code still checks the amount against what the treasury really has available."}</p>
+        <label class="label" for="yp-amount">Amount to put in</label>
+        ${input}
+        <div class="presets">${bestChip}<button type="button" class="filter-chip" data-action="yield-max" data-amount="${max}"${max === "" ? " disabled" : ""}>Max ${max}</button></div>
+        <p class="small muted">${cap === null ? "Available is the treasury's balance minus what open transfers promise." : "Max follows your limits. The code still checks the amount against what the treasury really has available."}${bestNote}</p>
+        ${preview}
       </div>
       <div class="sum-box">
         ${sumRow("To", html`<span class="mono">${list.lend}</span>`)}
         ${sumRow("Call", html`<span class="mono">ft_transfer_call on ${f.token_id}</span>`)}
-        ${sumRow("Deposit from your wallet", bond)}
+        ${bondRow}
       </div>
-      ${NEXT}${err}
+      ${next(bond)}${err}
     </div>
-    <div class="drawer-foot">${CANCEL}<button type="submit" class="btn btn-primary">Ask the council <span class="sig">1 signature</span></button></div></form>`;
+    <div class="drawer-foot">${CANCEL}${submit}</div></form>`;
 }
 
 export interface LimitErrors extends Partial<Record<LimitField, string>> {}
