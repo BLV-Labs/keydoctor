@@ -42,7 +42,7 @@ export function fmt(y) {
   return `${v / YOCTO}${frac ? "." + frac : ""} NEAR`;
 }
 
-async function query(params) {
+export async function query(params) {
   const res = await fetch(RPC, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -58,7 +58,7 @@ async function query(params) {
   return body.result;
 }
 
-async function account(id) {
+export async function account(id) {
   try {
     const a = await query({ request_type: "view_account", account_id: id });
     const spendable = BigInt(a.amount) - BigInt(a.storage_usage) * STORAGE_BYTE_COST;
