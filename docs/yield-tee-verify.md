@@ -31,7 +31,23 @@ Pass a model id to check another model on `YIELD_TEE_MODELS` (the script refuses
 ## Last run
 
 <!-- run:start -->
-Not run yet. The owner runs it with the project key; the result replaces this line.
+Last run: 2026-11-10T07:26:31Z, model `Qwen/Qwen3.6-35B-A3B-FP8`, verifier `94554726fd54`. Result: **PASS**.
+
+```text
+HTTP status: 200
+Chat id: f1ccddd1087249029df2449ade1771fc
+"text": "Qwen/Qwen3.6-35B-A3B-FP8:ab054cda83257fb173e9735e4d8e4fd78196175a9b28bad02dfdb73f4088b644:247796b7752d04ee891aafc38811849fd72c82024eb94d31d1bee28b1a151cbb",
+"signing_address": "0xfdbd7952498b333206f360d71d97a1e0961e8ddf",
+"signature_kind": "provider_tee"
+Request hash matches: True
+Response hash matches: True
+Signature valid: True
+Report data binds signing address: True
+Report data embeds request nonce: True
+GPU payload nonce matches request_nonce: True
+Intel TDX quote verified: True
+NVIDIA attestation verdict: True
+```
 <!-- run:end -->
 
 ## Limits
