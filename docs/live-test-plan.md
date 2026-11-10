@@ -118,6 +118,7 @@ Notes from the 2026-11-09 run:
 | K4 | wait for the keeper (minutes 7, 22, 37, 52) or run W4 | `execute_plan_step` from `keydoctor-keeper.testnet`, the receiver paid, `runs_done` 1, then 2 on the next cycle, and nothing after | done 2026-11-09 on `payroll-2`: the keeper ran plan 1 to `completed` (3 runs) and DCA plan 2 to `completed` (2 sells, tx hashes in backlog O9) |
 | K5 | guardian `pause` on a Budget | one `budget_owner_action` message in its chats on the next keeper cycle | **open** |
 | K6 | My Agents page with the owner wallet | `payroll-1` and `payroll-2` with their plan and limits | **open** |
+| K7 | `scripts/guard-setup/factory-global.sh keydoctor-guards-v2.testnet --send`, then step 1 of Create on the live Budget page; then create one Budget | `kd_factory_metadata.guard_code_global` true; the Guard cost line about 0.01 NEAR; the new Guard has no code of its own (`code_hash` of a global contract) | publish done 2026-11-10 (backlog O10), cost line 7.31032 NEAR read live; Budget creation **open** (needs the owner's wallet) |
 
 ### Yield (YD0–YD4)
 
