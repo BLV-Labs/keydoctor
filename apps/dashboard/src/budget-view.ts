@@ -69,7 +69,7 @@ const summaryOf = (g: GuardLive): string =>
 
 export const near = (yocto: string | null | undefined): string => (yocto === null || yocto === undefined ? "unknown" : `${yoctoToNear(yocto)} NEAR`);
 /** The Balance tile: two decimals, rounded down so it never shows more than can be spent. */
-function nearShort(yocto: string | null | undefined): string {
+export function nearShort(yocto: string | null | undefined): string {
   if (yocto === null || yocto === undefined || !/^\d+$/.test(yocto)) return "unknown";
   const cents = BigInt(yocto) / 10n ** 22n;
   return `${cents / 100n}.${(cents % 100n).toString().padStart(2, "0")} NEAR`;
