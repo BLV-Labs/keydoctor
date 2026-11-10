@@ -1937,8 +1937,104 @@ fn a_swap_over_the_daily_limit_skips_the_slot_without_a_quote() {
 }
 
 #[test]
-fn the_guard_reports_version_1_3_0() {
+fn the_guard_reports_version_1_4_0() {
     // The dashboard and the upgrade script read this to know which Guard a Budget runs.
     let g = setup();
-    assert_eq!(g.kd_guard_info()["version"], "1.3.0");
+    assert_eq!(g.kd_guard_info()["version"], "1.4.0");
+}
+
+// ---- close (issue #81)
+
+fn close_as(g: &mut Guard, who: &str) {
+    env_as(who, T0 + 2 * MINUTE);
+    let _ = g.close();
+}
+
+/// (receiver, beneficiary) of every DeleteAccount the current context created.
+fn deletes() -> Vec<(String, String)> {
+    get_created_receipts()
+        .into_iter()
+        .flat_map(|r| {
+            let to = r.receiver_id.to_string();
+            r.actions.into_iter().filter_map(move |a| match a {
+                MockAction::DeleteAccount { beneficiary_id, .. } => Some((to.clone(), beneficiary_id.to_string())),
+                _ => None,
+            })
+        })
+        .collect()
+}
+
+#[test]
+fn close_deletes_the_guard_with_the_dao_as_beneficiary_and_clears_its_records() {
+    // The DAO gets the whole balance back, the locked storage included. NEAR refuses to delete an account with
+    // over 10 KB of data, so every record must go first.
+    let mut g = setup();
+    auto_approved(&mut g, T0, "req-0001", NEAR, 7);
+    ask(&mut g, T0, "req-0002", STRANGER, NEAR);
+    added(&mut g, T0, "req-0002", Ok(8));
+    synced(&mut g, T0 + 1, "req-0002", "Rejected", T0);
+    let p = create(&mut g, pay_vendor(3));
+    env_as(DAO, T0);
+    g.cancel_plan(p);
+    assert_eq!(g.get_config()["requests"], "2");
+
+    close_as(&mut g, DAO);
+    assert_eq!(deletes(), [(GUARD.to_string(), DAO.to_string())]);
+    assert!(logged("guard_closed"));
+    assert!(g.get_request("req-0001".into()).is_none() && g.get_request("req-0002".into()).is_none());
+    assert!(g.get_request_by_proposal(7).is_none() && g.get_request_by_proposal(8).is_none());
+    assert!(g.list_requests(None, None).is_empty() && g.get_plans(None, None).is_empty());
+    assert!(g.get_agents().is_empty() && g.get_whitelist().is_empty());
+    assert_eq!(g.get_config()["guardians"], json!([]));
+}
+
+#[test]
+#[should_panic(expected = "ONLY_DAO")]
+fn only_the_dao_may_close_the_guard() {
+    // A guardian may stop the Guard, never take its money anywhere.
+    let mut g = setup();
+    close_as(&mut g, GUARDIAN);
+}
+
+#[test]
+#[should_panic(expected = "OPEN_REQUESTS")]
+fn close_waits_for_a_request_the_council_has_not_voted_on() {
+    // Its proposal still points at the Guard's money; deleting now would leave the council voting on nothing.
+    let mut g = setup();
+    ask(&mut g, T0, "req-0001", STRANGER, NEAR);
+    added(&mut g, T0, "req-0001", Ok(3));
+    close_as(&mut g, DAO);
+}
+
+#[test]
+#[should_panic(expected = "OPEN_PLANS")]
+fn close_refuses_while_a_plan_is_active() {
+    let mut g = setup();
+    create(&mut g, pay_vendor(3));
+    close_as(&mut g, DAO);
+}
+
+#[test]
+#[should_panic(expected = "OPEN_PLANS")]
+fn close_refuses_a_paused_plan_because_the_dao_could_resume_it() {
+    let mut g = setup();
+    let p = create(&mut g, pay_vendor(3));
+    env_as(DAO, T0);
+    g.pause_plan(p);
+    close_as(&mut g, DAO);
+}
+
+#[test]
+#[should_panic(expected = "TOO_MANY_RECORDS")]
+fn close_refuses_a_guard_with_records_the_ring_no_longer_reaches() {
+    // Records older than the last 200 cannot be found to delete, so the account would stay over the 10 KB limit.
+    let mut g = setup();
+    env_as(DAO, T0);
+    g.set_policy(GuardPolicy { max_pending_per_agent: 1_000, ..limits() });
+    for i in 0..201 {
+        ask(&mut g, T0 + i, &format!("req-{i:05}"), VENDOR, NEAR / 1000);
+        added(&mut g, T0 + i, &format!("req-{i:05}"), Ok(i));
+        voted(&mut g, T0 + i, &format!("req-{i:05}"), Ok(()));
+    }
+    close_as(&mut g, DAO);
 }

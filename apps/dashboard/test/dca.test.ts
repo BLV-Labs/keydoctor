@@ -253,7 +253,7 @@ const oldPolicy: RawPolicy = policyWith(oldRole);
 const live = (over: Partial<BudgetLive> = {}, pol: RawPolicy = policy): BudgetLive => ({
   dao: { dao: DAO, factory: FACTORY, code_storage: "0", policy: pol, guards: [] },
   guard: {
-    guard_id: GUARD, name: "g1", ready: true, in_role: true,
+    guard_id: GUARD, name: "g1", ready: true, in_role: true, closed: false,
     config: { paused: false, proposal_bond: "0", agents: 1, whitelist: 0, guardians: ["owner.testnet"] },
     policy: { max_per_tx: NEAR(2), max_per_day: NEAR(10), max_pending_per_agent: 3, min_reserve: NEAR(1) },
     window: { spent_in_window: NEAR(1), remaining: NEAR(9), resets_at: "2026-11-07T00:00:00.000Z" },

@@ -23,7 +23,7 @@ interface Call {
 }
 
 /** Answers like a NEAR RPC node: `views` maps "account.method" to the JSON result; a missing entry is a contract failure. */
-function stubRpc(views: Views): Call[] {
+function stubRpc(views: Views, gone: readonly string[] = []): Call[] {
   const calls: Call[] = [];
   const encode = (v: unknown) => [...new TextEncoder().encode(JSON.stringify(v))];
   mock.method(globalThis, "fetch", async (_url: string, init: { body: string }) => {
@@ -34,6 +34,9 @@ function stubRpc(views: Views): Call[] {
     }
     const key = `${params.account_id}.${params.method_name}`;
     calls.push({ method, account: params.account_id as string, view: params.method_name as string, block: params.block_id });
+    if (gone.includes(params.account_id as string)) {
+      return Response.json({ jsonrpc: "2.0", id: "kd", error: { name: "HANDLER_ERROR", cause: { name: "UNKNOWN_ACCOUNT" } } });
+    }
     if (!(key in views)) {
       return Response.json({ jsonrpc: "2.0", id: "kd", error: { name: "HANDLER_ERROR", cause: { name: "CONTRACT_EXECUTION_ERROR" } } });
     }
@@ -90,6 +93,19 @@ describe("readGuardDao", () => {
     assert.equal(ops?.agents?.length, 1);
     assert.equal(ops?.policy, null);
     assert.equal(ops?.window, null);
+  });
+
+  // `close` deletes the Guard, but the factory keeps listing it: the Budget page must not manage an account that is gone.
+  it("marks a Guard whose account is deleted as closed, and a Guard with only a failing view as not closed", async () => {
+    stubRpc(baseViews(), [GUARD]);
+    const gone = (await readGuardDao(DAO, FACTORY, "testnet")).guards[0];
+    assert.equal(gone?.closed, true);
+    assert.equal(gone?.config, null);
+    mock.restoreAll();
+    stubRpc(baseViews());
+    const [ops, pending] = (await readGuardDao(DAO, FACTORY, "testnet")).guards;
+    assert.equal(ops?.closed, false, "get_policy fails here, but the account exists");
+    assert.equal(pending?.closed, false);
   });
 
   // The contract returns `resets_at` in nanoseconds; the card printed "resets 1793762439898342064" before this.

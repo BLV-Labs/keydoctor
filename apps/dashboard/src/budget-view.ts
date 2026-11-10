@@ -3,7 +3,7 @@
 import { dcaPrice, DCA_TESTNET, formatUnits, type Network } from "key-doctor";
 import { applyAutoFunding, createCost, fundingMinYocto, parseRecipientLines, planBudget, setupErrorText, SPUTNIK_FACTORY, WIZARD_STEPS, type RecipientRow, type SetupError } from "./budget-create.ts";
 import { DCA_DEFAULT_SLIPPAGE, DCA_SLIPPAGE_CHOICES, DCA_STRATEGY, DCA_UNITS, dcaFromForm, PLAN_UNITS, planFromForm, planTotals, type DcaUnit, type PlanUnit } from "./budget-flow.ts";
-import { guardNeedsUpdate, TOP_UP_TEXT, topUpBlocks, withdrawMaxYocto, type BudgetLive, type DcaReadiness, type BudgetPlan, type BudgetProposal, type BudgetRequest } from "./budget-read.ts";
+import { guardCanClose, guardNeedsUpdate, TOP_UP_TEXT, topUpBlocks, withdrawMaxYocto, type BudgetLive, type DcaReadiness, type BudgetPlan, type BudgetProposal, type BudgetRequest } from "./budget-read.ts";
 import { formatUtc, nearToYocto, plural, yoctoToNear } from "./format.ts";
 import { KEEPER_ACCOUNT } from "./guard-form.ts";
 import { hasSwapRights, NEW_AGENT_DEPOSIT } from "./guard-proposals.ts";
@@ -438,7 +438,8 @@ function technical(b: BudgetLive, g: GuardLive, network: Network): Html {
       ${network === "testnet" && (b.plans ?? []).some((p) => p.action_type === "swap")
         ? html`<div class="tech-row"><dt>Swap exchange</dt><dd class="mono">${DCA_TESTNET.exchange} · pool ${DCA_TESTNET.pool_id}</dd></div>
           <div class="tech-row"><dt>Swap tokens</dt><dd class="mono">${DCA_TESTNET.wrap} → ${DCA_TESTNET.token_out}</dd></div>`
-        : ""}</dl></details>`;
+        : ""}</dl>
+    <p class="pad-row"><button type="button" class="btn btn-danger" data-action="budget-close" data-guard="${g.guard_id}">Close this Budget</button></p></details>`;
 }
 
 /** The state of one budget in a pill: Active, Agents paused, Setup not finished, Status unknown. */
@@ -521,6 +522,62 @@ export function renderBudgetPause(b: BudgetLive): Html {
     </div>
     <div class="drawer-foot"><button type="button" class="btn btn-secondary" data-action="close-dialog" autofocus>Cancel</button>
       <button type="button" class="btn btn-danger-solid" data-action="budget-pause-now" data-guard="${g?.guard_id ?? ""}">Pause now</button></div></div>`;
+}
+
+/** Above this many records the Guard cannot clear them in one call (`MAX_RECENT` in contracts/guard), so `close` refuses. */
+const CLOSE_MAX_REQUESTS = 200n;
+
+/**
+ * What stops `close` before the council votes on it, from the page's reads; the Guard checks again itself. Requests
+ * count the agents' waiting ones plus waiting plan steps among the newest requests, so an older waiting plan step can
+ * slip past this list and the Guard refuses it with OPEN_REQUESTS.
+ */
+export function closeBlockers(b: BudgetLive, version: string | null): string[] {
+  const g = b.guard;
+  if (version === null) return ["The Budget version could not be read. Reload the page and try again."];
+  if (!guardCanClose(version)) return [`This Budget runs version ${version}. Closing needs version 1.4.0 or later: update it first.`];
+  const out: string[] = [];
+  const waiting =
+    (g?.agents ?? []).reduce((n, a) => n + a.pending, 0) + (b.requests ?? []).filter((r) => r.plan_id !== null && (r.status === "Submitted" || r.status === "Pending")).length;
+  if (waiting > 0) out.push(`${plural(waiting, "payment")} still ${waiting === 1 ? "waits" : "wait"} for your decision. Approve or reject ${waiting === 1 ? "it" : "them"} first.`);
+  const open = (b.plans ?? []).filter((p) => p.status === "active" || p.status === "paused").length;
+  if (open > 0) out.push(`${plural(open, "scheduled payout")} can still run. Cancel ${open === 1 ? "it" : "them"} first; a paused one counts, since it could be resumed.`);
+  const held = g?.config?.requests;
+  if (held !== undefined && BigInt(held) > CLOSE_MAX_REQUESTS) {
+    out.push(`This Budget holds ${held} payment records, more than the ${CLOSE_MAX_REQUESTS} it can clear, so it cannot be closed. Its spare NEAR can still come back with withdraw_excess on the council page.`);
+  }
+  return out;
+}
+
+/**
+ * Close this Budget (Guard 1.4.0): what is lost for good, or what stops it first. Cancel has the first focus. A Budget
+ * on an older version gets only the Update button; `version` is `kd_guard_info.version`, null when unread.
+ */
+export function renderBudgetClose(b: BudgetLive, version: string | null): Html {
+  const g = b.guard;
+  const blockers = closeBlockers(b, version);
+  const update = version !== null && !guardCanClose(version);
+  const note = `${b.dao.dao}${g === null ? "" : ` · ${g.guard_id}`}`;
+  if (blockers.length > 0) {
+    return html`<div class="drawer-form">${drawerHead("Close this Budget?", note, true)}
+      <div class="drawer-body">
+        <p>Before you can close it:</p>
+        <ul class="list">${blockers.map((t) => html`<li>${t}</li>`)}</ul>
+        ${update ? twoSignatureSteps(b.dao.policy.proposal_bond) : ""}
+      </div>
+      <div class="drawer-foot">${CANCEL}${update ? html`<button type="button" class="btn btn-primary" data-action="budget-close-update">Update this Budget</button>` : ""}</div></div>`;
+  }
+  return html`<div class="drawer-form">${drawerHead("Close this Budget?", note, true)}
+    <div class="drawer-body">
+      <ul class="list">
+        <li>The Budget account is deleted. All its NEAR, the storage it locks included, goes back to <span class="mono">${b.dao.dao}</span>.</li>
+        <li>Agents can no longer ask for payments, and no payout can be scheduled.</li>
+        <li>Agent accounts keep what is left of their gas fund.</li>
+        <li>This cannot be undone. A new Budget needs a new name.</li>
+      </ul>
+      ${twoSignatureSteps(b.dao.policy.proposal_bond)}
+    </div>
+    <div class="drawer-foot">${CANCEL}<button type="button" class="btn btn-danger-solid" data-action="budget-close-now" data-guard="${g?.guard_id ?? ""}">Close Budget</button></div></div>`;
 }
 
 const sumRow = (label: string, value: Html | string) => html`<div class="sum-row"><span class="muted">${label}</span><span class="sum-value wrap">${value}</span></div>`;

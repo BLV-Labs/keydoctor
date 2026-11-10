@@ -467,7 +467,7 @@ impl Env {
 /// The Guard's own wasm with another version, so a test can see which code answers.
 fn guard_wasm_with_version(version: &[u8; 5]) -> Vec<u8> {
     let mut code = std::fs::read(GUARD_WASM).unwrap();
-    let hits: Vec<usize> = code.windows(5).enumerate().filter(|(_, w)| w == b"1.3.0").map(|(i, _)| i).collect();
+    let hits: Vec<usize> = code.windows(5).enumerate().filter(|(_, w)| w == b"1.4.0").map(|(i, _)| i).collect();
     assert!(!hits.is_empty(), "the version string must be in the wasm");
     for i in hits {
         code[i..i + 5].copy_from_slice(version);
@@ -591,7 +591,7 @@ async fn installed_sputnik_cannot_send_a_guard_sized_wasm_through_upgrade_remote
 #[tokio::test]
 async fn a_dao_upgrades_the_guard_and_every_record_survives() -> anyhow::Result<()> {
     let e = setup().await?;
-    assert_eq!(e.version().await?, "1.3.0");
+    assert_eq!(e.version().await?, "1.4.0");
     let held = e.request("up-pend-01", &e.stranger, NearToken::from_millinear(100)).await?;
     assert_eq!(held["status"], "Pending");
     let config: Value = e.guard.view("get_config").await?.json()?;
@@ -650,7 +650,7 @@ async fn nobody_outside_the_dao_reaches_upgrade_or_its_callbacks() -> anyhow::Re
     assert!(on_code.is_failure(), "on_code is private");
     let migrate = e.stranger.call(e.guard.id(), "migrate").max_gas().transact().await?;
     assert!(migrate.is_failure(), "migrate is private");
-    assert_eq!(e.version().await?, "1.3.0");
+    assert_eq!(e.version().await?, "1.4.0");
     Ok(())
 }
 
@@ -911,5 +911,38 @@ async fn a_call_plan_without_the_call_right_pauses_at_its_first_step() -> anyhow
     assert_eq!((plan["status"].as_str(), plan["pause_reason"].as_str()), (Some("paused"), Some("failures")), "{plan}");
     let window: Value = e.guard.view("get_window").await?.json()?;
     assert_eq!(window["spent_in_window"], "0");
+    Ok(())
+}
+
+// ---- close (issue #81)
+
+#[tokio::test]
+async fn the_dao_closes_its_guard_and_gets_the_whole_balance_back() -> anyhow::Result<()> {
+    // This Guard holds its own copy of the code, so it proves NEAR's 10 KB delete limit leaves the code out and
+    // that the records are gone before the delete. 50 Tgas is what the dashboard puts on the proposal.
+    let e = setup().await?;
+    for i in 0..5 {
+        assert_eq!(e.request(&format!("auto-000{i}"), &e.receiver, NearToken::from_millinear(10)).await?["status"], "AutoApproved");
+    }
+    let open = e.request("pend-0001", &e.stranger, NearToken::from_millinear(10)).await?;
+    assert_eq!(open["status"], "Pending");
+
+    let refused = e.dao_calls_guard("close", json!({}), NearToken::from_near(0)).await;
+    assert!(format!("{refused:?}").contains("OPEN_REQUESTS"), "{refused:?}");
+    assert!(e.guard.view_account().await.is_ok(), "an open request must keep the Guard: the proposal still names it");
+
+    e.vote(open["proposal_id"].as_u64().unwrap(), "VoteReject").await?;
+    assert_eq!(e.sync("pend-0001").await?["status"], "Rejected");
+    let guard_balance = e.balance(e.guard.as_account()).await?;
+    let dao_before = e.dao_free_near().await?;
+    println!("GUARD close storage={} bytes balance={guard_balance}", e.guard.view_account().await?.storage_usage);
+
+    assert_eq!(e.dao_calls_guard("close", json!({}), NearToken::from_near(0)).await?, "Approved");
+    assert!(e.guard.view_account().await.is_err(), "the Guard account must be deleted");
+    let gained = e.dao_free_near().await? - dao_before;
+    assert!(
+        gained + NearToken::from_millinear(50).as_yoctonear() >= guard_balance,
+        "the DAO must get the Guard's balance: gained {gained}, Guard held {guard_balance}"
+    );
     Ok(())
 }

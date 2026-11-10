@@ -109,7 +109,7 @@ function controls(g: GuardLive): Html {
         : "";
   const retire = g.in_role
     ? html`<div class="stack-xs">
-        <p class="small">A Guard cannot be deleted. Removing it from role <code class="mono">${GUARD_ROLE}</code> stops it proposing transfers.</p>
+        <p class="small">Removing it from role <code class="mono">${GUARD_ROLE}</code> stops it proposing transfers; the account stays. Deleting it is Close this Budget on the Agent Budget page (Guard 1.4.0 or later).</p>
         <button type="button" class="btn btn-secondary self-start" data-action="guard-retire" data-guard="${id}">Propose retire</button>
       </div>`
     : "";
@@ -117,6 +117,7 @@ function controls(g: GuardLive): Html {
 }
 
 export function renderGuardCard(g: GuardLive, network: Network): Html {
+  if (g.closed) return closedCard(g);
   const status = !g.ready
     ? html`<span class="pill pill-note">Creating</span>`
     : g.config?.paused
@@ -145,6 +146,19 @@ export function renderGuardCard(g: GuardLive, network: Network): Html {
         ${g.agents.map((a) => agentSteps(g, a.account_id, network))}</div>`}
       ${g.ready ? controls(g) : ""}
       ${g.ready ? changeForm(g) : ""}
+    </div></section>`;
+}
+
+/** A Guard the DAO closed: the account is gone, only a role entry may be left to remove. */
+function closedCard(g: GuardLive): Html {
+  return html`<section class="card" aria-labelledby="g-${g.guard_id}">
+    <div class="card-head"><h2 id="g-${g.guard_id}" class="h2 mono wrap">${g.guard_id}</h2><span class="pill pill-note">Closed</span></div>
+    <div class="pad stack">
+      <p class="small muted">The DAO closed this Guard: the account is deleted and its NEAR went back to the DAO.</p>
+      ${g.in_role
+        ? html`<div class="stack-xs"><p class="small">Role <code class="mono">${GUARD_ROLE}</code> still lists it. The deleted account cannot act, but removing it keeps the policy clean.</p>
+            <button type="button" class="btn btn-secondary self-start" data-action="guard-retire" data-guard="${g.guard_id}">Propose retire</button></div>`
+        : ""}
     </div></section>`;
 }
 

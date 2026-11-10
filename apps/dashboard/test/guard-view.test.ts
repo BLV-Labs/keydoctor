@@ -18,6 +18,7 @@ const guard = (over: Partial<GuardLive> = {}): GuardLive => ({
   name: "payroll",
   ready: true,
   in_role: true,
+  closed: false,
   config: { paused: false, proposal_bond: policy.proposal_bond, agents: 1, whitelist: 2, guardians: [] },
   whitelist: [],
   policy: { max_per_tx: (5n * NEAR).toString(), max_per_day: (10n * NEAR).toString(), max_pending_per_agent: 3, min_reserve: NEAR.toString() },
@@ -103,6 +104,17 @@ describe("renderGuardCard", () => {
   it("offers retire only while the Guard is in the role: out of the role there is nothing to cut off", () => {
     assert.match(renderGuardCard(guard(), "testnet").value, /data-action="guard-retire"/);
     assert.doesNotMatch(renderGuardCard(guard({ in_role: false }), "testnet").value, /guard-retire/);
+  });
+
+  // A closed Guard's account is gone: a change proposal or a guardian pause to it would pass the vote and then fail.
+  it("shows a closed Guard as Closed with no controls, keeping retire while the role still lists it", () => {
+    const closed = guard({ closed: true, config: null, policy: null, window: null, agents: null, whitelist: null });
+    const out = renderGuardCard(closed, "testnet").value;
+    assert.match(out, />Closed</);
+    assert.doesNotMatch(out, /Active/);
+    assert.doesNotMatch(out, /guard-pause|guard-change|Could not read/);
+    assert.match(out, /data-action="guard-retire"/);
+    assert.doesNotMatch(renderGuardCard({ ...closed, in_role: false }, "testnet").value, /guard-retire/);
   });
 });
 

@@ -40,7 +40,7 @@ import {
   type ConfirmedProposal,
   type VoteAction,
 } from "./budget-flow.ts";
-import { budgetRpc, guardNeedsUpdate, proposalLabel, readBalance, withdrawMaxYocto, readBudget, readDcaQuote, readDcaReadiness, readProposal, topUpBlocks, TOP_UP_TEXT, type BudgetLive, type DcaReadiness } from "./budget-read.ts";
+import { budgetRpc, guardCanClose, guardNeedsUpdate, proposalLabel, readBalance, withdrawMaxYocto, readBudget, readDcaQuote, readDcaReadiness, readProposal, topUpBlocks, TOP_UP_TEXT, type BudgetLive, type DcaReadiness } from "./budget-read.ts";
 import {
   BALANCED_RULES,
   CAUTIOUS_RULES,
@@ -58,6 +58,7 @@ import {
   renderBudgetLoading,
   renderBudgetNext,
   renderBudgetPanel,
+  renderBudgetClose,
   renderBudgetPause,
   renderBudgetSetup,
   renderRecipientList,
@@ -79,6 +80,7 @@ import {
   isGuardMethod,
   missingProposePermissions,
   removeGuardRoleProposal,
+  closeGuardProposal,
   upgradeGuardProposal,
   type AddProposalArgs,
   type RawPolicy,
@@ -1380,6 +1382,50 @@ function openBudgetPause(button: HTMLElement): void {
   showBudgetDrawer(renderBudgetPause(budgetState), button, true);
 }
 
+/** Kept from opening Close this Budget: the Update button there needs the factory's code hash. */
+let closeRead: DcaReadiness | null = null;
+
+/** Close this Budget: reads the Guard version first, since only 1.4.0 and later have `close`. */
+async function openBudgetClose(button: HTMLElement): Promise<void> {
+  const state = budgetState;
+  const status = budgetStatus();
+  if (state === null || state.guard === null || status === null) return;
+  status.textContent = "Reading the Budget version…";
+  closeRead = await readDcaReadiness(state.dao.dao, state.guard.guard_id, dcaContract(), budgetNetwork()).catch(() => null);
+  status.textContent = "";
+  showBudgetDrawer(renderBudgetClose(state, closeRead?.version ?? null), button, true);
+}
+
+/** Sign the close, or the update it waits for. Each ends with a chain read, since Sputnik shows a failed call as Approved. */
+function runBudgetClose(update: boolean): void {
+  const status = budgetStatus();
+  const state = budgetState;
+  if (status === null || state === null || state.guard === null) return;
+  const guardId = state.guard.guard_id;
+  const network = budgetNetwork();
+  closeBudgetDrawer();
+  if (update) {
+    const hash = closeRead?.latestHash ?? null;
+    if (hash === null) return void (status.textContent = "The newest Budget code could not be read, so it cannot be updated now.");
+    startTwoSignatures(upgradeGuardProposal(guardId, dcaContract(), hash), null, async () => {
+      let version: string | null = null;
+      const done = await untilRead(5, async () => {
+        version = (await readDcaReadiness(state.dao.dao, guardId, dcaContract(), network)).version;
+        return guardCanClose(version);
+      });
+      return done ? `Your Budget is updated to version ${String(version)}. Open Close this Budget again to continue.` : `The approval went through, but the Budget reports version ${String(version ?? "unknown")}, which cannot close. The newest code may not have it yet.`;
+    });
+    return;
+  }
+  startTwoSignatures(closeGuardProposal(guardId), null, async () => {
+    const rpc = budgetRpc(network);
+    const done = await untilRead(5, async () => !(await accountExists(rpc, guardId, (await rpc.block()).height)));
+    return done
+      ? `Your Budget is closed. ${guardId} is deleted and its NEAR went back to ${state.dao.dao}.`
+      : "The approval went through, but the Budget is still there. A payment may still wait or a payout still be scheduled: reload and check.";
+  });
+}
+
 /** Edit the fence: Save stays off until a value changes, a per-payment limit above the daily one is named, and the sentence follows what is typed. */
 function syncBudgetFence(form: HTMLFormElement): void {
   const input = (name: string) => form.elements.namedItem(name) as HTMLInputElement | null;
@@ -2291,7 +2337,7 @@ function submitGuardChange(form: HTMLFormElement): void {
   showGuardPreview({ dao: guardState.dao, bond: guardState.policy.proposal_bond, proposals: [guardChangeProposal(guardId, method, args)], labels: ["call"], notes: [] });
 }
 
-/** Previews the ChangePolicy that takes the Guard out of the agent-guard role: a Guard cannot be deleted. */
+/** Previews the ChangePolicy that takes the Guard out of the agent-guard role; deleting it is `close` (Close this Budget). */
 function previewGuardRetire(guardId: string): void {
   if (guardState === null) return;
   const proposal = removeGuardRoleProposal(guardState.policy, guardId);
@@ -2303,7 +2349,7 @@ function previewGuardRetire(guardId: string): void {
     labels: ["policy"],
     notes: [
       `Once it passes, ${guardId} can no longer propose or approve transfers. Proposals it already added stay for the council to decide.`,
-      "The Guard account and its code storage stay on chain. To get its other NEAR back, propose withdraw_excess (Propose a change).",
+      "The Guard account and its code storage stay on chain. To delete it and get all its NEAR back, use Close this Budget on the Budget page (Guard 1.4.0 or later); otherwise propose withdraw_excess (Propose a change).",
     ],
   });
 }
@@ -2770,6 +2816,15 @@ root.addEventListener("click", (event) => {
       break;
     case "budget-pause":
       openBudgetPause(el);
+      break;
+    case "budget-close":
+      void openBudgetClose(el);
+      break;
+    case "budget-close-now":
+      runBudgetClose(false);
+      break;
+    case "budget-close-update":
+      runBudgetClose(true);
       break;
     case "budget-pause-now": {
       closeBudgetDrawer();

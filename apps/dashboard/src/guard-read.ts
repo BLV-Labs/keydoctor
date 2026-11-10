@@ -1,5 +1,5 @@
 // Read-only RPC views for the Agent Guard page. Every read of one page load is pinned to one block, like a scan.
-import { createRpc, DEFAULT_RPC_URLS, type Network, type Rpc } from "key-doctor";
+import { createRpc, DEFAULT_RPC_URLS, isKdError, type Network, type Rpc } from "key-doctor";
 import type { RawPolicy } from "./guard-proposals.ts";
 import { GUARD_ROLE } from "./guard-proposals.ts";
 
@@ -10,7 +10,10 @@ export interface GuardLive {
   ready: boolean;
   /** Listed in the DAO's `agent-guard` role, i.e. P2 passed: without it the Guard cannot add transfers. */
   in_role: boolean;
-  config: { paused: boolean; proposal_bond: string; agents: number; whitelist: number; guardians: string[] } | null;
+  /** The DAO ran `close` (Guard 1.4.0): the account is deleted, the factory and the role may still list it. */
+  closed: boolean;
+  /** `requests` (records the Guard holds) is missing before Guard 1.4.0. */
+  config: { paused: boolean; proposal_bond: string; agents: number; whitelist: number; guardians: string[]; requests?: string } | null;
   policy: { max_per_tx: string; max_per_day: string; max_pending_per_agent: number; min_reserve: string } | null;
   /** `resets_at` is ISO 8601 UTC; the contract's `get_window` returns nanoseconds. */
   window: { spent_in_window: string; remaining: string; resets_at: string } | null;
@@ -46,8 +49,15 @@ function windowToIso(w: GuardLive["window"]): GuardLive["window"] {
 
 /** One Guard's views; a failed view leaves its field null so one broken Guard never hides the others. */
 async function readGuard(rpc: Rpc, height: number, g: { guard_id: string; name: string; ready: boolean }, members: string[]): Promise<GuardLive> {
+  let closed = false;
   const view = <T>(method: string): Promise<T | null> =>
-    g.ready ? (rpc.callFunction(g.guard_id, height, method, {}) as Promise<T>).catch(() => null) : Promise.resolve(null);
+    g.ready
+      ? (rpc.callFunction(g.guard_id, height, method, {}) as Promise<T>).catch((e: unknown) => {
+          // A deleted account answers UNKNOWN_ACCOUNT on every view; any other failure is only an unread field.
+          if (isKdError(e) && e.kd.code === "NOT_FOUND") closed = true;
+          return null;
+        })
+      : Promise.resolve(null);
   const [config, policy, window, agents, whitelist] = await Promise.all([
     view<GuardLive["config"]>("get_config"),
     view<GuardLive["policy"]>("get_policy"),
@@ -55,7 +65,7 @@ async function readGuard(rpc: Rpc, height: number, g: { guard_id: string; name: 
     view<GuardLive["agents"]>("get_agents"),
     view<GuardLive["whitelist"]>("get_whitelist"),
   ]);
-  return { guard_id: g.guard_id, name: g.name, ready: g.ready, in_role: members.includes(g.guard_id), config, policy, window, agents, whitelist };
+  return { guard_id: g.guard_id, name: g.name, ready: g.ready, in_role: members.includes(g.guard_id), closed, config, policy, window, agents, whitelist };
 }
 
 /** Throws a KdError from the DAO read, `NOT_A_DAO`, or `FACTORY_UNREADABLE` when a factory view fails. */
