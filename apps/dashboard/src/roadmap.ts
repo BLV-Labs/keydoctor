@@ -33,15 +33,27 @@ export const FUTURE: ReadonlyArray<Item> = [
   ["Farming on other chains", "Supply stablecoins on another chain while every move stays a council vote: Chain Signatures signs from the DAO, Intents moves the tokens. Research says conditional go for Aave, Compound and Morpho on Base."],
 ];
 
-/** Revenue is an open question, so the page lists candidates and says nothing is chosen. */
-export const REVENUE: ReadonlyArray<string> = [
-  "A monthly fee for the hosted agent, paid by the DAO through a proposal the council votes on.",
-  "A small fee on plans the keeper runs, written into the Guard and shown before the council approves.",
-  "A paid API tier for wallets and agent platforms that call preflight at high volume.",
+/** Revenue: fees from the agents that move a DAO's money (owner decision 2026-11-11). Not built. */
+export const REVENUE: ReadonlyArray<Item> = [
+  ["Yield agent", "Members deposit into the DAO and the DAO farms through the yield agent. Key Doctor keeps a share of the yield, so members earn the APR minus the fee. Never taken from the deposit."],
+  ["Other agents", "A small fee on keeper strategies and the hosted agent, written into the Guard and shown before the council approves."],
 ];
 
-const items = (list: ReadonlyArray<Item>) =>
-  html`<ul class="list">${list.map(([title, text]) => html`<li><span class="strong">${title}.</span> ${text}</li>`)}</ul>`;
+type Stage = { id: string; title: string; pill: Html; tone: "built" | "next" | "future"; list: ReadonlyArray<Item> };
+
+const STAGES: ReadonlyArray<Stage> = [
+  { id: "rm-built", title: "Built", pill: html`<span class="pill pill-ok">Live on testnet</span>`, tone: "built", list: BUILT },
+  { id: "rm-next", title: "Next", pill: html`<span class="pill pill-info">Planned</span>`, tone: "next", list: NEXT },
+  { id: "rm-future", title: "Future direction", pill: html`<span class="pill pill-note">Not built</span>`, tone: "future", list: FUTURE },
+];
+
+const card = ([title, text]: Item) => html`<li class="rm-card"><p class="strong">${title}</p><p class="small muted">${text}</p></li>`;
+
+const revenue = () => html`<li class="rm-card rm-revenue">
+    <div class="head-title"><p class="strong">Revenue: fees from agents</p><span class="pill pill-note pill-sm">Chosen, not built</span></div>
+    <p class="small muted">The checks stay free: scans, preflight, alerts and the public MCP are safety tools.</p>
+    <ul class="list small">${REVENUE.map(([title, text]) => html`<li><span class="strong">${title}.</span> ${text}</li>`)}</ul>
+  </li>`;
 
 export function renderRoadmap(): Html {
   return html`<section class="page-head"><div class="stack-sm grow">
@@ -49,21 +61,10 @@ export function renderRoadmap(): Html {
       <h1 class="h1">What is built, and what comes next</h1>
       <p class="lead">Key Doctor never holds your keys, and fixed rules make every verdict. Every step below keeps that.</p>
     </div></section>
-    <section class="card pad stack-sm" aria-labelledby="rm-built">
-      <div class="head-title"><h2 id="rm-built" class="h2">Built</h2><span class="pill pill-ok">Live on testnet</span></div>
-      ${items(BUILT)}
-    </section>
-    <section class="card pad stack-sm" aria-labelledby="rm-next">
-      <div class="head-title"><h2 id="rm-next" class="h2">Next</h2><span class="pill pill-info">Planned</span></div>
-      ${items(NEXT)}
-    </section>
-    <section class="card pad stack-sm" aria-labelledby="rm-future">
-      <div class="head-title"><h2 id="rm-future" class="h2">Future direction</h2><span class="pill pill-note">Not built</span></div>
-      ${items(FUTURE)}
-      <div class="stack-sm">
-        <p class="strong">Revenue <span class="pill pill-note pill-sm">Not decided</span></p>
-        <p class="small muted">The checks stay free: scans, preflight, alerts and the public MCP are safety tools. Options after the hackathon:</p>
-        <ul class="list">${REVENUE.map((r) => html`<li>${r}</li>`)}</ul>
-      </div>
-    </section>`;
+    <ol class="rm-track" aria-label="Roadmap stages">
+      ${STAGES.map((s) => html`<li class="rm-stage rm-${s.tone}" aria-labelledby="${s.id}">
+        <div class="rm-node"><span class="rm-dot" aria-hidden="true"></span><h2 id="${s.id}" class="h2">${s.title}</h2>${s.pill}</div>
+        <ul class="rm-cards">${s.list.map(card)}${s.tone === "future" ? revenue() : ""}</ul>
+      </li>`)}
+    </ol>`;
 }

@@ -437,15 +437,17 @@ describe("nav and the alerts / MCP pages", () => {
     const built = page.indexOf("Built Live on testnet");
     const next = page.indexOf("Next Planned");
     const future = page.indexOf("Future direction Not built");
-    assert.ok(built >= 0 && next > built && future > next, "sections in order: Built, Next, Future direction");
+    assert.ok(built >= 0 && next > built && future > next, "stages in order on the track: Built, Next, Future direction");
     // NEAR AI, Intents and cross-chain farming are direction only: they must sit under "Not built", never under "Built".
-    for (const [title] of FUTURE) assert.ok(page.indexOf(`${title}.`, future) > future, title);
+    for (const [title] of FUTURE) assert.ok(page.indexOf(title, future) > future, title);
     assert.ok(!page.slice(built, next).includes("NEAR Intents"));
-    // The owner has not picked a business model: every revenue line shows under "Not decided", and the checks stay free.
-    const revenue = page.indexOf("Revenue Not decided");
+    // Revenue is the owner's chosen model (fees from agents) but not built: it sits in the future stage, the checks stay free,
+    // and the yield fee is a share of the yield, never the members' deposit.
+    const revenue = page.indexOf("Revenue: fees from agents Chosen, not built");
     assert.ok(revenue > future);
     assert.ok(page.includes("The checks stay free"));
-    for (const r of REVENUE) assert.ok(page.indexOf(r, revenue) > revenue, r);
+    for (const [title] of REVENUE) assert.ok(page.indexOf(title, revenue) > revenue, title);
+    assert.match(page.slice(revenue), /APR minus the fee\. Never taken from the deposit/);
   });
 
 });
