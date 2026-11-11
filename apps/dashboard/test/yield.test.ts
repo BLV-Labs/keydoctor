@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { KdYieldReport, YieldOpportunity } from "key-doctor";
 import type { RawPolicy } from "../src/guard-proposals.ts";
-import { allowedYieldKind, checkYieldCall, registerProposal, supplyProposal, tokenAmount, tokenRaw, withdrawAllProposal, YIELD_ALLOWLIST, YIELD_PREFIX, YieldProposalError } from "../src/yield-proposals.ts";
+import { allowedYieldKind, checkYieldCall, readAmount, registerProposal, supplyProposal, tokenAmount, tokenRaw, withdrawAllProposal, YIELD_ALLOWLIST, YIELD_PREFIX, YieldProposalError } from "../src/yield-proposals.ts";
 import { councilAccounts, isYieldProposal, parsePositions, type YieldLive } from "../src/yield-read.ts";
-import { readAmount, renderYield, tileAmount, yieldActions, yieldState } from "../src/yield-view.ts";
+import { renderYield, tileAmount, yieldActions, yieldState } from "../src/yield-view.ts";
 
 const LEND = "contract.1638481328.burrow.testnet";
 const USDC = "usdc.fakes.testnet";

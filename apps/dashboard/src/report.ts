@@ -1,5 +1,5 @@
 import type { Flag, KdReport, KeyInfo, Member, Network, Status } from "key-doctor";
-import { formatInt, formatThreshold, formatUtc, keyAgeMs, plural, relativeAge, truncateKey, yoctoToNear } from "./format.ts";
+import { formatInt, formatThreshold, formatUtc, keyAgeMs, plural, relativeAge, truncateKey, nearText } from "./format.ts";
 import { walletBar } from "./session.ts";
 import { escape, Html as RawHtml, html, type Html } from "./html.ts";
 import { icon, statusIcon } from "./icons.ts";
@@ -145,7 +145,7 @@ function moneyCard(report: KdReport): Html {
           ? html`<dt>Who can approve a payment</dt><dd>${dao.transfer_vote_policy.map((p) => p.role).join(", ")}</dd><dt>Votes needed</dt><dd>${dao.transfer_vote_policy.map((p) => `${p.role}: ${formatThreshold(p.threshold)}`).join(" · ")}</dd>`
           : html`<dt>Who can approve a payment</dt><dd>${who?.role ?? ""}${who?.size == null ? "" : ` (${plural(who.size, "member")})`}</dd>
             <dt>Votes needed</dt><dd>${votes === null ? formatThreshold(dao.transfer_vote_policy[0]?.threshold) : `${plural(votes, "vote")} (${formatThreshold(dao.transfer_vote_policy[0]?.threshold)})`}</dd>`}
-      <dt>Deposit to start a vote</dt><dd>${yoctoToNear(dao.proposal_bond_yocto)} NEAR</dd>
+      <dt>Deposit to start a vote</dt><dd>${nearText(dao.proposal_bond_yocto)} NEAR</dd>
       <dt>Admins</dt><dd>${admins.length === 0 ? "None found" : html`<span class="mono wrap">${admins.join(", ")}</span>`}</dd>
     </dl>
   </section>`;

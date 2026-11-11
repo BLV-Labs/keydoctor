@@ -6,7 +6,7 @@ import { html, type Html } from "./html.ts";
 import { icon } from "./icons.ts";
 import { pageHref } from "./route.ts";
 import { pctText, reviewSentence } from "./yield-agent.ts";
-import { tokenAmount, tokenRaw } from "./yield-proposals.ts";
+import { readAmount, tokenAmount, tokenRaw } from "./yield-proposals.ts";
 import { CHECK_EVERY, CHECK_EVERY_TEXT, type CheckEvery, type LimitInput } from "./yield-settings.ts";
 import { limitFields, YIELD_TESTNET_ONLY, aprText, type LimitErrors } from "./yield-view.ts";
 import { pillarTag } from "./pillars.ts";
@@ -46,7 +46,7 @@ const later = (title: string, reason: string) =>
 
 function funds(v: CreateView): Html {
   const sym = v.token.symbol;
-  const amount = (raw: string | null) => (raw === null ? "unknown" : `${tokenAmount(raw, v.token.decimals)} ${sym}`);
+  const amount = (raw: string | null) => (raw === null ? "unknown" : `${readAmount(raw, v.token.decimals)} ${sym}`);
   const manual = html`<div class="stack-xs"><label class="label" for="yc-dao">Treasury account name</label>
       <input id="yc-dao" name="dao" type="text" class="input mono" value="${v.dao}" placeholder="team.sputnik-v2.testnet" autocomplete="off" autocapitalize="none" spellcheck="false"${v.notice ? html` aria-invalid="true" aria-describedby="yc-notice"` : ""}>
       <p class="small muted">Anyone can set up the page. Only the treasury's council can act on a suggestion.</p></div>`;
@@ -108,8 +108,8 @@ function review(v: CreateView): Html {
     <dl class="sum-box review-rows">
       ${sum("Treasury", html`<span class="mono wrap">${v.dao}</span>`)}
       ${sum("Where", `Rhea Lend, supply ${sym}`)}
-      ${sum("Most it may put to work", `${tokenAmount(put, v.token.decimals)} ${sym}`)}
-      ${sum("Always keep ready", `${tokenAmount(keep, v.token.decimals)} ${sym}`)}
+      ${sum("Most it may put to work", `${readAmount(put, v.token.decimals)} ${sym}`)}
+      ${sum("Always keep ready", `${readAmount(keep, v.token.decimals)} ${sym}`)}
       ${sum("Only act above", `${pctText(pct)}% a year`)}
       ${sum("How it acts", "Suggests, you approve each move")}
     </dl>

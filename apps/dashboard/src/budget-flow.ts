@@ -3,7 +3,7 @@
 // be an agent's request). The page reads the proposal back and compares it with what it built; only a match
 // unlocks sign 2, `act_proposal(id, action, proposal)`. The installed Sputnik ignores `proposal`, so this
 // read-back is the real protection against approving the wrong proposal.
-import { nearToYocto, yoctoToNear } from "./format.ts";
+import { nearText, nearToYocto } from "./format.ts";
 import { GUARD_FORM_TEXT, isAccountId, KEEPER_ACCOUNT, MAX_AGENTS, MAX_LABEL_CHARS, MAX_WHITELIST } from "./guard-form.ts";
 import { DCA_TESTNET } from "key-doctor";
 import { guardChangeProposal, NEW_AGENT_DEPOSIT, type AddProposalArgs } from "./guard-proposals.ts";
@@ -186,7 +186,7 @@ export async function freshAgentAccount(guardId: string, taken: (account: string
 export function addAgentProblem(label: string, existing: readonly string[], available: string | null): string | null {
   if (existing.length >= MAX_AGENTS) return `A Budget takes at most ${MAX_AGENTS} agents. Remove one first.`;
   if (label === "" || [...label].length > MAX_LABEL_CHARS) return `Name: 1 to ${MAX_LABEL_CHARS} characters.`;
-  if (available !== null && BigInt(available) < BigInt(NEW_AGENT_DEPOSIT)) return `Adding an agent uses ${yoctoToNear(NEW_AGENT_DEPOSIT)} NEAR of this Budget. Top up first.`;
+  if (available !== null && BigInt(available) < BigInt(NEW_AGENT_DEPOSIT)) return `Adding an agent uses ${nearText(NEW_AGENT_DEPOSIT)} NEAR of this Budget. Top up first.`;
   return null;
 }
 
@@ -247,9 +247,9 @@ export function planFromForm(v: Record<string, string>, rules: PlanRules, nowMs:
   const amount = amountFromForm(v.amount ?? "", null);
   if (!amount.ok) return amount;
   const yocto = BigInt(amount.value.yocto);
-  if (yocto > BigInt(rules.policy.max_per_tx)) return fail(`Amount per run is above your per-request limit (${yoctoToNear(rules.policy.max_per_tx)} NEAR). Lower it or edit your rules.`);
-  if (entry.max_per_tx !== null && yocto > BigInt(entry.max_per_tx)) return fail(`Amount per run is above this recipient's limit (${yoctoToNear(entry.max_per_tx)} NEAR).`);
-  if (yocto > BigInt(rules.policy.max_per_day)) return fail(`Amount per run is above your 24-hour limit (${yoctoToNear(rules.policy.max_per_day)} NEAR). Lower it or edit your rules.`);
+  if (yocto > BigInt(rules.policy.max_per_tx)) return fail(`Amount per run is above your per-request limit (${nearText(rules.policy.max_per_tx)} NEAR). Lower it or edit your rules.`);
+  if (entry.max_per_tx !== null && yocto > BigInt(entry.max_per_tx)) return fail(`Amount per run is above this recipient's limit (${nearText(entry.max_per_tx)} NEAR).`);
+  if (yocto > BigInt(rules.policy.max_per_day)) return fail(`Amount per run is above your 24-hour limit (${nearText(rules.policy.max_per_day)} NEAR). Lower it or edit your rules.`);
   if (!(unit in PLAN_UNITS) || !/^\d{1,6}$/.test(everyText)) return fail("Every: a whole number of minutes, hours or days.");
   const interval = Number(everyText) * PLAN_UNITS[unit];
   if (interval < MIN_PLAN_INTERVAL_SEC) return fail("Runs must be at least 1 minute apart.");
@@ -349,8 +349,8 @@ export function dcaFromForm(v: Record<string, string>, rules: Pick<PlanRules, "p
   const amount = amountFromForm(v.amount ?? "", null);
   if (!amount.ok) return amount;
   const yocto = BigInt(amount.value.yocto);
-  if (yocto > BigInt(rules.policy.max_per_tx)) return fail(`NEAR per run is above your per-request limit (${yoctoToNear(rules.policy.max_per_tx)} NEAR). Lower it or edit your rules.`);
-  if (yocto > BigInt(rules.policy.max_per_day)) return fail(`NEAR per run is above your 24-hour limit (${yoctoToNear(rules.policy.max_per_day)} NEAR). Lower it or edit your rules.`);
+  if (yocto > BigInt(rules.policy.max_per_tx)) return fail(`NEAR per run is above your per-request limit (${nearText(rules.policy.max_per_tx)} NEAR). Lower it or edit your rules.`);
+  if (yocto > BigInt(rules.policy.max_per_day)) return fail(`NEAR per run is above your 24-hour limit (${nearText(rules.policy.max_per_day)} NEAR). Lower it or edit your rules.`);
   if (!(unit in DCA_UNITS) || !/^\d{1,6}$/.test(everyText)) return fail("Every: a whole number of minutes, hours, days or weeks.");
   const interval = Number(everyText) * DCA_UNITS[unit];
   if (interval < MIN_PLAN_INTERVAL_SEC) return fail("Runs must be at least 1 minute apart.");

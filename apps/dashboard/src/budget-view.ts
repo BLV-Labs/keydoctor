@@ -4,7 +4,7 @@ import { dcaPrice, DCA_TESTNET, formatUnits, type Network } from "key-doctor";
 import { applyAutoFunding, createCost, fundingMinYocto, parseRecipientLines, planBudget, setupErrorText, SPUTNIK_FACTORY, WIZARD_STEPS, type RecipientRow, type SetupError } from "./budget-create.ts";
 import { DCA_DEFAULT_SLIPPAGE, DCA_SLIPPAGE_CHOICES, DCA_STRATEGY, DCA_UNITS, dcaFromForm, PLAN_UNITS, planFromForm, planTotals, type DcaUnit, type PlanUnit } from "./budget-flow.ts";
 import { guardCanClose, guardNeedsUpdate, TOP_UP_TEXT, topUpBlocks, withdrawMaxYocto, type BudgetLive, type DcaReadiness, type BudgetPlan, type BudgetProposal, type BudgetRequest } from "./budget-read.ts";
-import { formatUtc, nearToYocto, plural, yoctoToNear } from "./format.ts";
+import { formatUtc, groupDigits, nearText, nearToYocto, plural, yoctoToNear } from "./format.ts";
 import { KEEPER_ACCOUNT } from "./guard-form.ts";
 import { hasSwapRights, NEW_AGENT_DEPOSIT } from "./guard-proposals.ts";
 import type { GuardLive } from "./guard-read.ts";
@@ -68,12 +68,12 @@ const summaryOf = (g: GuardLive): string =>
     ? "We could not read the limits. Nothing was changed."
     : fenceSentence(g.agents?.length ?? g.config?.agents ?? null, near(g.policy.max_per_day), near(g.policy.max_per_tx), g.whitelist?.length ?? g.config?.whitelist ?? null);
 
-export const near = (yocto: string | null | undefined): string => (yocto === null || yocto === undefined ? "unknown" : `${yoctoToNear(yocto)} NEAR`);
-/** The Balance tile: two decimals, rounded down so it never shows more than can be spent. */
+export const near = (yocto: string | null | undefined): string => (yocto === null || yocto === undefined ? "unknown" : `${nearText(yocto)} NEAR`);
+/** The Balance tile: two decimals, rounded down so it never shows more than can be spent, with thousands separators. */
 export function nearShort(yocto: string | null | undefined): string {
   if (yocto === null || yocto === undefined || !/^\d+$/.test(yocto)) return "unknown";
   const cents = BigInt(yocto) / 10n ** 22n;
-  return `${cents / 100n}.${(cents % 100n).toString().padStart(2, "0")} NEAR`;
+  return `${(cents / 100n).toLocaleString("en-US")}.${(cents % 100n).toString().padStart(2, "0")} NEAR`;
 }
 
 const LEAD = "A budget your AI agent can spend, within rules you set. Larger payments wait for your approval. Top up or withdraw anytime.";
@@ -106,14 +106,14 @@ export function describeKind(kind: Record<string, unknown>): string {
   const t = kind.Transfer as { receiver_id?: unknown; amount?: unknown; token_id?: unknown } | undefined;
   if (t !== undefined) {
     const token = t.token_id === "" || t.token_id === undefined ? "NEAR" : String(t.token_id);
-    const amount = typeof t.amount === "string" && token === "NEAR" ? yoctoToNear(t.amount) : String(t.amount);
+    const amount = typeof t.amount === "string" && token === "NEAR" ? nearText(t.amount) : String(t.amount);
     return `Send ${amount} ${token} to ${String(t.receiver_id)}`;
   }
   const call = kind.FunctionCall as { receiver_id?: unknown; actions?: { method_name?: unknown; deposit?: unknown }[] } | undefined;
   if (call !== undefined) {
     const methods = (call.actions ?? []).map((a) => String(a.method_name)).join(", ");
     const deposit = (call.actions ?? []).reduce((sum, a) => sum + BigInt(typeof a.deposit === "string" && /^\d+$/.test(a.deposit) ? a.deposit : 0), 0n);
-    return `Call ${methods} on ${String(call.receiver_id)}${deposit > 0n ? `, attaching ${yoctoToNear(deposit.toString())} NEAR` : ""}`;
+    return `Call ${methods} on ${String(call.receiver_id)}${deposit > 0n ? `, attaching ${nearText(deposit.toString())} NEAR` : ""}`;
   }
   const other = Object.keys(kind)[0] ?? "Unknown request";
   return other.startsWith("ChangePolicy") ? `Change who controls this Budget (${other})` : other;
@@ -195,8 +195,8 @@ function tiles(b: BudgetLive, now: number): Html {
       ? html`<span class="tile-value">${near(plan.amount_per_run)}</span><span class="tile-note wrap">to ${plan.receiver_id ?? "a recipient"} · ${nsToUtc(plan.next_run_at ?? "0")}</span>`
       : html`<span class="tile-value">None</span>${b.plans === null ? html`<span class="tile-note">Not available right now</span>` : html`<span class="tile-note"><button type="button" class="btn btn-ghost btn-link" data-action="budget-open" data-panel="plan">Set one up</button></span>`}`;
   return html`<section class="tiles" aria-label="Budget summary">
-    ${tile("all", "Balance", nearShort(b.withdrawable), [runway === null ? "Top up any time" : runway, b.usdt === undefined || b.usdt === null ? "" : `USDT in your Budget: ${formatUnits(b.usdt, DCA_TESTNET.token_out_decimals)}`, held === null || held === 0n ? "" : `Plus ${near(held.toString())} kept for account storage, not spendable`])}
-    ${tile("auto", "Spent today", w === null ? "unknown" : p === null ? near(w.spent_in_window) : `${yoctoToNear(w.spent_in_window)} / ${near(p.max_per_day)}`,
+    ${tile("all", "Balance", nearShort(b.withdrawable), [runway === null ? "Top up any time" : runway, b.usdt === undefined || b.usdt === null ? "" : `USDT in your Budget: ${groupDigits(formatUnits(b.usdt, DCA_TESTNET.token_out_decimals))}`, held === null || held === 0n ? "" : `Plus ${near(held.toString())} kept for account storage, not spendable`])}
+    ${tile("auto", "Spent today", w === null ? "unknown" : p === null ? near(w.spent_in_window) : `${nearText(w.spent_in_window)} / ${near(p.max_per_day)}`,
       [w === null ? "" : `resets ${localTime(w.resets_at)}`],
       w !== null && p !== null ? html`<progress class="progress" max="100" value="${percent(w.spent_in_window, p.max_per_day)}" aria-label="Share of the daily limit spent"></progress>` : "")}
     ${tile("waiting", "Waiting for you", b.proposals === null ? "unknown" : String(b.proposals.length), [left === null || left === 0 ? "Review them below" : `Soonest: ${hours(left)} left`])}
@@ -631,19 +631,19 @@ export function renderBudgetPanel(panel: BudgetPanel, b: BudgetLive, error: stri
           <label class="label" for="bp-amount">Amount</label>
           <div class="input-unit">
             <input id="bp-amount" name="amount" type="text" class="input" value="${v("amount")}" placeholder="1" autocomplete="off" spellcheck="false" inputmode="decimal"${maxNear === null ? "" : html` aria-describedby="bp-amount-hint${error ? " bp-error" : ""}"`}>
-            ${maxNear === null ? "" : html`<button type="button" class="btn btn-ghost btn-max" data-action="budget-full" data-amount="${maxNear}" aria-label="Withdraw the most you can, ${maxNear} NEAR">Max</button>`}
+            ${maxNear === null ? "" : html`<button type="button" class="btn btn-ghost btn-max" data-action="budget-full" data-amount="${maxNear}" aria-label="Withdraw the most you can, ${groupDigits(maxNear)} NEAR">Max</button>`}
             <span class="muted">NEAR</span>
           </div>
           ${maxNear === null
             ? ""
-            : html`<p id="bp-amount-hint" class="small muted">Up to <button type="button" class="link-btn" data-action="budget-full" data-amount="${maxNear}">${maxNear} NEAR</button>. Requests waiting for you keep their deposit in the budget.</p>`}
+            : html`<p id="bp-amount-hint" class="small muted">Up to <button type="button" class="link-btn" data-action="budget-full" data-amount="${maxNear}">${groupDigits(maxNear)} NEAR</button>. Requests waiting for you keep their deposit in the budget.</p>`}
         </div>
         <div class="sum-box">${sumRow("To", html`<span class="mono">${v("to", "your connected wallet")}</span>`)}</div>
         <p id="bp-left" class="small ${left.empty ? "tone-cleanup" : "muted"}">${left.text}</p>
         ${twoSignatureSteps(b.dao.policy.proposal_bond, html`<span id="bp-echo">${typed === "" ? "the amount above" : `${typed} NEAR`}</span>`)}`, "Withdraw");
     }
     case "rules": {
-      const was = (yocto: string | undefined) => (yocto === undefined ? undefined : `${yoctoToNear(yocto)} NEAR`);
+      const was = (yocto: string | undefined) => (yocto === undefined ? undefined : `${nearText(yocto)} NEAR`);
       const agents = b.guard?.agents?.length ?? b.guard?.config?.agents ?? null;
       const recipients = b.guard?.whitelist?.length ?? b.guard?.config?.whitelist ?? null;
       const perTx = v("maxPerTx", near2(p?.max_per_tx));
@@ -664,7 +664,7 @@ export function renderBudgetPanel(panel: BudgetPanel, b: BudgetLive, error: stri
       return form("Add an agent", "It follows the same fence.", html`
         ${field("label", "Agent name", v("label"), "payroll bot")}
         ${agentLimits(b.dao.dao)}
-        <p class="small muted">This page makes the agent's key and its own account. ${yoctoToNear(NEW_AGENT_DEPOSIT)} NEAR leaves the Budget: 0.5 NEAR is the agent's gas, the rest pays for storage and what is not used comes back. You then get the key file and the command for your agent.</p>
+        <p class="small muted">This page makes the agent's key and its own account. ${nearText(NEW_AGENT_DEPOSIT)} NEAR leaves the Budget: 0.5 NEAR is the agent's gas, the rest pays for storage and what is not used comes back. You then get the key file and the command for your agent.</p>
         ${twoSignatureSteps(b.dao.policy.proposal_bond)}`, "Add agent");
     case "recipients":
       return form("Who agents can pay", "Payments to anyone else wait for you.", html`
@@ -772,7 +772,7 @@ function dcaPanel(b: BudgetLive, error: string | null, values: Record<string, st
       </div>
       ${quote === null
         ? html`<p class="small muted">The current price could not be read. The sale still checks it at every run.</p>`
-        : html`<p class="small">Right now ${plan.amount.near} NEAR gets about ${formatUnits(quote, DCA_TESTNET.token_out_decimals)} USDT${price === null ? "" : html` (${price} USDT per NEAR)`}, testnet price.</p>`}
+        : html`<p class="small">Right now ${plan.amount.near} NEAR gets about ${groupDigits(formatUnits(quote, DCA_TESTNET.token_out_decimals))} USDT${price === null ? "" : html` (${price} USDT per NEAR)`}, testnet price.</p>`}
       ${t.short === null
         ? html`<p class="check-line">${icon.alert()}<span>Could not read the balance, so the page cannot tell whether it covers every run.</span></p>`
         : BigInt(t.short) > 0n
@@ -913,7 +913,7 @@ export function renderBudgetApprove(p: BudgetProposal, b: BudgetLive, now: numbe
     return html`<ul class="plain-list k5-checks">
       ${check(!unknown, unknown ? `${req.receiver_id} is not on your recipient list` : `${req.receiver_id} is on your recipient list${cap === null ? "" : `, up to ${near(cap)} per payment`}`)}
       ${after === null ? check(false, "Balance unknown right now") : check(after >= 0n, after >= 0n ? `Balance after: ${near(after.toString())}. ${near(g?.policy?.min_reserve)} stays in the budget.` : `The balance is ${near(b.withdrawable)}: not enough for this payment`)}
-      ${dayAfter === null || dayMax === null ? check(false, "Today's spending unknown right now") : check(dayAfter <= BigInt(dayMax), `Today: ${yoctoToNear(dayAfter.toString())} of ${near(dayMax)} after this payment`)}
+      ${dayAfter === null || dayMax === null ? check(false, "Today's spending unknown right now") : check(dayAfter <= BigInt(dayMax), `Today: ${nearText(dayAfter.toString())} of ${near(dayMax)} after this payment`)}
     </ul>`;
   };
   const why = r === null || r.reasons.length === 0 ? "" : html`<div class="stack-xs"><h3 class="drawer-h3">Why it waited</h3><ul class="list small">${r.reasons.map((c) => html`<li>${reasonText(c, g, r.receiver_id)}</li>`)}</ul></div>`;
@@ -1048,7 +1048,7 @@ const FENCE_LABELS: ReadonlyArray<readonly [string, string, string]> = [
 export function setupCostText(values: Record<string, string>, codeStorageYocto: string | null): string {
   const cost = createCost(values.funding ?? "", codeStorageYocto);
   if (cost === null) return "Creating this budget costs at least 6 NEAR in signature 1. The exact amount shows once it is read from the chain.";
-  return `Creating this budget costs about ${yoctoToNear(cost.total)} NEAR in signature 1: ${yoctoToNear(cost.account)} NEAR for the budget account's storage, ${yoctoToNear(cost.contract)} NEAR for the spending contract and ${yoctoToNear(cost.fees)} NEAR set aside for fees. Spending money comes later, with Top up.`;
+  return `Creating this budget costs about ${nearText(cost.total)} NEAR in signature 1: ${nearText(cost.account)} NEAR for the budget account's storage, ${nearText(cost.contract)} NEAR for the spending contract and ${nearText(cost.fees)} NEAR set aside for fees. Spending money comes later, with Top up.`;
 }
 
 const nearAmount = (v: string): string => `${v.trim()} NEAR`;
@@ -1111,7 +1111,7 @@ export function renderBudgetSetup(available: boolean, values: Record<string, str
     </fieldset>
     <details id="bs-advanced" class="setup-advanced"${advancedOpen ? " open" : ""}><summary class="strong">Advanced</summary>
       <div class="grid-2">
-        ${field("funding", "Set aside for fees (NEAR)", "", html`<p id="bs-funding-hint" class="small muted">Not spending money. Pays the 0.1 NEAR deposit of each waiting payment and your agent's network fees. <span id="bs-funding-min">${min === null ? "" : auto ? `Filled in for your rules: at least ${yoctoToNear(min.toString())} NEAR.` : `At least ${yoctoToNear(min.toString())} NEAR for your rules.`}</span>${auto ? "" : html` <button type="button" class="link-btn" data-action="budget-funding-auto">Use the minimum</button>`}</p>`)}
+        ${field("funding", "Set aside for fees (NEAR)", "", html`<p id="bs-funding-hint" class="small muted">Not spending money. Pays the 0.1 NEAR deposit of each waiting payment and your agent's network fees. <span id="bs-funding-min">${min === null ? "" : auto ? `Filled in for your rules: at least ${nearText(min.toString())} NEAR.` : `At least ${nearText(min.toString())} NEAR for your rules.`}</span>${auto ? "" : html` <button type="button" class="link-btn" data-action="budget-funding-auto">Use the minimum</button>`}</p>`)}
         ${field("minReserve", "Contract keeps for its fees (NEAR)", "0", hintText("minReserve", "NEAR the spending contract keeps for itself, never budget money. 0 is fine."))}
       </div>
       <input type="hidden" name="fundingAuto" value="${auto ? "1" : "0"}">
@@ -1143,7 +1143,7 @@ export function renderBudgetSetup(available: boolean, values: Record<string, str
       planned === null
         ? "Not read from the chain yet. Your wallet shows the exact amount before you approve."
         : planned.ok
-          ? `About ${yoctoToNear(planned.plan.firstDepositYocto)} NEAR in signature 1: the budget account's storage, the spending contract and the fee set-aside. The 0.2 NEAR of deposits in signature 2 come back.`
+          ? `About ${nearText(planned.plan.firstDepositYocto)} NEAR in signature 1: the budget account's storage, the spending contract and the fee set-aside. The 0.2 NEAR of deposits in signature 2 come back.`
           : "Fix the earlier steps to see it.";
     review = html`<h2 id="bs-h" class="wiz-h" tabindex="-1">Review and create</h2>
       <p class="strong">${reviewSentence(agent === "" ? "Your agent" : agent, val("maxPerTx"), val("maxPerDay"), count)}</p>

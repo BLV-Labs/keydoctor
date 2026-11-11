@@ -119,8 +119,9 @@ describe("APR preview and best amount", () => {
   it("the supply drawer offers a Best chip below Max and says why", () => {
     const empty = live({ positions: [], pools: [BEFORE], idle: (2_000_020n * U).toString() });
     const page = renderYieldPanel("supply", empty, "testnet")!.value;
-    assert.match(page, /data-action="yield-max" data-amount="4\d0000">Best 4\d0000</);
-    assert.match(page, /Max 2000020/);
+    // The chip reads grouped, but data-amount stays plain: it is copied into the input, which tokenRaw parses without commas.
+    assert.match(page, /data-action="yield-max" data-amount="4\d0000">Best 4\d0,000</);
+    assert.match(page, /data-amount="2000020">Max 2,000,020</);
     assert.match(page, /Best earns the treasury the most a year/);
   });
 });
@@ -130,7 +131,7 @@ describe("drawer wording", () => {
     const page = renderYieldPanel("withdraw", live(), "testnet")!.value;
     assert.match(page, /<form id="yield-panel-form"[^>]*data-panel="withdraw"/);
     assert.match(page, /id="yp-amount"/);
-    assert.match(page, /data-amount="1800020\.040558">All 1800020\.040558/);
+    assert.match(page, /data-amount="1800020\.040558">All 1,800,020\.040558/);
     assert.match(page, /Leave it empty to take everything back/);
   });
 
