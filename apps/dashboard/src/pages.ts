@@ -163,38 +163,82 @@ function meterRow(n: number, d: number, label: string, unit: string): Html {
     </li>`;
 }
 
-/** One key type split into "never used" (highlighted) and "in use" (neutral), the two series the legend names. */
-function keyBar(name: string, total: number, unused: number): Html {
+/** Every council member split by what the scan found: one whole in three parts, so one tall segmented bar. */
+function membersSplit(s: HomeStats): Html {
+  const rest = Math.max(0, s.council_members - s.members_high - s.members_unreadable);
+  const parts = [
+    { tone: "high", n: s.members_high, label: "High risk" },
+    { tone: "ok", n: rest, label: "Read, no high-risk finding" },
+    { tone: "note", n: s.members_unreadable, label: "Could not be read" },
+  ].filter((p) => p.n > 0);
+  const counts = `${count(s.members_high)} of ${count(s.council_members)} members`;
+  return html`<li class="meter-row">
+      <p class="meter-text"><span class="meter-value">${share(s.members_high, s.council_members)}</span> <span class="meter-label">of council members are at high risk</span></p>
+      <div class="seg-bar seg-bar-tall" aria-hidden="true">
+        ${parts.map((p, i) => html`<span class="bar-seg seg-${p.tone} ${i === parts.length - 1 ? "bar-seg-rest" : widthClass(p.n, s.council_members)}" title="${p.label}: ${count(p.n)}"></span>`)}
+      </div>
+      <p class="small muted">${counts}</p>
+      <ul class="plain chart-legend small" aria-label="Council members">
+        ${parts.map((p) => html`<li><span class="swatch seg-${p.tone}" aria-hidden="true"></span>${p.label} <span class="legend-n">${count(p.n)}</span></li>`)}
+      </ul>
+    </li>`;
+}
+
+/** A round axis end for counts: 35,599 → 40,000 in steps of 10,000. */
+export function axisScale(n: number): { max: number; ticks: number[] } {
+  const step = 10 ** Math.floor(Math.log10(Math.max(1, n)));
+  const max = Math.ceil(Math.max(1, n) / step) * step;
+  return { max, ticks: Array.from({ length: max / step + 1 }, (_, i) => i * step) };
+}
+
+const tick = (n: number) => (n >= 1000 ? `${n / 1000}k` : String(n));
+
+/**
+ * One key type on the shared count axis: the bar length is the number of keys, split into "never used" (highlighted)
+ * and "in use" (neutral). The shared axis shows that app keys outnumber full-access keys as well as the share.
+ */
+function keyBar(name: string, total: number, unused: number, max: number): Html {
   return html`<li class="meter-row">
       <p class="meter-text"><span class="meter-value">${share(unused, total)}</span> <span class="meter-label">of council members' ${name} were never used</span></p>
-      <div class="seg-bar" aria-hidden="true">
+      <div class="axis-track" aria-hidden="true"><div class="seg-bar ${widthClass(total, max)}">
         <span class="bar-seg seg-unused ${widthClass(unused, total)}" title="Never used: ${count(unused)}"></span><span class="bar-seg seg-used" title="In use: ${count(total - unused)}"></span>
-      </div>
+      </div></div>
       <p class="small muted">${count(unused)} of ${count(total)} ${name}</p>
     </li>`;
 }
 
-/** Network-wide numbers from `pnpm stats` (GĐ10) as two small charts. Every number and its source block come from the JSON. */
+/** Network-wide numbers from `pnpm stats` (GĐ10): totals, then two charts. Every number and its source block come from the JSON. */
 export function renderNetworkStats(s: HomeStats): Html {
   const date = s.block_timestamp.slice(0, 10);
+  const axis = axisScale(Math.max(s.full_access_keys, s.function_call_keys));
+  const kpis: ReadonlyArray<readonly [number, string]> = [
+    [s.daos_scanned, "Sputnik DAOs read"],
+    [s.council_members, "council members"],
+    [s.full_access_keys + s.function_call_keys, "keys checked"],
+    [s.council_size.median, "members in the median council"],
+  ];
   return html`<section class="card pad stack home-numbers" aria-labelledby="numbers">
       <div class="stack-xs"><p class="eyebrow home-eyebrow">Measured on NEAR mainnet</p>
         <h2 id="numbers" class="h2">How safe are Sputnik DAO treasuries on NEAR?</h2></div>
+      <ul class="plain home-stats kpi-row">
+        ${kpis.map(([n, label]) => html`<li class="home-stat kpi"><span class="home-stat-value">${count(n)}</span> <span class="home-stat-label">${label}</span></li>`)}
+      </ul>
       <div class="chart-cols">
         <figure class="chart stack-sm" aria-labelledby="numbers-daos">
           <figcaption id="numbers-daos" class="chart-title">Councils</figcaption>
           <ul class="plain meter-list">
             ${meterRow(s.council_size.one_member, s.daos_scanned, "of Sputnik DAOs have a one-person council", "DAOs")}
             ${meterRow(s.daos_single_vote_transfer, s.daos_scanned, "of Sputnik DAOs let one account approve a payment", "DAOs")}
-            ${meterRow(s.members_high, s.council_members, "of council members are at high risk", "members")}
+            ${membersSplit(s)}
           </ul>
         </figure>
         <figure class="chart stack-sm" aria-labelledby="numbers-keys">
-          <figcaption id="numbers-keys" class="chart-title">Council members' keys</figcaption>
+          <figcaption id="numbers-keys" class="chart-title">Council members' keys, on one scale</figcaption>
           <ul class="plain meter-list">
-            ${keyBar("full-access keys", s.full_access_keys, s.full_access_keys_never_used)}
-            ${keyBar("app keys", s.function_call_keys, s.function_call_keys_never_used)}
+            ${keyBar("full-access keys", s.full_access_keys, s.full_access_keys_never_used, axis.max)}
+            ${keyBar("app keys", s.function_call_keys, s.function_call_keys_never_used, axis.max)}
           </ul>
+          <div class="chart-axis small muted" aria-hidden="true">${axis.ticks.map((t) => html`<span>${tick(t)}</span>`)}</div>
           <ul class="plain chart-legend small" aria-label="Legend">
             <li><span class="swatch seg-unused" aria-hidden="true"></span>Never used</li>
             <li><span class="swatch seg-used" aria-hidden="true"></span>In use</li>

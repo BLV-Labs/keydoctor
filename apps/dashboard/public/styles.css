@@ -148,6 +148,16 @@ summary:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3
 .seg-bar-tall { height: 20px; }
 .seg-high { background: var(--kd-high); } .seg-cleanup { background: var(--kd-cleanup); } .seg-ok { background: var(--kd-ok); } .seg-note { background: var(--kd-note); }
 .seg-full { background: var(--kd-text-2); } .seg-app { background: var(--kd-p-scan); }
+/* Totals above the charts, then one shared count axis for the key bars (a track the bar sits in, tick labels under it). */
+.home-numbers { container-type: inline-size; }
+.kpi-row { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 20px; }
+@container (max-width: 520px) { .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.kpi { padding: 4px 0 4px 12px; border-left: 3px solid var(--kd-p-scan); }
+.kpi .home-stat-value { font-size: 1.75rem; font-weight: 700; }
+.kpi .home-stat-label { font-size: var(--kd-fs-sm); }
+.axis-track { height: 10px; border-left: 1px solid var(--kd-border); }
+.axis-track > .seg-bar { height: 100%; }
+.chart-axis { display: flex; justify-content: space-between; border-top: 1px solid var(--kd-border); padding-top: 4px; font-variant-numeric: tabular-nums; }
 .chart-legend-col { flex-direction: column; gap: 6px; }
 .chart-legend-col li { display: flex; }
 /* Bar widths as classes: the CSP drops style="" attributes (src/bar-width.ts). */

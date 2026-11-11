@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { INVALID_NAME_MESSAGE, renderHome, renderNetworkStats } from "../src/pages.ts";
+import { INVALID_NAME_MESSAGE, axisScale, renderHome, renderNetworkStats } from "../src/pages.ts";
 import { NETWORK_STATS, type HomeStats } from "../src/network-stats.ts";
 
 const text = (h: { value: string }) => h.value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
@@ -86,15 +86,29 @@ describe("K1 home", () => {
     }
   });
 
+  it("key bars share one round count axis, so the longer bar means more keys", () => {
+    // WHY: two bars on separate scales would hide that app keys outnumber full-access keys almost 3 to 1.
+    assert.deepEqual(axisScale(35599), { max: 40000, ticks: [0, 10000, 20000, 30000, 40000] });
+    assert.deepEqual(axisScale(13686), { max: 20000, ticks: [0, 10000, 20000] });
+    assert.deepEqual(axisScale(0), { max: 1, ticks: [0, 1] });
+    const h = renderNetworkStats(NETWORK_STATS).value;
+    const bars = [...h.matchAll(/<div class="axis-track"[^>]*><div class="seg-bar (w-\d+)">/g)].map((m) => m[1]);
+    assert.deepEqual(bars, ["w-34", "w-89"]); // 13,686 and 35,599 of 40,000
+  });
+
   it("network numbers come from the pnpm stats output, with their source block and the scans left out", () => {
     // WHY: a judge reruns `pnpm stats` and must find the same numbers; a hand-typed figure on the page would drift.
-    const s: HomeStats = { ...NETWORK_STATS, scope: "all", block_height: 223787777, block_timestamp: "2026-11-09T15:49:10Z", daos_active: 716, daos_scanned: 2077, daos_failed: 35, council_size: { one_member: 1000 }, daos_single_vote_transfer: 1307, council_members: 3489, members_high: 1671, function_call_keys: 35599, function_call_keys_never_used: 31214, full_access_keys: 13686, full_access_keys_never_used: 3196 };
+    const s: HomeStats = { ...NETWORK_STATS, scope: "all", block_height: 223787777, block_timestamp: "2026-11-09T15:49:10Z", daos_active: 716, daos_scanned: 2077, daos_failed: 35, council_size: { median: 2, one_member: 1000 }, daos_single_vote_transfer: 1307, council_members: 3489, members_unreadable: 281, members_high: 1671, function_call_keys: 35599, function_call_keys_never_used: 31214, full_access_keys: 13686, full_access_keys_never_used: 3196 };
     const t = text(renderNetworkStats(s));
     assert.match(t, /48% of Sputnik DAOs have a one-person council 1,000 of 2,077 DAOs/);
     assert.match(t, /63% of Sputnik DAOs let one account approve a payment/);
     assert.match(t, /48% of council members are at high risk 1,671 of 3,489 members/);
     assert.match(t, /88% of council members' app keys were never used 31,214 of 35,599 app keys/);
     assert.match(t, /23% of council members' full-access keys were never used 3,196 of 13,686 full-access keys/);
+    // Totals: keys checked is full-access plus app keys of the members that could be read.
+    assert.match(t, /2,077 Sputnik DAOs read 3,489 council members 49,285 keys checked 2 members in the median council/);
+    // The members bar is one whole: high + read without a high finding + unreadable = every council member.
+    assert.match(t, /High risk 1,671 Read, no high-risk finding 1,537 Could not be read 281/);
     assert.match(t, /All 2,077 readable Sputnik DAOs on mainnet \(716 active in the last 365 days\)/);
     assert.match(t, /read at block 223,787,777 \(2026-11-09\)/);
     assert.match(t, /35 DAOs could not be read and are left out/);
