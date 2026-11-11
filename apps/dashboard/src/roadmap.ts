@@ -39,32 +39,50 @@ export const REVENUE: ReadonlyArray<Item> = [
   ["Other agents", "A small fee on keeper strategies and the hosted agent, written into the Guard and shown before the council approves."],
 ];
 
-type Stage = { id: string; title: string; pill: Html; tone: "built" | "next" | "future"; list: ReadonlyArray<Item> };
+type Stage = { tone: "built" | "next" | "future"; title: string; pill: Html; list: ReadonlyArray<Item> };
 
 const STAGES: ReadonlyArray<Stage> = [
-  { id: "rm-built", title: "Built", pill: html`<span class="pill pill-ok">Live on testnet</span>`, tone: "built", list: BUILT },
-  { id: "rm-next", title: "Next", pill: html`<span class="pill pill-info">Planned</span>`, tone: "next", list: NEXT },
-  { id: "rm-future", title: "Future direction", pill: html`<span class="pill pill-note">Not built</span>`, tone: "future", list: FUTURE },
+  { tone: "built", title: "Built", pill: html`<span class="pill pill-ok">Live on testnet</span>`, list: BUILT },
+  { tone: "next", title: "Next", pill: html`<span class="pill pill-info">Planned</span>`, list: NEXT },
+  { tone: "future", title: "Future direction", pill: html`<span class="pill pill-note">Not built</span>`, list: FUTURE },
 ];
 
-const card = ([title, text]: Item) => html`<li class="rm-card"><p class="strong">${title}</p><p class="small muted">${text}</p></li>`;
+/** One point on a lane. Its radio and its detail panel share an id, so CSS (`:has(:checked)`) opens the panel without JS. */
+type Point = { id: string; label: string; detail: Html };
 
-const revenue = () => html`<li class="rm-card rm-revenue">
-    <div class="head-title"><p class="strong">Revenue: fees from agents</p><span class="pill pill-note pill-sm">Chosen, not built</span></div>
-    <p class="small muted">The checks stay free: scans, preflight, alerts and the public MCP are safety tools.</p>
-    <ul class="list small">${REVENUE.map(([title, text]) => html`<li><span class="strong">${title}.</span> ${text}</li>`)}</ul>
-  </li>`;
+const revenueDetail = html`<p class="strong">Revenue: fees from agents <span class="pill pill-note pill-sm">Chosen, not built</span></p>
+  <p class="small muted">The checks stay free: scans, preflight, alerts and the public MCP are safety tools.</p>
+  <ul class="list small">${REVENUE.map(([title, text]) => html`<li><span class="strong">${title}.</span> ${text}</li>`)}</ul>`;
+
+function points(s: Stage): Point[] {
+  const list = s.list.map(([title, text], i): Point => ({
+    id: `rm-${s.tone}-${String(i)}`,
+    label: title,
+    detail: html`<p class="strong">${title}</p><p>${text}</p>`,
+  }));
+  return s.tone === "future" ? [...list, { id: "rm-future-revenue", label: "Revenue", detail: revenueDetail }] : list;
+}
 
 export function renderRoadmap(): Html {
   return html`<section class="page-head"><div class="stack-sm grow">
       <p class="eyebrow">Roadmap</p>
       <h1 class="h1">What is built, and what comes next</h1>
       <p class="lead">Key Doctor never holds your keys, and fixed rules make every verdict. Every step below keeps that.</p>
+      <p class="small muted">Click a point to read the details.</p>
     </div></section>
-    <ol class="rm-track" aria-label="Roadmap stages">
-      ${STAGES.map((s) => html`<li class="rm-stage rm-${s.tone}" aria-labelledby="${s.id}">
-        <div class="rm-node"><span class="rm-dot" aria-hidden="true"></span><h2 id="${s.id}" class="h2">${s.title}</h2>${s.pill}</div>
-        <ul class="rm-cards">${s.list.map(card)}${s.tone === "future" ? revenue() : ""}</ul>
-      </li>`)}
-    </ol>`;
+    <div class="rm-map">
+      ${STAGES.map((s) => {
+        const ps = points(s);
+        return html`<section class="card pad rm-lane rm-${s.tone}" aria-labelledby="rm-h-${s.tone}">
+          <div class="head-title"><h2 id="rm-h-${s.tone}" class="h2">${s.title}</h2>${s.pill}</div>
+          <ol class="rm-line" role="radiogroup" aria-labelledby="rm-h-${s.tone}">
+            ${ps.map((p) => html`<li class="rm-stop${p.id === "rm-future-revenue" ? " rm-stop-revenue" : ""}">
+              <input type="radio" name="rm-point" id="${p.id}" class="sr-only"${p.id === "rm-built-0" ? html` checked` : ""}>
+              <label for="${p.id}" class="rm-point"><span class="rm-dot" aria-hidden="true"></span><span class="rm-label">${p.label}</span></label>
+            </li>`)}
+          </ol>
+          <div class="rm-details">${ps.map((p) => html`<div class="rm-panel" data-for="${p.id}">${p.detail}</div>`)}</div>
+        </section>`;
+      })}
+    </div>`;
 }
