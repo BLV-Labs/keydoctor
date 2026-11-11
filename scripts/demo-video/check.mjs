@@ -5,8 +5,8 @@
 //   node scripts/demo-video/check.mjs
 //
 // Env (the same names guard-mcp and demo.sh use):
-//   GUARD_CONTRACT_ID, AGENT_ACCOUNT_ID, AGENT_KEY_PATH   clip 1, the Guard the agent pays through
-//   KD_DEMO_A, KD_DEMO_B, KD_DEMO_C, KD_DEMO_PREFIX       clips 2 and 3, the On Call council and its DAO
+//   GUARD_CONTRACT_ID, AGENT_ACCOUNT_ID, AGENT_KEY_PATH   scene 1, the Guard the agent pays through
+//   KD_DEMO_A, KD_DEMO_B, KD_DEMO_C, KD_DEMO_PREFIX       scene 2, the council and its DAO
 //   KD_WORKER_URL (default the hosted Worker), RUN_CHECK_TOKEN (only checked for presence)
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -56,7 +56,7 @@ function invoices() {
 }
 
 async function clip1() {
-  console.log("Clip 1: Agent Budget pays the invoices");
+  console.log("Scene 1: Agent Budget pays the invoices");
   const guard = env("GUARD_CONTRACT_ID");
   if (!guard) return fail("GUARD_CONTRACT_ID is not set");
   const info = await view(guard, "kd_guard_info").catch(() => null);
@@ -125,7 +125,7 @@ async function clip1() {
 }
 
 async function clip2and3() {
-  console.log("Clips 2 and 3: council scan and On Call");
+  console.log("Scene 2: council attack");
   const health = await fetch(WORKER).then((r) => r.ok, () => false);
   health ? ok(`Worker ${WORKER} answers`) : fail(`Worker ${WORKER} does not answer`);
   env("RUN_CHECK_TOKEN") ? ok("RUN_CHECK_TOKEN is set") : fail("RUN_CHECK_TOKEN is not set: demo.sh run-check needs it");
