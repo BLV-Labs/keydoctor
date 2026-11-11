@@ -8,6 +8,7 @@ import { formatThreshold, formatUtc, relativeAge, truncateKey, yoctoToNear } fro
 import { renderAgents, renderAlertsDrawer, renderError, renderHome, renderLayout } from "../src/pages.ts";
 import { PROPOSALS_ID, renderProposals } from "../src/proposals-view.ts";
 import { renderKeyDetail } from "../src/key-detail.ts";
+import { BUILT, FUTURE, NEXT, REVENUE, renderRoadmap } from "../src/roadmap.ts";
 import { renderAccount, renderCouncil } from "../src/report.ts";
 import { agentGuideHref, parseRoute, resolveInput, routeHref, settledHref } from "../src/route.ts";
 import { STATUS_LABEL, groupFlags, keyMix, mainReason, recentFullAccessKeys, sortMembers } from "../src/view.ts";
@@ -353,6 +354,7 @@ describe("nav and the alerts / MCP pages", () => {
     const footer = layout.match(/<footer[\s\S]*?<\/footer>/)![0];
     assert.ok(footer.includes("page=mcp"));
     assert.ok(footer.includes("For developers (MCP)"));
+    assert.ok(footer.includes("page=roadmap"));
     assert.ok(footer.includes("Key Doctor never holds your keys. Limits are enforced on-chain."));
   });
 
@@ -369,6 +371,7 @@ describe("nav and the alerts / MCP pages", () => {
 
   it("?page= picks the page without a target, and ?target= wins, with nothing left to open", () => {
     assert.equal(parseRoute("?page=mcp").page, "mcp");
+    assert.equal(parseRoute("?page=roadmap").page, "roadmap");
     assert.equal(parseRoute("?page=nope").page, "check");
     assert.equal(parseRoute("").page, "check");
     const target = parseRoute("?page=agents&target=kdoncall-p.testnet");
@@ -427,6 +430,38 @@ describe("nav and the alerts / MCP pages", () => {
     const none = text(renderAgents(""));
     assert.match(none, /Self-host: see the README/);
     assert.ok(!none.includes("claude mcp add"));
+  });
+
+  it("Roadmap keeps built, planned and future work apart, so a judge never reads a plan as a feature", () => {
+    const page = text(renderRoadmap());
+    const built = page.indexOf("Built Live on testnet");
+    const next = page.indexOf("Next Planned");
+    const future = page.indexOf("Future direction Not built");
+    assert.ok(built >= 0 && next > built && future > next, "lanes in order: Built, Next, Future direction");
+    // NEAR AI, Intents and cross-chain farming are direction only: they must sit under "Not built", never under "Built".
+    for (const [title] of FUTURE) assert.ok(page.indexOf(title, future) > future, title);
+    assert.ok(!page.slice(built, next).includes("NEAR Intents"));
+    // Revenue is the owner's chosen model (fees from agents) but not built: it sits in the future lane, the checks stay free,
+    // and the yield fee is a share of the yield, never the members' deposit.
+    const revenue = page.indexOf("Revenue: fees from agents Chosen, not built");
+    assert.ok(revenue > future);
+    assert.ok(page.includes("The checks stay free"));
+    for (const [title] of REVENUE) assert.ok(page.indexOf(title, revenue) > revenue, title);
+    assert.match(page.slice(revenue), /APR minus the fee\. Never taken from the deposit/);
+  });
+
+  it("every Roadmap point opens its own detail: a point with no panel or no CSS rule would be a dead click", () => {
+    const out = renderRoadmap().value;
+    const css = readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
+    const ids = [...out.matchAll(/<input type="radio" name="rm-point" id="([^"]+)"/g)].map((m) => m[1]!);
+    assert.equal(ids.length, BUILT.length + NEXT.length + FUTURE.length + 1, "one point per item, plus Revenue");
+    for (const id of ids) {
+      assert.ok(out.includes(`<label for="${id}"`), `label for ${id}`);
+      assert.equal(out.split(`data-for="${id}"`).length - 1, 1, `one panel for ${id}`);
+      assert.ok(css.includes(`.rm-lane:has(#${id}:checked) [data-for="${id}"]`), `CSS rule for ${id}`);
+    }
+    // One detail is open on load, so the page never starts as bare dots.
+    assert.equal(out.split(" checked>").length - 1, 1);
   });
 
 });
