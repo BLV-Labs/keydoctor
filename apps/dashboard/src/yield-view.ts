@@ -50,8 +50,12 @@ export function yieldStatePill(state: YieldState): Html {
 
 /** The DAO form. */
 export function renderYieldStart(dao: string, error: string | null): Html {
-  return html`${head(LEAD)}
-    <form id="yield-dao-form" class="card pad stack-sm budget-narrow" novalidate>
+  return html`${head(LEAD)}${renderYieldOpen(dao, error)}`;
+}
+
+/** The form that opens a treasury's Yield page by name. */
+export function renderYieldOpen(dao: string, error: string | null): Html {
+  return html`<form id="yield-dao-form" class="card pad stack-sm budget-narrow" novalidate>
       <label for="yield-dao" class="label">The treasury's account name</label>
       <div class="input-row">
         <input id="yield-dao" name="dao" type="text" class="input mono" value="${dao}" placeholder="${EXAMPLE_DAO}"

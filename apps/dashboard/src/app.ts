@@ -91,10 +91,10 @@ import { renderGuardCreate, renderGuardDao, renderGuardLoading, renderGuardPrevi
 import { avatar } from "./ui.ts";
 import { readAgentBudgets, readMyAgents, readWalletDaos, type BudgetCard, type MyAgents } from "./agents-read.ts";
 import { hydrateDaoPicker, openedDaos, rememberOpenedDao, unhydrateDaoPicker } from "./dao-picker.ts";
-import { renderMyAgents, renderMyAgentsError, renderMyAgentsLoading, renderMyAgentsSignedOut } from "./agents-view.ts";
+import { renderAgentList, renderAgentListError, renderAgentListLoading, renderAgentListSignedOut, renderMyAgents, renderMyAgentsError, renderMyAgentsLoading, renderMyAgentsSignedOut, type AgentListKind } from "./agents-view.ts";
 import { allowedYieldKind, registerProposal, supplyProposal, tokenAmount, tokenRaw, withdrawProposal as yieldWithdrawProposal, YIELD_ALLOWLIST, YieldProposalError } from "./yield-proposals.ts";
 import { councilAccounts, readYield, rememberYieldDao, seenYieldDaos, type YieldLive } from "./yield-read.ts";
-import { renderYield, renderYieldLimits, type LimitErrors, renderYieldLoading, renderYieldPanel, renderYieldStart, yieldPreview, type YieldPanel } from "./yield-view.ts";
+import { renderYield, renderYieldLimits, type LimitErrors, renderYieldLoading, renderYieldOpen, renderYieldPanel, renderYieldStart, yieldPreview, type YieldPanel } from "./yield-view.ts";
 import { suggest, suggestedAmount } from "./yield-agent.ts";
 import { renderYieldCreate, type CreateView, type FundRow, type FundsView } from "./yield-create.ts";
 import { CHECK_EVERY, loadSettings, saveSettings, validateSettings, type CheckEvery, type LimitInput, type YieldSettings } from "./yield-settings.ts";
@@ -342,11 +342,12 @@ function hydrateDaoPickers(): void {
  *  Also shows the wallet name and Disconnect in place of Connect Wallet while a wallet is connected. */
 function syncWallet(): void {
   restoreConnected(currentNetwork());
-  // My Agents lists what the connected accounts sit on: a new wallet means a new list.
+  // My Agents and the Budget / Yield lists show what the connected accounts sit on: a new wallet means a new list.
   const route = parseRoute(location.search);
   const shown = root.querySelector<HTMLElement>("[data-agents-for]")?.dataset.agentsFor ?? null;
   const now = (connected?.accounts ?? []).join(",");
-  if (route.target === null && route.page === "my-agents" && shown !== null && shown !== now) void render(false);
+  const listed = route.page === "my-agents" || route.page === "budget" || route.page === "yield";
+  if (route.target === null && listed && shown !== null && shown !== now) void render(false);
   hydrateDaoPickers();
   if (route.target === null && route.page === "yield" && route.yieldNew && yieldWizard !== null && yieldWizard.fundsFor !== now) void loadYieldFunds();
   const role = viewerRoleNow();
@@ -393,7 +394,7 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
     return;
   }
   if (route.target === null && route.page === "budget") {
-    await renderBudgetPage(route.dao, focusMain, seq, route.link, route.help);
+    await renderBudgetPage(route.dao, focusMain, seq, route.link, route.help, route.budgetNew);
     return;
   }
   if (route.target === null && route.page === "yield" && route.yieldNew) {
@@ -442,8 +443,11 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
 
 const budgetNetwork = (): Network => suffixNetwork(BUDGET_READ_FACTORY) ?? "testnet";
 
-/** The Agent Budget page: the DAO form, or the DAO's Budget read live from the chain. Nothing here is sample data. */
-async function renderBudgetPage(dao: string | null, focusMain: boolean, seq: number, link: RouteLink | null, help: boolean): Promise<void> {
+/**
+ * The Agent Budget page: the wallet's budgets, the New budget wizard (`budgetNew`) with the open-by-name form,
+ * or one DAO's Budget read live from the chain. Nothing here is sample data.
+ */
+async function renderBudgetPage(dao: string | null, focusMain: boolean, seq: number, link: RouteLink | null, help: boolean, budgetNew: boolean): Promise<void> {
   const network = budgetNetwork();
   const title = "Budget · Key Doctor";
   budgetState = null;
@@ -468,6 +472,11 @@ async function renderBudgetPage(dao: string | null, focusMain: boolean, seq: num
     void loadBudgetCodeStorage(network);
     paint(error === null ? html`${create}${open}` : html`${open}${create}`, title, focusMain, network, "budget");
   };
+  if (dao === null && !budgetNew && link === null && BUDGET_READ_FACTORY !== "") {
+    const open = renderBudgetStart("", null, `Budgets are read from ${BUDGET_READ_FACTORY} on ${network}.`);
+    await renderAgentListPage("budget", open, focusMain, seq);
+    return;
+  }
   if (dao === null || BUDGET_READ_FACTORY === "") {
     start(dao ?? "", null);
     return;
@@ -826,7 +835,7 @@ async function renderYieldPage(dao: string | null, focusMain: boolean, seq: numb
   const title = "Yield agent · Key Doctor";
   yieldState = null;
   if (dao === null) {
-    paint(renderYieldStart("", null), title, focusMain, "testnet", "yield");
+    await renderAgentListPage("yield", renderYieldOpen("", null), focusMain, seq);
     return;
   }
   const network = yieldNetwork(dao);
@@ -1275,11 +1284,44 @@ function advanceYieldWizard(w: YieldWizard): void {
 }
 
 /** The last Your agents read: Review and Reject on that page act on the budget named by the button. */
-let agentsView: { data: MyAgents; accounts: string[]; cards: BudgetCard[] } | null = null;
+/** What a Your agents page (`list` null) or a Budget / Yield list shows; `open` is the list page's open-by-name form. */
+interface AgentsView {
+  data: MyAgents;
+  accounts: string[];
+  cards: BudgetCard[];
+  list: AgentListKind | null;
+  open: Html;
+}
+let agentsView: AgentsView | null = null;
 
-function paintMyAgents(view: { data: MyAgents; accounts: string[]; cards: BudgetCard[] }, focusMain: boolean): void {
+const LIST_TITLE: Record<AgentListKind, string> = { budget: "Budget · Key Doctor", yield: "Yield agent · Key Doctor" };
+
+function paintMyAgents(view: AgentsView, focusMain: boolean): void {
   agentsView = view;
-  paint(renderMyAgents(view.data, view.accounts, view.cards), "Your agents · Key Doctor", focusMain, budgetNetwork(), "my-agents");
+  if (view.list === null) paint(renderMyAgents(view.data, view.accounts, view.cards), "Your agents · Key Doctor", focusMain, budgetNetwork(), "my-agents");
+  else paint(renderAgentList(view.list, view.data, view.accounts, view.cards, view.open), LIST_TITLE[view.list], focusMain, budgetNetwork(), view.list);
+}
+
+/** The Agent Budget or Yield nav page: every agent of that kind the connected wallet sits on, plus Create. */
+async function renderAgentListPage(kind: AgentListKind, open: Html, focusMain: boolean, seq: number): Promise<void> {
+  const network = budgetNetwork();
+  const accounts = connected?.accounts ?? [];
+  agentsView = null;
+  if (accounts.length === 0) {
+    paint(renderAgentListSignedOut(kind, open), LIST_TITLE[kind], focusMain, network, kind);
+    return;
+  }
+  paint(renderAgentListLoading(kind, accounts), LIST_TITLE[kind], focusMain, network, kind);
+  try {
+    const data = await readMyAgents(accounts, BUDGET_READ_FACTORY, network);
+    const cards = kind === "budget" ? await readAgentBudgets(data.budgetDaos, BUDGET_READ_FACTORY, network) : [];
+    if (seq !== scanSeq) return;
+    paintMyAgents({ data, accounts: [...accounts], cards, list: kind, open }, false);
+  } catch (e) {
+    if (seq !== scanSeq) return;
+    console.error("agent list read failed", { kind, error: e });
+    paint(renderAgentListError(kind, "We could not read your agents right now. Nothing was changed.", accounts, open), LIST_TITLE[kind], false, network, kind);
+  }
 }
 
 /** Your agents: needs a connected wallet, then reads every budget of its accounts, all at once. */
@@ -1298,7 +1340,7 @@ async function renderMyAgentsPage(focusMain: boolean, seq: number): Promise<void
     const data = await readMyAgents(accounts, BUDGET_READ_FACTORY, network);
     const cards = await readAgentBudgets(data.budgetDaos, BUDGET_READ_FACTORY, network);
     if (seq !== scanSeq) return;
-    paintMyAgents({ data, accounts: [...accounts], cards }, false);
+    paintMyAgents({ data, accounts: [...accounts], cards, list: null, open: html`` }, false);
   } catch (e) {
     if (seq !== scanSeq) return;
     console.error("my agents read failed", { error: e });
@@ -3037,7 +3079,7 @@ root.addEventListener("click", (event) => {
   if (t instanceof HTMLDialogElement && t.open) closeDialog(t);
   // The account menu is a <details>: it closes on any click outside it.
   const menu = root.querySelector<HTMLDetailsElement>(".wallet-menu[open]");
-  if (menu !== null && !(t instanceof Node && menu.contains(t))) menu.open = false;
+  if (menu !== null && (!(t instanceof Node && menu.contains(t)) || (t instanceof Element && t.closest("a") !== null))) menu.open = false;
 });
 root.addEventListener(
   "close",
