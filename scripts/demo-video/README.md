@@ -39,11 +39,18 @@ screen, the line to say (or show as a caption) and how to tell it worked. Testne
    - In Telegram, send `/watch <budget dao>` to `@KeyDoctorOnCallBot`, so the waiting request also alerts.
 2. **On Call council (clips 2 and 3).** Three accounts you hold keys for whose full-access keys are older than
    48 hours (a fresh key makes every vote alert, and spoils the before/after). A needs about 7 NEAR if the DAO
-   does not exist yet, B about 2 NEAR.
+   does not exist yet, B about 2 NEAR. Owner decision 2026-11-11: use the neutral `kdoncall-*` set, so no
+   personal account name shows on screen. A = `kdoncall-b.testnet` (9.99 NEAR), B = `kdoncall-c.testnet`
+   (10 NEAR), C = `kdoncall-a.testnet` (3.98 NEAR, never signs); one full-access key each, about 12 days old
+   (read 2026-11-11). Short of NEAR: top up from `duonghb3.testnet`.
 
    ```bash
-   export KD_DEMO_PREFIX=kdv$(date +%s) KD_DEMO_A=<a> KD_DEMO_B=<b> KD_DEMO_C=<c> KD_DEMO_SIGN=sign-with-legacy-keychain
+   export KD_DEMO_PREFIX=kdv$(date +%s) KD_DEMO_A=kdoncall-b.testnet KD_DEMO_B=kdoncall-c.testnet KD_DEMO_C=kdoncall-a.testnet KD_DEMO_SIGN=sign-with-legacy-keychain
    ```
+
+   The three also sit on the council of `kdoncall.sputnik-v2.testnet`, the README and dashboard example. While the
+   attacker key from `compromise` is on `kdoncall-b`, that example shows a high flag and preflight on `kdoncall-b`
+   says `block`, so delete the key right after recording (see "After recording").
 
    ```bash
    scripts/demo-testnet/demo.sh dao
@@ -69,7 +76,9 @@ screen, the line to say (or show as a caption) and how to tell it worked. Testne
 - **Never on screen:** `RUN_CHECK_TOKEN`, any `export` line, the key file or its contents, `~/.near-credentials`,
   seed phrases, wallet pop-ups that show a balance you do not want public, your email. Run the `export` lines in
   a terminal you do not record.
-- Telegram: Desktop app, the demo group open, nothing else visible.
+- Telegram: Desktop app set to English (command replies follow the app language), the demo group open, nothing
+  else visible. Cron alerts carry Vietnamese then English (`ALERT_LANG = "both"`, kept): hold the frame on the
+  English half.
 
 ### Hook (0:00–0:08)
 
@@ -169,7 +178,7 @@ Screen: the repo page, then the dashboard.
 
 ## After recording
 
-- Delete A's attacker key (the one `compromise` added): `near account delete-keys <a> public-keys <key> network-config testnet sign-with-keychain send`.
+- Delete A's attacker key (the one `compromise` added): `near account delete-keys kdoncall-b.testnet public-keys <key> network-config testnet sign-with-legacy-keychain send`.
 - Delete the old demo key `ed25519:5ECiGvMnr7EqyA64Fo4cydTwK2aPYpXnNeMRQUAL1wgC` on `bot2.duonghb3.testnet` if it is
   still there.
 - Leave the hosted demo up until at least 2026-11-18 (ideally 2026-11-25).
