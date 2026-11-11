@@ -53,6 +53,6 @@ export function renderKeyDetail(key: KeyInfo, member: Member, report: KdReport, 
       ${row("Nonce", html`<span class="mono">${key.nonce}</span>`)}
       ${row("Why it matters", reasons.length === 0 ? "No issue found" : reasons.join(" · "))}
     </dl>
-    ${role === "owner" ? "" : html`<p class="small muted">To revoke this key, connect your wallet as <span class="mono">${member.account_id}</span>.</p>`}
+    ${role === "owner" ? "" : html`<p class="dialog-note small muted">To revoke this key, connect your wallet as <span class="mono">${member.account_id}</span>.</p>`}
   </div>`;
 }
