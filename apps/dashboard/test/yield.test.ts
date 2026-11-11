@@ -4,7 +4,7 @@ import type { KdYieldReport, YieldOpportunity } from "key-doctor";
 import type { RawPolicy } from "../src/guard-proposals.ts";
 import { allowedYieldKind, checkYieldCall, registerProposal, supplyProposal, tokenAmount, tokenRaw, withdrawAllProposal, YIELD_ALLOWLIST, YIELD_PREFIX, YieldProposalError } from "../src/yield-proposals.ts";
 import { councilAccounts, isYieldProposal, parsePositions, type YieldLive } from "../src/yield-read.ts";
-import { renderYield, yieldActions, yieldState } from "../src/yield-view.ts";
+import { renderYield, tileAmount, yieldActions, yieldState } from "../src/yield-view.ts";
 
 const LEND = "contract.1638481328.burrow.testnet";
 const USDC = "usdc.fakes.testnet";
@@ -71,6 +71,17 @@ describe("token amounts", () => {
   });
   it("rejects too many decimals, signs and junk", () => {
     for (const bad of ["1.0000001", "-1", "1e6", "", "1,5", ".5"]) assert.equal(tokenRaw(bad, 6), null, bad);
+  });
+  it("tile amounts round down and group digits so a long balance fits a phone tile", () => {
+    // 2,000,046.513634 USDC: the exact form is 14 digits and overflowed a 375px tile.
+    assert.equal(tileAmount("2000046513634", 6), "2,000,046.51");
+    // Round down, never up: a tile must not show more than the treasury holds.
+    assert.equal(tileAmount("999999", 6), "0.99");
+    assert.equal(tileAmount("12500000", 6), "12.50");
+    assert.equal(tileAmount("0", 6), "0.00");
+    // Dust is not shown as zero, which would read as an empty balance.
+    assert.equal(tileAmount("9999", 6), "less than 0.01");
+    assert.equal(tileAmount("x", 6), "unknown");
   });
 });
 

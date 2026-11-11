@@ -71,7 +71,20 @@ export function renderYieldLoading(dao: string): Html {
 const tile = (label: string, value: Html | string, note: string) =>
   html`<div class="card tile"><span class="tile-label">${label}</span><span class="tile-value">${value}</span><span class="tile-note">${note}</span></div>`;
 const amountValue = (raw: string | null | undefined, decimals: number, symbol: string) =>
-  raw === null || raw === undefined ? "unknown" : html`${tokenAmount(raw, decimals)} <span class="tile-unit">${symbol}</span>`;
+  raw === null || raw === undefined ? "unknown" : html`${tileAmount(raw, decimals)} <span class="tile-unit">${symbol}</span>`;
+
+/**
+ * A tile amount: two decimals rounded down, so a tile never shows more than is there, with thousands
+ * separators so a long balance fits a phone-width tile and reads at a glance. Inputs and proposals keep
+ * the exact `tokenAmount`.
+ */
+export function tileAmount(raw: string, decimals: number): string {
+  if (!/^\d+$/.test(raw)) return "unknown";
+  const v = BigInt(raw);
+  const cents = decimals >= 2 ? v / 10n ** BigInt(decimals - 2) : v * 10n ** BigInt(2 - decimals);
+  if (cents === 0n && v > 0n) return "less than 0.01";
+  return `${(cents / 100n).toLocaleString("en-US")}.${(cents % 100n).toString().padStart(2, "0")}`;
+}
 
 /** The allowlisted token this page acts on (YD0 proved one), with its holding and position. */
 function focus(live: YieldLive, list: YieldAllowlist | null) {
