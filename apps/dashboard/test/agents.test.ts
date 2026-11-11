@@ -241,6 +241,17 @@ describe("Agent Budget and Yield lists", () => {
     }
   });
 
+  // WHY: one action, one button. A second Create in the empty card read as two different actions.
+  it("shows exactly one Create button in every list state", () => {
+    const creates = (out: string) => out.match(/Create<\/a>/g)?.length ?? 0;
+    for (const kind of ["budget", "yield"] as const) {
+      assert.equal(creates(list(kind, data([]), [])), 1, `${kind} empty`);
+      assert.equal(creates(renderAgentListSignedOut(kind, OPEN).value), 1, `${kind} signed out`);
+    }
+    assert.equal(creates(list("budget", both, [card(BUDGET_DAO, budget(BUDGET_DAO, []))])), 1, "budget filled");
+    assert.equal(creates(list("yield", both, [])), 1, "yield filled");
+  });
+
   it("asks a signed-out visitor to connect, and marks the list as read for no accounts", () => {
     const out = renderAgentListSignedOut("budget", OPEN).value;
     assert.match(out, /data-action="open-wallet"/);
