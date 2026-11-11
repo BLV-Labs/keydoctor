@@ -14,6 +14,7 @@ import { guardMcpCommand } from "./guard-view.ts";
 import { copyRow } from "./pages.ts";
 import { agentGuideHref, budgetHref, guardHref, pageHref, routeHref } from "./route.ts";
 import { avatar } from "./ui.ts";
+import { pillarTag } from "./pillars.ts";
 
 /** Shown in the form's placeholder text only; creation needs this factory to be deployed and set at build time. */
 export const BUDGET_FACTORY_NAME = "keydoctor-guards-v2.testnet";
@@ -78,7 +79,7 @@ export function nearShort(yocto: string | null | undefined): string {
 const LEAD = "A budget your AI agent can spend, within rules you set. Larger payments wait for your approval. Top up or withdraw anytime.";
 
 function head(lead: string): Html {
-  return html`<section class="stack-xs"><h1 class="h1">Agent Budget</h1><p class="muted budget-lead">${lead}</p></section>`;
+  return html`<section class="stack-xs">${pillarTag("budget")}<h1 class="h1">Agent Budget</h1><p class="muted budget-lead">${lead}</p></section>`;
 }
 
 /** The DAO form. */
@@ -1250,14 +1251,14 @@ export function renderLeaveKey(agent: string): Html {
 /** The page without a Budget: what it is until a wallet is connected, then the form. `syncWallet` picks which half shows. */
 export function renderBudgetCreate(form: Html): Html {
   return html`<div class="budget-intro" data-wallet-off>
-      <section class="budget-hero"><h1 class="display">Agent Budget</h1><p class="budget-hero-lead">${LEAD}</p>
+      <section class="budget-hero">${pillarTag("budget")}<h1 class="display">Agent Budget</h1><p class="budget-hero-lead">${LEAD}</p>
         <button type="button" class="btn btn-primary" data-action="open-wallet">${icon.wallet()}Connect wallet</button></section>
       <ol class="plain how-steps">${STEPS.map(([title, note], i) => html`<li><span class="step-dot">${i + 1}</span><div class="stack-xs"><strong>${title}</strong><p class="small muted">${note}</p></div></li>`)}</ol>
       <section class="stack-sm" aria-labelledby="b-strategies"><h2 id="b-strategies" class="h2">Strategies</h2>
         <div class="strategy-grid">${STRATEGIES.map(([name, note]) => html`<article class="card strategy-card"><div class="strategy-head"><h3 class="strategy-h">${name}</h3><span class="pill pill-note">${name === PAYOUTS || name === DCA ? "After setup" : "Coming soon"}</span></div><p class="small muted">${note}</p></article>`)}</div></section>
     </div>
     <div class="stack" data-wallet-on hidden>
-      <section class="stack-xs"><h1 class="h1">New agent budget</h1><p class="muted budget-lead">${WIZARD_LEAD}</p></section>
+      <section class="stack-xs">${pillarTag("budget")}<h1 class="h1">New agent budget</h1><p class="muted budget-lead">${WIZARD_LEAD}</p></section>
       ${form}
     </div>`;
 }

@@ -35,6 +35,7 @@ export const icon = {
   play: () => svg(16, '<path d="M7 4l13 8-13 8V4z"></path>'),
   plus: () => svg(16, '<path d="M12 5v14M5 12h14"></path>'),
   chevronRight: () => svg(16, '<path d="M9 6l6 6-6 6"></path>'),
+  trend: () => svg(28, '<path d="M3 17l6-6 4 4 8-8"></path><path d="M14 7h7v7"></path>', 1.8),
 };
 
 const STATUS_ICON: Record<Status, string> = {

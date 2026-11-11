@@ -826,23 +826,23 @@ async function renderYieldPage(dao: string | null, focusMain: boolean, seq: numb
   const title = "Yield agent · Key Doctor";
   yieldState = null;
   if (dao === null) {
-    paint(renderYieldStart("", null), title, focusMain, "testnet", "my-agents");
+    paint(renderYieldStart("", null), title, focusMain, "testnet", "yield");
     return;
   }
   const network = yieldNetwork(dao);
-  paint(renderYieldLoading(dao), title, focusMain, network, "my-agents");
+  paint(renderYieldLoading(dao), title, focusMain, network, "yield");
   try {
     const live = await readYield(dao, network);
     if (seq !== scanSeq) return;
     yieldState = live;
     rememberYieldDao(dao);
     rememberOpened(dao);
-    paint(renderYield(live, network, loadSettings(dao)), `${dao} · Yield agent · Key Doctor`, false, network, "my-agents");
+    paint(renderYield(live, network, loadSettings(dao)), `${dao} · Yield agent · Key Doctor`, false, network, "yield");
   } catch (e) {
     if (seq !== scanSeq) return;
     if (!isKdError(e)) console.error("yield read failed", { dao, error: e });
     const why = isKdError(e) ? `${dao}: ${e.kd.message.en}` : `${dao} could not be read right now. Try again.`;
-    paint(renderYieldStart(dao, why), title, false, network, "my-agents");
+    paint(renderYieldStart(dao, why), title, false, network, "yield");
   }
 }
 
@@ -1012,7 +1012,7 @@ function repaintYield(): void {
   const state = yieldState;
   if (state === null) return;
   const network = yieldNetwork(state.report.dao);
-  paint(renderYield(state, network, loadSettings(state.report.dao)), `${state.report.dao} · Yield agent · Key Doctor`, false, network, "my-agents");
+  paint(renderYield(state, network, loadSettings(state.report.dao)), `${state.report.dao} · Yield agent · Key Doctor`, false, network, "yield");
 }
 
 /** Pause and Resume change what the page suggests in this browser. They never touch the chain. */
@@ -1103,7 +1103,7 @@ function paintYieldWizard(focusHeading: boolean): void {
   const view = wizardView(w);
   const current = document.getElementById("yield-create-form");
   if (current === null) {
-    paint(renderYieldCreate(view), "New yield agent · Key Doctor", false, view.network, "my-agents");
+    paint(renderYieldCreate(view), "New yield agent · Key Doctor", false, view.network, "yield");
   } else {
     // The breadcrumb and title stay; only the form is swapped.
     current.outerHTML = renderYieldCreate(view).value.replace(/^[\s\S]*?(?=<form id="yield-create-form")/, "");
@@ -1119,7 +1119,7 @@ function renderYieldCreatePage(focusMain: boolean): void {
     step: 1, dao: "", values: { maxPut: "", keepReady: "0", minApr: "0" }, every: "1h", notice: null, errors: {},
     funds: { kind: "signed-out" }, fundsFor: "", lives: new Map(),
   };
-  paint(renderYieldCreate(wizardView(yieldWizard)), "New yield agent · Key Doctor", focusMain, network, "my-agents");
+  paint(renderYieldCreate(wizardView(yieldWizard)), "New yield agent · Key Doctor", focusMain, network, "yield");
 }
 
 /** The treasuries this wallet signs for, each with its USDC read. A failed read marks that row, not the page. */

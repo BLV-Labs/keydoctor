@@ -9,6 +9,7 @@ import { pctText, reviewSentence } from "./yield-agent.ts";
 import { tokenAmount, tokenRaw } from "./yield-proposals.ts";
 import { CHECK_EVERY, CHECK_EVERY_TEXT, type CheckEvery, type LimitInput } from "./yield-settings.ts";
 import { limitFields, YIELD_TESTNET_ONLY, aprText, type LimitErrors } from "./yield-view.ts";
+import { pillarTag } from "./pillars.ts";
 
 export const YIELD_STEPS = ["Funds", "Where", "Limits", "How it acts", "Review"] as const;
 
@@ -118,7 +119,7 @@ function review(v: CreateView): Html {
 /** The wizard. Mainnet shows one line instead of the form. */
 export function renderYieldCreate(v: CreateView): Html {
   const crumbs = html`<nav class="breadcrumb" aria-label="Breadcrumb"><a href="${pageHref("my-agents")}" data-nav>Your agents</a><span aria-hidden="true">/</span><span>New yield agent</span></nav>
-    <section class="stack-xs"><h1 class="h1">New yield agent</h1><p class="muted budget-lead">Watches idle stablecoins and suggests where they could earn. It never moves funds.</p></section>`;
+    <section class="stack-xs">${pillarTag("yield")}<h1 class="h1">New yield agent</h1><p class="muted budget-lead">Watches idle stablecoins and suggests where they could earn. It never moves funds.</p></section>`;
   if (v.network === "mainnet") return html`${crumbs}<p class="banner banner-cleanup">${icon.alertSmall()}<span>${YIELD_TESTNET_ONLY}.</span></p>`;
   const step = Math.min(5, Math.max(1, Math.trunc(v.step) || 1));
   const body = [funds, where, limits, acts, review][step - 1]!(v);

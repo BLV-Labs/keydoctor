@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { describe, it } from "node:test";
 import type { KdReport, ListProposalsResult, Member, ProposalInfo } from "key-doctor";
@@ -9,7 +9,9 @@ import { renderAgents, renderAlertsDrawer, renderError, renderHome, renderLayout
 import { PROPOSALS_ID, renderProposals } from "../src/proposals-view.ts";
 import { renderKeyDetail } from "../src/key-detail.ts";
 import { BUILT, FUTURE, NEXT, REVENUE, renderRoadmap } from "../src/roadmap.ts";
-import { renderAccount, renderCouncil } from "../src/report.ts";
+import { councilGlance, renderAccount, renderCouncil } from "../src/report.ts";
+import { widthClass } from "../src/bar-width.ts";
+import { transferVotes } from "../src/key-verdict.ts";
 import { agentGuideHref, parseRoute, resolveInput, routeHref, settledHref } from "../src/route.ts";
 import { STATUS_LABEL, groupFlags, keyMix, mainReason, recentFullAccessKeys, sortMembers } from "../src/view.ts";
 import { viewButton } from "../src/key-detail.ts";
@@ -344,15 +346,17 @@ describe("proposal list (C7)", () => {
 describe("nav and the alerts / MCP pages", () => {
   const nav = (page: "check" | "budget" | "my-agents" | "yield" | "mcp") => renderLayout(html`<p>x</p>`, "testnet", page).value.match(/<nav[\s\S]*?<\/nav>/)![0];
 
-  it("has Agents, Keys and an Alerts button; marks one item, so every budget and yield page stays under Agents", () => {
-    for (const [page, label] of [["check", "Keys"], ["my-agents", "Agents"], ["budget", "Agents"], ["yield", "Agents"], ["mcp", "Agents"]] as const) {
+  it("has one link per Sputnik DAO pillar and an Alerts button; marks one item, so every budget page stays under Agent Budget", () => {
+    for (const [page, label] of [["check", "Scan DAO"], ["my-agents", "Agent Budget"], ["budget", "Agent Budget"], ["yield", "Yield"]] as const) {
       const n = nav(page);
-      assert.equal((n.match(/<a /g) ?? []).length, 2);
+      assert.deepEqual([...n.matchAll(/<a [^>]*class="nav-(\w+)"/g)].map((m) => m[1]), ["scan", "budget", "yield"]);
       assert.equal((n.match(/aria-current="page"/g) ?? []).length, 1);
-      assert.match(n, new RegExp(`aria-current="page">${label}<`));
+      assert.match(n, new RegExp(`aria-current="page"><span class="pillar-dot" aria-hidden="true"></span>${label}<`));
       assert.match(n, /<button type="button" class="nav-btn" data-action="alerts-open">Alerts<\/button>/);
       assert.ok(!n.includes("t.me"));
     }
+    // The MCP page serves all three pillars, so no nav item claims it.
+    assert.doesNotMatch(nav("mcp"), /aria-current/);
   });
 
   it("shows the network in the header, so a mainnet page never passes for testnet", () => {
@@ -477,6 +481,23 @@ describe("nav and the alerts / MCP pages", () => {
     assert.equal(out.split(" checked>").length - 1, 1);
   });
 
+  it("draws each lane as a road with numbered pins, text alternating above and below", () => {
+    // WHY: the winding-road layout only lines up when the grid has one column per point; a lane with no matching
+    // .rm-n-N rule would fall back to 4 columns and wrap the road.
+    const out = renderRoadmap().value;
+    const css = readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
+    const lanes = [...out.matchAll(/<ol class="rm-line rm-n-(\d+)"[\s\S]*?<\/ol>/g)];
+    assert.deepEqual(lanes.map((l) => Number(l[1])), [BUILT.length, NEXT.length, FUTURE.length + 1]);
+    for (const [lane, n] of lanes) {
+      assert.ok(css.includes(`.rm-n-${n} { grid-template-columns: repeat(${n}, minmax(0, 1fr)); }`), `CSS for rm-n-${n}`);
+      const pins = [...lane.matchAll(/class="rm-pin" aria-hidden="true"><span>(\d+)</g)].map((m) => m[1]);
+      assert.deepEqual(pins, Array.from({ length: Number(n) }, (_, i) => String(i + 1).padStart(2, "0")));
+      const sides = [...lane.matchAll(/class="rm-point (rm-up|rm-down)"/g)].map((m) => m[1]);
+      assert.deepEqual(sides, sides.map((_, i) => (i % 2 === 0 ? "rm-up" : "rm-down")));
+      assert.equal((lane.match(/<svg class="rm-road"/g) ?? []).length, Number(n), "one road segment per point");
+    }
+  });
+
 });
 
 describe("labels and key table wording", () => {
@@ -489,5 +510,51 @@ describe("labels and key table wording", () => {
 
   it("home page says checking needs no sign-in and a wallet is only for removing your own keys", () => {
     assert.match(text(renderHome("", null)), /No sign-in needed to check\. Connecting a wallet is only for removing your own keys\./);
+  });
+});
+
+describe("charts", () => {
+  it("never uses a style attribute: the CSP has no 'unsafe-inline' for styles, so the browser would drop it", () => {
+    // WHY: public/_headers sets style-src 'self'. A bar sized by style="" renders empty on the live site, while a
+    // local preview without the header looks fine.
+    const headers = readFileSync(new URL("../public/_headers", import.meta.url), "utf8");
+    assert.match(headers, /style-src 'self'/);
+    assert.doesNotMatch(headers, /style-src[^;]*unsafe-inline/);
+    const dir = new URL("../src/", import.meta.url);
+    for (const f of readdirSync(dir).filter((x) => x.endsWith(".ts"))) {
+      assert.doesNotMatch(readFileSync(new URL(f, dir), "utf8"), /\sstyle="/, f);
+    }
+  });
+
+  it("sizes bars by class, never hiding a non-zero share or filling a partial one", () => {
+    // WHY: 1 member in 400 must still show on the bar, and 399 of 400 must not look like all of them.
+    assert.equal(widthClass(0, 10), "w-0");
+    assert.equal(widthClass(3, 0), "w-0");
+    assert.equal(widthClass(1, 400), "w-1");
+    assert.equal(widthClass(399, 400), "w-99");
+    assert.equal(widthClass(400, 400), "w-100");
+    assert.equal(widthClass(1000, 2077), "w-48");
+    const css = readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
+    for (let i = 0; i <= 100; i++) assert.ok(css.includes(`.w-${i} { width: ${i}%; }`), `.w-${i}`);
+  });
+
+  it("council at a glance counts every member once and says how many votes move money", () => {
+    // WHY: the chart is a summary of the member list below it; a count that drifts from the list would mislead a council.
+    const r = dao();
+    const out = councilGlance(r).value;
+    const counts = [...out.matchAll(/<span class="legend-n">(\d+)<\/span>/g)].map((m) => Number(m[1]));
+    const states = (out.match(/<figure[\s\S]*?<\/figure>/)![0].match(/class="legend-n"/g) ?? []).length;
+    assert.equal(counts.slice(0, states).reduce((a, b) => a + b, 0), r.members.length);
+    // The state bar fills the row: every segment but the last has a width class, the last takes the rest.
+    const segs = [...out.matchAll(/class="bar-seg seg-(high|cleanup|ok|note) ([\w-]+)"/g)].map((m) => m[2]);
+    assert.equal(segs.length, states);
+    assert.equal(segs.at(-1), "bar-seg-rest");
+    const votes = transferVotes(r);
+    assert.ok(votes !== null, "the demo DAO has one transfer rule");
+    assert.match(text(councilGlance(r)), new RegExp(`${votes} of ${r.members.length} members must approve a payment`));
+    // Rules that are not one simple vote get a pointer, not a made-up number.
+    const odd = { ...r, dao: { ...r.dao!, transfer_vote_policy: [] } } as KdReport;
+    assert.match(text(councilGlance(odd)), /not one simple vote/);
+    assert.doesNotMatch(councilGlance(odd).value, /meter-votes/);
   });
 });

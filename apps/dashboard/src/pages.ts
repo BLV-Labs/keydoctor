@@ -6,19 +6,26 @@ import { breadcrumb, walletControls } from "./report.ts";
 import { BOT_URL, BOT_USERNAME, homeHref, pageHref, routeHref, type Page } from "./route.ts";
 import { alertLines, watchCommand } from "./watch.ts";
 import { NETWORK_STATS, type HomeStats } from "./network-stats.ts";
+import { pagePillar, type Pillar } from "./pillars.ts";
+import { widthClass } from "./bar-width.ts";
 
 export const EXAMPLE_DAO = "kdoncall.sputnik-v2.testnet";
 export const EXAMPLE_ACCOUNT = "kdoncall-p.testnet";
 
-/** Each nav item and the pages it stays current on (Keyfence handoff §1.3). Alerts is a button, never current. */
-const NAV: ReadonlyArray<readonly [Page, string, ReadonlyArray<Page>]> = [
-  ["my-agents", "Agents", ["my-agents", "budget", "yield", "guard", "mcp"]],
-  ["check", "Keys", ["check"]],
+/**
+ * One nav item per Sputnik DAO pillar and the pages it stays current on. Your agents lists Budget and Yield agents
+ * together, so it stays under Agent Budget, where an owner starts. Alerts is a button, never current.
+ */
+const NAV: ReadonlyArray<readonly [Page, Pillar, string, ReadonlyArray<Page>]> = [
+  ["check", "scan", "Scan DAO", ["check"]],
+  ["budget", "budget", "Agent Budget", ["budget", "my-agents", "guard"]],
+  ["yield", "yield", "Yield", ["yield"]],
 ];
 
 export function renderLayout(content: Html, network: Network = "testnet", page: Page = "check"): Html {
-  const link = ([p, label, current]: readonly [Page, string, ReadonlyArray<Page>]) =>
-    html`<a href="${pageHref(p, network)}" data-nav${current.includes(page) ? html` aria-current="page"` : ""}>${label}</a>`;
+  const link = ([p, pillar, label, current]: readonly [Page, Pillar, string, ReadonlyArray<Page>]) =>
+    html`<a href="${pageHref(p, network)}" data-nav class="nav-${pillar}"${current.includes(page) ? html` aria-current="page"` : ""}><span class="pillar-dot" aria-hidden="true"></span>${label}</a>`;
+  const pillar = pagePillar(page);
   return html`<a class="skip" href="#main">Skip to content</a>
     <header class="site-header">
       <div class="container header-inner">
@@ -36,7 +43,7 @@ export function renderLayout(content: Html, network: Network = "testnet", page: 
         </div>
       </div>
     </header>
-    <main id="main" tabindex="-1" class="container page">${content}</main>
+    <main id="main" tabindex="-1" class="container page"${pillar === null ? "" : html` data-pillar="${pillar}"`}>${content}</main>
     <footer class="site-footer">
       <div class="container footer-inner">
         <span>${network === "testnet" ? "Testnet. Contracts are unaudited." : "Mainnet. Your wallet signs, never Key Doctor."}</span>
@@ -121,19 +128,20 @@ function jumpToCheck(cta: Html | string, placeholder = "", fillWallet = false): 
   return html`<a class="btn btn-secondary" href="#check" data-action="jump-check"${placeholder ? html` data-placeholder="${placeholder}"` : ""}${fillWallet ? html` data-fill="wallet"` : ""}>${cta}</a>`;
 }
 
-function homePath(glyph: Html, title: string, lead: string, points: string[], cta: Html): Html {
-  return html`<article class="card pad stack-sm home-path">
-      <span class="home-tile" aria-hidden="true">${glyph}</span>
-      <h3 class="h3">${title}</h3><p class="small muted">${lead}</p>
+/** One pillar card: the tool's color stripe and tile, what it does in plain words, and where to start. */
+function pillarCard(pillar: Pillar, glyph: Html, name: string, title: string, lead: string, points: string[], cta: Html): Html {
+  return html`<article class="card pad stack-sm home-path pillar-card pillar-${pillar}" aria-labelledby="pillar-${pillar}">
+      <div class="pillar-card-head"><span class="home-tile pillar-tile" aria-hidden="true">${glyph}</span><p class="pillar-name">${name}</p></div>
+      <h3 id="pillar-${pillar}" class="h3">${title}</h3><p class="small muted">${lead}</p>
       <ul class="list small">${points.map((p) => html`<li>${p}</li>`)}</ul>
-      <div class="home-path-cta">${cta}</div>
+      <div class="home-path-cta actions">${cta}</div>
     </article>`;
 }
 
 /** Fixed sample text only; hidden from assistive tech because it shows no real data. */
 const HOME_PREVIEW = html`<div class="card pad stack-sm home-preview" aria-hidden="true">
       <div class="home-preview-head">${icon.key()}<strong>Research bot</strong><span class="pill pill-ok">Active</span></div>
-      <div><div class="home-preview-row"><span>Spent today</span><span>1.2 of 5 NEAR</span></div><div class="home-bar"><span style="width: 24%"></span></div></div>
+      <div><div class="home-preview-row"><span>Spent today</span><span>1.2 of 5 NEAR</span></div><div class="home-bar"><span class="w-24"></span></div></div>
       <div class="home-preview-line"><span class="tone-ok">${icon.check()}</span><span>Paid 0.4 NEAR to <span class="mono">search-api.testnet</span></span></div>
       <div class="home-preview-line"><span class="tone-cleanup">${icon.clock()}</span><span>Waiting for you: 4.5 NEAR to <span class="mono">api-vendor.testnet</span></span></div>
       <div class="home-preview-line"><span class="tone-high">${icon.close()}</span><span>You rejected 500 NEAR to <span class="mono">attacker.testnet</span></span></div>
@@ -142,58 +150,143 @@ const HOME_PREVIEW = html`<div class="card pad stack-sm home-preview" aria-hidde
 const share = (n: number, d: number) => (d === 0 ? "n/a" : `${Math.round((100 * n) / d)}%`);
 const count = (n: number) => n.toLocaleString("en-US");
 
-function statTile(value: string, label: string, detail: string): Html {
-  return html`<li class="home-stat"><span class="home-stat-value">${value}</span><span class="home-stat-label">${label}</span><span class="small muted">${detail}</span></li>`;
+/**
+ * One ratio as a meter: the number and its words first (they carry the meaning), then the bar, then the raw counts.
+ * The bar is decorative for screen readers because the text above it says the same thing.
+ */
+function meterRow(n: number, d: number, label: string, unit: string): Html {
+  const counts = `${count(n)} of ${count(d)} ${unit}`;
+  return html`<li class="meter-row">
+      <p class="meter-text"><span class="meter-value">${share(n, d)}</span> <span class="meter-label">${label}</span></p>
+      <div class="meter" aria-hidden="true" title="${counts}"><span class="${widthClass(n, d)}"></span></div>
+      <p class="small muted">${counts}</p>
+    </li>`;
 }
 
-/** Network-wide numbers from `pnpm stats` (GĐ10). Every number and its source block come from the JSON. */
+/** Every council member split by what the scan found: one whole in three parts, so one tall segmented bar. */
+function membersSplit(s: HomeStats): Html {
+  const rest = Math.max(0, s.council_members - s.members_high - s.members_unreadable);
+  const parts = [
+    { tone: "high", n: s.members_high, label: "High risk" },
+    { tone: "ok", n: rest, label: "Read, no high-risk finding" },
+    { tone: "note", n: s.members_unreadable, label: "Could not be read" },
+  ].filter((p) => p.n > 0);
+  const counts = `${count(s.members_high)} of ${count(s.council_members)} members`;
+  return html`<li class="meter-row">
+      <p class="meter-text"><span class="meter-value">${share(s.members_high, s.council_members)}</span> <span class="meter-label">of council members are at high risk</span></p>
+      <div class="seg-bar seg-bar-tall" aria-hidden="true">
+        ${parts.map((p, i) => html`<span class="bar-seg seg-${p.tone} ${i === parts.length - 1 ? "bar-seg-rest" : widthClass(p.n, s.council_members)}" title="${p.label}: ${count(p.n)}"></span>`)}
+      </div>
+      <p class="small muted">${counts}</p>
+      <ul class="plain chart-legend small" aria-label="Council members">
+        ${parts.map((p) => html`<li><span class="swatch seg-${p.tone}" aria-hidden="true"></span>${p.label} <span class="legend-n">${count(p.n)}</span></li>`)}
+      </ul>
+    </li>`;
+}
+
+/** A round axis end for counts: 35,599 → 40,000 in steps of 10,000. */
+export function axisScale(n: number): { max: number; ticks: number[] } {
+  const step = 10 ** Math.floor(Math.log10(Math.max(1, n)));
+  const max = Math.ceil(Math.max(1, n) / step) * step;
+  return { max, ticks: Array.from({ length: max / step + 1 }, (_, i) => i * step) };
+}
+
+const tick = (n: number) => (n >= 1000 ? `${n / 1000}k` : String(n));
+
+/**
+ * One key type on the shared count axis: the bar length is the number of keys, split into "never used" (highlighted)
+ * and "in use" (neutral). The shared axis shows that app keys outnumber full-access keys as well as the share.
+ */
+function keyBar(name: string, total: number, unused: number, max: number): Html {
+  return html`<li class="meter-row">
+      <p class="meter-text"><span class="meter-value">${share(unused, total)}</span> <span class="meter-label">of council members' ${name} were never used</span></p>
+      <div class="axis-track" aria-hidden="true"><div class="seg-bar ${widthClass(total, max)}">
+        <span class="bar-seg seg-unused ${widthClass(unused, total)}" title="Never used: ${count(unused)}"></span><span class="bar-seg seg-used" title="In use: ${count(total - unused)}"></span>
+      </div></div>
+      <p class="small muted">${count(unused)} of ${count(total)} ${name}</p>
+    </li>`;
+}
+
+/** Network-wide numbers from `pnpm stats` (GĐ10): totals, then two charts. Every number and its source block come from the JSON. */
 export function renderNetworkStats(s: HomeStats): Html {
   const date = s.block_timestamp.slice(0, 10);
-  return html`<section class="card pad stack" aria-labelledby="numbers">
+  const axis = axisScale(Math.max(s.full_access_keys, s.function_call_keys));
+  const kpis: ReadonlyArray<readonly [number, string]> = [
+    [s.daos_scanned, "Sputnik DAOs read"],
+    [s.council_members, "council members"],
+    [s.full_access_keys + s.function_call_keys, "keys checked"],
+    [s.council_size.median, "members in the median council"],
+  ];
+  return html`<section class="card pad stack home-numbers" aria-labelledby="numbers">
       <div class="stack-xs"><p class="eyebrow home-eyebrow">Measured on NEAR mainnet</p>
-        <h2 id="numbers" class="h2">How safe are shared treasuries on NEAR?</h2></div>
-      <ul class="plain home-stats">
-        ${statTile(share(s.council_size.one_member, s.daos_scanned), "of shared treasuries have a one-person council", `${count(s.council_size.one_member)} of ${count(s.daos_scanned)} treasuries`)}
-        ${statTile(share(s.daos_single_vote_transfer, s.daos_scanned), "of shared treasuries let one account approve a payment", `${count(s.daos_single_vote_transfer)} of ${count(s.daos_scanned)} treasuries`)}
-        ${statTile(share(s.members_high, s.council_members), "of council members are at high risk", `${count(s.members_high)} of ${count(s.council_members)} members`)}
-        ${statTile(share(s.function_call_keys_never_used, s.function_call_keys), "of council members' app keys were never used", `${count(s.function_call_keys_never_used)} of ${count(s.function_call_keys)} app keys`)}
+        <h2 id="numbers" class="h2">How safe are Sputnik DAO treasuries on NEAR?</h2></div>
+      <ul class="plain home-stats kpi-row">
+        ${kpis.map(([n, label]) => html`<li class="home-stat kpi"><span class="home-stat-value">${count(n)}</span> <span class="home-stat-label">${label}</span></li>`)}
       </ul>
-      <p class="small muted">${s.scope === "all" ? `All ${count(s.daos_scanned)} readable council treasuries on ${s.network} (${count(s.daos_active)} active in the last ${s.active_days} days)` : `${count(s.daos_scanned)} council treasuries on ${s.network} active in the last ${s.active_days} days`}, read at block ${count(s.block_height)} (${date}), ruleset ${s.ruleset_version}. ${s.daos_failed} treasuries could not be read and are left out. Rerun with <code class="mono">pnpm stats --block ${s.block_height}${s.scope === "all" ? " --all" : ""}</code>.</p>
+      <div class="chart-cols">
+        <figure class="chart stack-sm" aria-labelledby="numbers-daos">
+          <figcaption id="numbers-daos" class="chart-title">Councils</figcaption>
+          <ul class="plain meter-list">
+            ${meterRow(s.council_size.one_member, s.daos_scanned, "of Sputnik DAOs have a one-person council", "DAOs")}
+            ${meterRow(s.daos_single_vote_transfer, s.daos_scanned, "of Sputnik DAOs let one account approve a payment", "DAOs")}
+            ${membersSplit(s)}
+          </ul>
+        </figure>
+        <figure class="chart stack-sm" aria-labelledby="numbers-keys">
+          <figcaption id="numbers-keys" class="chart-title">Council members' keys, on one scale</figcaption>
+          <ul class="plain meter-list">
+            ${keyBar("full-access keys", s.full_access_keys, s.full_access_keys_never_used, axis.max)}
+            ${keyBar("app keys", s.function_call_keys, s.function_call_keys_never_used, axis.max)}
+          </ul>
+          <div class="chart-axis small muted" aria-hidden="true">${axis.ticks.map((t) => html`<span>${tick(t)}</span>`)}</div>
+          <ul class="plain chart-legend small" aria-label="Legend">
+            <li><span class="swatch seg-unused" aria-hidden="true"></span>Never used</li>
+            <li><span class="swatch seg-used" aria-hidden="true"></span>In use</li>
+          </ul>
+        </figure>
+      </div>
+      <p class="small muted">${s.scope === "all" ? `All ${count(s.daos_scanned)} readable Sputnik DAOs on ${s.network} (${count(s.daos_active)} active in the last ${s.active_days} days)` : `${count(s.daos_scanned)} Sputnik DAOs on ${s.network} active in the last ${s.active_days} days`}, read at block ${count(s.block_height)} (${date}), ruleset ${s.ruleset_version}. ${s.daos_failed} DAOs could not be read and are left out. Rerun with <code class="mono">pnpm stats --block ${s.block_height}${s.scope === "all" ? " --all" : ""}</code>.</p>
     </section>`;
 }
 
 export function renderHome(value: string, error: string | null, network: Network = "testnet", signedIn = false, stats: HomeStats = NETWORK_STATS): Html {
   const suffix = network === "mainnet" ? ".near" : ".testnet";
+  const daoPlaceholder = network === "mainnet" ? "your-dao.sputnik-dao.near" : EXAMPLE_DAO;
   const primary = signedIn
     ? html`<a class="btn btn-primary" href="${pageHref("my-agents")}" data-nav>Go to your agents</a>`
     : html`<a class="btn btn-primary" href="${pageHref("budget")}" data-nav>${icon.plus()}Set up an agent budget</a>`;
   return html`<section class="home-hero">
       <div class="stack home-hero-text">
-        <p class="eyebrow home-eyebrow">Spending limits for AI agents on NEAR</p>
-        <h1 class="display">Give your AI agent money, not your keys.</h1>
-        <p class="lead">Key Doctor puts each agent behind a fence: a daily budget, a limit per payment and a list of who it may pay. Anything outside the fence waits for you.</p>
-        <div class="actions">${primary}${jumpToCheck(html`${icon.key()}Check an account's keys`)}</div>
+        <p class="eyebrow home-eyebrow">Built for Sputnik DAO councils on NEAR</p>
+        <h1 class="display">Keep your DAO's keys, agents and idle funds in check.</h1>
+        <p class="lead">Key Doctor scans every council member's keys, gives your AI agents a budget an on-chain contract enforces, and finds where idle stablecoins can earn. It never holds your keys.</p>
+        <div class="actions">${primary}${jumpToCheck(html`${icon.key()}Scan a DAO's keys`, daoPlaceholder)}</div>
+        <ul class="plain pillar-chips small" aria-label="Three tools">
+          <li class="pillar-scan"><span class="pillar-dot" aria-hidden="true"></span>Scan DAO</li>
+          <li class="pillar-budget"><span class="pillar-dot" aria-hidden="true"></span>Agent Budget</li>
+          <li class="pillar-yield"><span class="pillar-dot" aria-hidden="true"></span>Yield</li>
+        </ul>
       </div>
       ${HOME_PREVIEW}
     </section>
 
-    ${renderNetworkStats(stats)}
-
-    <section class="card pad stack" aria-labelledby="how"><h2 id="how" class="h2">How it works</h2>
-      <ol class="plain home-steps">
-        ${homeStep(1, "Build the fence", "Pick a daily budget and a limit per payment, then list who the agent may pay.", icon.check())}
-        ${homeStep(2, "Connect your agent", "Your agent gets a key that can only ask for payments. One command connects it.", icon.key())}
-        ${homeStep(3, "Approve the rest", "Payments inside the fence go through. Anything else waits for your tap in Key Doctor or Telegram.", icon.bell())}
-      </ol></section>
-
     <section aria-labelledby="who" class="stack-sm">
-      <h2 id="who" class="h2">What do you want to do?</h2>
+      <h2 id="who" class="h2">Three tools for one Sputnik DAO</h2>
       <div class="home-paths">
-        ${homePath(icon.list(), "Run an AI agent", "Let it pay for APIs, tools and services without access to your wallet.", ["Daily budget and limit per payment", "Allowed recipients", "Scheduled payouts"], html`<a class="btn btn-secondary" href="${pageHref("budget")}" data-nav>Set up an agent budget</a>`)}
-        ${homePath(icon.users(), "Protect a council", "Know before the final vote if a council member's account was taken over.", ["Checks every council member's keys", "Telegram warning before the final vote", "Let an agent earn on idle funds, within limits"], jumpToCheck("Check a council", network === "mainnet" ? "your-dao.sputnik-dao.near" : EXAMPLE_DAO))}
-        ${homePath(icon.user(), "Check my own keys", "See every key on your account, what each one can do, and remove the ones you don't use.", ["One plain sentence per key", "Safe step-by-step cleanup", "Alert when a key is added"], jumpToCheck("Check my keys", network === "mainnet" ? "your-name.near" : EXAMPLE_ACCOUNT, true))}
+        ${pillarCard("scan", icon.users(), "Scan DAO", "Know who can move the treasury", "Every council member's keys and the voting rules, checked with fixed rules and explained in plain words.", ["Each member's keys checked with 14 rules", "Telegram warning before the final vote", "Step-by-step cleanup from your own wallet"], html`${jumpToCheck("Scan a council", daoPlaceholder)}${jumpToCheck("Check my own keys", network === "mainnet" ? "your-name.near" : EXAMPLE_ACCOUNT, true)}`)}
+        ${pillarCard("budget", icon.list(), "Agent Budget", "Let an AI agent pay, within limits", "The agent holds a key that can only ask for money. Payments inside the limits go out; the rest wait for the council.", ["Daily budget and limit per payment", "Allowed recipients", "Scheduled payouts and DCA"], html`<a class="btn btn-secondary" href="${pageHref("budget", network)}" data-nav>Set up an agent budget</a>`)}
+        ${pillarCard("yield", icon.trend(), "Yield", "Put idle stablecoins to work", "Reads Rhea Lend rates for the DAO's idle tokens and suggests a move. The council votes on every move.", ["Suggestions capped at the free balance", "Every number comes from code, not a model", "Data, not financial advice"], html`<a class="btn btn-secondary" href="${pageHref("yield", network)}" data-nav>Open the yield agent</a>`)}
       </div>
     </section>
+
+    ${renderNetworkStats(stats)}
+
+    <section class="card pad stack" aria-labelledby="how"><h2 id="how" class="h2">How it works for a council</h2>
+      <ol class="plain home-steps">
+        ${homeStep(1, "Scan the council", "Type the DAO name. Every member's keys and the voting rules come back in plain words.", icon.search())}
+        ${homeStep(2, "Fence your agents", "Pick a daily budget, a limit per payment and who the agent may pay. The contract enforces it, not the agent.", icon.check())}
+        ${homeStep(3, "Stay on call", "Risky votes, new keys and payments that wait for the council arrive in Telegram.", icon.bell())}
+      </ol></section>
 
     <section id="check" class="card pad stack-sm" aria-labelledby="check-h">
       <h2 id="check-h" class="h2">Check any NEAR account or DAO</h2>
@@ -205,7 +298,7 @@ export function renderHome(value: string, error: string | null, network: Network
         </div>
         <div class="input-row">
           <input id="target" name="target" type="text" class="input mono" value="${value}"
-            placeholder="${network === "mainnet" ? "your-dao.sputnik-dao.near" : EXAMPLE_DAO}"
+            placeholder="${daoPlaceholder}"
             autocomplete="off" autocapitalize="none" spellcheck="false" required
             aria-describedby="target-hint${error ? " target-error" : ""}"${error ? html` aria-invalid="true"` : ""}>
           <button type="submit" class="btn btn-primary">${icon.search()}Check</button>

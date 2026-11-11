@@ -11,6 +11,7 @@ import { pctText, suggest, summarySentence, votesNeeded } from "./yield-agent.ts
 import { allowedYieldKind, describeYieldKind, RHEA_STORAGE_YOCTO, tokenAmount, tokenRaw, YIELD_ALLOWLIST, type YieldAllowlist, type YieldMove } from "./yield-proposals.ts";
 import type { YieldLive, YieldProposal } from "./yield-read.ts";
 import { CHECK_EVERY_TEXT, type LimitField, type LimitInput, type YieldSettings } from "./yield-settings.ts";
+import { pillarTag } from "./pillars.ts";
 
 export type YieldPanel = "supply" | "withdraw" | "register";
 export type YieldState = "farming" | "idle" | "unknown";
@@ -21,7 +22,7 @@ export const YIELD_TESTNET_ONLY = "Yield works on testnet only for now";
 const SIG = html`<span class="sig">1 signature + vote</span>`;
 
 function head(lead: string): Html {
-  return html`<section class="stack-xs"><h1 class="h1">Yield agent</h1><p class="muted budget-lead">${lead}</p></section>`;
+  return html`<section class="stack-xs">${pillarTag("yield")}<h1 class="h1">Yield agent</h1><p class="muted budget-lead">${lead}</p></section>`;
 }
 
 /** Supply APR, a fraction, as a percent with two places. */
