@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createdYieldDaos, guardDaoIds, paymentRows, readAgentBudgets, yieldRow, type AgentRow, type BudgetCard, type MyAgents } from "../src/agents-read.ts";
 import type { BudgetLive, BudgetProposal, BudgetRequest } from "../src/budget-read.ts";
-import { NEEDS_SHOWN, renderMyAgents, renderMyAgentsError, renderMyAgentsSignedOut, waitingItems } from "../src/agents-view.ts";
+import { NEEDS_SHOWN, renderAgentList, renderAgentListSignedOut, renderMyAgents, renderMyAgentsError, renderMyAgentsSignedOut, waitingItems } from "../src/agents-view.ts";
+import { html } from "../src/html.ts";
+import { walletControls } from "../src/report.ts";
 import type { GuardDao, GuardLive } from "../src/guard-read.ts";
-import { parseRoute, yieldHref } from "../src/route.ts";
+import { budgetHref, parseRoute, yieldHref } from "../src/route.ts";
 
 const DAO = "demo.sputnikv2.testnet";
 
@@ -200,5 +202,60 @@ describe("readAgentBudgets", () => {
     }) as unknown as Parameters<typeof readAgentBudgets>[3];
     const cards = await readAgentBudgets(["a.sputnik-v2.testnet", "bad.sputnik-v2.testnet"], "f.testnet", "testnet", read);
     assert.deepEqual(cards.map((c) => [c.dao, c.live === null]), [["a.sputnik-v2.testnet", false], ["bad.sputnik-v2.testnet", true]]);
+  });
+});
+
+describe("Agent Budget and Yield lists", () => {
+  const OPEN = html`<form id="open-by-name"></form>`;
+  const BUDGET_DAO = "a.sputnik-v2.testnet";
+  const YIELD_DAO = "y.sputnik-v2.testnet";
+  const both: MyAgents = { ...data([BUDGET_DAO]), rows: [yieldRow(YIELD_DAO, [{ token_id: "t", supplied: "2" }])] };
+  const list = (kind: "budget" | "yield", d: MyAgents, cards: BudgetCard[]) => renderAgentList(kind, d, ["alice.testnet"], cards, OPEN).value;
+  const esc = (href: string) => href.replace(/[?]/g, "\\?").replace(/&/g, "&(amp;)?");
+
+  // WHY: the nav item is how an owner picks one agent; Create must stay one click away whatever the list holds.
+  it("lists only the budgets on Agent Budget, each card opening its own budget, with Create on top", () => {
+    const out = list("budget", both, [card(BUDGET_DAO, budget(BUDGET_DAO, []))]);
+    assert.match(out, new RegExp(`href="${esc(budgetHref(BUDGET_DAO))}"`));
+    assert.doesNotMatch(out, new RegExp(esc(yieldHref(YIELD_DAO))));
+    assert.match(out, /href="\?page=budget&(amp;)?new=1"[^>]*>[\s\S]*?Create<\/a>/);
+    // A wallet change re-reads the list: syncWallet compares this attribute with the connected accounts.
+    assert.match(out, /data-agents-for="alice.testnet"/);
+    assert.match(out, /id="open-by-name"/);
+  });
+
+  it("lists only the yield agents on Yield, each card opening its own treasury, with Create on top", () => {
+    const out = list("yield", both, []);
+    assert.match(out, new RegExp(`href="${esc(yieldHref(YIELD_DAO))}"`));
+    assert.doesNotMatch(out, new RegExp(esc(budgetHref(BUDGET_DAO))));
+    assert.match(out, /href="\?page=yield&(amp;)?new=1"[^>]*>[\s\S]*?Create<\/a>/);
+  });
+
+  // An empty list must not be a dead end: Create and the open-by-name form are still there.
+  it("offers Create and the open-by-name form when the wallet has none", () => {
+    for (const [kind, empty] of [["budget", /No budgets yet/], ["yield", /No yield agents yet/]] as const) {
+      const out = list(kind, data([]), []);
+      assert.match(out, empty);
+      assert.match(out, new RegExp(`href="\\?page=${kind}&(amp;)?new=1"`));
+      assert.match(out, /id="open-by-name"/);
+    }
+  });
+
+  it("asks a signed-out visitor to connect, and marks the list as read for no accounts", () => {
+    const out = renderAgentListSignedOut("budget", OPEN).value;
+    assert.match(out, /data-action="open-wallet"/);
+    assert.match(out, /data-agents-for=""/);
+    assert.match(out, /id="open-by-name"/);
+  });
+
+  // Create on the Budget list must reach the wizard, not loop back to the list.
+  it("routes ?page=budget to the list and &new=1 to the wizard", () => {
+    assert.equal(parseRoute("?page=budget").budgetNew, false);
+    assert.equal(parseRoute("?page=budget&new=1").budgetNew, true);
+    assert.equal(parseRoute("?page=yield&new=1").budgetNew, false);
+  });
+
+  it("puts My agents in the wallet menu", () => {
+    assert.match(walletControls().value, /class="wallet-pop[\s\S]*href="\?page=my-agents"[^>]*>My agents<\/a>/);
   });
 });

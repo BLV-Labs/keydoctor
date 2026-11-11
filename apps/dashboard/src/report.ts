@@ -74,13 +74,16 @@ function moreChecks(report: KdReport, member: Member | null): Html {
   </details>`;
 }
 
-/** Connect wallet until a wallet is connected; then an account chip whose menu holds Disconnect. app.ts flips `hidden`. */
+/** Connect wallet until a wallet is connected; then an account chip whose menu holds My agents and Disconnect. app.ts flips `hidden`. */
 export function walletControls(): Html {
   return html`<div class="wallet-ctl" data-wallet-ctl>
     <button type="button" class="btn btn-secondary" data-action="open-wallet" data-wallet-off>${icon.wallet()}<span class="wallet-text">Connect wallet</span></button>
     <details class="wallet-menu" data-wallet-on hidden>
       <summary class="btn btn-secondary wallet-chip" data-wallet-name></summary>
-      <div class="wallet-pop"><button type="button" class="btn btn-danger" data-action="disconnect-wallet">Disconnect</button></div>
+      <div class="wallet-pop stack-xs">
+        <a class="btn btn-secondary" href="${pageHref("my-agents")}" data-nav>My agents</a>
+        <button type="button" class="btn btn-danger" data-action="disconnect-wallet">Disconnect</button>
+      </div>
     </details>
     <span class="small muted" id="wallet-status" role="status"></span>
   </div>`;

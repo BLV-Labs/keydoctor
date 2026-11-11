@@ -12,11 +12,11 @@ describe("K1 home", () => {
   it("hero CTA sends a new visitor to the budget wizard and a signed-in owner to Your agents", () => {
     // WHY: the one-click promise of K1 — each visitor lands on their job, and an owner never sees "set up" again.
     const out = renderHome("", null, "testnet", false).value;
-    assert.match(out, /href="\?page=budget"[^>]*>[^<]*(<svg[\s\S]*?<\/svg>)?Set up an agent budget/);
+    assert.match(out, /href="\?page=budget&(amp;)?new=1"[^>]*>[^<]*(<svg[\s\S]*?<\/svg>)?Set up an agent budget/);
     assert.doesNotMatch(out, /Go to your agents/);
     const inn = renderHome("", null, "testnet", true).value;
     assert.match(inn, /href="\?page=my-agents"[^>]*>Go to your agents/);
-    assert.doesNotMatch(inn, /class="btn btn-primary" href="\?page=budget"/);
+    assert.doesNotMatch(inn, /class="btn btn-primary" href="\?page=budget/);
     // The secondary CTA is the same in both states.
     assert.match(inn, /href="#check"[^>]*>[\s\S]*?Scan a DAO's keys/);
   });

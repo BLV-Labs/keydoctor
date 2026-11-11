@@ -3,7 +3,7 @@ import { html, type Html } from "./html.ts";
 import { icon } from "./icons.ts";
 import { walletDialog } from "./cleanup-view.ts";
 import { breadcrumb, walletControls } from "./report.ts";
-import { BOT_URL, BOT_USERNAME, homeHref, pageHref, routeHref, type Page } from "./route.ts";
+import { BOT_URL, BOT_USERNAME, budgetNewHref, homeHref, pageHref, routeHref, type Page } from "./route.ts";
 import { alertLines, watchCommand } from "./watch.ts";
 import { NETWORK_STATS, type HomeStats } from "./network-stats.ts";
 import { pagePillar, type Pillar } from "./pillars.ts";
@@ -254,7 +254,7 @@ export function renderHome(value: string, error: string | null, network: Network
   const daoPlaceholder = network === "mainnet" ? "your-dao.sputnik-dao.near" : EXAMPLE_DAO;
   const primary = signedIn
     ? html`<a class="btn btn-primary" href="${pageHref("my-agents")}" data-nav>Go to your agents</a>`
-    : html`<a class="btn btn-primary" href="${pageHref("budget")}" data-nav>${icon.plus()}Set up an agent budget</a>`;
+    : html`<a class="btn btn-primary" href="${budgetNewHref()}" data-nav>${icon.plus()}Set up an agent budget</a>`;
   return html`<section class="home-hero">
       <div class="stack home-hero-text">
         <p class="eyebrow home-eyebrow">Built for Sputnik DAO councils on NEAR</p>
