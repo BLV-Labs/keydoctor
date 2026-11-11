@@ -41,14 +41,16 @@ screen, the line to say (or show as a caption) and how to tell it worked. Testne
    48 hours (a fresh key makes every vote alert, and spoils the before/after). A needs about 7 NEAR if the DAO
    does not exist yet, B about 2 NEAR. Owner decision 2026-11-11: use the neutral `kdoncall-*` set, so no
    personal account name shows on screen. A = `kdoncall-b.testnet` (9.99 NEAR), B = `kdoncall-c.testnet`
-   (10 NEAR), C = `kdoncall-a.testnet` (3.98 NEAR, never signs); one full-access key each, about 12 days old
-   (read 2026-11-11). Short of NEAR: top up from `duonghb3.testnet`.
+   (10 NEAR), one full-access key each, about 12 days old. C = `kdoncall-p.testnet` (10 NEAR, never signs):
+   3 full-access keys, 4 never used, 2 app keys that can call any method, so the scan marks it `cleanup` and
+   clip 2 has a flagged member to open (no key newer than 48 hours, so it never makes C `block`). Read
+   2026-11-11. Short of NEAR: top up from `duonghb3.testnet`.
 
    ```bash
-   export KD_DEMO_PREFIX=kdv$(date +%s) KD_DEMO_A=kdoncall-b.testnet KD_DEMO_B=kdoncall-c.testnet KD_DEMO_C=kdoncall-a.testnet KD_DEMO_SIGN=sign-with-legacy-keychain
+   export KD_DEMO_PREFIX=kdv$(date +%s) KD_DEMO_A=kdoncall-b.testnet KD_DEMO_B=kdoncall-c.testnet KD_DEMO_C=kdoncall-p.testnet KD_DEMO_SIGN=sign-with-legacy-keychain
    ```
 
-   The three also sit on the council of `kdoncall.sputnik-v2.testnet`, the README and dashboard example. While the
+   A and B also sit on the council of `kdoncall.sputnik-v2.testnet`, the README and dashboard example. While the
    attacker key from `compromise` is on `kdoncall-b`, that example shows a high flag and preflight on `kdoncall-b`
    says `block`, so delete the key right after recording (see "After recording").
 
@@ -119,7 +121,8 @@ Done when: the three receivers got their NEAR (Budget page, Activity: "Paid auto
 Screen: `https://key-doctor-dashboard.pages.dev/?target=<prefix>.sputnik-v2.testnet`.
 
 1. Show the summary and the member list, then open one member with a flag (the one `check.mjs` lists as `cleanup`
-   or `high`). Hold on the reason sentence.
+   or `high`; with the accounts above, C = `kdoncall-p`). Hold on the reason sentence ("Each extra key is one more
+   place that can leak.").
    > Not every risk is the agent. The council that controls the money is a set of accounts, and on NEAR every key is
    > public. Key Doctor reads them all, with fixed rules, no AI guessing.
 2. Cut to the README stats table, or a caption:
