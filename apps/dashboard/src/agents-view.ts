@@ -266,7 +266,6 @@ export function renderAgentList(kind: AgentListKind, data: MyAgents, accounts: r
       <section class="card pad stack-xs budget-narrow">
         <p class="strong">No ${l.noun}s yet</p>
         <p class="small muted">${l.empty}</p>
-        <div class="actions"><a class="btn btn-primary" href="${l.create}" data-nav>${icon.plus()}Create</a></div>
         ${unread}
       </section>${open}`;
   }
