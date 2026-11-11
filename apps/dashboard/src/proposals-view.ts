@@ -93,7 +93,17 @@ function row(p: ProposalInfo, members: readonly Member[]): Html {
           voterKeysLine(p.pending_voters, members) === "" ? "" : html`<p class="small muted">Their keys: ${voterKeysLine(p.pending_voters, members)}</p>`
         }`}
     ${p.ui_url !== null && /^https:\/\//.test(p.ui_url) ? html`<a class="small strong self-start" href="${p.ui_url}" target="_blank" rel="noopener">Open vote →</a>` : ""}
+    ${p.status === "InProgress" ? voteButtons(p.id) : ""}
   </li>`;
+}
+
+/** A council member votes from here with their own wallet; the page re-reads the proposal before it asks to sign. */
+function voteButtons(id: number): Html {
+  return html`<div class="actions">
+      <button type="button" class="btn btn-danger btn-sm" data-action="council-vote" data-id="${String(id)}" data-vote="VoteReject">Reject</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-action="council-vote" data-id="${String(id)}" data-vote="VoteApprove">Approve</button>
+    </div>
+    <p class="small" id="vote-status-${String(id)}" role="status"></p>`;
 }
 
 const head = (note: string): Html =>

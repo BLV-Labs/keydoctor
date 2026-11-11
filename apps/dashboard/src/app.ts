@@ -707,6 +707,50 @@ async function statusAfterVote(network: Network, dao: string, id: number): Promi
   return status;
 }
 
+/**
+ * Approve or Reject a proposal of the DAO on the council page. Only a council member who has not voted yet may: the
+ * page re-reads the proposal and shows what it does before the wallet asks to sign.
+ */
+function voteOnCouncil(button: HTMLButtonElement): void {
+  const id = Number(button.dataset.id);
+  const action: VoteAction = button.dataset.vote === "VoteReject" ? "VoteReject" : "VoteApprove";
+  const status = document.getElementById(`vote-status-${id}`);
+  const report = lastReport;
+  if (status === null || report === null || report.target.type !== "dao") return;
+  const dao = report.target.id;
+  const network = report.chain.network;
+  const shown = [...proposalPages.values()].flatMap((r) => r?.proposals ?? []).find((p) => p.id === id);
+  if (shown === undefined) return;
+  if (connected === null) {
+    statusWithButton(status, "Connect the wallet of a council member first.", "open-wallet", "Connect Wallet");
+    return;
+  }
+  const account = connected.accounts.find((a) => shown.pending_voters.includes(a));
+  if (account === undefined) {
+    status.textContent = `${connected.accounts[0] ?? "This account"} may not vote on #${id}. Still to vote: ${shown.pending_voters.join(", ") || "nobody"}.`;
+    return;
+  }
+  const { walletId } = connected;
+  button.disabled = true;
+  status.textContent = "Checking the proposal on the chain…";
+  readProposal(budgetRpc(network), dao, id)
+    .then((raw) => {
+      const p = raw as { id?: unknown; status?: unknown; kind?: unknown };
+      if (p.id !== id || typeof p.kind !== "object" || p.kind === null) throw new Error(`Could not read proposal #${id} from the chain.`);
+      if (p.status !== "InProgress") throw new Error(`Proposal #${id} is no longer open (${String(p.status)}).`);
+      const confirmed = { id, kind: p.kind as Record<string, unknown> };
+      status.textContent = `Waiting for ${walletLabel(walletId)}. ${action === "VoteApprove" ? "Approve" : "Reject"} #${id}: ${describeKind(confirmed.kind)}.`;
+      return import("./wallet.ts")
+        .then((w) => withWalletHint(status, w.signActProposal(account, network, dao, actProposalArgs(confirmed, action), walletId, (t) => (status.textContent = t))))
+        .then(() => statusAfterVote(network, dao, id))
+        .then((after) => statusWithButton(status, voteResultText(id, action, confirmed.kind, after), "rescan", "Reload"));
+    })
+    .catch((e: unknown) => {
+      button.disabled = false;
+      notDone(status, e);
+    });
+}
+
 /** Approve or Reject a pending proposal: re-read it first and stop if it is no longer what the page showed. */
 function actOnPending(button: HTMLButtonElement): void {
   const status = budgetStatus();
@@ -2863,6 +2907,9 @@ root.addEventListener("click", (event) => {
       syncBudgetAfter();
       break;
     }
+    case "council-vote":
+      voteOnCouncil(el as HTMLButtonElement);
+      break;
     case "budget-act":
       selectAgentBudget(el);
       closeBudgetDrawer();

@@ -322,6 +322,19 @@ describe("proposal list (C7)", () => {
     assert.match(text(renderProposals(result([info({})], 3, ["proposal 1: NOT_A_DAO"]))), /1 vote\(s\) on this page could not be read/);
   });
 
+  it("an open proposal offers Reject and Approve, so a council member who got the alert can act from here", () => {
+    const out = renderProposals(result([info({})])).value;
+    assert.match(out, /data-action="council-vote" data-id="2" data-vote="VoteReject">Reject</);
+    assert.match(out, /data-action="council-vote" data-id="2" data-vote="VoteApprove">Approve</);
+    assert.match(out, /id="vote-status-2" role="status"/);
+  });
+
+  it("a closed proposal offers no vote: the chain would refuse it", () => {
+    for (const status of ["Approved", "Rejected", "Expired", "Failed"]) {
+      assert.doesNotMatch(renderProposals(result([info({ status })])).value, /council-vote/);
+    }
+  });
+
   it("hostile chain text in a description never becomes markup", () => {
     const out = renderProposals(result([info({ description: "<img src=x onerror=alert(1)>" })])).value;
     assert.doesNotMatch(out, /<img/);
