@@ -86,6 +86,18 @@ export function tileAmount(raw: string, decimals: number): string {
   return `${(cents / 100n).toLocaleString("en-US")}.${(cents % 100n).toString().padStart(2, "0")}`;
 }
 
+/**
+ * An amount in a sentence: exact, since it is what the vote would move, with thousands separators so a long
+ * number reads at a glance. Never for input values or `data-amount`: `tokenRaw` does not parse commas.
+ */
+export function readAmount(raw: string, decimals: number): string {
+  const exact = tokenAmount(raw, decimals);
+  if (exact === "unknown") return exact;
+  const [int = "", frac] = exact.split(".");
+  const grouped = BigInt(int).toLocaleString("en-US");
+  return frac === undefined ? grouped : `${grouped}.${frac}`;
+}
+
 /** The allowlisted token this page acts on (YD0 proved one), with its holding and position. */
 function focus(live: YieldLive, list: YieldAllowlist | null) {
   const t = list?.tokens[0] ?? null;
@@ -106,8 +118,8 @@ function moveText(m: YieldMove, network: Network): string {
   const t = tokenOf(network);
   const sym = t?.symbol ?? "";
   if (m.kind === "register") return "Register with Rhea Lend";
-  if (m.kind === "withdraw") return m.amount === null ? `Take all ${sym} back from Rhea Lend` : `Take ${tokenAmount(m.amount, t?.decimals ?? 6)} ${sym} back from Rhea Lend`;
-  return `Put ${tokenAmount(m.amount, t?.decimals ?? 6)} ${sym} on Rhea Lend`;
+  if (m.kind === "withdraw") return m.amount === null ? `Take all ${sym} back from Rhea Lend` : `Take ${readAmount(m.amount, t?.decimals ?? 6)} ${sym} back from Rhea Lend`;
+  return `Put ${readAmount(m.amount, t?.decimals ?? 6)} ${sym} on Rhea Lend`;
 }
 
 function tiles(f: Focus, settings: YieldSettings | null): Html {
@@ -166,21 +178,22 @@ function suggestionCard(live: YieldLive, network: Network, f: Focus, settings: Y
       body = html`<p class="strong">Nothing to do: ${s.reason}</p>`;
     } else {
       const amount = tokenAmount(s.amount, f.decimals);
+      const shown = readAmount(s.amount, f.decimals);
       const rate = f.opportunity === null ? "" : `Rate today ${aprText(f.opportunity.apr)} a year${f.opportunity.test_data ? " (test data)" : ""}. `;
-      const keep = settings === null || BigInt(settings.keepReady) === 0n ? "" : `, with ${tokenAmount(settings.keepReady, f.decimals)} ${f.symbol} kept ready`;
+      const keep = settings === null || BigInt(settings.keepReady) === 0n ? "" : `, with ${readAmount(settings.keepReady, f.decimals)} ${f.symbol} kept ready`;
       const after = projection(f, BigInt(s.amount));
       const allAfter = s.all === undefined ? null : projection(f, BigInt(s.all));
       const best = s.all === undefined
         ? ""
-        : html`<p class="small muted">${amount} ${f.symbol} earns the treasury the most: each deposit lowers the rate for the whole pool. Putting all ${tokenAmount(s.all, f.decimals)} ${f.symbol} in: ${allAfter ?? "unknown"}</p>`;
+        : html`<p class="small muted">${shown} ${f.symbol} earns the treasury the most: each deposit lowers the rate for the whole pool. Putting all ${readAmount(s.all, f.decimals)} ${f.symbol} in: ${allAfter ?? "unknown"}</p>`;
       body = s.kind === "register"
         ? html`<div class="stack-sm">
             <div class="sugg-top"><span class="strong">Register with Rhea Lend first</span></div>
-            <p class="small muted">${rate}One time, before the first move. Then ${amount} ${f.symbol} can go to work.</p>
+            <p class="small muted">${rate}One time, before the first move. Then ${shown} ${f.symbol} can go to work.</p>
             <div class="actions"><button type="button" class="btn btn-primary btn-sm" data-action="yield-open" data-panel="register">Propose ${SIG}</button></div></div>`
         : html`<div class="stack-sm">
-            <div class="sugg-top"><span class="strong">Put ${amount} ${f.symbol} on Rhea Lend</span></div>
-            <p class="small muted">${rate}${s.all === undefined ? `${amount} ${f.symbol} is idle${keep}.` : `${tokenAmount(s.all, f.decimals)} ${f.symbol} is idle${keep}.`}</p>
+            <div class="sugg-top"><span class="strong">Put ${shown} ${f.symbol} on Rhea Lend</span></div>
+            <p class="small muted">${rate}${s.all === undefined ? `${shown} ${f.symbol} is idle${keep}.` : `${readAmount(s.all, f.decimals)} ${f.symbol} is idle${keep}.`}</p>
             ${after === null ? "" : html`<p class="small">${after}</p>`}${best}
             <div class="actions"><button type="button" class="btn btn-primary btn-sm" data-action="yield-open" data-panel="supply" data-amount="${amount}">Propose ${SIG}</button></div></div>`;
     }
