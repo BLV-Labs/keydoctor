@@ -397,7 +397,7 @@ V1 alerts and suggests; it never moves funds. The plan is in [`docs/stories/epic
 
 ## Roadmap
 
-Nothing below is built unless it says so. Built and deployed work is in [Status](#status).
+Nothing below is built unless it says so. Built and deployed work is in [Status](#status). The dashboard shows a short version of both at [`?page=roadmap`](https://key-doctor-dashboard.pages.dev/?page=roadmap).
 
 ### Next: finish what exists
 

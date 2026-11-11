@@ -3,7 +3,7 @@ import { resolveTarget, type Network } from "key-doctor";
 export const BOT_USERNAME = "KeyDoctorOnCallBot";
 export const BOT_URL = `https://t.me/${BOT_USERNAME}`;
 
-export type Page = "check" | "mcp" | "guard" | "budget" | "my-agents" | "yield";
+export type Page = "check" | "mcp" | "guard" | "budget" | "my-agents" | "yield" | "roadmap";
 
 /** What a link asks the page to open once, after it has painted (docs/final-idea.md §10.1, §10.5). */
 export type RouteLink =
@@ -113,7 +113,7 @@ export function parseRoute(search: string): Route {
  * Agent Budget. `?page=guard&dao=` stays the council page: the README documents it and a many-member DAO has no other.
  */
 function pageOf(p: string | null, dao: string | null): Page {
-  if (p === "mcp" || p === "budget" || p === "my-agents" || p === "yield") return p;
+  if (p === "mcp" || p === "budget" || p === "my-agents" || p === "yield" || p === "roadmap") return p;
   if (p === "agents") return "budget";
   if (p === "guard") return dao === null ? "budget" : "guard";
   return "check";

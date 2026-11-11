@@ -8,6 +8,7 @@ import { formatThreshold, formatUtc, relativeAge, truncateKey, yoctoToNear } fro
 import { renderAgents, renderAlertsDrawer, renderError, renderHome, renderLayout } from "../src/pages.ts";
 import { PROPOSALS_ID, renderProposals } from "../src/proposals-view.ts";
 import { renderKeyDetail } from "../src/key-detail.ts";
+import { FUTURE, REVENUE, renderRoadmap } from "../src/roadmap.ts";
 import { renderAccount, renderCouncil } from "../src/report.ts";
 import { agentGuideHref, parseRoute, resolveInput, routeHref, settledHref } from "../src/route.ts";
 import { STATUS_LABEL, groupFlags, keyMix, mainReason, recentFullAccessKeys, sortMembers } from "../src/view.ts";
@@ -353,6 +354,7 @@ describe("nav and the alerts / MCP pages", () => {
     const footer = layout.match(/<footer[\s\S]*?<\/footer>/)![0];
     assert.ok(footer.includes("page=mcp"));
     assert.ok(footer.includes("For developers (MCP)"));
+    assert.ok(footer.includes("page=roadmap"));
     assert.ok(footer.includes("Key Doctor never holds your keys. Limits are enforced on-chain."));
   });
 
@@ -369,6 +371,7 @@ describe("nav and the alerts / MCP pages", () => {
 
   it("?page= picks the page without a target, and ?target= wins, with nothing left to open", () => {
     assert.equal(parseRoute("?page=mcp").page, "mcp");
+    assert.equal(parseRoute("?page=roadmap").page, "roadmap");
     assert.equal(parseRoute("?page=nope").page, "check");
     assert.equal(parseRoute("").page, "check");
     const target = parseRoute("?page=agents&target=kdoncall-p.testnet");
@@ -427,6 +430,22 @@ describe("nav and the alerts / MCP pages", () => {
     const none = text(renderAgents(""));
     assert.match(none, /Self-host: see the README/);
     assert.ok(!none.includes("claude mcp add"));
+  });
+
+  it("Roadmap keeps built, planned and future work apart, so a judge never reads a plan as a feature", () => {
+    const page = text(renderRoadmap());
+    const built = page.indexOf("Built Live on testnet");
+    const next = page.indexOf("Next Planned");
+    const future = page.indexOf("Future direction Not built");
+    assert.ok(built >= 0 && next > built && future > next, "sections in order: Built, Next, Future direction");
+    // NEAR AI, Intents and cross-chain farming are direction only: they must sit under "Not built", never under "Built".
+    for (const [title] of FUTURE) assert.ok(page.indexOf(`${title}.`, future) > future, title);
+    assert.ok(!page.slice(built, next).includes("NEAR Intents"));
+    // The owner has not picked a business model: every revenue line shows under "Not decided", and the checks stay free.
+    const revenue = page.indexOf("Revenue Not decided");
+    assert.ok(revenue > future);
+    assert.ok(page.includes("The checks stay free"));
+    for (const r of REVENUE) assert.ok(page.indexOf(r, revenue) > revenue, r);
   });
 
 });

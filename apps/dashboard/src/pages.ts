@@ -41,7 +41,7 @@ export function renderLayout(content: Html, network: Network = "testnet", page: 
       <div class="container footer-inner">
         <span>${network === "testnet" ? "Testnet. Contracts are unaudited." : "Mainnet. Your wallet signs, never Key Doctor."}</span>
         <span>Key Doctor never holds your keys. Limits are enforced on-chain.</span>
-        <nav aria-label="More pages" class="footer-nav"><a href="${pageHref("mcp", network)}" data-nav${page === "mcp" ? html` aria-current="page"` : ""}>For developers (MCP)</a></nav>
+        <nav aria-label="More pages" class="footer-nav"><a href="${pageHref("mcp", network)}" data-nav${page === "mcp" ? html` aria-current="page"` : ""}>For developers (MCP)</a><a href="${pageHref("roadmap", network)}" data-nav${page === "roadmap" ? html` aria-current="page"` : ""}>Roadmap</a></nav>
       </div>
     </footer>
     <dialog id="alerts-drawer" class="drawer" aria-labelledby="alerts-title"></dialog>

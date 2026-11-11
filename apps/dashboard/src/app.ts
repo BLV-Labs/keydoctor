@@ -3,6 +3,7 @@ import { isKdError, listProposals, scanAccount, scanTarget, type KdError, type K
 import { revealClampToggles, toggleClamp } from "./clamp.ts";
 import { html, type Html } from "./html.ts";
 import { INVALID_NAME_MESSAGE, renderAgents, renderAlertsDrawer, renderError, renderHome, renderLayout, renderScanning } from "./pages.ts";
+import { renderRoadmap } from "./roadmap.ts";
 import { buildDeletePlan, GUARD_TEXT, METEOR_INSTALL_URL, type DeletePlan } from "./cleanup.ts";
 import { renderCleanup } from "./cleanup-view.ts";
 import { PAGE_SIZE, pageOf, parsePaging, type Paging } from "./paging.ts";
@@ -409,6 +410,10 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
   }
   if (route.target === null && route.page === "mcp") {
     paint(renderAgents(WORKER_URL), "For AI agents · Key Doctor", focusMain, route.network ?? storedNetwork(), "mcp");
+    return;
+  }
+  if (route.target === null && route.page === "roadmap") {
+    paint(renderRoadmap(), "Roadmap · Key Doctor", focusMain, route.network ?? storedNetwork(), "roadmap");
     return;
   }
   if (route.target === null) {
