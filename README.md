@@ -397,16 +397,28 @@ V1 alerts and suggests; it never moves funds. The plan is in [`docs/stories/epic
 
 ## Roadmap
 
-- Show the exact time each key was added, from the NearBlocks indexer (its API v1 key endpoint was retired on 2026-11-05; the v3 equivalent is not checked yet), next to the nonce-based estimate. See `docs/data-sources-benchmark.md`.
-- Backtest the proposal rules on 12 months of history (`kd.backtest.v1`), using NearBlocks for keys added and later removed.
-- Exact key creation dates from NearBlocks, and more rules.
+Nothing below is built unless it says so. Built and deployed work is in [Status](#status).
+
+### Next: finish what exists
+
+- **Key age:** show the exact time each key was added, from the NearBlocks indexer, next to the nonce-based estimate. Its API v1 key endpoint was retired on 2026-11-05 and the v3 equivalent is not checked yet. See `docs/data-sources-benchmark.md`.
+- **More rules, tested on history:** backtest the proposal rules on 12 months of history (`kd.backtest.v1`), using NearBlocks for keys added and later removed.
 - **Agent Guard:** Guard checks in the council report (`/check`).
 - **Strategies for a multi-member council:** set up Scheduled payouts and DCA from the Agent Guard page, so the whole council votes on each plan. Today only the Agent Budget page (one owner) offers them.
-- **Agent Budget storage:** a Guard `upgrade` by global code hash, so an update does not copy the code. A DAO that runs the official Sputnik code as a global contract by code hash would cut creation to about 1 NEAR, but it trades "created by the official factory" for "same code hash as the official Sputnik", so it needs a decision against `docs/final-idea.md` §11.10.1 A1 first.
-- **Hosted Guard agent (after the hackathon):** each DAO adds its own Telegram bot; a separate Worker turns allowed members' chat into Guard `request_transfer` calls through a model on NEAR AI Cloud. Secrets encrypted per DAO, council-signed registration, the Guard limits and the council vote still decide every payment. It would put an LLM and agent keys in a hosted service, which Key Doctor avoids today, so it is a plan only: `docs/stories/epics/guard/hosted-agent-plan.md`.
-- **Yield agent:** a tiny mainnet run of the dashboard proposal builder (YD4b), after the testnet path passes. Later (V2), the agent supplies within council-set limits by itself, through a Guard-style contract. Other protocols and chains (Chain Signatures) after a feasibility check.
-- Link a Telegram user to a NEAR account by signature to mention voters by name. Discord and email alerts. Near-real-time watching through an indexer.
-- Add ML-DSA keys in the dashboard when wallet-selector supports them. Integration with wallets and treasury tools.
+- **Agent Budget storage:** new Guards already run on global code (published 2026-11-10). Still open: a Guard `upgrade` by global code hash, so an update does not copy the code. A DAO that runs the official Sputnik code as a global contract by code hash would cut creation to about 1 NEAR, but it trades "created by the official factory" for "same code hash as the official Sputnik", so it needs a decision against `docs/final-idea.md` §11.10.1 A1 first.
+- **Yield agent:** a tiny mainnet run of the dashboard proposal builder (YD4b), after the testnet path passes. Later (V2), the agent supplies within council-set limits by itself, through a Guard-style contract.
+- **Alerts:** per-DAO alert settings per chat, and a Telegram user linked to a NEAR account by signature, so a pending-vote alert names the members who still have to vote (`docs/stories/epics/per-dao/plan.md`, owner answers in, nothing built). Discord and email alerts. Near-real-time watching through an indexer.
+- **Wallets:** add ML-DSA keys in the dashboard when wallet-selector supports them. Integration with wallets and treasury tools.
+
+### Future direction
+
+- **NEAR AI.** Today one optional step uses a model: the yield agent asks a TEE model on NEAR AI Cloud to order candidates the code built ([ADR 0004](docs/decisions/0004-llm-in-yield-agent.md)), and `examples/near-ai-agent` pays through a Guard. Next is a **hosted Guard agent** (after the hackathon): each DAO adds its own Telegram bot, and a separate Worker turns allowed members' chat into Guard `request_transfer` calls through a model on NEAR AI Cloud. Secrets are encrypted per DAO, registration is council-signed, and the Guard limits and the council vote still decide every payment. It would put an LLM and agent keys in a hosted service, which Key Doctor avoids today, so it is a plan only: `docs/stories/epics/guard/hosted-agent-plan.md`.
+- **NEAR Intents.** Swaps in DCA and yield go through Rhea today, because a DAO has no key to sign an intent and Intents has no testnet (HACKATHON Q-007). Next: a Guard plan step that swaps through Intents once a DAO-signed intent can be proven, with the quote checked against an outside price, so a DAO with no eligible token can still farm.
+- **Farming on other chains.** A DAO on NEAR supplying stablecoins on another chain, every move still a council vote: Chain Signatures signs the transaction from the DAO, Intents moves the tokens. `docs/yield-crosschain-feasibility.md` (2026-11-04) rates Aave v3, Compound v3 and a Morpho vault on Base as a conditional go (3 votes per round trip, an off-chain relayer that holds no key) and a Curve stable pool as no-go. The next step is the Base Sepolia spike in its section 7.
+- **Revenue.** Not decided and not built. The checks stay free: scans, `preflight`, alerts and the open MCP are public safety tools. Candidates the owner will choose from after the hackathon:
+  - a monthly fee for the hosted Guard agent, paid by the DAO through a normal proposal the council votes on;
+  - a small fee on strategies the keeper runs (scheduled payouts, DCA), written into the Guard and shown on chain before the council approves;
+  - a paid API tier for wallets and agent platforms that call `preflight` at high volume, above today's rate limit.
 
 ## Deploy
 
