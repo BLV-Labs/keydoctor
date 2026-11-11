@@ -20,6 +20,8 @@ export interface HomeStats {
   members_high: number;
   function_call_keys: number;
   function_call_keys_never_used: number;
+  full_access_keys: number;
+  full_access_keys_never_used: number;
 }
 
 export const NETWORK_STATS: HomeStats = measured as HomeStats;

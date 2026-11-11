@@ -9,6 +9,8 @@ import { proposalsPlaceholder } from "./proposals-view.ts";
 import { NO_PAGING, pageOf, pager, slicePage, type Paging } from "./paging.ts";
 import { budgetHref, pageHref, routeHref } from "./route.ts";
 import { avatar, cardHead } from "./ui.ts";
+import { pillarTag } from "./pillars.ts";
+import { widthClass } from "./bar-width.ts";
 import { STATUS_LABEL, adminMembers, groupFlags, mainReason, recentFullAccessKeys } from "./view.ts";
 
 export const statusPill = (status: Status, small = false): Html =>
@@ -157,6 +159,64 @@ function agentCard(dao: string): Html {
   </section>`;
 }
 
+const STATE_ORDER: ReadonlyArray<Status> = ["high", "cleanup", "ok", "note"];
+
+/**
+ * The council in three small charts: members by state (status colors, each with its icon and words), the keys they
+ * hold by type, and how many votes move money. Every number is counted from the report; the legends carry the
+ * counts, so the bars are decorative for screen readers.
+ */
+export function councilGlance(report: KdReport): Html {
+  const members = report.members;
+  if (members.length === 0) return html``;
+  const states = new Map<Status, { label: string; n: number }>();
+  for (const m of members) {
+    const st = memberState(m);
+    const cur = states.get(st.tone);
+    states.set(st.tone, { label: st.label, n: (cur?.n ?? 0) + 1 });
+  }
+  const shown = STATE_ORDER.flatMap((t) => {
+    const v = states.get(t);
+    return v === undefined ? [] : [{ tone: t, ...v }];
+  });
+  const read = members.filter((m) => m.error === null);
+  const full = read.reduce((a, m) => a + m.counts.full_access, 0);
+  const app = read.reduce((a, m) => a + m.counts.function_call, 0);
+  const unused = read.reduce((a, m) => a + m.counts.unused, 0);
+  const votes = transferVotes(report);
+  const size = members.length;
+  const shownTotal = shown.reduce((a, s) => a + s.n, 0);
+  return html`<section class="card pad stack council-glance" aria-labelledby="glance-h">
+      <h2 id="glance-h" class="h2">Council at a glance</h2>
+      <div class="chart-cols chart-cols-3">
+        <figure class="chart stack-sm" aria-labelledby="glance-states">
+          <figcaption id="glance-states" class="chart-title">Members by state</figcaption>
+          <div class="seg-bar seg-bar-tall" aria-hidden="true">${shown.map((s, i) => html`<span class="bar-seg seg-${s.tone} ${i === shown.length - 1 ? "bar-seg-rest" : widthClass(s.n, shownTotal)}" title="${s.label}: ${String(s.n)}"></span>`)}</div>
+          <ul class="plain chart-legend chart-legend-col small">${shown.map((s) => html`<li><span class="tone-${s.tone}">${statusIcon(s.tone, 14)}</span>${s.label}<span class="legend-n">${String(s.n)}</span></li>`)}</ul>
+        </figure>
+        <figure class="chart stack-sm" aria-labelledby="glance-keys">
+          <figcaption id="glance-keys" class="chart-title">Keys members hold</figcaption>
+          ${full + app === 0
+            ? html`<p class="small muted">No keys could be read.</p>`
+            : html`<div class="seg-bar seg-bar-tall" aria-hidden="true">${full > 0 ? html`<span class="bar-seg seg-full ${app > 0 ? widthClass(full, full + app) : "bar-seg-rest"}" title="Full-access keys: ${String(full)}"></span>` : ""}${app > 0 ? html`<span class="bar-seg seg-app bar-seg-rest" title="App keys: ${String(app)}"></span>` : ""}</div>
+              <ul class="plain chart-legend chart-legend-col small">
+                <li><span class="swatch seg-full" aria-hidden="true"></span>Full-access keys<span class="legend-n">${String(full)}</span></li>
+                <li><span class="swatch seg-app" aria-hidden="true"></span>App keys<span class="legend-n">${String(app)}</span></li>
+              </ul>
+              <p class="small muted">${unused === 0 ? "Every key has been used." : `${plural(unused, "key")} never used.`}</p>`}
+        </figure>
+        <figure class="chart stack-sm" aria-labelledby="glance-votes">
+          <figcaption id="glance-votes" class="chart-title">Votes to move money</figcaption>
+          ${votes === null
+            ? html`<p class="small muted">The transfer rules are not one simple vote. See "Voting rules" below.</p>`
+            : html`<p class="meter-text"><span class="meter-value">${String(votes)}</span> <span class="meter-label">of ${plural(size, "member")} must approve a payment</span></p>
+              <div class="meter meter-votes" aria-hidden="true" title="${String(votes)} of ${String(size)}"><span class="${widthClass(votes, size)}"></span></div>
+              <p class="small muted">${votes <= 1 ? "One account can send funds alone." : "No single account can send funds alone."}</p>`}
+        </figure>
+      </div>
+    </section>`;
+}
+
 export function renderCouncil(report: KdReport, paging: Paging = NO_PAGING): Html {
   const dao = report.target.id;
   const v = councilVerdict(report);
@@ -167,6 +227,7 @@ export function renderCouncil(report: KdReport, paging: Paging = NO_PAGING): Htm
   return html`${breadcrumb(dao, null)}
     <section class="page-head">
       <div class="stack-sm grow">
+        ${pillarTag("scan")}
         <div class="tags"><span class="tag">Council · ${report.chain.network}</span></div>
         <h1 class="h1 mono wrap">${dao}</h1>
         ${checkedLine(report)}
@@ -185,6 +246,8 @@ export function renderCouncil(report: KdReport, paging: Paging = NO_PAGING): Htm
         </div>
       </div>
     </section>
+
+    ${councilGlance(report)}
 
     <div class="council-cols">
       <div class="council-main stack-lg">
@@ -355,6 +418,7 @@ export function renderAccount(report: KdReport, from: string | null, paging: Pag
   return html`${breadcrumb(id, from)}
     <section class="page-head">
       <div class="stack-sm grow">
+        ${pillarTag("scan")}
         <div class="tags"><span class="tag">Account · ${report.chain.network}</span></div>
         <h1 class="h1 mono wrap">${id}</h1>
         ${checkedLine(report)}

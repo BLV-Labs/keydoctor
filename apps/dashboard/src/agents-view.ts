@@ -10,6 +10,7 @@ import { icon } from "./icons.ts";
 import { budgetHref, pageHref, yieldHref, yieldNewHref } from "./route.ts";
 import { avatar } from "./ui.ts";
 import { YIELD_ALLOWLIST, tokenAmount } from "./yield-proposals.ts";
+import { pillarTag } from "./pillars.ts";
 
 /** Waiting rows shown before "Show all". */
 export const NEEDS_SHOWN = 5;
@@ -18,7 +19,7 @@ export const ACTIVITY_SHOWN = 5;
 
 /** `data-agents-for` names the accounts this view was read for, so a wallet change re-reads it. */
 function head(accounts: readonly string[], sub: string | null = null): Html {
-  return html`<section class="stack-xs" data-agents-for="${accounts.join(",")}"><h1 class="h1">Your agents</h1>${sub === null ? "" : html`<p class="muted budget-lead">${sub}</p>`}</section>`;
+  return html`<section class="stack-xs" data-agents-for="${accounts.join(",")}">${pillarTag("budget")}<h1 class="h1">Your agents</h1>${sub === null ? "" : html`<p class="muted budget-lead">${sub}</p>`}</section>`;
 }
 
 const NEW_AGENT = html`<details class="menu">

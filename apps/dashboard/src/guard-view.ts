@@ -10,11 +10,13 @@ import { GUARD_METHODS, GUARD_ROLE, type AddProposalArgs, type RawPolicy } from 
 import type { GuardDao, GuardLive } from "./guard-read.ts";
 import { copyRow } from "./pages.ts";
 import { pageHref, routeHref } from "./route.ts";
+import { pillarTag } from "./pillars.ts";
 
 const EXAMPLE_GUARD_DAO = "kdoncall.sputnik-v2.testnet";
 
 function head(lead: string): Html {
   return html`<section class="page-head"><div class="stack-sm grow">
+      ${pillarTag("budget")}
       <p class="eyebrow">Agent Guard</p>
       <h1 class="h1">Let an AI agent pay, within limits the council set</h1>
       <p class="lead">${lead}</p>

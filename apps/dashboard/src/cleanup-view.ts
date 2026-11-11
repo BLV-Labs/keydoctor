@@ -10,6 +10,7 @@ import { keyDialogShell, viewButton } from "./key-detail.ts";
 import { NO_PAGING, pageOf, pager, slicePage, type Paging } from "./paging.ts";
 import { routeHref } from "./route.ts";
 import { freshKeys, keyStatus } from "./key-verdict.ts";
+import { pillarTag } from "./pillars.ts";
 
 const TITLE: Record<StepId, string> = {
   revoke_app_keys: "Revoke app keys you do not use",
@@ -141,6 +142,7 @@ export function renderCleanup(report: KdReport, from: string | null, level: Leve
   return html`${breadcrumb(id, from)}
     <section class="page-head">
       <div class="stack-sm grow">
+        ${pillarTag("scan")}
         <div class="tags"><span class="tag">Clean up keys · ${report.chain.network}</span></div>
         <h1 class="h1 mono wrap">${id}</h1>
         <p class="meta" id="progress-label">${done} of ${main.length} steps done · Checked ${formatUtc(report.chain.block_timestamp)} · <button type="button" class="btn btn-ghost btn-link" data-action="rescan">Check again</button></p>

@@ -63,11 +63,25 @@ function points(s: Stage): Point[] {
   return s.tone === "future" ? [...list, { id: "rm-future-revenue", label: "Revenue", detail: revenueDetail }] : list;
 }
 
+/** Half the road's swing, in viewBox units (the band is 100 high, the dot sits at 50). */
+const SWING = 30;
+
+/**
+ * The road under one point. Each column draws its own S: it enters at one edge of the swing, crosses the band's
+ * middle under the dot, and leaves at the other edge. Both ends are flat, so neighbouring columns join without a seam.
+ */
+function road(i: number): Html {
+  const s = i % 2 === 0 ? 1 : -1;
+  const a = 50 - s * SWING;
+  const b = 50 + s * SWING;
+  const d = `M0 ${a} C50 ${a} 50 ${b} 100 ${b}`;
+  return html`<svg class="rm-road" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="rm-road-base" d="${d}"></path><path class="rm-road-line" d="${d}"></path></svg>`;
+}
+
 export function renderRoadmap(): Html {
   return html`<section class="page-head"><div class="stack-sm grow">
-      <p class="eyebrow">Roadmap</p>
-      <h1 class="h1">What is built, and what comes next</h1>
-      <p class="lead">Key Doctor never holds your keys, and fixed rules make every verdict. Every step below keeps that.</p>
+      <h1 class="h1">Roadmap</h1>
+      <p class="lead">What is built, and what comes next. Key Doctor never holds your keys, and fixed rules make every verdict. Every step below keeps that.</p>
       <p class="small muted">Click a point to read the details.</p>
     </div></section>
     <div class="rm-map">
@@ -75,10 +89,10 @@ export function renderRoadmap(): Html {
         const ps = points(s);
         return html`<section class="card pad rm-lane rm-${s.tone}" aria-labelledby="rm-h-${s.tone}">
           <div class="head-title"><h2 id="rm-h-${s.tone}" class="h2">${s.title}</h2>${s.pill}</div>
-          <ol class="rm-line" role="radiogroup" aria-labelledby="rm-h-${s.tone}">
-            ${ps.map((p) => html`<li class="rm-stop${p.id === "rm-future-revenue" ? " rm-stop-revenue" : ""}">
+          <ol class="rm-line rm-n-${String(ps.length)}" role="radiogroup" aria-labelledby="rm-h-${s.tone}">
+            ${ps.map((p, i) => html`<li class="rm-stop${p.id === "rm-future-revenue" ? " rm-stop-revenue" : ""}">
               <input type="radio" name="rm-point" id="${p.id}" class="sr-only"${p.id === "rm-built-0" ? html` checked` : ""}>
-              <label for="${p.id}" class="rm-point"><span class="rm-dot" aria-hidden="true"></span><span class="rm-label">${p.label}</span></label>
+              <label for="${p.id}" class="rm-point ${i % 2 === 0 ? "rm-up" : "rm-down"}">${road(i)}<span class="rm-pin" aria-hidden="true"><span>${String(i + 1).padStart(2, "0")}</span></span><span class="rm-stem" aria-hidden="true"></span><span class="rm-dot" aria-hidden="true"></span><span class="rm-label">${p.label}</span></label>
             </li>`)}
           </ol>
           <div class="rm-details">${ps.map((p) => html`<div class="rm-panel" data-for="${p.id}">${p.detail}</div>`)}</div>
