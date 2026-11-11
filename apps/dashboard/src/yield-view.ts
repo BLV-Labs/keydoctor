@@ -2,13 +2,13 @@
 // report. The page never calls the AI step: suggestions show in the rule order (highest APR first), and the
 // council's wallets sign every proposal and vote (yield plan YD4).
 import { bestSupply, supplyAprAfter, YIELD_REASON_TEXT, yearlyEarnings, type KdYieldReport, type Network, type YieldOpportunity } from "key-doctor";
-import { formatUtc, yoctoToNear } from "./format.ts";
+import { formatUtc, groupDigits, nearText } from "./format.ts";
 import { html, type Html } from "./html.ts";
 import { icon } from "./icons.ts";
 import { copyRow } from "./pages.ts";
 import { pageHref } from "./route.ts";
 import { pctText, suggest, summarySentence, votesNeeded } from "./yield-agent.ts";
-import { allowedYieldKind, describeYieldKind, RHEA_STORAGE_YOCTO, tokenAmount, tokenRaw, YIELD_ALLOWLIST, type YieldAllowlist, type YieldMove } from "./yield-proposals.ts";
+import { allowedYieldKind, describeYieldKind, RHEA_STORAGE_YOCTO, readAmount, tokenAmount, tokenRaw, YIELD_ALLOWLIST, type YieldAllowlist, type YieldMove } from "./yield-proposals.ts";
 import type { YieldLive, YieldProposal } from "./yield-read.ts";
 import { CHECK_EVERY_TEXT, type LimitField, type LimitInput, type YieldSettings } from "./yield-settings.ts";
 import { pillarTag } from "./pillars.ts";
@@ -71,7 +71,20 @@ export function renderYieldLoading(dao: string): Html {
 const tile = (label: string, value: Html | string, note: string) =>
   html`<div class="card tile"><span class="tile-label">${label}</span><span class="tile-value">${value}</span><span class="tile-note">${note}</span></div>`;
 const amountValue = (raw: string | null | undefined, decimals: number, symbol: string) =>
-  raw === null || raw === undefined ? "unknown" : html`${tokenAmount(raw, decimals)} <span class="tile-unit">${symbol}</span>`;
+  raw === null || raw === undefined ? "unknown" : html`${tileAmount(raw, decimals)} <span class="tile-unit">${symbol}</span>`;
+
+/**
+ * A tile amount: two decimals rounded down, so a tile never shows more than is there, with thousands
+ * separators so a long balance fits a phone-width tile and reads at a glance. Inputs and proposals keep
+ * the exact `tokenAmount`.
+ */
+export function tileAmount(raw: string, decimals: number): string {
+  if (!/^\d+$/.test(raw)) return "unknown";
+  const v = BigInt(raw);
+  const cents = decimals >= 2 ? v / 10n ** BigInt(decimals - 2) : v * 10n ** BigInt(2 - decimals);
+  if (cents === 0n && v > 0n) return "less than 0.01";
+  return `${(cents / 100n).toLocaleString("en-US")}.${(cents % 100n).toString().padStart(2, "0")}`;
+}
 
 /** The allowlisted token this page acts on (YD0 proved one), with its holding and position. */
 function focus(live: YieldLive, list: YieldAllowlist | null) {
@@ -93,12 +106,12 @@ function moveText(m: YieldMove, network: Network): string {
   const t = tokenOf(network);
   const sym = t?.symbol ?? "";
   if (m.kind === "register") return "Register with Rhea Lend";
-  if (m.kind === "withdraw") return m.amount === null ? `Take all ${sym} back from Rhea Lend` : `Take ${tokenAmount(m.amount, t?.decimals ?? 6)} ${sym} back from Rhea Lend`;
-  return `Put ${tokenAmount(m.amount, t?.decimals ?? 6)} ${sym} on Rhea Lend`;
+  if (m.kind === "withdraw") return m.amount === null ? `Take all ${sym} back from Rhea Lend` : `Take ${readAmount(m.amount, t?.decimals ?? 6)} ${sym} back from Rhea Lend`;
+  return `Put ${readAmount(m.amount, t?.decimals ?? 6)} ${sym} on Rhea Lend`;
 }
 
 function tiles(f: Focus, settings: YieldSettings | null): Html {
-  const keep = settings === null || BigInt(settings.keepReady) === 0n ? null : tokenAmount(settings.keepReady, f.decimals);
+  const keep = settings === null || BigInt(settings.keepReady) === 0n ? null : readAmount(settings.keepReady, f.decimals);
   const open = f.holding?.open_transfers ?? [];
   const idleNote = keep !== null ? `${keep} ${f.symbol} kept ready` : open.length === 0 ? "Nothing promised to open transfers" : `Open transfers ${open.map((o) => `#${o.proposal_id}`).join(", ")} hold part of it`;
   const o = f.opportunity;
@@ -153,21 +166,22 @@ function suggestionCard(live: YieldLive, network: Network, f: Focus, settings: Y
       body = html`<p class="strong">Nothing to do: ${s.reason}</p>`;
     } else {
       const amount = tokenAmount(s.amount, f.decimals);
+      const shown = readAmount(s.amount, f.decimals);
       const rate = f.opportunity === null ? "" : `Rate today ${aprText(f.opportunity.apr)} a year${f.opportunity.test_data ? " (test data)" : ""}. `;
-      const keep = settings === null || BigInt(settings.keepReady) === 0n ? "" : `, with ${tokenAmount(settings.keepReady, f.decimals)} ${f.symbol} kept ready`;
+      const keep = settings === null || BigInt(settings.keepReady) === 0n ? "" : `, with ${readAmount(settings.keepReady, f.decimals)} ${f.symbol} kept ready`;
       const after = projection(f, BigInt(s.amount));
       const allAfter = s.all === undefined ? null : projection(f, BigInt(s.all));
       const best = s.all === undefined
         ? ""
-        : html`<p class="small muted">${amount} ${f.symbol} earns the treasury the most: each deposit lowers the rate for the whole pool. Putting all ${tokenAmount(s.all, f.decimals)} ${f.symbol} in: ${allAfter ?? "unknown"}</p>`;
+        : html`<p class="small muted">${shown} ${f.symbol} earns the treasury the most: each deposit lowers the rate for the whole pool. Putting all ${readAmount(s.all, f.decimals)} ${f.symbol} in: ${allAfter ?? "unknown"}</p>`;
       body = s.kind === "register"
         ? html`<div class="stack-sm">
             <div class="sugg-top"><span class="strong">Register with Rhea Lend first</span></div>
-            <p class="small muted">${rate}One time, before the first move. Then ${amount} ${f.symbol} can go to work.</p>
+            <p class="small muted">${rate}One time, before the first move. Then ${shown} ${f.symbol} can go to work.</p>
             <div class="actions"><button type="button" class="btn btn-primary btn-sm" data-action="yield-open" data-panel="register">Propose ${SIG}</button></div></div>`
         : html`<div class="stack-sm">
-            <div class="sugg-top"><span class="strong">Put ${amount} ${f.symbol} on Rhea Lend</span></div>
-            <p class="small muted">${rate}${s.all === undefined ? `${amount} ${f.symbol} is idle${keep}.` : `${tokenAmount(s.all, f.decimals)} ${f.symbol} is idle${keep}.`}</p>
+            <div class="sugg-top"><span class="strong">Put ${shown} ${f.symbol} on Rhea Lend</span></div>
+            <p class="small muted">${rate}${s.all === undefined ? `${shown} ${f.symbol} is idle${keep}.` : `${readAmount(s.all, f.decimals)} ${f.symbol} is idle${keep}.`}</p>
             ${after === null ? "" : html`<p class="small">${after}</p>`}${best}
             <div class="actions"><button type="button" class="btn btn-primary btn-sm" data-action="yield-open" data-panel="supply" data-amount="${amount}">Propose ${SIG}</button></div></div>`;
     }
@@ -278,8 +292,8 @@ function limitsCard(settings: YieldSettings | null, f: Focus | null): Html {
     ${settings === null
       ? html`<p class="pad muted">No limits set. Suggestions use everything idle.</p>`
       : html`<dl class="rule-list">
-          ${row("Most it may put to work", `${tokenAmount(settings.maxPut, d)} ${sym}`)}
-          ${row("Always keep ready", `${tokenAmount(settings.keepReady, d)} ${sym}`)}
+          ${row("Most it may put to work", `${readAmount(settings.maxPut, d)} ${sym}`)}
+          ${row("Always keep ready", `${readAmount(settings.keepReady, d)} ${sym}`)}
           ${row("Only act above", `${pctText(settings.minApr)}% a year`)}
           ${row("Checks rates", `every ${CHECK_EVERY_TEXT[settings.checkEvery]}`)}
           ${row("How it acts", "Suggests, you approve each move")}
@@ -291,7 +305,7 @@ function takeBackCard(f: Focus | null, canWithdraw: boolean): Html {
   return html`<section class="card" aria-labelledby="y-back">
     <div class="b-head"><h2 id="y-back" class="b-h">Take money back</h2></div>
     <div class="pad stack-sm">
-      <p class="small muted">${f === null || f.supplied === null || BigInt(f.supplied) === 0n ? "Nothing is working on Rhea Lend right now." : `Brings part or all of the ${tokenAmount(f.supplied, f.decimals)} ${f.symbol} back, interest included. The council votes first.`}</p>
+      <p class="small muted">${f === null || f.supplied === null || BigInt(f.supplied) === 0n ? "Nothing is working on Rhea Lend right now." : `Brings part or all of the ${readAmount(f.supplied, f.decimals)} ${f.symbol} back, interest included. The council votes first.`}</p>
       <button type="button" class="btn btn-secondary" data-action="yield-open" data-panel="withdraw"${canWithdraw ? "" : " disabled"}>Take it back ${SIG}</button>
     </div>
   </section>`;
@@ -305,7 +319,7 @@ function technical(live: YieldLive, list: YieldAllowlist | null, f: Focus | null
     <dl class="tech-list">
       <div class="tech-row"><dt>Rhea Lend contract</dt><dd class="mono">${list?.lend ?? "not open on this network"}</dd></div>
       <div class="tech-row"><dt>Registered with Rhea Lend</dt><dd>${registered}</dd></div>
-      <div class="tech-row"><dt>Treasury balance</dt><dd>${f?.holding?.balance == null ? "unknown" : `${tokenAmount(f.holding.balance, f.decimals)} ${f.symbol}`}</dd></div>
+      <div class="tech-row"><dt>Treasury balance</dt><dd>${f?.holding?.balance == null ? "unknown" : `${readAmount(f.holding.balance, f.decimals)} ${f.symbol}`}</dd></div>
       <div class="tech-row"><dt>Yield ruleset</dt><dd class="mono">${r.yield_ruleset_version}</dd></div>
       <div class="tech-row"><dt>Block</dt><dd class="mono">${String(r.chain.block_height)}</dd></div>
       <div class="tech-row"><dt>Network</dt><dd>${r.chain.network}</dd></div>
@@ -409,7 +423,7 @@ export function renderYieldPanel(panel: YieldPanel, live: YieldLive, network: Ne
   const list = YIELD_ALLOWLIST[network];
   const f = focus(live, list);
   if (list === null || f === null) return null;
-  const bond = live.policy === null ? "the bond" : `${yoctoToNear(live.policy.proposal_bond)} NEAR`;
+  const bond = live.policy === null ? "the bond" : `${nearText(live.policy.proposal_bond)} NEAR`;
   const bondRow = sumRow("Proposal bond (returned)", live.policy === null ? "unknown" : bond);
   const err = error ? html`<p id="yp-error" class="field-error" role="alert">${error}</p>` : "";
   const preview = html`<p id="yp-preview" class="small" aria-live="polite">${yieldPreview(panel, live, network, amount)}</p>`;
@@ -417,7 +431,7 @@ export function renderYieldPanel(panel: YieldPanel, live: YieldLive, network: Ne
   if (panel === "register") {
     return html`${drawerHead("Register this treasury with Rhea Lend", "One time, before the first move")}
       <div class="drawer-body">
-        <div class="sum-box">${sumRow("The treasury pays", `${yoctoToNear(RHEA_STORAGE_YOCTO)} NEAR storage deposit`)}${sumRow("Call", html`<span class="mono">storage_deposit on ${list.lend}</span>`)}${bondRow}</div>
+        <div class="sum-box">${sumRow("The treasury pays", `${nearText(RHEA_STORAGE_YOCTO)} NEAR storage deposit`)}${sumRow("Call", html`<span class="mono">storage_deposit on ${list.lend}</span>`)}${bondRow}</div>
         ${next(bond)}${err}
       </div>
       <div class="drawer-foot">${CANCEL}<button type="button" class="btn btn-primary" data-action="yield-sign" data-panel="register">Ask the council <span class="sig">1 signature</span></button></div>`;
@@ -430,8 +444,8 @@ export function renderYieldPanel(panel: YieldPanel, live: YieldLive, network: Ne
         <div class="stack-xs">
           <label class="label" for="yp-amount">Amount to take back</label>
           ${input}
-          <div class="presets"><button type="button" class="filter-chip" data-action="yield-max" data-amount="${all}"${all === "" ? " disabled" : ""}>All ${all}</button></div>
-          <p class="small muted">Leave it empty to take everything back, interest included. ${all === "" ? "" : `${all} ${f.symbol} is on Rhea Lend now.`}</p>
+          <div class="presets"><button type="button" class="filter-chip" data-action="yield-max" data-amount="${all}"${all === "" ? " disabled" : ""}>All ${groupDigits(all)}</button></div>
+          <p class="small muted">Leave it empty to take everything back, interest included. ${all === "" ? "" : `${groupDigits(all)} ${f.symbol} is on Rhea Lend now.`}</p>
           ${preview}
         </div>
         <div class="sum-box">
@@ -450,7 +464,7 @@ export function renderYieldPanel(panel: YieldPanel, live: YieldLive, network: Ne
   const best = f.pool === null || f.supplied === null || maxRaw === null ? null : bestSupply(f.pool, BigInt(f.supplied), BigInt(maxRaw), f.decimals);
   const bestChip = best === null || best === 0n || maxRaw === null || best >= BigInt(maxRaw)
     ? ""
-    : html`<button type="button" class="filter-chip" data-action="yield-max" data-amount="${tokenAmount(best.toString(), f.decimals)}">Best ${tokenAmount(best.toString(), f.decimals)}</button>`;
+    : html`<button type="button" class="filter-chip" data-action="yield-max" data-amount="${tokenAmount(best.toString(), f.decimals)}">Best ${readAmount(best.toString(), f.decimals)}</button>`;
   const bestNote = best === 0n
     ? " Putting more in would lower what the treasury earns: each deposit lowers the rate for the whole pool."
     : bestChip === "" ? "" : " Best earns the treasury the most a year if borrowing stays as it is.";
@@ -459,7 +473,7 @@ export function renderYieldPanel(panel: YieldPanel, live: YieldLive, network: Ne
       <div class="stack-xs">
         <label class="label" for="yp-amount">Amount to put in</label>
         ${input}
-        <div class="presets">${bestChip}<button type="button" class="filter-chip" data-action="yield-max" data-amount="${max}"${max === "" ? " disabled" : ""}>Max ${max}</button></div>
+        <div class="presets">${bestChip}<button type="button" class="filter-chip" data-action="yield-max" data-amount="${max}"${max === "" ? " disabled" : ""}>Max ${groupDigits(max)}</button></div>
         <p class="small muted">${cap === null ? "Available is the treasury's balance minus what open transfers promise." : "Max follows your limits. The code still checks the amount against what the treasury really has available."}${bestNote}</p>
         ${preview}
       </div>
@@ -484,7 +498,7 @@ export function limitFields(v: LimitInput, errors: LimitErrors, symbol: string, 
       <p id="${p}-${name}-hint" class="small muted">${hint}</p>
       ${errors[name] ? html`<p id="${p}-${name}-error" class="field-error" role="alert">${errors[name] as string}</p>` : ""}
     </div>`;
-  return html`${field("maxPut", "Most it may put to work", idleText === null ? "The most it will ever suggest putting on Rhea Lend." : `The most it will ever suggest putting on Rhea Lend. At most ${idleText} ${symbol}.`, symbol)}
+  return html`${field("maxPut", "Most it may put to work", idleText === null ? "The most it will ever suggest putting on Rhea Lend." : `The most it will ever suggest putting on Rhea Lend. At most ${groupDigits(idleText)} ${symbol}.`, symbol)}
     ${field("keepReady", "Always keep ready", "Left untouched in the treasury so payouts are never short. 0 keeps nothing back.", symbol)}
     ${field("minApr", "Only act above", "It stays quiet while the rate is at or below this.", "% a year")}`;
 }

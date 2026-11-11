@@ -4,12 +4,12 @@ import type { Network } from "key-doctor";
 import type { AgentRow, BudgetCard, MyAgents } from "./agents-read.ts";
 import type { BudgetLive, BudgetProposal, BudgetRequest } from "./budget-read.ts";
 import { activityRow, agentName, ago, budgetStatusPill, describeKind, expiryText, hoursLeft, near, nearShort, percent, reasonText, requestOf } from "./budget-view.ts";
-import { plural, yoctoToNear } from "./format.ts";
+import { nearText, plural } from "./format.ts";
 import { html, type Html } from "./html.ts";
 import { icon } from "./icons.ts";
 import { budgetHref, pageHref, yieldHref, yieldNewHref } from "./route.ts";
 import { avatar } from "./ui.ts";
-import { YIELD_ALLOWLIST, tokenAmount } from "./yield-proposals.ts";
+import { readAmount, YIELD_ALLOWLIST } from "./yield-proposals.ts";
 import { pillarTag } from "./pillars.ts";
 
 /** Waiting rows shown before "Show all". */
@@ -139,7 +139,7 @@ function budgetCard(card: BudgetCard): Html {
     <div class="agent-card-nums">
       <div><p class="small muted">Balance</p><p class="agent-card-big">${nearShort(b.withdrawable)}</p></div>
       <div class="grow-min"><p class="small muted">Spent today</p>
-        <p class="strong">${w === null ? "unknown" : p === null ? near(w.spent_in_window) : `${yoctoToNear(w.spent_in_window)} of ${near(p.max_per_day)}`}</p>
+        <p class="strong">${w === null ? "unknown" : p === null ? near(w.spent_in_window) : `${nearText(w.spent_in_window)} of ${near(p.max_per_day)}`}</p>
         ${w !== null && p !== null ? html`<progress class="progress" max="100" value="${percent(w.spent_in_window, p.max_per_day)}" aria-label="Share of the daily limit spent"></progress>` : ""}</div>
     </div>
     ${meta === "" ? "" : html`<p class="small muted">${meta}</p>`}</a>`;
@@ -153,7 +153,7 @@ function yieldCard(row: AgentRow, network: Network): Html {
       : row.status === "idle"
         ? html`<span class="pill pill-note">Idle</span>`
         : html`<span class="pill pill-cleanup">Status unknown</span>`;
-  const supplied = row.supplied === null || token === null ? "unknown" : `${tokenAmount(row.supplied, token.decimals)} ${token.symbol}`;
+  const supplied = row.supplied === null || token === null ? "unknown" : `${readAmount(row.supplied, token.decimals)} ${token.symbol}`;
   return html`<a class="agent-card" href="${yieldHref(row.dao)}" data-nav>
     <div class="agent-card-head">${avatar(`yield:${row.dao}`)}<span class="stack-xs grow-min"><span class="strong">Yield agent</span><span class="small muted mono wrap">${row.dao}</span></span>${pill}</div>
     <div><p class="small muted">Supplied on Rhea Lend</p><p class="agent-card-big">${supplied}</p></div>

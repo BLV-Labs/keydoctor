@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { KdYieldReport, YieldOpportunity } from "key-doctor";
 import type { RawPolicy } from "../src/guard-proposals.ts";
-import { allowedYieldKind, checkYieldCall, registerProposal, supplyProposal, tokenAmount, tokenRaw, withdrawAllProposal, YIELD_ALLOWLIST, YIELD_PREFIX, YieldProposalError } from "../src/yield-proposals.ts";
+import { allowedYieldKind, checkYieldCall, readAmount, registerProposal, supplyProposal, tokenAmount, tokenRaw, withdrawAllProposal, YIELD_ALLOWLIST, YIELD_PREFIX, YieldProposalError } from "../src/yield-proposals.ts";
 import { councilAccounts, isYieldProposal, parsePositions, type YieldLive } from "../src/yield-read.ts";
-import { renderYield, yieldActions, yieldState } from "../src/yield-view.ts";
+import { renderYield, tileAmount, yieldActions, yieldState } from "../src/yield-view.ts";
 
 const LEND = "contract.1638481328.burrow.testnet";
 const USDC = "usdc.fakes.testnet";
@@ -71,6 +71,23 @@ describe("token amounts", () => {
   });
   it("rejects too many decimals, signs and junk", () => {
     for (const bad of ["1.0000001", "-1", "1e6", "", "1,5", ".5"]) assert.equal(tokenRaw(bad, 6), null, bad);
+  });
+  it("tile amounts round down and group digits so a long balance fits a phone tile", () => {
+    // 2,000,046.513634 USDC: the exact form is 14 digits and overflowed a 375px tile.
+    assert.equal(tileAmount("2000046513634", 6), "2,000,046.51");
+    // Round down, never up: a tile must not show more than the treasury holds.
+    assert.equal(tileAmount("999999", 6), "0.99");
+    assert.equal(tileAmount("12500000", 6), "12.50");
+    assert.equal(tileAmount("0", 6), "0.00");
+    // Dust is not shown as zero, which would read as an empty balance.
+    assert.equal(tileAmount("9999", 6), "less than 0.01");
+    assert.equal(tileAmount("x", 6), "unknown");
+  });
+  it("amounts in a sentence stay exact, since they are what the vote moves, but group their digits", () => {
+    assert.equal(readAmount("2000046513634", 6), "2,000,046.513634");
+    assert.equal(readAmount("490000000000", 6), "490,000");
+    assert.equal(readAmount("12500000", 6), "12.5");
+    assert.equal(readAmount("x", 6), "unknown");
   });
 });
 
@@ -168,6 +185,20 @@ describe("yield page", () => {
     assert.match(page, /testnet only for now/);
     assert.doesNotMatch(page, /data-action="yield-vote"/);
     for (const b of page.match(/<button[^>]*data-action="yield-open"[^>]*>/g) ?? []) assert.match(b, / disabled/);
+  });
+
+  // The suggestion reads with separators, but the amount it hands the supply form stays plain: tokenRaw does not parse commas.
+  it("groups digits in the suggestion text and keeps the form amount plain", () => {
+    const big = live("testnet", { proposals: [] });
+    const h = big.report.holdings[0]!;
+    big.report.holdings[0] = { ...h, balance: "2000046513634", available: "2000046513634" };
+    big.report.suggestions[0] = { ...big.report.suggestions[0]!, max_amount: "2000046513634" };
+    const page = renderYield(big, "testnet").value;
+    assert.match(page, /2,000,046\.513634 USDC \(test\) is idle/);
+    const form = page.match(/data-panel="supply" data-amount="([^"]*)"/)?.[1];
+    assert.ok(form !== undefined && form !== "", "the suggestion offers a supply");
+    assert.doesNotMatch(form, /,/);
+    assert.notEqual(tokenRaw(form, 6), null);
   });
 
   it("asks for registration before a supply", () => {

@@ -2,7 +2,7 @@
 // transaction of four calls that makes its Guard, the agent and the Guard's role. Pure: the page reads and signs.
 import type { KeyPermission } from "key-doctor";
 import { actProposalArgs } from "./budget-flow.ts";
-import { nearToYocto, yoctoToNear } from "./format.ts";
+import { nearText, nearToYocto, yoctoToNear } from "./format.ts";
 import { formToInput, guardAccountId, MAX_NAME_LEN, RECORD_STORAGE_YOCTO, validateGuardForm, type GuardCreateArgs, type GuardFormError } from "./guard-form.ts";
 import { addGuardRoleProposal, AGENT_GAS_FUND_YOCTO, base64Json, BUDGET_GUARD_PERMISSIONS, createGuardProposal, GUARD_ROLE, type AddProposalArgs, type RawPolicy } from "./guard-proposals.ts";
 
@@ -287,7 +287,7 @@ export function validateSetupStep(step: 1 | 2 | 3, get: (name: string) => string
       if (!here || errors.some((x) => x.field === e.field)) continue;
       // Name the number: "start with more" alone sent the owner guessing.
       const short = e.field === "funding" && min !== null && (e.code === "FUNDING_UNDER_MINIMUM" || e.code === "FUNDING_TOO_LOW" || e.code === "FUNDING_BELOW_RESERVE");
-      errors.push(short ? { ...e, text: `Set aside at least ${yoctoToNear(min.toString())} NEAR for these rules: 0.1 NEAR per waiting payment, 0.5 NEAR of agent fees, the contract's own 0.5 NEAR and what it keeps.` } : e);
+      errors.push(short ? { ...e, text: `Set aside at least ${nearText(min.toString())} NEAR for these rules: 0.1 NEAR per waiting payment, 0.5 NEAR of agent fees, the contract's own 0.5 NEAR and what it keeps.` } : e);
     }
   }
   if (step === 3) {

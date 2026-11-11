@@ -13,7 +13,7 @@ import { PROPOSALS_ID, PROPOSALS_LIST, renderProposals } from "./proposals-view.
 import { renderAccount, renderCouncil } from "./report.ts";
 import { budgetHref, guardHref, homeHref, parseRoute, resolveInput, routeHref, settledHref, suffixNetwork, yieldHref, yieldNewHref, type Page, type Route, type RouteLink } from "./route.ts";
 import { renderAgentGuide } from "./agent-guide.ts";
-import { yoctoToNear } from "./format.ts";
+import { nearText } from "./format.ts";
 import { whenSlow } from "./wallet-hint.ts";
 import { formToInput, isAccountId, validateGuardForm, type GuardFormError } from "./guard-form.ts";
 import { agentKeyFile, agentKeyProblem, agentKeyUnsaved, applyAutoFunding, budgetCheckFailures, firstSignatureProblem, fundingMinYocto, parseRecipientLines, planBudget, recipientLines, savedSetupKey, secondSignatureCalls, SETUP_FIELDS, setupErrorText, sputnikCreateArgs, SPUTNIK_FACTORY, stepOfField, unfinishedBudgetOwner, validateSetupStep, type BudgetChain, type BudgetPlan, type RecipientRow, type SetupError } from "./budget-create.ts";
@@ -603,7 +603,7 @@ function startTwoSignatures(args: AddProposalArgs, agent: NewAgent | null = null
   budgetSign2 = null;
   const next = document.getElementById("budget-next");
   if (next) next.innerHTML = "";
-  status.textContent = `Waiting for ${walletLabel(walletId)}. Signature 1 of 2: the wallet shows a ${yoctoToNear(state.dao.policy.proposal_bond)} NEAR refundable deposit, not ${args.proposal.kind && "Transfer" in args.proposal.kind ? "the withdrawal" : "a payment"}. Check it there before you approve.`;
+  status.textContent = `Waiting for ${walletLabel(walletId)}. Signature 1 of 2: the wallet shows a ${nearText(state.dao.policy.proposal_bond)} NEAR refundable deposit, not ${args.proposal.kind && "Transfer" in args.proposal.kind ? "the withdrawal" : "a payment"}. Check it there before you approve.`;
   import("./wallet.ts")
     .then((w) => withWalletHint(status, w.signAddProposalOutcome(account, network, state.dao.dao, state.dao.policy.proposal_bond, args, walletId, (t) => (status.textContent = t))))
     .then(async (outcome) => {
@@ -1612,7 +1612,7 @@ function syncSetupMoney(typedFunding = false): void {
   if (funding !== null && values.fundingAuto !== "0" && funding.value !== values.funding) funding.value = values.funding ?? "";
   const min = fundingMinYocto(values.maxPendingPerAgent ?? "", values.minReserve ?? "0");
   const minText = document.getElementById("bs-funding-min");
-  if (minText !== null) minText.textContent = min === null ? "" : `${values.fundingAuto === "0" ? "At least" : "Filled in for your rules: at least"} ${yoctoToNear(min.toString())} NEAR.`;
+  if (minText !== null) minText.textContent = min === null ? "" : `${values.fundingAuto === "0" ? "At least" : "Filled in for your rules: at least"} ${nearText(min.toString())} NEAR.`;
   const cost = document.querySelector("#bs-cost span");
   if (cost !== null) cost.textContent = setupCostText(values, budgetCodeStorage);
 }
@@ -2147,7 +2147,7 @@ async function submitBudgetSetup(form: HTMLFormElement, signNow = false): Promis
       if (problem !== null) return stop(`The name ${plan.name} is taken by ${plan.dao}. ${problem}`);
       const held = await readBalance(plan.dao, height, network);
       if (held === null || BigInt(held.withdrawable) < BigInt(plan.guardDepositYocto)) {
-        return stop(`${plan.dao} needs ${yoctoToNear(plan.guardDepositYocto)} NEAR free to finish the budget and ${held === null ? "its balance could not be read" : `has ${yoctoToNear(held.withdrawable)} NEAR`}. Lower the starting balance, or send it more.`);
+        return stop(`${plan.dao} needs ${nearText(plan.guardDepositYocto)} NEAR free to finish the budget and ${held === null ? "its balance could not be read" : `has ${nearText(held.withdrawable)} NEAR`}. Lower the starting balance, or send it more.`);
       }
     }
     budgetCreation = { plan, account, walletId: wallet.walletId, key: null, values };
@@ -2359,7 +2359,7 @@ function submitGuardCreate(form: HTMLFormElement): void {
     labels: role === null ? ["call"] : ["call", "policy"],
     notes: [
       `Both proposals need the council's votes. The Guard can propose transfers only after both pass: P1 creates ${result.guardId}, P2 lets it into the agent-guard role.`,
-      `P1 attaches the funding plus ${yoctoToNear(guardState.code_storage)} NEAR for the Guard's own copy of the code and 0.01 NEAR for the factory's record: the DAO pays for its Guard.`,
+      `P1 attaches the funding plus ${nearText(guardState.code_storage)} NEAR for the Guard's own copy of the code and 0.01 NEAR for the factory's record: the DAO pays for its Guard.`,
       "If P1 fails on chain, the factory refunds the whole deposit to the DAO.",
     ],
   });

@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { describe, it } from "node:test";
 import type { KdReport, ListProposalsResult, Member, ProposalInfo } from "key-doctor";
 import { escape, html } from "../src/html.ts";
-import { formatThreshold, formatUtc, relativeAge, truncateKey, yoctoToNear } from "../src/format.ts";
+import { formatThreshold, formatUtc, groupDigits, nearText, nearToYocto, relativeAge, truncateKey, yoctoToNear } from "../src/format.ts";
 import { renderAgents, renderAlertsDrawer, renderError, renderHome, renderLayout } from "../src/pages.ts";
 import { PROPOSALS_ID, renderProposals } from "../src/proposals-view.ts";
 import { renderKeyDetail } from "../src/key-detail.ts";
@@ -52,6 +52,19 @@ describe("format", () => {
     assert.equal(relativeAge(3 * 3_600_000), "About 3 hours ago");
     assert.equal(relativeAge(800 * 86_400_000), "About 2 years ago");
     assert.equal(relativeAge(null), "Unknown");
+  });
+
+  it("groups digits in text but keeps values plain, since the amount parsers reject commas", () => {
+    // Text: a 7-digit balance must be readable at a glance.
+    assert.equal(groupDigits("2000046.5"), "2,000,046.5");
+    assert.equal(groupDigits("999"), "999");
+    assert.equal(nearText("1234567000000000000000000000000"), "1,234,567");
+    // Decimals are never grouped, and anything that is not a plain number comes back as is.
+    assert.equal(groupDigits("0.123456"), "0.123456");
+    assert.equal(groupDigits("abc"), "abc");
+    // Values: input values and data-amount use yoctoToNear, because the grouped form does not parse back.
+    assert.equal(yoctoToNear("1234567000000000000000000000000"), "1234567");
+    assert.equal(nearToYocto("1,234,567"), null);
   });
 });
 

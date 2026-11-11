@@ -32,6 +32,19 @@ export function yoctoToNear(yocto: string): string {
   return frac ? `${whole}.${frac}` : `${whole}`;
 }
 
+/**
+ * Thousands separators for a plain decimal string: "2000046.5" → "2,000,046.5". Anything else comes back as is.
+ * For text only: input values, data-amount and typed confirmations stay plain, since nearToYocto and tokenRaw
+ * do not parse commas.
+ */
+export function groupDigits(n: string): string {
+  const m = /^(\d+)(\.\d+)?$/.exec(n);
+  return m === null ? n : `${BigInt(m[1]!).toLocaleString("en-US")}${m[2] ?? ""}`;
+}
+
+/** yoctoNEAR as NEAR for text: exact, with thousands separators. */
+export const nearText = (yocto: string): string => groupDigits(yoctoToNear(yocto));
+
 /** A NEAR amount typed by a user to yoctoNEAR without float rounding: "0.1" → "100000000000000000000000". Null if not a plain decimal. */
 export function nearToYocto(near: string): string | null {
   const m = /^(\d+)(?:\.(\d{1,24}))?$/.exec(near.trim());

@@ -2,7 +2,7 @@
 // votes in its usual DAO UI, and only a passed proposal creates or changes a Guard. The one direct call is a
 // guardian's `pause`, which can only stop a Guard.
 import type { Network } from "key-doctor";
-import { formatUtc, yoctoToNear } from "./format.ts";
+import { formatUtc, nearText } from "./format.ts";
 import { html, type Html } from "./html.ts";
 import { icon } from "./icons.ts";
 import { GUARD_FORM_TEXT, type GuardFormError } from "./guard-form.ts";
@@ -48,7 +48,7 @@ export function renderGuardLoading(dao: string): Html {
     <section class="card pad stack-sm" aria-busy="true" aria-label="Loading ${dao}"><p class="meta mono" role="status">${dao}</p></section>`;
 }
 
-const near = (yocto: string | undefined): string => (yocto === undefined ? "unknown" : `${yoctoToNear(yocto)} NEAR`);
+const near = (yocto: string | undefined): string => (yocto === undefined ? "unknown" : `${nearText(yocto)} NEAR`);
 
 function row(label: string, value: Html | string): Html {
   return html`<tr><th scope="row">${label}</th><td>${value}</td></tr>`;

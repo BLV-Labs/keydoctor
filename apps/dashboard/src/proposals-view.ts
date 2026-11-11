@@ -2,7 +2,7 @@
 // proposal read never delays it.
 import type { ListProposalsResult, Member, ProposalInfo, Vote } from "key-doctor";
 import { clamp } from "./clamp.ts";
-import { formatInt, yoctoToNear } from "./format.ts";
+import { formatInt, nearText } from "./format.ts";
 import { html, type Html } from "./html.ts";
 import { statusIcon } from "./icons.ts";
 import { voterKeysLine } from "./key-verdict.ts";
@@ -61,7 +61,7 @@ function votesLine(p: ProposalInfo): string {
 
 /** A token transfer shows the raw amount and token id: NEAR decimals would misstate it. */
 function transferLine(t: NonNullable<ProposalInfo["transfer"]>): Html {
-  const amount = t.token_id === "" ? html`${t.amount === "?" ? "?" : yoctoToNear(t.amount)} NEAR` : html`${t.amount} units of token <span class="mono wrap">${t.token_id}</span>`;
+  const amount = t.token_id === "" ? html`${t.amount === "?" ? "?" : nearText(t.amount)} NEAR` : html`${t.amount} units of token <span class="mono wrap">${t.token_id}</span>`;
   return html`<p class="wrap">Send <strong>${amount}</strong> to <span class="mono wrap">${t.receiver_id}</span></p>`;
 }
 

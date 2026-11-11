@@ -1,7 +1,7 @@
 // The Yield agent's limits, kept in this browser only (no Worker or D1). They shape what the page suggests and
 // nothing else: the council's vote and the code's balance checks stay exactly as they were. Creating an agent
 // costs nothing on chain, so nothing here signs.
-import { tokenAmount, tokenRaw } from "./yield-proposals.ts";
+import { readAmount, tokenRaw } from "./yield-proposals.ts";
 
 export type CheckEvery = "15m" | "1h" | "1d";
 export const CHECK_EVERY: readonly CheckEvery[] = ["15m", "1h", "1d"];
@@ -57,7 +57,7 @@ export function validateSettings(input: LimitInput, ctx: LimitContext): LimitRes
   const put = tokenRaw(input.maxPut, ctx.decimals);
   const keep = input.keepReady.trim() === "" ? "0" : tokenRaw(input.keepReady, ctx.decimals);
   if (put === null || put === "0") errors.maxPut = `Enter an amount above 0, like 12.5, with at most ${ctx.decimals} decimals.`;
-  else if (ctx.ceiling !== null && BigInt(put) > BigInt(ctx.ceiling)) errors.maxPut = `That is more than the ${tokenAmount(ctx.ceiling, ctx.decimals)} ${ctx.symbol} this treasury has.`;
+  else if (ctx.ceiling !== null && BigInt(put) > BigInt(ctx.ceiling)) errors.maxPut = `That is more than the ${readAmount(ctx.ceiling, ctx.decimals)} ${ctx.symbol} this treasury has.`;
   if (keep === null) errors.keepReady = `Enter 0 or an amount like 12.5, with at most ${ctx.decimals} decimals. It cannot be negative.`;
   const pct = /^\d+(\.\d{1,2})?$/.test(input.minApr.trim()) ? Number(input.minApr.trim()) : null;
   if (pct === null || pct > 100) errors.minApr = "Enter a rate from 0 to 100, like 4 or 4.5.";
