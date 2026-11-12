@@ -361,6 +361,12 @@ export const TEXT = {
   tooMany: (lang: Lang, max: number): Outgoing => ({
     text: lang === "vi" ? `Mỗi chat theo dõi tối đa ${max} target. Dùng /unwatch để bớt.` : `A chat can watch at most ${max} targets. Use /unwatch to remove one.`,
   }),
+  targetFull: (lang: Lang, target: string, max: number): Outgoing => ({
+    text:
+      lang === "vi"
+        ? `${id(target)} đã có ${max} chat theo dõi, mức tối đa. Hãy nhận cảnh báo trong một nhóm đang theo dõi nó.`
+        : `${id(target)} already has ${max} watching chats, the most allowed. Get its alerts in a group that already watches it.`,
+  }),
   unwatched: (lang: Lang, target: string): Outgoing => ({
     text: lang === "vi" ? `Đã tắt theo dõi ${id(target)}.` : `Stopped watching ${id(target)}.`,
   }),

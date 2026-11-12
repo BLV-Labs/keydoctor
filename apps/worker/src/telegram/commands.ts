@@ -9,8 +9,10 @@ import { getProposalState, saveProposalState } from "../store/proposal-state.ts"
 import { latestSnapshot, saveSnapshot } from "../store/snapshots.ts";
 import {
   addSubscription,
+  countChatsFor,
   countSubscriptions,
   deleteChat,
+  MAX_CHATS_PER_TARGET,
   listSubscriptions,
   removeSubscription,
 } from "../store/subscriptions.ts";
@@ -184,6 +186,7 @@ async function watchTarget(
 ): Promise<Outgoing> {
   const { lang, chatId } = inc;
   if ((await countSubscriptions(env.DB, chatId)) >= MAX_SUBS_PER_CHAT) return TEXT.tooMany(lang, MAX_SUBS_PER_CHAT);
+  if ((await countChatsFor(env.DB, id, network)) >= MAX_CHATS_PER_TARGET) return TEXT.targetFull(lang, id, MAX_CHATS_PER_TARGET);
   typing();
   const report = await scan({ target: id, network }, env);
   const type = report.target.type;

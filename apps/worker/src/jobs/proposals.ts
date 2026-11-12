@@ -2,7 +2,7 @@
 import { checkProposals, isKdError, resolveTarget, type Network } from "key-doctor";
 import type { D1Database, Env } from "../env.ts";
 import { rpcUrlsFor } from "../core.ts";
-import { getProposalState, saveProposalState } from "../store/proposal-state.ts";
+import { getProposalState, saveProposalState, touchProposalState } from "../store/proposal-state.ts";
 import { renderBudgetAlert } from "../telegram/render.ts";
 import { alertLang, alertMessage, deliver, renderFor } from "./deliver.ts";
 
@@ -82,7 +82,9 @@ export async function runProposalJob(env: Env, only?: string): Promise<JobResult
       result.errors.push(...d.errors);
     }
     // A failed send keeps the old state, so the next run rebuilds the alert; alerts_sent drops the ones that did arrive.
+    // It still goes to the back of the queue (red-team M8), so a DAO whose sends keep failing cannot hold the front.
     if (!retry) await saveProposalState(env.DB, target, network, checked.state);
+    else await touchProposalState(env.DB, target, network);
   }
   return result;
 }

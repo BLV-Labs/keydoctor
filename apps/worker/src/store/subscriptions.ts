@@ -59,10 +59,19 @@ export async function deleteChat(db: D1Database, chatId: string): Promise<void> 
   ]);
 }
 
+/** Chats one target may have (red-team M8): every chat costs one subrequest per alert. */
+export const MAX_CHATS_PER_TARGET = 25;
+
+export async function countChatsFor(db: D1Database, target: string, network: Network): Promise<number> {
+  const row = await db.prepare("SELECT COUNT(*) AS n FROM subscriptions WHERE target = ? AND network = ?").bind(target, network).first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+/** The oldest MAX_CHATS_PER_TARGET chats watching the target: fan-out per alert stays bounded. */
 export async function chatsFor(db: D1Database, target: string, network: Network): Promise<string[]> {
   const { results } = await db
-    .prepare("SELECT chat_id FROM subscriptions WHERE target = ? AND network = ? ORDER BY created_at")
-    .bind(target, network)
+    .prepare("SELECT chat_id FROM subscriptions WHERE target = ? AND network = ? ORDER BY created_at, chat_id LIMIT ?")
+    .bind(target, network, MAX_CHATS_PER_TARGET)
     .all<{ chat_id: string }>();
   return results.map((r) => r.chat_id);
 }
