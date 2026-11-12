@@ -10,6 +10,8 @@ const NEAR: u128 = 1_000_000_000_000_000_000_000_000;
 const BOND: u128 = NEAR / 10;
 const T0: u64 = 1_800_000_000_000_000_000;
 const PERIOD: u64 = 7 * policy::DAY_NS;
+/// A spend made in the hour starting at T0 stops counting here (`policy::spent`: 24 to 25 h, never less).
+const FREED: u64 = T0 + 25 * policy::HOUR_NS;
 
 const GUARD: &str = "guard.testnet";
 const DAO: &str = "kd-demo.sputnik-v2.testnet";
@@ -371,14 +373,32 @@ fn daily_limit_turns_the_fifth_request_pending() {
 }
 
 #[test]
-fn window_resets_after_24_hours() {
+fn a_spend_frees_its_room_after_24_hours_and_not_before() {
     let mut g = setup();
     auto_approved(&mut g, T0, "req-0001", 5 * NEAR, 1);
     env_as(STRANGER, T0 + policy::DAY_NS);
+    assert_eq!(spent(&g), 5 * NEAR, "24 h later the spend still counts: the window rolls, it does not reset");
+    env_as(STRANGER, FREED);
     assert_eq!(spent(&g), 0, "the view shows the window the next request will see");
-    ask(&mut g, T0 + policy::DAY_NS, "req-0002", VENDOR, 5 * NEAR);
+    ask(&mut g, FREED, "req-0002", VENDOR, 5 * NEAR);
     assert_eq!(rec(&g, "req-0002").decision, Decision::Auto);
     assert_eq!(spent(&g), 5 * NEAR);
+}
+
+#[test]
+fn twice_the_daily_limit_cannot_leave_across_the_old_reset() {
+    // Red team M4: 1.5.0 reset its window at the first request 24 h after the window opened, so an agent that
+    // filled the limit just before the reset could fill it again just after: 2 × max_per_day within minutes.
+    let mut g = setup();
+    auto_approved(&mut g, T0, "req-0000", NEAR, 1);
+    let late = T0 + policy::DAY_NS - MINUTE;
+    for i in 1..4u64 {
+        auto_approved(&mut g, late, &format!("req-000{i}"), 5 * NEAR, 1 + i);
+    }
+    assert_eq!(spent(&g), 16 * NEAR);
+    ask(&mut g, T0 + policy::DAY_NS + MINUTE, "req-0009", VENDOR, 5 * NEAR);
+    assert_eq!(rec(&g, "req-0009").reasons, ["OVER_DAILY_LIMIT"], "the 15 NEAR from a minute ago still count");
+    assert_eq!(spent(&g), 16 * NEAR);
 }
 
 #[test]
@@ -416,15 +436,25 @@ fn failed_execution_refunds_in_the_same_window() {
 
 #[test]
 fn no_refund_into_a_later_window() {
-    // A refund after the reset would let today's window spend more than max_per_day.
+    // A refund after the spend stopped counting would free room in today's window that today never used.
     let mut g = setup();
     auto_approved(&mut g, T0, "req-0001", 5 * NEAR, 1);
-    let next_day = T0 + policy::DAY_NS + 1;
-    auto_approved(&mut g, next_day, "req-0002", 3 * NEAR, 2);
-    synced(&mut g, next_day, "req-0001", "Failed", T0);
+    auto_approved(&mut g, FREED, "req-0002", 3 * NEAR, 2);
+    synced(&mut g, FREED, "req-0001", "Failed", T0);
     let r = rec(&g, "req-0001");
     assert_eq!((r.status, r.counted_in_window), (RequestStatus::Failed, true));
     assert_eq!(spent(&g), 3 * NEAR);
+}
+
+#[test]
+fn a_refund_while_the_spend_still_counts_comes_back() {
+    // 24 h after the request its spend still counts (until FREED), so a failure then gives that room back.
+    let mut g = setup();
+    auto_approved(&mut g, T0, "req-0001", 5 * NEAR, 1);
+    synced(&mut g, T0 + policy::DAY_NS + 1, "req-0001", "Failed", T0);
+    let r = rec(&g, "req-0001");
+    assert_eq!((r.status, r.counted_in_window), (RequestStatus::Failed, false));
+    assert_eq!((spent(&g), agent_spent(&g, AGENT)), (0, 0));
 }
 
 #[test]
@@ -1059,10 +1089,10 @@ fn agent_spend_resets_with_the_window() {
     // No request runs at the reset, so the view must not show yesterday's spend as today's.
     let mut g = setup();
     auto_approved(&mut g, T0 + 1, "req-0001", 3 * NEAR, 1);
-    env_as(STRANGER, T0 + policy::DAY_NS);
-    assert_eq!(agent_spent(&g, AGENT), 0, "the view reads a past window as reset");
+    env_as(STRANGER, FREED);
+    assert_eq!(agent_spent(&g, AGENT), 0, "the view drops a spend that no longer counts");
 
-    auto_approved(&mut g, T0 + policy::DAY_NS, "req-0002", NEAR, 2);
+    auto_approved(&mut g, FREED, "req-0002", NEAR, 2);
     assert_eq!(agent_spent(&g, AGENT), NEAR, "the first request of a new window does not add to the old amount");
 }
 
@@ -1071,8 +1101,8 @@ fn a_late_failure_does_not_touch_the_next_windows_agent_spend() {
     // Same rule as `no_refund_into_a_later_window`: yesterday's payment is not part of today's amount.
     let mut g = setup();
     auto_approved(&mut g, T0 + 1, "req-0001", 3 * NEAR, 1);
-    auto_approved(&mut g, T0 + policy::DAY_NS, "req-0002", 2 * NEAR, 2);
-    synced(&mut g, T0 + policy::DAY_NS + 1, "req-0001", "Failed", T0 + 1);
+    auto_approved(&mut g, FREED, "req-0002", 2 * NEAR, 2);
+    synced(&mut g, FREED + 1, "req-0001", "Failed", T0 + 1);
     assert_eq!(agent_spent(&g, AGENT), 2 * NEAR);
 }
 
@@ -1200,12 +1230,22 @@ fn a_new_plan_waits_for_its_start_time_and_reads_as_section_4_11() {
 
 #[test]
 fn a_swap_plan_parses_now_that_it_can_run() {
-    // GĐ31 added `swap`: it must parse, with the fields the dashboard sends.
-    let input = near_sdk::serde_json::json!({
-        "action": { "type": "swap", "pool_id": 1, "token_out": "wrap.testnet", "max_slippage_bps": 50 },
-        "strategy_id": "dca", "token_in": "", "amount_per_run": "1", "interval_sec": 60, "runs_total": 1, "start_at": "0",
-    });
-    assert!(near_sdk::serde_json::from_value::<PlanInput>(input).is_ok());
+    // 1.5.0: `swap_with_floor` must parse with the fields the dashboard sends. The legacy `swap` still parses (stored
+    // plans and old views use it), and create_plan refuses it.
+    let input = |action: Value| {
+        near_sdk::serde_json::json!({
+            "action": action, "strategy_id": "dca", "token_in": "", "amount_per_run": "1", "interval_sec": 60,
+            "runs_total": 1, "start_at": "0",
+        })
+    };
+    let floored = input(near_sdk::serde_json::json!({
+        "type": "swap_with_floor", "pool_id": 1, "token_out": "usdt.fakes.testnet", "max_slippage_bps": 50,
+        "min_out_per_near": "8500000",
+    }));
+    let parsed = near_sdk::serde_json::from_value::<PlanInput>(floored).unwrap();
+    assert!(matches!(parsed.action, PlanAction::SwapWithFloor { min_out_per_near: U128(8_500_000), .. }));
+    let legacy = input(near_sdk::serde_json::json!({ "type": "swap", "pool_id": 1, "token_out": "usdt.fakes.testnet", "max_slippage_bps": 50 }));
+    assert!(matches!(near_sdk::serde_json::from_value::<PlanInput>(legacy).unwrap().action, PlanAction::Swap { .. }));
 }
 
 #[test]
@@ -1340,8 +1380,7 @@ fn a_day_over_the_limit_skips_the_slot_and_keeps_the_run() {
     let p = plan(&g, 0);
     assert_eq!((p.runs_done, p.status, p.next_run_at), (0, PlanStatus::Active, Some(U64(due + MINUTE))));
 
-    let tomorrow = T0 + policy::DAY_NS + 1;
-    step(&mut g, tomorrow, 0);
+    step(&mut g, FREED, 0);
     assert!(method_called("add_proposal"), "the run still happens once the window rolls");
 }
 
@@ -1579,8 +1618,13 @@ const EXCHANGE: &str = "ref-finance-101.testnet";
 const WRAP: &str = "wrap.testnet";
 const USDT: &str = "usdt.fakes.testnet";
 
+/// A floored swap. Floor 1 base unit per NEAR is 0 for 0.1 NEAR, so it never decides a test that is not about it.
 fn swap_of(bps: u16) -> PlanAction {
-    PlanAction::Swap { pool_id: 57, token_out: id(USDT), max_slippage_bps: bps }
+    swap_floored(bps, 1)
+}
+
+fn swap_floored(bps: u16, min_out_per_near: u128) -> PlanAction {
+    PlanAction::SwapWithFloor { pool_id: 57, token_out: id(USDT), max_slippage_bps: bps, min_out_per_near: U128(min_out_per_near) }
 }
 
 /// A DCA plan: sells 0.1 NEAR per run.
@@ -1841,6 +1885,32 @@ fn the_swap_vote_gets_the_swap_gas_and_a_transfer_vote_keeps_its_own() {
 }
 
 #[test]
+fn each_swap_callback_keeps_15_tgas_of_its_own() {
+    // Red team M3: a callback that runs out of gas after its parent moved the slot leaves the request in Submitted,
+    // which holds a pending slot and blocks close(). 5 Tgas of own margin was too thin for on_quote's work.
+    let own = Gas::from_tgas(15).as_gas();
+    let on_added = GAS_ACT_PROPOSAL_SWAP.as_gas() + GAS_ON_VOTED.as_gas() + own;
+    assert!(GAS_ON_ADDED_SWAP.as_gas() >= on_added);
+    assert!(GAS_ON_QUOTE.as_gas() >= GAS_ADD_PROPOSAL.as_gas() + GAS_ON_ADDED_SWAP.as_gas() + own);
+    assert!(MIN_SWAP_STEP_GAS.as_gas() >= GAS_QUOTE_VIEW.as_gas() + GAS_ON_QUOTE.as_gas() + own);
+    assert!(MIN_SWAP_STEP_GAS <= Gas::from_tgas(300), "the keeper's 300 Tgas must pass");
+}
+
+#[test]
+fn a_swap_step_called_with_too_little_gas_fails_before_anything_moves() {
+    let mut g = setup();
+    create(&mut g, dca(100, 2));
+    testing_env!(VMContextBuilder::new()
+        .current_account_id(id(GUARD))
+        .predecessor_account_id(id(STRANGER))
+        .block_timestamp(T0 + MINUTE)
+        .prepaid_gas(Gas::from_tgas(270))
+        .build());
+    let err = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| { let _ = g.execute_plan_step(0); })).unwrap_err();
+    assert_eq!(err.downcast_ref::<String>().map(String::as_str), Some("SWAP_STEP_NEEDS_300_TGAS"));
+}
+
+#[test]
 fn a_failed_vote_on_a_swap_pauses_for_balance_and_gives_the_limit_back() {
     // The DAO is short of NEAR: near_deposit fails inside act_proposal, so the vote fails (F4). Like a transfer, the
     // owner is told to top up (a call would say Failures), and the NEAR counted for the run goes back.
@@ -1919,7 +1989,8 @@ fn create_plan_refuses_a_slippage_outside_the_three_choices() {
 #[should_panic(expected = "INVALID_TOKEN_OUT")]
 fn create_plan_refuses_wnear_as_the_token_to_buy() {
     let mut g = setup();
-    create(&mut g, plan_of(PlanAction::Swap { pool_id: 57, token_out: id(WRAP), max_slippage_bps: 100 }, NEAR / 10, 2));
+    let wnear = PlanAction::SwapWithFloor { pool_id: 57, token_out: id(WRAP), max_slippage_bps: 100, min_out_per_near: U128(1) };
+    create(&mut g, plan_of(wnear, NEAR / 10, 2));
 }
 
 #[test]
@@ -1937,10 +2008,224 @@ fn a_swap_over_the_daily_limit_skips_the_slot_without_a_quote() {
 }
 
 #[test]
-fn the_guard_reports_version_1_4_0() {
-    // The dashboard and the upgrade script read this to know which Guard a Budget runs.
+fn the_guard_reports_version_1_6_0() {
+    // The dashboard and the upgrade script read this to know which Guard a Budget runs (1.6.0: the rolling window).
     let g = setup();
-    assert_eq!(g.kd_guard_info()["version"], "1.4.0");
+    assert_eq!(g.kd_guard_info()["version"], "1.6.0");
+}
+
+// ---- 1.5.0 → 1.6.0 state (red team M4)
+
+/// The bytes 1.5.0 wrote for `g`: today's layout without `spends` and `agent_spends`, with its fixed window.
+fn state_1_5_0(mut g: Guard, window_start: u64, spent_in_window: u128, agent_spent: u128) -> Vec<u8> {
+    g.window_start = window_start;
+    g.spent_in_window = spent_in_window;
+    let a = g.agents.get_mut(&id(AGENT)).unwrap();
+    a.spent = U128(agent_spent);
+    a.spent_window = U64(window_start);
+    g.agents.flush();
+    let full = near_sdk::borsh::to_vec(&g).unwrap();
+    let tail = near_sdk::borsh::to_vec(&(&g.spends, &g.agent_spends)).unwrap();
+    assert!(g.spends.is_empty() && full.ends_with(&tail));
+    full[..full.len() - tail.len()].to_vec()
+}
+
+fn migrated(state: Vec<u8>, now: u64) -> Guard {
+    env_as(GUARD, now);
+    env::storage_write(b"STATE", &state);
+    Guard::migrate()
+}
+
+#[test]
+fn migrate_carries_a_live_1_5_0_window_into_the_rolling_one() {
+    // A Budget upgraded mid-window keeps what it spent: the upgrade must not become a free reset.
+    let g = setup();
+    let now = T0 + 20 * policy::HOUR_NS;
+    let mut g = migrated(state_1_5_0(g, T0, 12 * NEAR, 7 * NEAR), now);
+    env_as(STRANGER, now);
+    assert_eq!((spent(&g), agent_spent(&g, AGENT)), (12 * NEAR, 7 * NEAR));
+    assert_eq!((g.window_start, g.spent_in_window), (0, 0), "the old fields are left unused");
+    ask(&mut g, now, "req-0001", VENDOR, 5 * NEAR);
+    assert_eq!(rec(&g, "req-0001").decision, Decision::Auto);
+    ask(&mut g, now, "req-0002", VENDOR, 5 * NEAR);
+    assert_eq!(rec(&g, "req-0002").reasons, ["OVER_DAILY_LIMIT"]);
+}
+
+#[test]
+fn migrate_drops_a_1_5_0_window_that_had_ended() {
+    let g = setup();
+    let g = migrated(state_1_5_0(g, T0, 12 * NEAR, 7 * NEAR), T0 + policy::DAY_NS);
+    env_as(STRANGER, T0 + policy::DAY_NS);
+    assert_eq!((spent(&g), agent_spent(&g, AGENT)), (0, 0));
+    assert_eq!(g.get_agents().len(), 1);
+}
+
+#[test]
+fn migrate_leaves_a_1_6_0_state_as_it_is() {
+    let mut g = setup();
+    auto_approved(&mut g, T0, "req-0001", 3 * NEAR, 1);
+    g.agents.flush();
+    g.agent_spends.flush();
+    g.requests.flush();
+    let state = near_sdk::borsh::to_vec(&g).unwrap();
+    let g = migrated(state, T0 + 1);
+    assert_eq!((spent(&g), agent_spent(&g, AGENT)), (3 * NEAR, 3 * NEAR));
+    assert_eq!(rec(&g, "req-0001").status, RequestStatus::AutoApproved);
+}
+
+#[test]
+fn a_re_added_agent_starts_with_no_spend_of_its_own() {
+    // The Guard's total keeps the removed agent's spend; the agent's own view does not carry it over.
+    let mut g = setup();
+    auto_approved(&mut g, T0 + 1, "req-0001", 3 * NEAR, 1);
+    env_as(DAO, T0 + 2);
+    g.remove_agent(id(AGENT));
+    env_full(DAO, T0 + 3, NEAR, 10 * NEAR);
+    g.add_agent(id(AGENT), "payroll bot".into(), None);
+    assert_eq!((spent(&g), agent_spent(&g, AGENT)), (3 * NEAR, 0));
+}
+
+// ---- DCA price floor (red team H2, ADR 0007 2026-11-12)
+//
+// Anyone may call execute_plan_step (K2), so an attacker can skew pool 57, run the step and trade back. The quote is
+// then the attacker's price; only a floor the DAO set at creation bounds what one run can lose.
+
+/// 8.5 USDT (6 decimals) per NEAR: 850_000 base units for the 0.1 NEAR run of `dca`.
+const FLOOR: u128 = 8_500_000;
+const RUN_FLOOR: u128 = 850_000;
+
+fn floored_dca(bps: u16) -> PlanInput {
+    plan_of(swap_floored(bps, FLOOR), NEAR / 10, 2)
+}
+
+#[test]
+fn a_skewed_quote_below_the_dao_floor_skips_the_run_without_a_proposal_and_gives_the_window_back() {
+    // (a) The attacker pushed the price to 800_000 per 0.1 NEAR: quote_floor 792_000 < 850_000. The run is skipped
+    // like an over-limit slot: no proposal, nothing counted, the plan stays Active for the next slot.
+    let mut g = setup();
+    create(&mut g, floored_dca(100));
+    let (due, rid) = (T0 + MINUTE, step_id(0, T0 + MINUTE));
+    step(&mut g, due, 0);
+    assert_eq!(spent(&g), NEAR / 10);
+    quoted(&mut g, due, &rid, 0, Ok(800_000));
+    assert!(!method_called("add_proposal"), "no proposal at the attacker's price");
+    let p = plan(&g, 0);
+    assert_eq!((p.status, p.pause_reason, p.runs_done), (PlanStatus::Active, None, 0));
+    assert_eq!(p.next_run_at, Some(U64(due + MINUTE)), "the next slot runs as usual");
+    assert_eq!(spent(&g), 0, "nothing moved, so the daily window is given back");
+    assert_eq!(pending(&g), 0);
+    assert_eq!(rec(&g, &rid).status, RequestStatus::Failed);
+    assert!(logged("PRICE_BELOW_FLOOR") && logged("plan_step_skipped"));
+    let skipped = get_logs().into_iter().find(|l| l.contains("plan_step_skipped")).unwrap();
+    assert!(skipped.contains(&format!("\"due\":\"{due}\"")) && skipped.contains("\"run\":1"), "{skipped}");
+    assert!(!logged("plan_paused") && !logged("ADD_PROPOSAL_FAILED"), "a skip is not a failure");
+}
+
+#[test]
+fn a_fair_quote_sets_min_out_to_the_larger_of_the_quote_floor_and_the_dao_floor() {
+    // (b) 896_500 at 1%: quote_floor 887_535 >= 850_000, so the run goes with 887_535. At exactly the DAO floor
+    // (quote 858_586 -> 850_000.14 -> 850_000) it runs too, and min_out is never below the DAO floor.
+    for (quote, want) in [(896_500u128, 887_535u128), (858_586, RUN_FLOOR)] {
+        let mut g = setup();
+        create(&mut g, floored_dca(100));
+        let (due, rid) = (T0 + MINUTE, step_id(0, T0 + MINUTE));
+        step(&mut g, due, 0);
+        quoted(&mut g, due, &rid, 0, Ok(quote));
+        let min_out: u128 = min_out_of(&swap_proposal_kind()).as_str().unwrap().parse().unwrap();
+        assert_eq!(min_out, want, "quote {quote}");
+        assert!(min_out >= RUN_FLOOR);
+        assert!(!logged("plan_step_skipped"));
+    }
+    // One base unit under the DAO floor skips (858_585 * 0.99 = 849_999.15).
+    let mut g = setup();
+    create(&mut g, floored_dca(100));
+    let (due, rid) = (T0 + MINUTE, step_id(0, T0 + MINUTE));
+    step(&mut g, due, 0);
+    quoted(&mut g, due, &rid, 0, Ok(858_585));
+    assert!(!method_called("add_proposal") && logged("PRICE_BELOW_FLOOR"));
+}
+
+#[test]
+fn a_dao_floor_too_large_to_compute_skips_rather_than_running_unprotected() {
+    let mut g = setup();
+    create(&mut g, plan_of(swap_floored(100, u128::MAX), NEAR, 2));
+    let (due, rid) = (T0 + MINUTE, step_id(0, T0 + MINUTE));
+    step(&mut g, due, 0);
+    quoted(&mut g, due, &rid, 0, Ok(u128::MAX));
+    assert!(!method_called("add_proposal") && logged("PRICE_BELOW_FLOOR"));
+}
+
+/// A plan stored by a 1.4.0 Guard: the legacy variant, which create_plan no longer accepts.
+fn legacy_swap_plan(g: &mut Guard) -> u32 {
+    let plan_id = g.plans.len();
+    g.plans.push(Plan {
+        plan_id,
+        action: PlanAction::Swap { pool_id: 57, token_out: id(USDT), max_slippage_bps: 100 },
+        strategy_id: "dca".into(),
+        token_in: "".into(),
+        amount_per_run: U128(NEAR / 10),
+        interval_sec: 60,
+        runs_total: 2,
+        runs_done: 0,
+        start_at: U64(T0 + MINUTE),
+        next_run_at: Some(U64(T0 + MINUTE)),
+        status: PlanStatus::Active,
+        pause_reason: None,
+    });
+    plan_id
+}
+
+#[test]
+fn an_old_swap_plan_coming_due_pauses_with_price_floor_required() {
+    // (c) It has no floor, so it must not run at a quote alone. Paused, not cancelled: the owner sees why.
+    let mut g = setup();
+    let id0 = legacy_swap_plan(&mut g);
+    step(&mut g, T0 + MINUTE, id0);
+    let p = plan(&g, id0);
+    assert_eq!((p.status, p.pause_reason, p.runs_done), (PlanStatus::Paused, Some(PlanPauseReason::PriceFloorRequired), 0));
+    assert!(logged("PRICE_FLOOR_REQUIRED") && logged("plan_paused"));
+    assert!(!method_called("get_return") && !method_called("add_proposal"), "no quote, no proposal");
+    assert_eq!(spent(&g), 0);
+    assert_eq!(pending(&g), 0);
+    let json = near_sdk::serde_json::to_value(&p).unwrap();
+    assert_eq!(json["pause_reason"], "price_floor_required");
+}
+
+#[test]
+fn an_old_swap_plan_with_a_quote_in_flight_at_the_upgrade_pauses_and_gives_the_window_back() {
+    // A 1.4.0 step asked for a quote, then the Guard was upgraded before on_quote ran.
+    let mut g = setup();
+    let id0 = legacy_swap_plan(&mut g);
+    let (due, rid) = (T0 + MINUTE, step_id(id0, T0 + MINUTE));
+    // Recreate the 1.4.0 step state: a counted, pending record for the run.
+    env_as(STRANGER, due);
+    g.plans.replace(id0, Plan { action: PlanAction::SwapWithFloor { pool_id: 57, token_out: id(USDT), max_slippage_bps: 100, min_out_per_near: U128(1) }, ..plan(&g, id0) });
+    let _ = g.execute_plan_step(id0);
+    assert_eq!(spent(&g), NEAR / 10);
+    g.plans.replace(id0, Plan { action: PlanAction::Swap { pool_id: 57, token_out: id(USDT), max_slippage_bps: 100 }, ..plan(&g, id0) });
+    quoted(&mut g, due, &rid, id0, Ok(896_500));
+    let p = plan(&g, id0);
+    assert_eq!((p.status, p.pause_reason), (PlanStatus::Paused, Some(PlanPauseReason::PriceFloorRequired)));
+    assert!(!method_called("add_proposal"));
+    assert_eq!(spent(&g), 0);
+    assert_eq!(pending(&g), 0);
+    assert_eq!(rec(&g, &rid).status, RequestStatus::Failed);
+}
+
+#[test]
+#[should_panic(expected = "PRICE_FLOOR_REQUIRED")]
+fn create_plan_refuses_the_old_swap_without_a_floor() {
+    // (d)
+    let mut g = setup();
+    create(&mut g, plan_of(PlanAction::Swap { pool_id: 57, token_out: id(USDT), max_slippage_bps: 100 }, NEAR / 10, 2));
+}
+
+#[test]
+#[should_panic(expected = "INVALID_PRICE_FLOOR")]
+fn create_plan_refuses_a_zero_floor() {
+    // (d)
+    let mut g = setup();
+    create(&mut g, plan_of(swap_floored(100, 0), NEAR / 10, 2));
 }
 
 // ---- close (issue #81)

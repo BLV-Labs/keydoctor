@@ -48,7 +48,7 @@ No formatter or linter is configured. CI runs `pnpm typecheck` and `pnpm test`, 
 - `POST /run-check`: `Authorization: Bearer` with `RUN_CHECK_TOKEN`, checked before any work.
 - `POST /mcp`: no token (ADR 0003). Every `tools/call` is rate-limited by `cf-connecting-ip`.
 - `POST /api/watch-link`: CORS only for `DASHBOARD_ORIGIN`.
-- D1: parameterized `prepare().bind()` only. Only the Worker writes `subscriptions`; baseline writes only in the daily job, the first subscription, and `compare` when no baseline exists or `update_baseline: true` is passed (ADR 0003).
+- D1: parameterized `prepare().bind()` only. Only the Worker writes `subscriptions`; baseline writes only in the daily job, the first subscription, and `compare` only when no baseline exists (ADR 0003).
 - RPC: validate targets with `resolveTarget` before fetching.
 
 ## Testing

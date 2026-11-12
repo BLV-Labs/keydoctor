@@ -3,6 +3,7 @@
 import { html, type Html } from "./html.ts";
 import { budgetHref, pageHref } from "./route.ts";
 import { AGENT_TEST_PROMPT } from "./budget-view.ts";
+import { pillarTag } from "./pillars.ts";
 
 const CAN = [
   "See your rules, your balance and what is left of the 24-hour limit",
@@ -62,6 +63,7 @@ export function renderAgentGuide(dao: string | null): Html {
   const back = dao === null ? pageHref("budget") : budgetHref(dao);
   return html`<section class="page-head"><div class="stack-sm grow">
       <a class="small" href="${back}" data-nav>Back to Agent Budget</a>
+      ${pillarTag("budget")}
       <h1 class="h1">How your agent works</h1>
       <p class="lead">Your agent can spend only inside the rules you set. Everything else waits for you.</p>
     </div></section>

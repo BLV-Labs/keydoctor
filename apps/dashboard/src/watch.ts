@@ -6,8 +6,8 @@ import { BOT_URL, BOT_USERNAME } from "./route.ts";
 export function alertLines(isDao: boolean): Html {
   return html`<p class="check-line">${icon.check()}<span>${
       isDao
-        ? "A daily message at 02:00 UTC when a key is added to or removed from any council account, or the council changes."
-        : "A daily message at 02:00 UTC when a key is added to or removed from this account."
+        ? "A daily message (about every 24 hours) when a key is added to or removed from any council account, or the council changes."
+        : "A daily message (about every 24 hours) when a key is added to or removed from this account."
     }</span></p>
     ${isDao
       ? html`<p class="check-line">${icon.check()}<span>A warning before the final vote when a voter on a pending proposal has a new full-access key. Checked every 15 minutes.</span></p>

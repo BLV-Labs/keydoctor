@@ -4,7 +4,7 @@ import { bestSupply, type RheaPool } from "key-doctor";
 import type { RawPolicy } from "./guard-proposals.ts";
 import { GUARD_ROLE } from "./guard-proposals.ts";
 import { CHECK_EVERY_LONG, type YieldSettings } from "./yield-settings.ts";
-import { tokenAmount } from "./yield-proposals.ts";
+import { readAmount } from "./yield-proposals.ts";
 
 /** A fraction a year as a short percent: 0.04 is "4", 0.0425 is "4.25". */
 export const pctText = (fraction: number): string => (fraction * 100).toFixed(2).replace(/\.?0+$/, "");
@@ -87,7 +87,7 @@ const every = (s: YieldSettings) => `every ${s.checkEvery === "15m" ? "15 minute
 /** The one sentence on Review (K7): the exact limits the user typed. */
 export function reviewSentence(s: Pick<YieldSettings, "maxPut" | "keepReady" | "minApr" | "checkEvery">, decimals: number, symbol: string): string {
   const full = { ...s, mode: "suggest", paused: false } as YieldSettings;
-  return `Checks Rhea Lend ${every(full)} and suggests putting up to ${tokenAmount(s.maxPut, decimals)} ${symbol} to work, always keeping ${tokenAmount(s.keepReady, decimals)} ${symbol} ready, only above ${pctText(s.minApr)}% a year. You approve every move.`;
+  return `Checks Rhea Lend ${every(full)} and suggests putting up to ${readAmount(s.maxPut, decimals)} ${symbol} to work, always keeping ${readAmount(s.keepReady, decimals)} ${symbol} ready, only above ${pctText(s.minApr)}% a year. You approve every move.`;
 }
 
 /** The one sentence under the K8 title. */

@@ -12,18 +12,20 @@ database_name = "key-doctor"
 database_id = "a7ab0080-7623-4914-bab6-979e63ff8328"
 migrations_dir = "migrations"
 
-# Proposal watch every 15 minutes, daily key diff at 02:00 UTC, keeper and yield push every 15 minutes on their
+# Proposal watch every 15 minutes, daily key diff hourly (each target about once a day, oldest first), keeper and yield push every 15 minutes on their
 # own offsets (src/index.ts PROPOSAL_CRON, DAILY_CRON, KEEPER_CRON, YIELD_CRON). The free plan allows 5 triggers.
 [triggers]
-crons = ["*/15 * * * *", "0 2 * * *", "7,22,37,52 * * * *", "11,26,41,56 * * * *"]
+crons = ["*/15 * * * *", "2 * * * *", "7,22,37,52 * * * *", "11,26,41,56 * * * *"]
 
 [vars]
 NEW_KEY_WINDOW_HOURS = "48"
 MAX_DAOS_PER_RUN = "5"
+# Daily key diff: targets per hourly run, so 72 a day; watched targets take turns, oldest check first.
+MAX_DAILY_TARGETS_PER_RUN = "3"
 PENDING_SUB_TTL_MINUTES = "30"
 DASHBOARD_URL = "https://key-doctor-dashboard.pages.dev"
 DASHBOARD_ORIGIN = "https://key-doctor-dashboard.pages.dev"
-PROPOSAL_UI_URL_TEMPLATE = ""
+PROPOSAL_UI_URL_TEMPLATE = "https://key-doctor-dashboard.pages.dev/?target={dao}"
 ALERT_LANG = "both"
 RPC_URL_TESTNET = "https://rpc.testnet.fastnear.com,https://rpc.testnet.near.org"
 RPC_URL_MAINNET = "https://rpc.mainnet.fastnear.com,https://rpc.mainnet.near.org"
@@ -34,5 +36,6 @@ KEEPER_MIN_BALANCE = "1"
 KEEPER_MAX_BALANCE = "5"
 KEEPER_MAX_GUARDS_PER_RUN = "3"
 KEEPER_MAX_STEPS_PER_RUN = "3"
+KEEPER_MAX_TXS_PER_DAO_PER_DAY = "48"
 # Yield push (YD3): DAOs read per cycle; watched DAOs take turns. Above 1 only on the paid plan.
 MAX_YIELD_DAOS_PER_RUN = "1"

@@ -9,12 +9,17 @@ import { getProposalState, saveProposalState } from "../store/proposal-state.ts"
 import { latestSnapshot, saveSnapshot } from "../store/snapshots.ts";
 import {
   addSubscription,
+  countChatsByUser,
+  countChatsFor,
   countSubscriptions,
   deleteChat,
+  isSubscribed,
+  MAX_CHATS_PER_TARGET,
+  MAX_CHATS_PER_USER_TARGET,
   listSubscriptions,
   removeSubscription,
 } from "../store/subscriptions.ts";
-import { sendMessage, sendTyping, TelegramError, type Outgoing } from "./api.ts";
+import { isChatAdmin, sendMessage, sendTyping, TelegramError, type Outgoing } from "./api.ts";
 import { langOf, renderChanges, renderCheck, renderHelp, renderYield, TEXT, type Lang } from "./render.ts";
 import { takePending } from "../store/pending.ts";
 import { isCode } from "../watch-link.ts";
@@ -77,6 +82,8 @@ export function parseCommand(text: string, isGroup: boolean): Command {
 export interface Incoming {
   chatId: string;
   chatType: string;
+  /** The sender's user id, or null when Telegram sent none. */
+  fromId: string | null;
   text: string;
   lang: Lang;
 }
@@ -86,12 +93,14 @@ export function incomingFrom(update: unknown): Incoming | null {
   if (typeof update !== "object" || update === null) return null;
   const msg = (update as { message?: unknown }).message;
   if (typeof msg !== "object" || msg === null) return null;
-  const m = msg as { text?: unknown; chat?: { id?: unknown; type?: unknown }; from?: { is_bot?: unknown; language_code?: unknown } };
+  const m = msg as { text?: unknown; chat?: { id?: unknown; type?: unknown }; from?: { id?: unknown; is_bot?: unknown; language_code?: unknown } };
   if (typeof m.text !== "string" || m.from?.is_bot === true) return null;
   const id = m.chat?.id;
   const type = m.chat?.type;
   if ((typeof id !== "number" && typeof id !== "string") || typeof type !== "string" || type === "channel") return null;
-  return { chatId: String(id), chatType: type, text: m.text.slice(0, 1000), lang: langOf(m.from?.language_code) };
+  const from = m.from?.id;
+  const fromId = typeof from === "number" && Number.isSafeInteger(from) ? String(from) : null;
+  return { chatId: String(id), chatType: type, fromId, text: m.text.slice(0, 1000), lang: langOf(m.from?.language_code) };
 }
 
 const kdOf = (e: unknown): KdError | null => (isKdError(e) ? e.kd : null);
@@ -114,6 +123,11 @@ async function run(cmd: Command, inc: Incoming, env: Env, typing: () => void): P
   }
   if (cmd.target === null) return cmd.name.startsWith("yield") ? TEXT.yieldUsage(lang, cmd.name) : TEXT.usage(lang, cmd.name);
   const t = resolve({ target: cmd.target }, env);
+  // Red-team M7: in a group, turning alerts off is for admins only, so one member cannot silence the council.
+  if ((cmd.name === "unwatch" || cmd.name === "yield_unwatch") && inc.chatType !== "private") {
+    const token = env.TELEGRAM_BOT_TOKEN;
+    if (inc.fromId === null || !token || !(await isChatAdmin(token, chatId, inc.fromId))) return TEXT.adminsOnly(lang);
+  }
   if (cmd.name === "yield" || cmd.name === "yield_watch") {
     const wait = checkRate(`yield:${chatId}`, YIELD_PER_CHAT_PER_MIN);
     if (wait > 0) return TEXT.rateLimited(lang, wait);
@@ -125,7 +139,7 @@ async function run(cmd: Command, inc: Incoming, env: Env, typing: () => void): P
       return renderCheck(lang, await scan({ target: t.id }, env), env.DASHBOARD_URL);
     case "changes":
       typing();
-      return renderChanges(lang, await compare({ target: t.id, update_baseline: false }, env), env.DASHBOARD_URL);
+      return renderChanges(lang, await compare({ target: t.id }, env), env.DASHBOARD_URL);
     case "unwatch":
       return (await removeSubscription(env.DB, t.id, t.network, chatId)) ? TEXT.unwatched(lang, t.id) : TEXT.notWatched(lang, t.id);
     case "watch":
@@ -175,6 +189,12 @@ async function watchTarget(
 ): Promise<Outgoing> {
   const { lang, chatId } = inc;
   if ((await countSubscriptions(env.DB, chatId)) >= MAX_SUBS_PER_CHAT) return TEXT.tooMany(lang, MAX_SUBS_PER_CHAT);
+  // Already watching comes first: a chat that holds a slot should hear that, not "full".
+  if (await isSubscribed(env.DB, id, network, chatId)) return TEXT.alreadyWatched(lang, id);
+  if ((await countChatsFor(env.DB, id, network)) >= MAX_CHATS_PER_TARGET) return TEXT.targetFull(lang, id, MAX_CHATS_PER_TARGET);
+  if (inc.fromId !== null && (await countChatsByUser(env.DB, id, network, inc.fromId)) >= MAX_CHATS_PER_USER_TARGET) {
+    return TEXT.userTargetFull(lang, id, MAX_CHATS_PER_USER_TARGET);
+  }
   typing();
   const report = await scan({ target: id, network }, env);
   const type = report.target.type;
@@ -185,8 +205,10 @@ async function watchTarget(
     chat_id: chatId,
     chat_type: inc.chatType,
     created_at: new Date().toISOString(),
+    added_by: inc.fromId,
   });
-  if (!added) return TEXT.alreadyWatched(lang, id);
+  // Another update took the last slot while this one scanned.
+  if (!added) return (await isSubscribed(env.DB, id, network, chatId)) ? TEXT.alreadyWatched(lang, id) : TEXT.targetFull(lang, id, MAX_CHATS_PER_TARGET);
   // First subscription to a target with no baseline: this scan becomes the baseline (one of the two baseline writers).
   if ((await latestSnapshot(env.DB, id, network)) === null) await saveSnapshot(env.DB, report);
   // A DAO is watched only from now on: record the current last proposal, no alerts.

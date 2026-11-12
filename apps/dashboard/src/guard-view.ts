@@ -2,7 +2,7 @@
 // votes in its usual DAO UI, and only a passed proposal creates or changes a Guard. The one direct call is a
 // guardian's `pause`, which can only stop a Guard.
 import type { Network } from "key-doctor";
-import { formatUtc, yoctoToNear } from "./format.ts";
+import { formatUtc, nearText } from "./format.ts";
 import { html, type Html } from "./html.ts";
 import { icon } from "./icons.ts";
 import { GUARD_FORM_TEXT, type GuardFormError } from "./guard-form.ts";
@@ -10,11 +10,13 @@ import { GUARD_METHODS, GUARD_ROLE, type AddProposalArgs, type RawPolicy } from 
 import type { GuardDao, GuardLive } from "./guard-read.ts";
 import { copyRow } from "./pages.ts";
 import { pageHref, routeHref } from "./route.ts";
+import { pillarTag } from "./pillars.ts";
 
 const EXAMPLE_GUARD_DAO = "kdoncall.sputnik-v2.testnet";
 
 function head(lead: string): Html {
   return html`<section class="page-head"><div class="stack-sm grow">
+      ${pillarTag("budget")}
       <p class="eyebrow">Agent Guard</p>
       <h1 class="h1">Let an AI agent pay, within limits the council set</h1>
       <p class="lead">${lead}</p>
@@ -46,7 +48,7 @@ export function renderGuardLoading(dao: string): Html {
     <section class="card pad stack-sm" aria-busy="true" aria-label="Loading ${dao}"><p class="meta mono" role="status">${dao}</p></section>`;
 }
 
-const near = (yocto: string | undefined): string => (yocto === undefined ? "unknown" : `${yoctoToNear(yocto)} NEAR`);
+const near = (yocto: string | undefined): string => (yocto === undefined ? "unknown" : `${nearText(yocto)} NEAR`);
 
 function row(label: string, value: Html | string): Html {
   return html`<tr><th scope="row">${label}</th><td>${value}</td></tr>`;
@@ -136,7 +138,7 @@ export function renderGuardCard(g: GuardLive, network: Network): Html {
       ${p === null ? "" : html`<div class="table-scroll"><table class="info-table"><tbody>
         ${row("Per transfer", near(p.max_per_tx))}
         ${row("Per 24 hours", near(p.max_per_day))}
-        ${row("Spent in window", w === null ? "unknown" : html`${near(w.spent_in_window)}, ${near(w.remaining)} left, resets ${formatUtc(w.resets_at)}`)}
+        ${row("Spent in window", w === null ? "unknown" : html`${near(w.spent_in_window)}, ${near(w.remaining)} left${w.spent_in_window === "0" ? "" : `, frees up from ${formatUtc(w.resets_at)}`}`)}
         ${row("Pending per agent", String(p.max_pending_per_agent))}
         ${row("Reserve kept", near(p.min_reserve))}
         ${g.config === null ? "" : row("Whitelisted receivers", String(g.config.whitelist))}

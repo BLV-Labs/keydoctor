@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it, mock } from "node:test";
 import { DCA_TESTNET } from "key-doctor";
-import { createDcaProposal, dcaFromForm, DCA_SLIPPAGE_CHOICES } from "../src/budget-flow.ts";
-import { DCA_TOKEN_CONTRACTS, guardNeedsUpdate, readDcaQuote, readDcaReadiness } from "../src/budget-read.ts";
+import { createDcaProposal, dcaFloorFromText, dcaFloorPrefill, dcaFromForm, DCA_SLIPPAGE_CHOICES } from "../src/budget-flow.ts";
+import { DCA_TOKEN_CONTRACTS, guardNeedsUpdate, readDcaQuote, readDcaReadiness, readUpgradeShortfall, upgradeShortfallYocto } from "../src/budget-read.ts";
 import type { BudgetLive, BudgetPlan, DcaReadiness } from "../src/budget-read.ts";
 import { renderBudget, renderBudgetCreate, renderBudgetPanel, type DcaView } from "../src/budget-view.ts";
 import { html } from "../src/html.ts";
@@ -103,9 +103,9 @@ describe("guard-proposals: Enable USDT", () => {
 });
 
 describe("budget-read: guardNeedsUpdate", () => {
-  it("is true below 1.3.0 and false from 1.3.0 up, across the major/minor/patch edges", () => {
-    for (const v of ["0.9.9", "1.0.0", "1.2.0", "1.2.99"]) assert.equal(guardNeedsUpdate(v), true, v);
-    for (const v of ["1.3.0", "1.3.1", "1.10.0", "2.0.0", "2.0.1"]) assert.equal(guardNeedsUpdate(v), false, v);
+  it("is true below 1.5.0 and false from 1.5.0 up: a 1.4.0 Guard has no lowest price, so a DCA must not start on it", () => {
+    for (const v of ["0.9.9", "1.0.0", "1.2.0", "1.3.0", "1.4.0", "1.4.99"]) assert.equal(guardNeedsUpdate(v), true, v);
+    for (const v of ["1.5.0", "1.5.1", "1.10.0", "2.0.0", "2.0.1"]) assert.equal(guardNeedsUpdate(v), false, v);
   });
   it("treats an unreadable version as not old, so no Update button shows on a guess", () => {
     for (const v of [null, "", "abc", "1.2", "v1.2.0", "1.2.0-beta"]) assert.equal(guardNeedsUpdate(v), false, String(v));
@@ -127,6 +127,67 @@ function stubRpc(views: Views): string[] {
   return calls;
 }
 afterEach(() => mock.restoreAll());
+
+describe("budget-read: upgradeShortfallYocto", () => {
+  const CODE_1_6_0 = 372_544; // bytes of Guard 1.6.0
+  it("a Guard on global code with 0.8 NEAR free lacks the whole copy: 3.73 NEAR + 0.01 margin - 0.8, rounded up", () => {
+    assert.equal(upgradeShortfallYocto("800000000000000000000000", CODE_1_6_0, 0), "2940000000000000000000000");
+  });
+  it("is 0 once the free NEAR covers the copy and the margin", () => {
+    assert.equal(upgradeShortfallYocto("3736000000000000000000000", CODE_1_6_0, 0), "0");
+    assert.equal(upgradeShortfallYocto("3735440000000000000000000", CODE_1_6_0, 0), "0", "exactly enough is enough");
+  });
+  it("a Guard with its own copy pays only for the growth", () => {
+    // 38,544 bytes of growth: 0.38544 NEAR + 0.01 margin.
+    assert.equal(upgradeShortfallYocto("500000000000000000000000", CODE_1_6_0, 334_000), "0");
+    assert.equal(upgradeShortfallYocto("100000000000000000000000", CODE_1_6_0, 334_000), "300000000000000000000000");
+    assert.equal(upgradeShortfallYocto("0", 300_000, 334_000), "10000000000000000000000", "smaller code still needs the margin");
+  });
+  it("rounds up to 0.01 NEAR so the asked amount is always enough", () => {
+    // 1 yocto short still asks for 0.01 NEAR.
+    assert.equal(upgradeShortfallYocto("3735439999999999999999999", CODE_1_6_0, 0), "10000000000000000000000");
+  });
+});
+
+describe("budget-read: readUpgradeShortfall", () => {
+  const code = (n: number) => Buffer.alloc(n).toString("base64");
+  function stubRaw(account: Record<string, unknown> | null, newCode: number | null, ownCode: number | null): string[] {
+    const calls: string[] = [];
+    mock.method(globalThis, "fetch", async (_url: string, init: { body: string }) => {
+      const { method, params } = JSON.parse(init.body) as { method: string; params: Record<string, unknown> };
+      if (method === "block") return Response.json({ jsonrpc: "2.0", id: "kd", result: { header: { height: 99, timestamp_nanosec: "1" } } });
+      calls.push(String(params.request_type));
+      const fail = Response.json({ jsonrpc: "2.0", id: "kd", error: { name: "HANDLER_ERROR" } });
+      if (params.request_type === "view_account") return account === null ? fail : Response.json({ jsonrpc: "2.0", id: "kd", result: account });
+      if (params.request_type === "call_function" && params.method_name === "get_guard_code") return newCode === null ? fail : Response.json({ jsonrpc: "2.0", id: "kd", result: { result: [...Buffer.alloc(newCode)], logs: [] } });
+      if (params.request_type === "view_code") return ownCode === null ? fail : Response.json({ jsonrpc: "2.0", id: "kd", result: { code_base64: code(ownCode) } });
+      return fail;
+    });
+    return calls;
+  }
+  const GLOBAL = "11111111111111111111111111111111";
+  it("a Guard on global code: the whole new code, from the balance minus storage, and no view_code read", async () => {
+    // 1.3 NEAR on the account, 50,000 bytes used (0.5 NEAR locked): 0.8 NEAR free.
+    const calls = stubRaw({ amount: "1300000000000000000000000", storage_usage: 50_000, code_hash: GLOBAL }, 372_544, null);
+    assert.equal(await readUpgradeShortfall(GUARD, FACTORY, "testnet"), "2940000000000000000000000");
+    assert.ok(!calls.includes("view_code"));
+  });
+  it("a Guard with its own copy: only the growth over its current code", async () => {
+    stubRaw({ amount: "7840000000000000000000000", storage_usage: 334_175, code_hash: "4dug" }, 372_544, 330_000);
+    assert.equal(await readUpgradeShortfall(GUARD, FACTORY, "testnet"), "0");
+  });
+  it("any failed read is null (unknown), never 0 (enough)", async () => {
+    stubRaw(null, 372_544, null);
+    assert.equal(await readUpgradeShortfall(GUARD, FACTORY, "testnet"), null);
+    mock.restoreAll();
+    stubRaw({ amount: "1", storage_usage: 1, code_hash: GLOBAL }, null, null);
+    assert.equal(await readUpgradeShortfall(GUARD, FACTORY, "testnet"), null);
+    mock.restoreAll();
+    stubRaw({ amount: "1", storage_usage: 1, code_hash: "4dug" }, 10, null);
+    assert.equal(await readUpgradeShortfall(GUARD, FACTORY, "testnet"), null);
+    assert.equal(await readUpgradeShortfall(GUARD, "", "testnet"), null, "no factory in this build");
+  });
+});
 
 describe("budget-read: readDcaReadiness and readDcaQuote", () => {
   const MIN = "1250000000000000000000";
@@ -179,7 +240,7 @@ describe("budget-read: readDcaReadiness and readDcaQuote", () => {
 describe("dcaFromForm", () => {
   const NOW = new Date("2026-11-10T00:00:00").getTime();
   const rules = { policy: { max_per_tx: NEAR(2), max_per_day: NEAR(10) } };
-  const form = (over: Record<string, string> = {}) => ({ amount: "1", every: "1", unit: "days", stop: "times", runs: "10", slippage: "100", start: "", end: "", ...over });
+  const form = (over: Record<string, string> = {}) => ({ amount: "1", every: "1", unit: "days", stop: "times", runs: "10", slippage: "100", floor: "0.85", start: "", end: "", ...over });
   const ok = (over: Record<string, string> = {}) => {
     const r = dcaFromForm(form(over), rules, NOW);
     assert.ok(r.ok, r.ok ? "" : r.error);
@@ -234,16 +295,33 @@ describe("dcaFromForm", () => {
     assert.equal(later.starts_now, false);
     assert.equal(later.start_ms, new Date("2026-11-11T09:30").getTime());
   });
-  it("create_plan carries a swap action with the typed slippage, the exchange's pool and the DCA strategy id, start in nanoseconds", () => {
-    const plan = ok({ slippage: "50", start: "2026-11-11T09:30" });
+  it("create_plan carries a swap_with_floor action with the typed slippage and lowest price, the exchange's pool and the DCA strategy id, start in nanoseconds", () => {
+    const plan = ok({ slippage: "50", floor: "8.5", start: "2026-11-11T09:30" });
     const p = decode(action(createDcaProposal(GUARD, plan)).actions[0]!.args!).plan as Record<string, unknown>;
-    assert.deepEqual(p.action, { type: "swap", pool_id: DCA_TESTNET.pool_id, token_out: DCA_TESTNET.token_out, max_slippage_bps: 50 });
+    // The floor is what bounds a run when someone skews the pool before calling the step (red team H2).
+    assert.deepEqual(p.action, { type: "swap_with_floor", pool_id: DCA_TESTNET.pool_id, token_out: DCA_TESTNET.token_out, max_slippage_bps: 50, min_out_per_near: "8500000" });
     assert.equal(p.strategy_id, "dca-near");
     assert.equal(p.amount_per_run, NEAR(1));
     assert.equal(p.start_at, (BigInt(plan.start_ms) * 1_000_000n).toString());
     assert.equal(p.runs_total, 10);
     // Slippage is a bound the Guard checks at the swap; the page must not send a min_out of its own.
     assert.equal("min_out" in p, false);
+  });
+  it("lowest price: USDT per NEAR to base units with the token's 6 decimals, exact", () => {
+    for (const [text, base] of [["8.5", "8500000"], ["0.000001", "1"], ["12", "12000000"], [" 0.851675 ", "851675"], ["1.100000", "1100000"]] as const) {
+      const r = dcaFloorFromText(text);
+      assert.ok(r.ok && r.value === base, `${text} -> ${r.ok ? r.value : r.error}`);
+    }
+    assert.equal(ok({ floor: "9.25" }).min_out_per_near, "9250000");
+  });
+  it("lowest price 0, empty, negative, over 6 decimals or not a number is refused: a zero floor is no floor", () => {
+    for (const f of ["0", "0.0", "0.0000001", "1.1234567", "", "-1", "abc", "1e3", "1,5"]) assert.match(bad({ floor: f }), /Lowest price/, f);
+  });
+  it("the lowest price starts 5 % under the price of 1 NEAR now, rounded down; with no price it starts empty", () => {
+    // 896_500 * 9500 / 10_000 = 851_675
+    assert.equal(dcaFloorPrefill("896500"), "0.851675");
+    assert.equal(dcaFloorPrefill("10000001"), "9.5");
+    for (const p of [null, "", "abc", "1"]) assert.equal(dcaFloorPrefill(p), "", String(p));
   });
 });
 
@@ -262,11 +340,11 @@ const live = (over: Partial<BudgetLive> = {}, pol: RawPolicy = policy): BudgetLi
   balance: NEAR(12), withdrawable: NEAR(11), proposals: [], requests: [], plans: [], ...over,
 });
 const readiness = (over: Partial<DcaReadiness> = {}): DcaReadiness => ({
-  version: "1.3.0", latestHash: "HASH",
+  version: "1.5.0", latestHash: "HASH",
   registrations: DCA_TOKEN_CONTRACTS.map((contract) => ({ contract, registered: true, min: "1" })), ...over,
 });
-const view = (over: Partial<DcaView> = {}): DcaView => ({ network: "testnet", readiness: readiness(), quote: "896500", canUpdate: true, ...over });
-const values = { connected: "1", amount: "1", every: "1", unit: "days", stop: "times", runs: "5", slippage: "100" };
+const view = (over: Partial<DcaView> = {}): DcaView => ({ network: "testnet", readiness: readiness(), quote: "896500", price: "896500", canUpdate: true, upgradeShort: "0", ...over });
+const values = { connected: "1", amount: "1", every: "1", unit: "days", stop: "times", runs: "5", slippage: "100", floor: "0.85" };
 const confirm = { ...values, step: "confirm" };
 const NOW = new Date("2026-11-10T00:00:00").getTime();
 const panel = (b: BudgetLive, dca: DcaView | null, v: Record<string, string> = values) => renderBudgetPanel("dca", b, null, v, NOW, dca).value;
@@ -283,7 +361,7 @@ describe("DCA drawer: checklist and Start", () => {
   });
   for (const [name, b, dca, label] of [
     ["wallet not connected", live(), view(), "Connect the owner"],
-    ["Budget older than 1.3.0", live(), view({ readiness: readiness({ version: "1.2.0" }) }), "Update your Budget so it can swap"],
+    ["Budget older than 1.5.0", live(), view({ readiness: readiness({ version: "1.4.0" }) }), "Update your Budget so it can swap"],
     ["swaps not allowed", live({}, oldPolicy), view(), "Allow swaps for this Budget"],
     ["USDT not enabled", live(), view({ readiness: readiness({ registrations: [{ contract: "usdt.fakes.testnet", registered: false, min: "1" }] }) }), "Enable USDT for this Budget"],
   ] as const) {
@@ -303,15 +381,31 @@ describe("DCA drawer: checklist and Start", () => {
       assert.match(startBtn(panel(live(), dca, confirm))![1]!, /disabled/);
     });
   }
-  it("'Update your Budget' shows only when the version is below 1.3.0", () => {
-    assert.match(panel(live(), view({ readiness: readiness({ version: "1.2.0" }) })), /data-action="dca-upgrade"/);
-    assert.doesNotMatch(panel(live(), view({ readiness: readiness({ version: "1.3.0" }) })), /Update your Budget|dca-upgrade/);
+  it("'Update your Budget' shows only when the version is below 1.5.0", () => {
+    assert.match(panel(live(), view({ readiness: readiness({ version: "1.4.0" }) })), /data-action="dca-upgrade"/);
+    assert.doesNotMatch(panel(live(), view({ readiness: readiness({ version: "1.5.0" }) })), /Update your Budget|dca-upgrade/);
     assert.doesNotMatch(panel(live(), view({ readiness: readiness({ version: null }) })), /data-action="dca-upgrade"/, "unreadable is not old");
   });
   it("the Update button is disabled when this build has no factory or the hash is unread", () => {
     const old = readiness({ version: "1.2.0" });
     assert.match(panel(live(), view({ readiness: old, canUpdate: false })), /data-action="dca-upgrade" disabled/);
     assert.match(panel(live(), view({ readiness: { ...old, latestHash: null } })), /data-action="dca-upgrade" disabled/);
+  });
+  // A Guard on the factory's global code holds no code of its own; `upgrade` stores a copy (3.73 NEAR for 1.6.0)
+  // from the Guard's free NEAR. Short of that the update fails after two signatures, so the button waits for the top-up.
+  it("the Update button is disabled and names the NEAR to send when the Budget account lacks room for the code", () => {
+    const h = panel(live(), view({ readiness: readiness({ version: "1.4.0" }), upgradeShort: "2950000000000000000000000" }));
+    assert.match(h, /data-action="dca-upgrade" disabled/);
+    assert.match(words(h), /Send\s+2\.95 NEAR\s+to the Budget account\s+g1\.guards\.testnet\s+first/);
+  });
+  it("with enough room the Update button is enabled and no note shows; an unread check warns but does not block", () => {
+    const old = readiness({ version: "1.4.0" });
+    const ok = panel(live(), view({ readiness: old }));
+    assert.doesNotMatch(ok, /data-action="dca-upgrade" disabled/);
+    assert.doesNotMatch(ok, /Send .* to the Budget account|could not check/);
+    const unread = panel(live(), view({ readiness: old, upgradeShort: null }));
+    assert.doesNotMatch(unread, /data-action="dca-upgrade" disabled/);
+    assert.match(unread, /could not check that the Budget account/);
   });
   it("mainnet shows the testnet-only line, no form and no Start", () => {
     const h = panel(live(), view({ network: "mainnet" }), confirm);
@@ -338,6 +432,27 @@ describe("DCA drawer: review", () => {
     assert.doesNotMatch(h, /Start selling/);
     assert.match(h, /value="Review"|>Review</);
   });
+  it("the edit step asks for a lowest price, starting 5 % under the current price, and keeps what the owner typed", () => {
+    const fresh = panel(live(), view(), { connected: "1" });
+    assert.match(fresh, /name="floor"[^>]*value="0\.851675"/);
+    assert.match(words(fresh), /Now about 0\.8965 USDT per NEAR; this starts 5 % lower\. A run below it is skipped/);
+    assert.match(panel(live(), view(), { connected: "1", floor: "0.7" }), /name="floor"[^>]*value="0\.7"/);
+    const unread = panel(live(), view({ price: null }), { connected: "1" });
+    assert.match(unread, /name="floor"[^>]*value=""/);
+    assert.match(words(unread), /current price could not be read/);
+  });
+  it("the review shows the lowest price and carries it to the signature", () => {
+    const h = panel(live(), view(), confirm);
+    assert.match(words(h), /Lowest price\s+0\.85 USDT per NEAR/);
+    assert.match(h, /<input type="hidden" name="floor" value="0\.85">/);
+    assert.doesNotMatch(words(h), /would be skipped/);
+  });
+  it("the review warns when today's price is already below the lowest price, as the step would skip", () => {
+    // 1 NEAR quotes 896_500; at 1 % the step's own floor is 887_535, under a 0.9 USDT floor (900_000).
+    assert.match(words(panel(live(), view(), { ...confirm, floor: "0.9" })), /At today's price a run would be skipped/);
+    // 0.8875 USDT -> 887_500 <= 887_535: runs, no warning.
+    assert.doesNotMatch(words(panel(live(), view(), { ...confirm, floor: "0.8875" })), /would be skipped/);
+  });
   it("offers the slippage choices 0.5 / 1 / 2 % only", () => {
     const h = panel(live(), view());
     assert.deepEqual([...h.matchAll(/<option value="(\d+)"[^>]*>[\d.]+ %<\/option>/g)].map((m) => m[1]!), ["50", "100", "200"]);
@@ -347,12 +462,16 @@ describe("DCA drawer: review", () => {
 describe("DCA in plain words", () => {
   const surfaces: Record<string, string> = {
     "edit step": panel(live(), view()),
-    "edit step, old Budget": panel(live({}, oldPolicy), view({ readiness: readiness({ version: "1.2.0", registrations: [{ contract: "usdt.fakes.testnet", registered: false, min: "1" }] }) })),
+    "edit step, old Budget": panel(live({}, oldPolicy), view({ readiness: readiness({ version: "1.4.0", registrations: [{ contract: "usdt.fakes.testnet", registered: false, min: "1" }] }) })),
     "edit step, unread": panel(live(), view({ readiness: null })),
+    "edit step, old Budget short of NEAR for the update": panel(live(), view({ readiness: readiness({ version: "1.4.0" }), upgradeShort: "2950000000000000000000000" })),
+    "edit step, update room unread": panel(live(), view({ readiness: readiness({ version: "1.4.0" }), upgradeShort: null })),
     review: panel(live(), view(), confirm),
     "review, short": panel(live({ withdrawable: NEAR(1) }), view({ quote: null }), confirm),
     mainnet: panel(live(), view({ network: "mainnet" })),
     "plans card": renderBudget(live({ plans: [swapPlan()], usdt: "2500000" }), "testnet").value,
+    "review, below the lowest price": panel(live(), view(), { ...confirm, floor: "0.9" }),
+    "plans card, old plan paused": renderBudget(live({ plans: [swapPlan({ action_type: "swap", status: "paused", pause_reason: "price_floor_required" })] }), "testnet").value,
   };
   for (const [name, h] of Object.entries(surfaces)) {
     it(`${name} has no protocol words outside Technical details`, () => assert.doesNotMatch(words(h), JARGON, `${name}: ${words(h).match(JARGON)?.[0]}`));
@@ -360,7 +479,7 @@ describe("DCA in plain words", () => {
 });
 
 function swapPlan(over: Partial<BudgetPlan> = {}): BudgetPlan {
-  return { plan_id: 4, receiver_id: null, action_type: "swap", strategy_id: "dca-near", amount_per_run: NEAR(1), interval_sec: 86_400, runs_total: 5, runs_done: 1, next_run_at: "1794222000000000000", status: "active", pause_reason: null, ...over };
+  return { plan_id: 4, receiver_id: null, action_type: "swap_with_floor", strategy_id: "dca-near", amount_per_run: NEAR(1), interval_sec: 86_400, runs_total: 5, runs_done: 1, next_run_at: "1794222000000000000", status: "active", pause_reason: null, ...over };
 }
 
 describe("Budget page: DCA surfaces", () => {
@@ -368,6 +487,11 @@ describe("Budget page: DCA surfaces", () => {
     const h = words(renderBudget(live({ plans: [swapPlan({ amount_per_run: "500000000000000000000000", interval_sec: 7_200 })] }), "testnet").value);
     assert.match(h, /Sell 0\.5 NEAR for USDT every 2 hours/);
     assert.doesNotMatch(h, /Plan #4 \(swap\)/);
+  });
+  it("an old swap plan (no lowest price) still reads as a sale, and its pause says to create it again", () => {
+    const h = words(renderBudget(live({ plans: [swapPlan({ action_type: "swap", status: "paused", pause_reason: "price_floor_required" })] }), "testnet").value);
+    assert.match(h, /Sell 1 NEAR for USDT every 1 day/);
+    assert.match(h, /made before the lowest price was required\. Cancel it and create it again/);
   });
   it("the Plans card offers New payout and New DCA", () => {
     const h = renderBudget(live(), "testnet").value;

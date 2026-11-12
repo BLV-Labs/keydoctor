@@ -352,6 +352,22 @@ describe("plans_status", () => {
     assert.equal(row!.receiver_id, null);
   });
 
+  it("names the token a swap_with_floor plan buys too (Guard 1.5.0)", async () => {
+    const swap = plan(4, { strategy_id: "dca-near", action: { type: "swap_with_floor", pool_id: 57, token_out: "usdt.fakes.testnet", max_slippage_bps: 100, min_out_per_near: "8500000" } });
+    const [row] = (await chain({ views: { get_plans: () => [swap] } }).guard.plansStatus()).plans;
+    assert.equal(row!.action, "swap_with_floor");
+    assert.equal(row!.token_out, "usdt.fakes.testnet");
+    assert.equal(row!.receiver_id, null);
+  });
+
+  it("explains a price_floor_required pause instead of leaving the agent with a bare code", async () => {
+    const old = plan(5, { strategy_id: "dca-near", status: "paused", pause_reason: "price_floor_required", action: { type: "swap", pool_id: 57, token_out: "usdt.fakes.testnet", max_slippage_bps: 100 } });
+    const [row] = (await chain({ views: { get_plans: () => [old] } }).guard.plansStatus()).plans;
+    assert.ok(row!.status_text);
+    assert.match(row!.status_text!, /no lowest price\. The owner cancels it and creates it again/);
+    assert.equal(row!.next_run_at, null);
+  });
+
   it("says why a plan is paused and gives no next run for one that will not run", async () => {
     const { guard } = chain({
       views: { get_plans: () => [plan(1, { status: "paused", pause_reason: "insufficient_balance" }), plan(2, { status: "completed", runs_done: 3, next_run_at: "1793703600000000000" })] },

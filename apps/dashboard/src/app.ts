@@ -3,6 +3,7 @@ import { isKdError, listProposals, scanAccount, scanTarget, type KdError, type K
 import { revealClampToggles, toggleClamp } from "./clamp.ts";
 import { html, type Html } from "./html.ts";
 import { INVALID_NAME_MESSAGE, renderAgents, renderAlertsDrawer, renderError, renderHome, renderLayout, renderScanning } from "./pages.ts";
+import { renderRoadmap } from "./roadmap.ts";
 import { buildDeletePlan, GUARD_TEXT, METEOR_INSTALL_URL, type DeletePlan } from "./cleanup.ts";
 import { renderCleanup } from "./cleanup-view.ts";
 import { PAGE_SIZE, pageOf, parsePaging, type Paging } from "./paging.ts";
@@ -12,7 +13,7 @@ import { PROPOSALS_ID, PROPOSALS_LIST, renderProposals } from "./proposals-view.
 import { renderAccount, renderCouncil } from "./report.ts";
 import { budgetHref, guardHref, homeHref, parseRoute, resolveInput, routeHref, settledHref, suffixNetwork, yieldHref, yieldNewHref, type Page, type Route, type RouteLink } from "./route.ts";
 import { renderAgentGuide } from "./agent-guide.ts";
-import { yoctoToNear } from "./format.ts";
+import { nearText } from "./format.ts";
 import { whenSlow } from "./wallet-hint.ts";
 import { formToInput, isAccountId, validateGuardForm, type GuardFormError } from "./guard-form.ts";
 import { agentKeyFile, agentKeyProblem, agentKeyUnsaved, applyAutoFunding, budgetCheckFailures, firstSignatureProblem, fundingMinYocto, parseRecipientLines, planBudget, recipientLines, savedSetupKey, secondSignatureCalls, SETUP_FIELDS, setupErrorText, sputnikCreateArgs, SPUTNIK_FACTORY, stepOfField, unfinishedBudgetOwner, validateSetupStep, type BudgetChain, type BudgetPlan, type RecipientRow, type SetupError } from "./budget-create.ts";
@@ -40,7 +41,7 @@ import {
   type ConfirmedProposal,
   type VoteAction,
 } from "./budget-flow.ts";
-import { budgetRpc, guardCanClose, guardNeedsUpdate, proposalLabel, readBalance, withdrawMaxYocto, readBudget, readDcaQuote, readDcaReadiness, readProposal, topUpBlocks, TOP_UP_TEXT, type BudgetLive, type DcaReadiness } from "./budget-read.ts";
+import { budgetRpc, guardCanClose, guardNeedsUpdate, proposalLabel, readBalance, withdrawMaxYocto, readBudget, readDcaQuote, readDcaReadiness, readProposal, readUpgradeShortfall, topUpBlocks, TOP_UP_TEXT, type BudgetLive, type DcaReadiness } from "./budget-read.ts";
 import {
   BALANCED_RULES,
   CAUTIOUS_RULES,
@@ -90,10 +91,10 @@ import { renderGuardCreate, renderGuardDao, renderGuardLoading, renderGuardPrevi
 import { avatar } from "./ui.ts";
 import { readAgentBudgets, readMyAgents, readWalletDaos, type BudgetCard, type MyAgents } from "./agents-read.ts";
 import { hydrateDaoPicker, openedDaos, rememberOpenedDao, unhydrateDaoPicker } from "./dao-picker.ts";
-import { renderMyAgents, renderMyAgentsError, renderMyAgentsLoading, renderMyAgentsSignedOut } from "./agents-view.ts";
+import { renderAgentList, renderAgentListError, renderAgentListLoading, renderAgentListSignedOut, renderMyAgents, renderMyAgentsError, renderMyAgentsLoading, renderMyAgentsSignedOut, type AgentListKind } from "./agents-view.ts";
 import { allowedYieldKind, registerProposal, supplyProposal, tokenAmount, tokenRaw, withdrawProposal as yieldWithdrawProposal, YIELD_ALLOWLIST, YieldProposalError } from "./yield-proposals.ts";
 import { councilAccounts, readYield, rememberYieldDao, seenYieldDaos, type YieldLive } from "./yield-read.ts";
-import { renderYield, renderYieldLimits, type LimitErrors, renderYieldLoading, renderYieldPanel, renderYieldStart, yieldPreview, type YieldPanel } from "./yield-view.ts";
+import { renderYield, renderYieldLimits, type LimitErrors, renderYieldLoading, renderYieldOpen, renderYieldPanel, renderYieldStart, yieldPreview, type YieldPanel } from "./yield-view.ts";
 import { suggest, suggestedAmount } from "./yield-agent.ts";
 import { renderYieldCreate, type CreateView, type FundRow, type FundsView } from "./yield-create.ts";
 import { CHECK_EVERY, loadSettings, saveSettings, validateSettings, type CheckEvery, type LimitInput, type YieldSettings } from "./yield-settings.ts";
@@ -138,7 +139,8 @@ interface Sign2 {
 }
 let budgetSign2: Sign2 | null = null;
 /** The DCA pop-up's reads: the checklist state and the price of one run. */
-let dcaRead: { readiness: DcaReadiness | null; quote: string | null } = { readiness: null, quote: null };
+/** `price`: what 1 NEAR buys now (token_out base units), to start the lowest-price field from. */
+let dcaRead: { readiness: DcaReadiness | null; quote: string | null; price: string | null; upgradeShort: string | null } = { readiness: null, quote: null, price: null, upgradeShort: null };
 /** An agent whose last signature has started. Its private key exists only here: leaving the page loses it. */
 let budgetNewAgent: NewAgent | null = null;
 /** A Budget being created. `key` exists from sign 2 on, and only here: leaving the page loses it. */
@@ -341,11 +343,12 @@ function hydrateDaoPickers(): void {
  *  Also shows the wallet name and Disconnect in place of Connect Wallet while a wallet is connected. */
 function syncWallet(): void {
   restoreConnected(currentNetwork());
-  // My Agents lists what the connected accounts sit on: a new wallet means a new list.
+  // My Agents and the Budget / Yield lists show what the connected accounts sit on: a new wallet means a new list.
   const route = parseRoute(location.search);
   const shown = root.querySelector<HTMLElement>("[data-agents-for]")?.dataset.agentsFor ?? null;
   const now = (connected?.accounts ?? []).join(",");
-  if (route.target === null && route.page === "my-agents" && shown !== null && shown !== now) void render(false);
+  const listed = route.page === "my-agents" || route.page === "budget" || route.page === "yield";
+  if (route.target === null && listed && shown !== null && shown !== now) void render(false);
   hydrateDaoPickers();
   if (route.target === null && route.page === "yield" && route.yieldNew && yieldWizard !== null && yieldWizard.fundsFor !== now) void loadYieldFunds();
   const role = viewerRoleNow();
@@ -392,7 +395,7 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
     return;
   }
   if (route.target === null && route.page === "budget") {
-    await renderBudgetPage(route.dao, focusMain, seq, route.link, route.help);
+    await renderBudgetPage(route.dao, focusMain, seq, route.link, route.help, route.budgetNew);
     return;
   }
   if (route.target === null && route.page === "yield" && route.yieldNew) {
@@ -409,6 +412,10 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
   }
   if (route.target === null && route.page === "mcp") {
     paint(renderAgents(WORKER_URL), "For AI agents · Key Doctor", focusMain, route.network ?? storedNetwork(), "mcp");
+    return;
+  }
+  if (route.target === null && route.page === "roadmap") {
+    paint(renderRoadmap(), "Roadmap · Key Doctor", focusMain, route.network ?? storedNetwork(), "roadmap");
     return;
   }
   if (route.target === null) {
@@ -437,8 +444,11 @@ async function render(focusMain: boolean, rescan = true): Promise<void> {
 
 const budgetNetwork = (): Network => suffixNetwork(BUDGET_READ_FACTORY) ?? "testnet";
 
-/** The Agent Budget page: the DAO form, or the DAO's Budget read live from the chain. Nothing here is sample data. */
-async function renderBudgetPage(dao: string | null, focusMain: boolean, seq: number, link: RouteLink | null, help: boolean): Promise<void> {
+/**
+ * The Agent Budget page: the wallet's budgets, the New budget wizard (`budgetNew`) with the open-by-name form,
+ * or one DAO's Budget read live from the chain. Nothing here is sample data.
+ */
+async function renderBudgetPage(dao: string | null, focusMain: boolean, seq: number, link: RouteLink | null, help: boolean, budgetNew: boolean): Promise<void> {
   const network = budgetNetwork();
   const title = "Budget · Key Doctor";
   budgetState = null;
@@ -463,6 +473,11 @@ async function renderBudgetPage(dao: string | null, focusMain: boolean, seq: num
     void loadBudgetCodeStorage(network);
     paint(error === null ? html`${create}${open}` : html`${open}${create}`, title, focusMain, network, "budget");
   };
+  if (dao === null && !budgetNew && link === null && BUDGET_READ_FACTORY !== "") {
+    const open = renderBudgetStart("", null, `Budgets are read from ${BUDGET_READ_FACTORY} on ${network}.`);
+    await renderAgentListPage("budget", open, focusMain, seq);
+    return;
+  }
   if (dao === null || BUDGET_READ_FACTORY === "") {
     start(dao ?? "", null);
     return;
@@ -598,7 +613,7 @@ function startTwoSignatures(args: AddProposalArgs, agent: NewAgent | null = null
   budgetSign2 = null;
   const next = document.getElementById("budget-next");
   if (next) next.innerHTML = "";
-  status.textContent = `Waiting for ${walletLabel(walletId)}. Signature 1 of 2: the wallet shows a ${yoctoToNear(state.dao.policy.proposal_bond)} NEAR refundable deposit, not ${args.proposal.kind && "Transfer" in args.proposal.kind ? "the withdrawal" : "a payment"}. Check it there before you approve.`;
+  status.textContent = `Waiting for ${walletLabel(walletId)}. Signature 1 of 2: the wallet shows a ${nearText(state.dao.policy.proposal_bond)} NEAR refundable deposit, not ${args.proposal.kind && "Transfer" in args.proposal.kind ? "the withdrawal" : "a payment"}. Check it there before you approve.`;
   import("./wallet.ts")
     .then((w) => withWalletHint(status, w.signAddProposalOutcome(account, network, state.dao.dao, state.dao.policy.proposal_bond, args, walletId, (t) => (status.textContent = t))))
     .then(async (outcome) => {
@@ -702,6 +717,50 @@ async function statusAfterVote(network: Network, dao: string, id: number): Promi
   return status;
 }
 
+/**
+ * Approve or Reject a proposal of the DAO on the council page. Only a council member who has not voted yet may: the
+ * page re-reads the proposal and shows what it does before the wallet asks to sign.
+ */
+function voteOnCouncil(button: HTMLButtonElement): void {
+  const id = Number(button.dataset.id);
+  const action: VoteAction = button.dataset.vote === "VoteReject" ? "VoteReject" : "VoteApprove";
+  const status = document.getElementById(`vote-status-${id}`);
+  const report = lastReport;
+  if (status === null || report === null || report.target.type !== "dao") return;
+  const dao = report.target.id;
+  const network = report.chain.network;
+  const shown = [...proposalPages.values()].flatMap((r) => r?.proposals ?? []).find((p) => p.id === id);
+  if (shown === undefined) return;
+  if (connected === null) {
+    statusWithButton(status, "Connect the wallet of a council member first.", "open-wallet", "Connect Wallet");
+    return;
+  }
+  const account = connected.accounts.find((a) => shown.pending_voters.includes(a));
+  if (account === undefined) {
+    status.textContent = `${connected.accounts[0] ?? "This account"} may not vote on #${id}. Still to vote: ${shown.pending_voters.join(", ") || "nobody"}.`;
+    return;
+  }
+  const { walletId } = connected;
+  button.disabled = true;
+  status.textContent = "Checking the proposal on the chain…";
+  readProposal(budgetRpc(network), dao, id)
+    .then((raw) => {
+      const p = raw as { id?: unknown; status?: unknown; kind?: unknown };
+      if (p.id !== id || typeof p.kind !== "object" || p.kind === null) throw new Error(`Could not read proposal #${id} from the chain.`);
+      if (p.status !== "InProgress") throw new Error(`Proposal #${id} is no longer open (${String(p.status)}).`);
+      const confirmed = { id, kind: p.kind as Record<string, unknown> };
+      status.textContent = `Waiting for ${walletLabel(walletId)}. ${action === "VoteApprove" ? "Approve" : "Reject"} #${id}: ${describeKind(confirmed.kind)}.`;
+      return import("./wallet.ts")
+        .then((w) => withWalletHint(status, w.signActProposal(account, network, dao, actProposalArgs(confirmed, action), walletId, (t) => (status.textContent = t))))
+        .then(() => statusAfterVote(network, dao, id))
+        .then((after) => statusWithButton(status, voteResultText(id, action, confirmed.kind, after), "rescan", "Reload"));
+    })
+    .catch((e: unknown) => {
+      button.disabled = false;
+      notDone(status, e);
+    });
+}
+
 /** Approve or Reject a pending proposal: re-read it first and stop if it is no longer what the page showed. */
 function actOnPending(button: HTMLButtonElement): void {
   const status = budgetStatus();
@@ -777,23 +836,23 @@ async function renderYieldPage(dao: string | null, focusMain: boolean, seq: numb
   const title = "Yield agent · Key Doctor";
   yieldState = null;
   if (dao === null) {
-    paint(renderYieldStart("", null), title, focusMain, "testnet", "my-agents");
+    await renderAgentListPage("yield", renderYieldOpen("", null), focusMain, seq);
     return;
   }
   const network = yieldNetwork(dao);
-  paint(renderYieldLoading(dao), title, focusMain, network, "my-agents");
+  paint(renderYieldLoading(dao), title, focusMain, network, "yield");
   try {
     const live = await readYield(dao, network);
     if (seq !== scanSeq) return;
     yieldState = live;
     rememberYieldDao(dao);
     rememberOpened(dao);
-    paint(renderYield(live, network, loadSettings(dao)), `${dao} · Yield agent · Key Doctor`, false, network, "my-agents");
+    paint(renderYield(live, network, loadSettings(dao)), `${dao} · Yield agent · Key Doctor`, false, network, "yield");
   } catch (e) {
     if (seq !== scanSeq) return;
     if (!isKdError(e)) console.error("yield read failed", { dao, error: e });
     const why = isKdError(e) ? `${dao}: ${e.kd.message.en}` : `${dao} could not be read right now. Try again.`;
-    paint(renderYieldStart(dao, why), title, false, network, "my-agents");
+    paint(renderYieldStart(dao, why), title, false, network, "yield");
   }
 }
 
@@ -963,7 +1022,7 @@ function repaintYield(): void {
   const state = yieldState;
   if (state === null) return;
   const network = yieldNetwork(state.report.dao);
-  paint(renderYield(state, network, loadSettings(state.report.dao)), `${state.report.dao} · Yield agent · Key Doctor`, false, network, "my-agents");
+  paint(renderYield(state, network, loadSettings(state.report.dao)), `${state.report.dao} · Yield agent · Key Doctor`, false, network, "yield");
 }
 
 /** Pause and Resume change what the page suggests in this browser. They never touch the chain. */
@@ -1054,7 +1113,7 @@ function paintYieldWizard(focusHeading: boolean): void {
   const view = wizardView(w);
   const current = document.getElementById("yield-create-form");
   if (current === null) {
-    paint(renderYieldCreate(view), "New yield agent · Key Doctor", false, view.network, "my-agents");
+    paint(renderYieldCreate(view), "New yield agent · Key Doctor", false, view.network, "yield");
   } else {
     // The breadcrumb and title stay; only the form is swapped.
     current.outerHTML = renderYieldCreate(view).value.replace(/^[\s\S]*?(?=<form id="yield-create-form")/, "");
@@ -1070,7 +1129,7 @@ function renderYieldCreatePage(focusMain: boolean): void {
     step: 1, dao: "", values: { maxPut: "", keepReady: "0", minApr: "0" }, every: "1h", notice: null, errors: {},
     funds: { kind: "signed-out" }, fundsFor: "", lives: new Map(),
   };
-  paint(renderYieldCreate(wizardView(yieldWizard)), "New yield agent · Key Doctor", focusMain, network, "my-agents");
+  paint(renderYieldCreate(wizardView(yieldWizard)), "New yield agent · Key Doctor", focusMain, network, "yield");
 }
 
 /** The treasuries this wallet signs for, each with its USDC read. A failed read marks that row, not the page. */
@@ -1226,11 +1285,44 @@ function advanceYieldWizard(w: YieldWizard): void {
 }
 
 /** The last Your agents read: Review and Reject on that page act on the budget named by the button. */
-let agentsView: { data: MyAgents; accounts: string[]; cards: BudgetCard[] } | null = null;
+/** What a Your agents page (`list` null) or a Budget / Yield list shows; `open` is the list page's open-by-name form. */
+interface AgentsView {
+  data: MyAgents;
+  accounts: string[];
+  cards: BudgetCard[];
+  list: AgentListKind | null;
+  open: Html;
+}
+let agentsView: AgentsView | null = null;
 
-function paintMyAgents(view: { data: MyAgents; accounts: string[]; cards: BudgetCard[] }, focusMain: boolean): void {
+const LIST_TITLE: Record<AgentListKind, string> = { budget: "Budget · Key Doctor", yield: "Yield agent · Key Doctor" };
+
+function paintMyAgents(view: AgentsView, focusMain: boolean): void {
   agentsView = view;
-  paint(renderMyAgents(view.data, view.accounts, view.cards), "Your agents · Key Doctor", focusMain, budgetNetwork(), "my-agents");
+  if (view.list === null) paint(renderMyAgents(view.data, view.accounts, view.cards), "Your agents · Key Doctor", focusMain, budgetNetwork(), "my-agents");
+  else paint(renderAgentList(view.list, view.data, view.accounts, view.cards, view.open), LIST_TITLE[view.list], focusMain, budgetNetwork(), view.list);
+}
+
+/** The Agent Budget or Yield nav page: every agent of that kind the connected wallet sits on, plus Create. */
+async function renderAgentListPage(kind: AgentListKind, open: Html, focusMain: boolean, seq: number): Promise<void> {
+  const network = budgetNetwork();
+  const accounts = connected?.accounts ?? [];
+  agentsView = null;
+  if (accounts.length === 0) {
+    paint(renderAgentListSignedOut(kind, open), LIST_TITLE[kind], focusMain, network, kind);
+    return;
+  }
+  paint(renderAgentListLoading(kind, accounts), LIST_TITLE[kind], focusMain, network, kind);
+  try {
+    const data = await readMyAgents(accounts, BUDGET_READ_FACTORY, network);
+    const cards = kind === "budget" ? await readAgentBudgets(data.budgetDaos, BUDGET_READ_FACTORY, network) : [];
+    if (seq !== scanSeq) return;
+    paintMyAgents({ data, accounts: [...accounts], cards, list: kind, open }, false);
+  } catch (e) {
+    if (seq !== scanSeq) return;
+    console.error("agent list read failed", { kind, error: e });
+    paint(renderAgentListError(kind, "We could not read your agents right now. Nothing was changed.", accounts, open), LIST_TITLE[kind], false, network, kind);
+  }
 }
 
 /** Your agents: needs a connected wallet, then reads every budget of its accounts, all at once. */
@@ -1249,7 +1341,7 @@ async function renderMyAgentsPage(focusMain: boolean, seq: number): Promise<void
     const data = await readMyAgents(accounts, BUDGET_READ_FACTORY, network);
     const cards = await readAgentBudgets(data.budgetDaos, BUDGET_READ_FACTORY, network);
     if (seq !== scanSeq) return;
-    paintMyAgents({ data, accounts: [...accounts], cards }, false);
+    paintMyAgents({ data, accounts: [...accounts], cards, list: null, open: html`` }, false);
   } catch (e) {
     if (seq !== scanSeq) return;
     console.error("my agents read failed", { error: e });
@@ -1392,8 +1484,11 @@ async function openBudgetClose(button: HTMLElement): Promise<void> {
   if (state === null || state.guard === null || status === null) return;
   status.textContent = "Reading the Budget version…";
   closeRead = await readDcaReadiness(state.dao.dao, state.guard.guard_id, dcaContract(), budgetNetwork()).catch(() => null);
+  const version = closeRead?.version ?? null;
+  // Only an old Guard is offered Update, and only it needs the code-size read (about 370 KB).
+  const short = version !== null && !guardCanClose(version) ? await readUpgradeShortfall(state.guard.guard_id, dcaContract(), budgetNetwork()) : null;
   status.textContent = "";
-  showBudgetDrawer(renderBudgetClose(state, closeRead?.version ?? null), button, true);
+  showBudgetDrawer(renderBudgetClose(state, version, short), button, true);
 }
 
 /** Sign the close, or the update it waits for. Each ends with a chain read, since Sputnik shows a failed call as Approved. */
@@ -1563,7 +1658,7 @@ function syncSetupMoney(typedFunding = false): void {
   if (funding !== null && values.fundingAuto !== "0" && funding.value !== values.funding) funding.value = values.funding ?? "";
   const min = fundingMinYocto(values.maxPendingPerAgent ?? "", values.minReserve ?? "0");
   const minText = document.getElementById("bs-funding-min");
-  if (minText !== null) minText.textContent = min === null ? "" : `${values.fundingAuto === "0" ? "At least" : "Filled in for your rules: at least"} ${yoctoToNear(min.toString())} NEAR.`;
+  if (minText !== null) minText.textContent = min === null ? "" : `${values.fundingAuto === "0" ? "At least" : "Filled in for your rules: at least"} ${nearText(min.toString())} NEAR.`;
   const cost = document.querySelector("#bs-cost span");
   if (cost !== null) cost.textContent = setupCostText(values, budgetCodeStorage);
 }
@@ -1664,7 +1759,7 @@ const isBudgetPanel = (v: unknown): v is BudgetPanel =>
 const formValues = (form: HTMLFormElement): Record<string, string> => Object.fromEntries([...new FormData(form).entries()].map(([k, v]) => [k, String(v)]));
 
 const dcaContract = (): string => BUDGET_FACTORY || BUDGET_FACTORY_NAME;
-const dcaView = (): DcaView => ({ network: budgetNetwork(), readiness: dcaRead.readiness, quote: dcaRead.quote, canUpdate: true });
+const dcaView = (): DcaView => ({ network: budgetNetwork(), readiness: dcaRead.readiness, quote: dcaRead.quote, price: dcaRead.price, canUpdate: true, upgradeShort: dcaRead.upgradeShort });
 
 function renderDcaPanel(error: string | null, values: Record<string, string>, now: number = Date.now()): Html {
   return renderBudgetPanel("dca", budgetState as BudgetLive, error, { ...budgetPanelTo(), ...values, connected: connected === null ? "" : "1" }, now, dcaView());
@@ -1673,7 +1768,7 @@ function renderDcaPanel(error: string | null, values: Record<string, string>, no
 /** Opens the DCA pop-up at once, then fills the checklist when the chain reads are back. */
 function openDca(trigger: HTMLElement): void {
   if (budgetState === null) return;
-  dcaRead = { readiness: null, quote: null };
+  dcaRead = { readiness: null, quote: null, price: null, upgradeShort: null };
   showBudgetDrawer(renderDcaPanel(null, {}), trigger, false);
   void refreshDca();
 }
@@ -1687,11 +1782,18 @@ function repaintDca(): void {
   if (activeId !== "") document.getElementById(activeId)?.focus();
 }
 
+const NEAR_IN_YOCTO = (10n ** 24n).toString();
+
 async function refreshDca(): Promise<void> {
   const state = budgetState;
   if (state === null || state.guard === null) return;
-  const readiness = await readDcaReadiness(state.dao.dao, state.guard.guard_id, dcaContract(), budgetNetwork()).catch(() => null);
-  dcaRead = { ...dcaRead, readiness };
+  const network = budgetNetwork();
+  const [readiness, price] = await Promise.all([
+    readDcaReadiness(state.dao.dao, state.guard.guard_id, dcaContract(), network).catch(() => null),
+    readDcaQuote(NEAR_IN_YOCTO, network).catch(() => null),
+  ]);
+  const upgradeShort = readiness !== null && guardNeedsUpdate(readiness.version) ? await readUpgradeShortfall(state.guard.guard_id, dcaContract(), network) : null;
+  dcaRead = { ...dcaRead, readiness, price, upgradeShort };
   repaintDca();
 }
 
@@ -2098,7 +2200,7 @@ async function submitBudgetSetup(form: HTMLFormElement, signNow = false): Promis
       if (problem !== null) return stop(`The name ${plan.name} is taken by ${plan.dao}. ${problem}`);
       const held = await readBalance(plan.dao, height, network);
       if (held === null || BigInt(held.withdrawable) < BigInt(plan.guardDepositYocto)) {
-        return stop(`${plan.dao} needs ${yoctoToNear(plan.guardDepositYocto)} NEAR free to finish the budget and ${held === null ? "its balance could not be read" : `has ${yoctoToNear(held.withdrawable)} NEAR`}. Lower the starting balance, or send it more.`);
+        return stop(`${plan.dao} needs ${nearText(plan.guardDepositYocto)} NEAR free to finish the budget and ${held === null ? "its balance could not be read" : `has ${nearText(held.withdrawable)} NEAR`}. Lower the starting balance, or send it more.`);
       }
     }
     budgetCreation = { plan, account, walletId: wallet.walletId, key: null, values };
@@ -2310,7 +2412,7 @@ function submitGuardCreate(form: HTMLFormElement): void {
     labels: role === null ? ["call"] : ["call", "policy"],
     notes: [
       `Both proposals need the council's votes. The Guard can propose transfers only after both pass: P1 creates ${result.guardId}, P2 lets it into the agent-guard role.`,
-      `P1 attaches the funding plus ${yoctoToNear(guardState.code_storage)} NEAR for the Guard's own copy of the code and 0.01 NEAR for the factory's record: the DAO pays for its Guard.`,
+      `P1 attaches the funding plus ${nearText(guardState.code_storage)} NEAR for the Guard's own copy of the code and 0.01 NEAR for the factory's record: the DAO pays for its Guard.`,
       "If P1 fails on chain, the factory refunds the whole deposit to the DAO.",
     ],
   });
@@ -2858,6 +2960,9 @@ root.addEventListener("click", (event) => {
       syncBudgetAfter();
       break;
     }
+    case "council-vote":
+      voteOnCouncil(el as HTMLButtonElement);
+      break;
     case "budget-act":
       selectAgentBudget(el);
       closeBudgetDrawer();
@@ -2985,7 +3090,7 @@ root.addEventListener("click", (event) => {
   if (t instanceof HTMLDialogElement && t.open) closeDialog(t);
   // The account menu is a <details>: it closes on any click outside it.
   const menu = root.querySelector<HTMLDetailsElement>(".wallet-menu[open]");
-  if (menu !== null && !(t instanceof Node && menu.contains(t))) menu.open = false;
+  if (menu !== null && (!(t instanceof Node && menu.contains(t)) || (t instanceof Element && t.closest("a") !== null))) menu.open = false;
 });
 root.addEventListener(
   "close",

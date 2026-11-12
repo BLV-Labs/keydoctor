@@ -3,9 +3,9 @@
 // be an agent's request). The page reads the proposal back and compares it with what it built; only a match
 // unlocks sign 2, `act_proposal(id, action, proposal)`. The installed Sputnik ignores `proposal`, so this
 // read-back is the real protection against approving the wrong proposal.
-import { nearToYocto, yoctoToNear } from "./format.ts";
+import { nearText, nearToYocto } from "./format.ts";
 import { GUARD_FORM_TEXT, isAccountId, KEEPER_ACCOUNT, MAX_AGENTS, MAX_LABEL_CHARS, MAX_WHITELIST } from "./guard-form.ts";
-import { DCA_TESTNET } from "key-doctor";
+import { DCA_TESTNET, formatUnits } from "key-doctor";
 import { guardChangeProposal, NEW_AGENT_DEPOSIT, type AddProposalArgs } from "./guard-proposals.ts";
 
 export type BudgetFlowCode = "NO_PROPOSAL_ID" | "PROPOSAL_UNREADABLE" | "PROPOSAL_MISMATCH" | "PROPOSAL_NOT_OPEN";
@@ -186,7 +186,7 @@ export async function freshAgentAccount(guardId: string, taken: (account: string
 export function addAgentProblem(label: string, existing: readonly string[], available: string | null): string | null {
   if (existing.length >= MAX_AGENTS) return `A Budget takes at most ${MAX_AGENTS} agents. Remove one first.`;
   if (label === "" || [...label].length > MAX_LABEL_CHARS) return `Name: 1 to ${MAX_LABEL_CHARS} characters.`;
-  if (available !== null && BigInt(available) < BigInt(NEW_AGENT_DEPOSIT)) return `Adding an agent uses ${yoctoToNear(NEW_AGENT_DEPOSIT)} NEAR of this Budget. Top up first.`;
+  if (available !== null && BigInt(available) < BigInt(NEW_AGENT_DEPOSIT)) return `Adding an agent uses ${nearText(NEW_AGENT_DEPOSIT)} NEAR of this Budget. Top up first.`;
   return null;
 }
 
@@ -247,9 +247,9 @@ export function planFromForm(v: Record<string, string>, rules: PlanRules, nowMs:
   const amount = amountFromForm(v.amount ?? "", null);
   if (!amount.ok) return amount;
   const yocto = BigInt(amount.value.yocto);
-  if (yocto > BigInt(rules.policy.max_per_tx)) return fail(`Amount per run is above your per-request limit (${yoctoToNear(rules.policy.max_per_tx)} NEAR). Lower it or edit your rules.`);
-  if (entry.max_per_tx !== null && yocto > BigInt(entry.max_per_tx)) return fail(`Amount per run is above this recipient's limit (${yoctoToNear(entry.max_per_tx)} NEAR).`);
-  if (yocto > BigInt(rules.policy.max_per_day)) return fail(`Amount per run is above your 24-hour limit (${yoctoToNear(rules.policy.max_per_day)} NEAR). Lower it or edit your rules.`);
+  if (yocto > BigInt(rules.policy.max_per_tx)) return fail(`Amount per run is above your per-request limit (${nearText(rules.policy.max_per_tx)} NEAR). Lower it or edit your rules.`);
+  if (entry.max_per_tx !== null && yocto > BigInt(entry.max_per_tx)) return fail(`Amount per run is above this recipient's limit (${nearText(entry.max_per_tx)} NEAR).`);
+  if (yocto > BigInt(rules.policy.max_per_day)) return fail(`Amount per run is above your 24-hour limit (${nearText(rules.policy.max_per_day)} NEAR). Lower it or edit your rules.`);
   if (!(unit in PLAN_UNITS) || !/^\d{1,6}$/.test(everyText)) return fail("Every: a whole number of minutes, hours or days.");
   const interval = Number(everyText) * PLAN_UNITS[unit];
   if (interval < MIN_PLAN_INTERVAL_SEC) return fail("Runs must be at least 1 minute apart.");
@@ -324,6 +324,29 @@ export type DcaUnit = keyof typeof DCA_UNITS;
 /** The "max price drop" choices in basis points (the Guard accepts 1 to 500). */
 export const DCA_SLIPPAGE_CHOICES: readonly number[] = [50, 100, 200];
 export const DCA_DEFAULT_SLIPPAGE = 100;
+/** The lowest-price field starts this far under the current price (5%); the owner can type any other price. */
+export const DCA_FLOOR_MARGIN_BPS = 500;
+
+/**
+ * The lowest price the form starts with: the price of 1 NEAR now (token_out base units, from the exchange's quote)
+ * minus DCA_FLOOR_MARGIN_BPS, in USDT as typed. "" when there is no price to start from.
+ */
+export function dcaFloorPrefill(pricePerNear: string | null): string {
+  if (pricePerNear === null || !/^\d+$/.test(pricePerNear)) return "";
+  const floor = (BigInt(pricePerNear) * BigInt(10_000 - DCA_FLOOR_MARGIN_BPS)) / 10_000n;
+  return floor === 0n ? "" : formatUnits(floor.toString(), DCA_TESTNET.token_out_decimals);
+}
+
+/** "8.5" USDT per NEAR to "8500000" base units. Above 0 and at most the token's decimals, or refused. */
+export function dcaFloorFromText(text: string): FormResult<string> {
+  const decimals = DCA_TESTNET.token_out_decimals;
+  const t = text.trim();
+  const m = /^(\d{1,12})(?:\.(\d+))?$/.exec(t);
+  const refuse = fail(`Lowest price: a USDT amount above 0, such as 8.5, with at most ${decimals} decimals.`);
+  if (!m || (m[2] !== undefined && m[2].length > decimals)) return refuse;
+  const base = BigInt(m[1]!) * 10n ** BigInt(decimals) + BigInt((m[2] ?? "").padEnd(decimals, "0") || "0");
+  return base === 0n ? refuse : { ok: true, value: base.toString() };
+}
 
 /** A DCA plan the owner typed, checked. Amounts yoctoNEAR, times milliseconds. */
 export interface DcaPlan {
@@ -333,6 +356,8 @@ export interface DcaPlan {
   start_ms: number;
   starts_now: boolean;
   slippage_bps: number;
+  /** The DAO's floor, token_out base units per 1 NEAR (Guard 1.5.0 `min_out_per_near`). A run quoted below it is skipped. */
+  min_out_per_near: string;
 }
 
 /**
@@ -349,13 +374,15 @@ export function dcaFromForm(v: Record<string, string>, rules: Pick<PlanRules, "p
   const amount = amountFromForm(v.amount ?? "", null);
   if (!amount.ok) return amount;
   const yocto = BigInt(amount.value.yocto);
-  if (yocto > BigInt(rules.policy.max_per_tx)) return fail(`NEAR per run is above your per-request limit (${yoctoToNear(rules.policy.max_per_tx)} NEAR). Lower it or edit your rules.`);
-  if (yocto > BigInt(rules.policy.max_per_day)) return fail(`NEAR per run is above your 24-hour limit (${yoctoToNear(rules.policy.max_per_day)} NEAR). Lower it or edit your rules.`);
+  if (yocto > BigInt(rules.policy.max_per_tx)) return fail(`NEAR per run is above your per-request limit (${nearText(rules.policy.max_per_tx)} NEAR). Lower it or edit your rules.`);
+  if (yocto > BigInt(rules.policy.max_per_day)) return fail(`NEAR per run is above your 24-hour limit (${nearText(rules.policy.max_per_day)} NEAR). Lower it or edit your rules.`);
   if (!(unit in DCA_UNITS) || !/^\d{1,6}$/.test(everyText)) return fail("Every: a whole number of minutes, hours, days or weeks.");
   const interval = Number(everyText) * DCA_UNITS[unit];
   if (interval < MIN_PLAN_INTERVAL_SEC) return fail("Runs must be at least 1 minute apart.");
   if (interval > MAX_PLAN_INTERVAL_SEC) return fail("Runs can be at most 365 days apart.");
   if (!DCA_SLIPPAGE_CHOICES.includes(slippage)) return fail("Pick a max price drop from the list.");
+  const floor = dcaFloorFromText(v.floor ?? "");
+  if (!floor.ok) return floor;
   let start = nowMs;
   if (startText !== "") {
     const typed = DATETIME_LOCAL.test(startText) ? new Date(startText).getTime() : NaN;
@@ -375,14 +402,23 @@ export function dcaFromForm(v: Record<string, string>, rules: Pick<PlanRules, "p
     if (!/^\d{1,4}$/.test(runsText) || Number(runsText) < 1 || Number(runsText) > MAX_PLAN_RUNS) return fail(`Number of runs: a whole number from 1 to ${MAX_PLAN_RUNS}.`);
     runs = Number(runsText);
   }
-  return { ok: true, value: { amount: amount.value, interval_sec: interval, runs, start_ms: start, starts_now: start === nowMs, slippage_bps: slippage } };
+  return { ok: true, value: { amount: amount.value, interval_sec: interval, runs, start_ms: start, starts_now: start === nowMs, slippage_bps: slippage, min_out_per_near: floor.value } };
 }
 
-/** `create_plan(plan)` with a swap step: the Guard sells `amount_per_run` NEAR for USDT on the testnet exchange. */
+/**
+ * `create_plan(plan)` with a swap step: the Guard sells `amount_per_run` NEAR for USDT on the testnet exchange, never
+ * below the plan's lowest price. `swap_with_floor` needs Guard 1.5.0; an older Guard refuses the unknown type loudly.
+ */
 export function createDcaProposal(guardId: string, plan: DcaPlan): AddProposalArgs {
   return guardChangeProposal(guardId, "create_plan", {
     plan: {
-      action: { type: "swap", pool_id: DCA_TESTNET.pool_id, token_out: DCA_TESTNET.token_out, max_slippage_bps: plan.slippage_bps },
+      action: {
+        type: "swap_with_floor",
+        pool_id: DCA_TESTNET.pool_id,
+        token_out: DCA_TESTNET.token_out,
+        max_slippage_bps: plan.slippage_bps,
+        min_out_per_near: plan.min_out_per_near,
+      },
       strategy_id: DCA_STRATEGY,
       token_in: "",
       amount_per_run: plan.amount.yocto,

@@ -160,10 +160,14 @@ export function swapOutcome(tx: TxOutcome, exchange: string, wrap: string, token
   return null;
 }
 
-/** `kd_guard` NEP-297 events of a transaction, in order. */
-export function guardEvents(tx: TxOutcome): { event: string; data: any }[] {
+/**
+ * `kd_guard` NEP-297 events the Guard itself logged, in order. Only the Guard's own receipts count: the target of a
+ * `call` plan runs in the same transaction and could log a fake `plan_step_skipped` with its own reason.
+ */
+export function guardEvents(tx: TxOutcome, guard: string): { event: string; data: any }[] {
   const events: { event: string; data: any }[] = [];
   for (const r of tx.receipts_outcome) {
+    if (r.outcome.executor_id !== guard) continue;
     for (const log of r.outcome.logs) {
       if (!log.startsWith("EVENT_JSON:")) continue;
       try {

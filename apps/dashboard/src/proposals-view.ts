@@ -2,7 +2,7 @@
 // proposal read never delays it.
 import type { ListProposalsResult, Member, ProposalInfo, Vote } from "key-doctor";
 import { clamp } from "./clamp.ts";
-import { formatInt, yoctoToNear } from "./format.ts";
+import { formatInt, nearText } from "./format.ts";
 import { html, type Html } from "./html.ts";
 import { statusIcon } from "./icons.ts";
 import { voterKeysLine } from "./key-verdict.ts";
@@ -61,7 +61,7 @@ function votesLine(p: ProposalInfo): string {
 
 /** A token transfer shows the raw amount and token id: NEAR decimals would misstate it. */
 function transferLine(t: NonNullable<ProposalInfo["transfer"]>): Html {
-  const amount = t.token_id === "" ? html`${t.amount === "?" ? "?" : yoctoToNear(t.amount)} NEAR` : html`${t.amount} units of token <span class="mono wrap">${t.token_id}</span>`;
+  const amount = t.token_id === "" ? html`${t.amount === "?" ? "?" : nearText(t.amount)} NEAR` : html`${t.amount} units of token <span class="mono wrap">${t.token_id}</span>`;
   return html`<p class="wrap">Send <strong>${amount}</strong> to <span class="mono wrap">${t.receiver_id}</span></p>`;
 }
 
@@ -93,7 +93,17 @@ function row(p: ProposalInfo, members: readonly Member[]): Html {
           voterKeysLine(p.pending_voters, members) === "" ? "" : html`<p class="small muted">Their keys: ${voterKeysLine(p.pending_voters, members)}</p>`
         }`}
     ${p.ui_url !== null && /^https:\/\//.test(p.ui_url) ? html`<a class="small strong self-start" href="${p.ui_url}" target="_blank" rel="noopener">Open vote →</a>` : ""}
+    ${p.status === "InProgress" ? voteButtons(p.id) : ""}
   </li>`;
+}
+
+/** A council member votes from here with their own wallet; the page re-reads the proposal before it asks to sign. */
+function voteButtons(id: number): Html {
+  return html`<div class="actions">
+      <button type="button" class="btn btn-danger btn-sm" data-action="council-vote" data-id="${String(id)}" data-vote="VoteReject">Reject</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-action="council-vote" data-id="${String(id)}" data-vote="VoteApprove">Approve</button>
+    </div>
+    <p class="small" id="vote-status-${String(id)}" role="status"></p>`;
 }
 
 const head = (note: string): Html =>

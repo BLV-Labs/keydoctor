@@ -4,12 +4,13 @@ import type { Network } from "key-doctor";
 import type { AgentRow, BudgetCard, MyAgents } from "./agents-read.ts";
 import type { BudgetLive, BudgetProposal, BudgetRequest } from "./budget-read.ts";
 import { activityRow, agentName, ago, budgetStatusPill, describeKind, expiryText, hoursLeft, near, nearShort, percent, reasonText, requestOf } from "./budget-view.ts";
-import { plural, yoctoToNear } from "./format.ts";
+import { nearText, plural } from "./format.ts";
 import { html, type Html } from "./html.ts";
 import { icon } from "./icons.ts";
-import { budgetHref, pageHref, yieldHref, yieldNewHref } from "./route.ts";
+import { budgetHref, budgetNewHref, pageHref, yieldHref, yieldNewHref } from "./route.ts";
 import { avatar } from "./ui.ts";
-import { YIELD_ALLOWLIST, tokenAmount } from "./yield-proposals.ts";
+import { readAmount, YIELD_ALLOWLIST } from "./yield-proposals.ts";
+import { pillarTag } from "./pillars.ts";
 
 /** Waiting rows shown before "Show all". */
 export const NEEDS_SHOWN = 5;
@@ -18,13 +19,13 @@ export const ACTIVITY_SHOWN = 5;
 
 /** `data-agents-for` names the accounts this view was read for, so a wallet change re-reads it. */
 function head(accounts: readonly string[], sub: string | null = null): Html {
-  return html`<section class="stack-xs" data-agents-for="${accounts.join(",")}"><h1 class="h1">Your agents</h1>${sub === null ? "" : html`<p class="muted budget-lead">${sub}</p>`}</section>`;
+  return html`<section class="stack-xs" data-agents-for="${accounts.join(",")}">${pillarTag("budget")}<h1 class="h1">Your agents</h1>${sub === null ? "" : html`<p class="muted budget-lead">${sub}</p>`}</section>`;
 }
 
 const NEW_AGENT = html`<details class="menu">
   <summary class="btn btn-primary">${icon.plus()}New agent</summary>
   <div class="pop card">
-    <a class="pop-item" href="${pageHref("budget")}" data-nav><span class="strong">Pay for things</span><span class="small muted">Spends from a budget within your limits. Needs 2 signatures.</span></a>
+    <a class="pop-item" href="${budgetNewHref()}" data-nav><span class="strong">Pay for things</span><span class="small muted">Spends from a budget within your limits. Needs 2 signatures.</span></a>
     <a class="pop-item" href="${yieldNewHref()}" data-nav><span class="strong">Earn on idle funds</span><span class="small muted">Watches Rhea Lend for idle stablecoins and suggests moves. You approve every one.</span></a>
   </div>
 </details>`;
@@ -39,7 +40,7 @@ export function renderMyAgentsSignedOut(): Html {
       <p class="strong">Connect your wallet to see your agents</p>
       <p class="small muted">Key Doctor only reads. Your wallet signs.</p>
       <button type="button" class="btn btn-primary btn-start" data-action="open-wallet">Connect wallet</button>
-      <p class="small"><a href="${pageHref("budget")}" data-nav>Or open one budget by name</a></p>
+      <p class="small"><a href="${budgetNewHref()}" data-nav>Or open one budget by name</a></p>
     </section>`;
 }
 
@@ -138,7 +139,7 @@ function budgetCard(card: BudgetCard): Html {
     <div class="agent-card-nums">
       <div><p class="small muted">Balance</p><p class="agent-card-big">${nearShort(b.withdrawable)}</p></div>
       <div class="grow-min"><p class="small muted">Spent today</p>
-        <p class="strong">${w === null ? "unknown" : p === null ? near(w.spent_in_window) : `${yoctoToNear(w.spent_in_window)} of ${near(p.max_per_day)}`}</p>
+        <p class="strong">${w === null ? "unknown" : p === null ? near(w.spent_in_window) : `${nearText(w.spent_in_window)} of ${near(p.max_per_day)}`}</p>
         ${w !== null && p !== null ? html`<progress class="progress" max="100" value="${percent(w.spent_in_window, p.max_per_day)}" aria-label="Share of the daily limit spent"></progress>` : ""}</div>
     </div>
     ${meta === "" ? "" : html`<p class="small muted">${meta}</p>`}</a>`;
@@ -152,14 +153,14 @@ function yieldCard(row: AgentRow, network: Network): Html {
       : row.status === "idle"
         ? html`<span class="pill pill-note">Idle</span>`
         : html`<span class="pill pill-cleanup">Status unknown</span>`;
-  const supplied = row.supplied === null || token === null ? "unknown" : `${tokenAmount(row.supplied, token.decimals)} ${token.symbol}`;
+  const supplied = row.supplied === null || token === null ? "unknown" : `${readAmount(row.supplied, token.decimals)} ${token.symbol}`;
   return html`<a class="agent-card" href="${yieldHref(row.dao)}" data-nav>
     <div class="agent-card-head">${avatar(`yield:${row.dao}`)}<span class="stack-xs grow-min"><span class="strong">Yield agent</span><span class="small muted mono wrap">${row.dao}</span></span>${pill}</div>
     <div><p class="small muted">Supplied on Rhea Lend</p><p class="agent-card-big">${supplied}</p></div>
     <p class="small muted">Suggests only. You approve every move.${network === "testnet" ? " Test data, not real yield." : ""}</p></a>`;
 }
 
-const NEW_CARD = html`<div class="agent-card agent-card-new">${icon.plus()}<span class="strong">New agent</span><a class="link-btn" href="${pageHref("budget")}" data-nav>Pay for things</a><a class="link-btn" href="${yieldNewHref()}" data-nav>Earn on idle funds</a></div>`;
+const NEW_CARD = html`<div class="agent-card agent-card-new">${icon.plus()}<span class="strong">New agent</span><a class="link-btn" href="${budgetNewHref()}" data-nav>Pay for things</a><a class="link-btn" href="${yieldNewHref()}" data-nav>Earn on idle funds</a></div>`;
 
 /** The newest events across budgets, each worded by its own budget's agents. */
 function recentActivity(cards: readonly BudgetCard[], now: number): Html {
@@ -185,7 +186,7 @@ export function renderMyAgents(data: MyAgents, accounts: readonly string[], card
       <section class="card pad stack-xs budget-narrow">
         <p class="strong">No agents yet</p>
         <p class="small muted">Give your first agent a budget in about 2 minutes.</p>
-        <div class="actions"><a class="btn btn-primary" href="${pageHref("budget")}" data-nav>${icon.plus()}Pay for things</a><a class="btn" href="${yieldNewHref()}" data-nav>Earn on idle funds</a></div>
+        <div class="actions"><a class="btn btn-primary" href="${budgetNewHref()}" data-nav>${icon.plus()}Pay for things</a><a class="btn" href="${yieldNewHref()}" data-nav>Earn on idle funds</a></div>
         ${note}
       </section>`;
   }
@@ -198,4 +199,77 @@ export function renderMyAgents(data: MyAgents, accounts: readonly string[], card
       <div class="agent-cards">${cards.map(budgetCard)}${yields.map((r) => yieldCard(r, data.network))}${NEW_CARD}</div>
       ${unread}</section>
     ${recentActivity(cards, now)}${ALERTS}`;
+}
+
+/** The Agent Budget and Yield nav pages: the wallet's agents of one kind, each card opens that agent. */
+export type AgentListKind = "budget" | "yield";
+
+const LIST: Record<AgentListKind, { title: string; create: string; noun: string; empty: string; scope: string }> = {
+  budget: {
+    title: "Your Agent Budgets",
+    create: budgetNewHref(),
+    noun: "budget",
+    empty: "Give your first agent a budget in about 2 minutes.",
+    scope: "Budgets where your account sits on the council.",
+  },
+  yield: {
+    title: "Your yield agents",
+    create: yieldNewHref(),
+    noun: "yield agent",
+    empty: "A yield agent watches Rhea Lend for idle stablecoins and suggests moves. You approve every one.",
+    scope: "Yield agents made or opened in this browser, where your account sits on the council.",
+  },
+};
+
+/** `data-agents-for` names the accounts the list was read for (empty when signed out), so a wallet change re-reads it. */
+function listTop(kind: AgentListKind, accounts: readonly string[], sub: string): Html {
+  const l = LIST[kind];
+  return html`<div class="agents-top">
+    <section class="stack-xs" data-agents-for="${accounts.join(",")}">${pillarTag(kind)}<h1 class="h1">${l.title}</h1><p class="muted budget-lead">${sub}</p></section>
+    <div class="actions"><a class="btn btn-primary" href="${l.create}" data-nav>${icon.plus()}Create</a></div>
+  </div>`;
+}
+
+/** `open` is the page's open-by-name form, kept under the list for an agent the wallet does not sit on. */
+export function renderAgentListSignedOut(kind: AgentListKind, open: Html): Html {
+  return html`${listTop(kind, [], LIST[kind].scope)}
+    <section class="card pad stack-xs budget-narrow">
+      <p class="strong">Connect your wallet to see your ${LIST[kind].noun}s</p>
+      <p class="small muted">Key Doctor only reads. Your wallet signs.</p>
+      <button type="button" class="btn btn-primary btn-start" data-action="open-wallet">Connect wallet</button>
+    </section>${open}`;
+}
+
+export function renderAgentListLoading(kind: AgentListKind, accounts: readonly string[]): Html {
+  return html`${listTop(kind, accounts, LIST[kind].scope)}
+    <section class="card pad stack-sm" aria-busy="true" aria-label="Loading ${LIST[kind].noun}s"><p class="meta" role="status">Finding the ${LIST[kind].noun}s of <span class="mono">${accounts.join(", ")}</span>…</p></section>`;
+}
+
+export function renderAgentListError(kind: AgentListKind, message: string, accounts: readonly string[], open: Html): Html {
+  return html`${listTop(kind, accounts, LIST[kind].scope)}
+    <section class="card pad stack-xs budget-narrow">
+      <p class="check-line small">${icon.alertSmall()}<span>${message}</span></p>
+      <button type="button" class="btn btn-secondary btn-start" data-action="rescan">Try again</button>
+    </section>${open}`;
+}
+
+/** Every agent of one kind as a card; the card is how one is picked. Budget cards need `cards`, yield cards `data.rows`. */
+export function renderAgentList(kind: AgentListKind, data: MyAgents, accounts: readonly string[], cards: readonly BudgetCard[], open: Html): Html {
+  const l = LIST[kind];
+  const list = kind === "budget" ? cards.map(budgetCard) : data.rows.filter((r) => r.kind === "yield").map((r) => yieldCard(r, data.network));
+  const unread =
+    kind === "budget" && data.unread !== 0
+      ? html`<p class="small muted">${plural(data.unread, "budget")} could not be read, so this page cannot tell if you sit on ${data.unread === 1 ? "it" : "them"}.</p>`
+      : "";
+  if (list.length === 0) {
+    return html`${listTop(kind, accounts, l.scope)}
+      <section class="card pad stack-xs budget-narrow">
+        <p class="strong">No ${l.noun}s yet</p>
+        <p class="small muted">${l.empty}</p>
+        ${unread}
+      </section>${open}`;
+  }
+  return html`${listTop(kind, accounts, `${plural(list.length, l.noun)}. ${l.scope}`)}
+    <p id="budget-status" class="small" role="status" aria-live="polite"></p>
+    <div class="agent-cards">${list}</div>${unread}${open}`;
 }

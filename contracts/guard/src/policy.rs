@@ -44,13 +44,62 @@ pub fn decide(p: &GuardPolicy, wl: Option<&WhitelistEntry>, spent: u128, amount:
     (decision, reasons.into_iter().map(String::from).collect())
 }
 
-/// Rolling 24 h window: once `now` reaches `start + 24h` a new window starts at `now` with nothing spent.
-pub fn roll_window(start: u64, spent: u128, now: u64) -> (u64, u128) {
-    if now >= start.saturating_add(DAY_NS) {
-        (now, 0)
-    } else {
-        (start, spent)
+pub const HOUR_NS: u64 = 3_600 * 1_000_000_000;
+
+/// Self-approved yoctoNEAR per hour (`block_timestamp / HOUR_NS`), oldest first: the rolling 24 h window (red-team
+/// M4). A fixed window that restarts at the first request after 24 h let twice `max_per_day` leave in a few minutes
+/// across the restart. At most 25 hours are live, so the list stays small.
+pub type Spends = Vec<(u32, u128)>;
+
+fn hour_of(ns: u64) -> u32 {
+    (ns / HOUR_NS) as u32
+}
+
+/// A spend counts until the hour 25 hours after its own starts, so every 24 h span that holds it sees it: the limit
+/// errs on the safe side by up to one hour.
+fn live(hour: u32, now: u64) -> bool {
+    hour_of(now) <= hour.saturating_add(24)
+}
+
+pub fn prune(spends: &mut Spends, now: u64) {
+    spends.retain(|&(hour, _)| live(hour, now));
+}
+
+/// What counts against the daily limit at `now`.
+pub fn spent(spends: &Spends, now: u64) -> u128 {
+    spends.iter().filter(|&&(hour, _)| live(hour, now)).fold(0u128, |sum, &(_, a)| sum.saturating_add(a))
+}
+
+pub fn add_spend(spends: &mut Spends, now: u64, amount: u128) {
+    prune(spends, now);
+    let hour = hour_of(now);
+    match spends.last_mut() {
+        Some((h, a)) if *h == hour => *a = a.saturating_add(amount),
+        _ => spends.push((hour, amount)),
     }
+}
+
+/// Gives back `amount` spent at `created_at`, if that spend still counts. Returns whether it did. A spend that
+/// already dropped out of the window has nothing left to give back.
+pub fn refund_spend(spends: &mut Spends, created_at: u64, now: u64, amount: u128) -> bool {
+    prune(spends, now);
+    let hour = hour_of(created_at);
+    let Some(i) = spends.iter().position(|&(h, _)| h == hour) else {
+        return false;
+    };
+    spends[i].1 = spends[i].1.saturating_sub(amount);
+    if spends[i].1 == 0 {
+        spends.remove(i);
+    }
+    true
+}
+
+/// When the oldest spend that still counts drops out, freeing part of the limit; `now` when nothing counts.
+pub fn frees_at(spends: &Spends, now: u64) -> u64 {
+    spends
+        .iter()
+        .find(|&&(hour, _)| live(hour, now))
+        .map_or(now, |&(hour, _)| (hour as u64 + 25).saturating_mul(HOUR_NS))
 }
 
 /// 8 to 64 chars of `[A-Za-z0-9_-]`, outside the prefix plan steps use. The id goes into the proposal description,
@@ -126,7 +175,11 @@ pub fn check_plan(plan: &PlanInput, guard: &AccountId, dao: &AccountId, factory:
             return Err("INVALID_CALL_GAS");
         }
     }
-    if let PlanAction::Swap { token_out, max_slippage_bps, .. } = &plan.action {
+    // A swap with no floor of its own takes whatever price a quote gives, and anyone can skew the quote (ADR 0007).
+    if let PlanAction::Swap { .. } = &plan.action {
+        return Err("PRICE_FLOOR_REQUIRED");
+    }
+    if let PlanAction::SwapWithFloor { token_out, max_slippage_bps, min_out_per_near, .. } = &plan.action {
         let Some((wrap, exchange)) = dex_for(guard) else {
             return Err("SWAP_NOT_SUPPORTED");
         };
@@ -137,14 +190,46 @@ pub fn check_plan(plan: &PlanInput, guard: &AccountId, dao: &AccountId, factory:
         if t == wrap || t == exchange || token_out == guard || token_out == dao || factory == Some(t) {
             return Err("INVALID_TOKEN_OUT");
         }
+        if min_out_per_near.0 == 0 {
+            return Err("INVALID_PRICE_FLOOR");
+        }
     }
     Ok(())
+}
+
+const YOCTO_PER_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
+
+/// `amount * min_out_per_near / 10^24`, rounded down: the least `token_out` the DAO takes for `amount` yoctoNEAR.
+/// Exact on the full 256-bit product, since 1e9 NEAR at 10 USDT (6 decimals) already passes `u128::MAX`. `None` when
+/// the answer does not fit a `u128`: no swap can return that much, so the floor cannot be met.
+pub fn dao_floor(amount: u128, min_out_per_near: u128) -> Option<u128> {
+    const LO: u128 = u64::MAX as u128;
+    let (a1, a0, b1, b0) = (amount >> 64, amount & LO, min_out_per_near >> 64, min_out_per_near & LO);
+    let (p00, p01, p10, p11) = (a0 * b0, a0 * b1, a1 * b0, a1 * b1);
+    let mid = (p00 >> 64) + (p01 & LO) + (p10 & LO);
+    let lo = (p00 & LO) | ((mid & LO) << 64);
+    let hi = p11 + (p01 >> 64) + (p10 >> 64) + (mid >> 64);
+    // The quotient fits 128 bits only when the high half is below the divisor.
+    if hi >= YOCTO_PER_NEAR {
+        return None;
+    }
+    // Long division of (hi, lo) by 10^24 one bit at a time; the remainder stays below 2^81.
+    let (mut rem, mut q) = (hi, 0u128);
+    for bit in (0..128).rev() {
+        rem = (rem << 1) | ((lo >> bit) & 1);
+        q <<= 1;
+        if rem >= YOCTO_PER_NEAR {
+            rem -= YOCTO_PER_NEAR;
+            q |= 1;
+        }
+    }
+    Some(q)
 }
 
 /// The agent limits, which hold for a plan too. A `call` or `swap` has no receiver to whitelist.
 pub fn plan_reasons(p: &GuardPolicy, action: &PlanAction, wl: Option<&WhitelistEntry>, spent: u128, amount: u128) -> Vec<String> {
     let (_, mut reasons) = decide(p, wl, spent, amount);
-    if matches!(action, PlanAction::Call { .. } | PlanAction::Swap { .. }) {
+    if matches!(action, PlanAction::Call { .. } | PlanAction::Swap { .. } | PlanAction::SwapWithFloor { .. }) {
         reasons.retain(|r| r != "NOT_WHITELISTED");
     }
     reasons
@@ -216,11 +301,57 @@ mod tests {
         assert!(reasons(Some(&listed(None)), 10 * NEAR, u128::MAX).contains(&"OVER_DAILY_LIMIT".to_string()));
     }
 
+    const H0: u64 = 500_000 * HOUR_NS;
+
     #[test]
-    fn window_resets_at_exactly_24_hours() {
-        // One nanosecond early keeps the spent amount; at the boundary the window starts over.
-        assert_eq!(roll_window(1_000, 7, 1_000 + DAY_NS - 1), (1_000, 7));
-        assert_eq!(roll_window(1_000, 7, 1_000 + DAY_NS), (1_000 + DAY_NS, 0));
+    fn no_24_hours_can_hold_more_than_the_limit_across_the_old_reset() {
+        // Red-team M4: the fixed window let 20 NEAR leave just before its reset and 20 more just after. A rolling
+        // window still counts the first 20 a minute later, and frees them only once 24 h have passed.
+        let mut s = Spends::new();
+        add_spend(&mut s, H0 + DAY_NS - 60_000_000_000, 20 * NEAR);
+        assert_eq!(spent(&s, H0 + DAY_NS + 60_000_000_000), 20 * NEAR, "a minute after the old reset");
+        assert_eq!(spent(&s, H0 + 2 * DAY_NS - 61_000_000_000), 20 * NEAR, "still inside its own 24 h");
+        assert_eq!(spent(&s, H0 + 2 * DAY_NS + HOUR_NS), 0, "out once its hour is 25 h old");
+    }
+
+    #[test]
+    fn a_spend_counts_for_24_to_25_hours_never_less() {
+        // Hour buckets round the expiry up, never down: a spend late in its hour counts a little over 24 h.
+        let mut s = Spends::new();
+        add_spend(&mut s, H0 + HOUR_NS - 1, 7);
+        assert_eq!(spent(&s, H0 + HOUR_NS - 1 + DAY_NS), 7, "exactly 24 h later");
+        assert_eq!(spent(&s, H0 + 25 * HOUR_NS), 0, "first ns of the 25th hour after");
+        assert_eq!(frees_at(&s, H0), H0 + 25 * HOUR_NS);
+        assert_eq!(frees_at(&Spends::new(), H0), H0, "nothing counts: nothing to wait for");
+    }
+
+    #[test]
+    fn spends_in_one_hour_share_a_bucket_and_old_ones_are_dropped() {
+        // The state stays at most 25 entries however many requests run.
+        let mut s = Spends::new();
+        for m in 0..60 {
+            add_spend(&mut s, H0 + m * 60_000_000_000, 1);
+        }
+        assert_eq!(s, vec![(500_000, 60)]);
+        for h in 1..=40u64 {
+            add_spend(&mut s, H0 + h * HOUR_NS, 1);
+        }
+        assert_eq!(s.len(), 25);
+        assert_eq!(s[0].0, 500_016);
+    }
+
+    #[test]
+    fn a_refund_comes_off_its_own_hour_and_only_while_it_counts() {
+        // A refund into a later hour would free room the failed request never took; after expiry there is none left.
+        let mut s = Spends::new();
+        add_spend(&mut s, H0, 5);
+        add_spend(&mut s, H0 + HOUR_NS, 3);
+        assert!(refund_spend(&mut s, H0 + 10, H0 + 2 * HOUR_NS, 5));
+        assert_eq!(s, vec![(500_001, 3)], "an emptied hour is removed");
+        assert!(!refund_spend(&mut s, H0, H0 + 2 * HOUR_NS, 5), "nothing left in that hour");
+        assert_eq!(spent(&s, H0 + 2 * HOUR_NS), 3, "the other hour is untouched");
+        assert!(!refund_spend(&mut s, H0 + HOUR_NS, H0 + 26 * HOUR_NS, 3), "expired");
+        assert_eq!(spent(&s, H0 + 26 * HOUR_NS), 0);
     }
 
     #[test]
@@ -364,7 +495,45 @@ mod tests {
     }
 
     fn swap_to(token_out: &str, bps: u16) -> PlanAction {
-        PlanAction::Swap { pool_id: 57, token_out: token_out.parse().unwrap(), max_slippage_bps: bps }
+        PlanAction::SwapWithFloor { pool_id: 57, token_out: token_out.parse().unwrap(), max_slippage_bps: bps, min_out_per_near: U128(8_500_000) }
+    }
+
+    #[test]
+    fn a_swap_without_a_dao_floor_is_refused_since_a_quote_alone_can_be_skewed() {
+        // ADR 0007, 2026-11-12: anyone can run a step, so a quote-only bound lets them sandwich the sale. The old shape
+        // stays readable for stored plans but no new plan may use it, on any network.
+        let old = plan(PlanAction::Swap { pool_id: 57, token_out: "usdt.fakes.testnet".parse().unwrap(), max_slippage_bps: 100 });
+        assert_eq!(check(&old), Err("PRICE_FLOOR_REQUIRED"));
+        let (guard, dao) = ("g.factory.near".parse().unwrap(), "dao.testnet".parse().unwrap());
+        assert_eq!(check_plan(&old, &guard, &dao, None), Err("PRICE_FLOOR_REQUIRED"));
+    }
+
+    #[test]
+    fn a_zero_floor_is_refused_because_it_is_no_floor_at_all() {
+        let mut zero = plan(swap_to("usdt.fakes.testnet", 100));
+        let PlanAction::SwapWithFloor { min_out_per_near, .. } = &mut zero.action else { unreachable!() };
+        *min_out_per_near = U128(0);
+        assert_eq!(check(&zero), Err("INVALID_PRICE_FLOOR"));
+        let mut one = zero.clone();
+        let PlanAction::SwapWithFloor { min_out_per_near, .. } = &mut one.action else { unreachable!() };
+        *min_out_per_near = U128(1);
+        assert_eq!(check(&one), Ok(()), "any floor above 0 is the DAO's call");
+    }
+
+    #[test]
+    fn the_dao_floor_is_exact_where_the_plain_product_would_overflow() {
+        // A rounding or overflow error here moves the line between a run and a skip, so the values come from
+        // Python's exact integers.
+        assert_eq!(dao_floor(NEAR / 10, 8_500_000), Some(850_000));
+        assert_eq!(dao_floor(123_456_789_012_345_678_901_234_567, 987_654_321_098_765), Some(121_932_631_137_021_741));
+        // 1e9 NEAR at 10 USDT: the product passes u128::MAX, the answer does not.
+        assert_eq!(dao_floor(1_000_000_000 * NEAR, 10_000_000), Some(10_000_000_000_000_000));
+        assert_eq!(dao_floor(u128::MAX, NEAR), Some(u128::MAX));
+        assert_eq!(dao_floor(u128::MAX, NEAR - 1), Some(340_282_366_920_938_463_463_374_267_149_401_290_516));
+        assert_eq!(dao_floor(u128::MAX, NEAR + 1), None, "an answer over u128 cannot be met by any swap");
+        assert_eq!(dao_floor(u128::MAX, u128::MAX), None);
+        assert_eq!(dao_floor(0, u128::MAX), Some(0));
+        assert_eq!(dao_floor(NEAR - 1, 1), Some(0), "rounded down");
     }
 
     #[test]
@@ -408,9 +577,14 @@ mod tests {
     fn a_swap_is_checked_for_network_before_slippage_and_slippage_before_token() {
         // Each code must name the first thing the owner has to fix; a wrong order would send them to the wrong field.
         let (guard, dao) = ("g.factory.near".parse().unwrap(), "dao.testnet".parse().unwrap());
-        let both = plan(swap_to("wrap.testnet", 7));
-        assert_eq!(check_plan(&both, &guard, &dao, None), Err("SWAP_NOT_SUPPORTED"));
-        assert_eq!(check(&both), Err("INVALID_SLIPPAGE"));
+        let mut all = plan(swap_to("wrap.testnet", 7));
+        let PlanAction::SwapWithFloor { min_out_per_near, .. } = &mut all.action else { unreachable!() };
+        *min_out_per_near = U128(0);
+        assert_eq!(check_plan(&all, &guard, &dao, None), Err("SWAP_NOT_SUPPORTED"));
+        assert_eq!(check(&all), Err("INVALID_SLIPPAGE"));
+        let PlanAction::SwapWithFloor { max_slippage_bps, .. } = &mut all.action else { unreachable!() };
+        *max_slippage_bps = 100;
+        assert_eq!(check(&all), Err("INVALID_TOKEN_OUT"), "the token before the floor");
     }
 
     #[test]

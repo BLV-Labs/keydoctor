@@ -693,6 +693,23 @@ describe("Close this Budget", () => {
     assert.doesNotMatch(out, /budget-close-now/);
   });
 
+  // `upgrade` stores the Guard's own copy of the new code from its free NEAR (3.73 NEAR for 1.6.0 on a Guard that runs
+  // the factory's global code). Short of that the deploy fails after two signatures and a bond, so Update waits.
+  it("on an older Guard short of NEAR for the code, Update is disabled and the page names what to send and where", () => {
+    const out = renderBudgetClose(live(), "1.3.0", "2950000000000000000000000").value;
+    assert.match(out, /data-action="budget-close-update" disabled/);
+    assert.match(out, /Send <strong>2\.95 NEAR<\/strong> to the Budget account <span class="mono">g1\.guards\.testnet<\/span> first/);
+  });
+
+  it("on an older Guard with enough NEAR, Update is enabled with no note; an unread check warns but does not block", () => {
+    const ok = renderBudgetClose(live(), "1.3.0", "0").value;
+    assert.match(ok, /data-action="budget-close-update">/);
+    assert.doesNotMatch(ok, /Send <strong>|could not check/);
+    const unread = renderBudgetClose(live(), "1.3.0", null).value;
+    assert.match(unread, /data-action="budget-close-update">/);
+    assert.match(unread, /could not check that the Budget account/);
+  });
+
   it("with an unread version offers nothing to sign", () => {
     const out = renderBudgetClose(live(), null).value;
     assert.match(out, /could not be read/);

@@ -3,7 +3,7 @@ import { resolveTarget, type Network } from "key-doctor";
 export const BOT_USERNAME = "KeyDoctorOnCallBot";
 export const BOT_URL = `https://t.me/${BOT_USERNAME}`;
 
-export type Page = "check" | "mcp" | "guard" | "budget" | "my-agents" | "yield";
+export type Page = "check" | "mcp" | "guard" | "budget" | "my-agents" | "yield" | "roadmap";
 
 /** What a link asks the page to open once, after it has painted (docs/final-idea.md §10.1, §10.5). */
 export type RouteLink =
@@ -37,6 +37,8 @@ export interface Route {
   help: boolean;
   /** `?page=yield&new=1`: the New yield agent wizard. */
   yieldNew: boolean;
+  /** `?page=budget&new=1`: the New budget wizard and the open-by-name form. Without it, `?page=budget` lists the wallet's budgets. */
+  budgetNew: boolean;
 }
 
 const NETWORK_SUFFIX: Record<Network, string> = { mainnet: ".near", testnet: ".testnet" };
@@ -88,9 +90,10 @@ export function parseRoute(search: string): Route {
   const link = raw === null ? parseLink(p, params) : null;
   const help = raw === null && p === "budget" && params.get("help") === "agent";
   const yieldNew = raw === null && p === "yield" && params.get("new") === "1";
-  if (raw === null || raw.trim() === "") return { page, target: null, invalid: null, from: null, dao, view: "report", level, network, link, help, yieldNew };
+  const budgetNew = raw === null && p === "budget" && params.get("new") === "1";
+  if (raw === null || raw.trim() === "") return { page, target: null, invalid: null, from: null, dao, view: "report", level, network, link, help, yieldNew, budgetNew };
   const target = normalize(raw);
-  if (target === null) return { page: "check", target: null, invalid: raw, from: null, dao: null, view: "report", level, network, link: null, help: false, yieldNew: false };
+  if (target === null) return { page: "check", target: null, invalid: raw, from: null, dao: null, view: "report", level, network, link: null, help: false, yieldNew: false, budgetNew: false };
   const fromRaw = params.get("from");
   const from = fromRaw === null ? null : normalize(fromRaw);
   return {
@@ -105,6 +108,7 @@ export function parseRoute(search: string): Route {
     link: null,
     help: false,
     yieldNew: false,
+    budgetNew: false,
   };
 }
 
@@ -113,7 +117,7 @@ export function parseRoute(search: string): Route {
  * Agent Budget. `?page=guard&dao=` stays the council page: the README documents it and a many-member DAO has no other.
  */
 function pageOf(p: string | null, dao: string | null): Page {
-  if (p === "mcp" || p === "budget" || p === "my-agents" || p === "yield") return p;
+  if (p === "mcp" || p === "budget" || p === "my-agents" || p === "yield" || p === "roadmap") return p;
   if (p === "agents") return "budget";
   if (p === "guard") return dao === null ? "budget" : "guard";
   return "check";
@@ -177,6 +181,11 @@ export function yieldHref(dao: string): string {
 /** The New yield agent wizard. */
 export function yieldNewHref(): string {
   return "?page=yield&new=1";
+}
+
+/** The New budget wizard, with the form that opens a Budget by name. */
+export function budgetNewHref(): string {
+  return "?page=budget&new=1";
 }
 
 /** The full "How your agent works" guide. */

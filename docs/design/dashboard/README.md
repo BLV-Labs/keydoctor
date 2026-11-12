@@ -11,8 +11,8 @@ The approved mockup for `apps/dashboard` (GĐ7, GĐ8). Build the dashboard from 
 ## Themes and density
 
 - **Two themes.** Light is `:root`; dark is `:root[data-theme="dark"]`. `public/theme-init.js` sets `data-theme` before the first paint (saved choice, else the system setting); the header switch saves the choice. Every text/background pair passes WCAG AA in both themes (`test/ui.test.ts` checks it). In the mockup, each screen has a **theme** tweak (Tweaks panel) and the page screens a header switch.
-- **Type scale** (`--kd-fs-*`): 11 column heads · 12 tags · 13 meta, notes, row buttons · 14 body, tables, dialogs · 16 card titles, inputs · 18 section titles · 24 page title, tile values · 36 home hero. Inputs stay 16px so phones do not zoom.
-- **Compact lists.** Card header = title + short note together, at most one link on the right. Table rows 10px × 12–20px, column heads 11px uppercase, numbers right-aligned with tabular figures, members start with a decorative two-letter monogram. Row buttons are 32px on a pointer screen and 44px on touch.
+- **Type scale** (`--kd-fs-*`): 12 column heads, tags · 13 meta, notes, row buttons · 15 body, tables, dialogs · 17 card titles, inputs · 20 section titles · 28 page title, stat and tile values · 40 home hero. On screens up to 720px: 22 page title and values, 30 hero. Nothing below 12px; inputs are 17px so phones do not zoom.
+- **Compact lists.** Card header = title + short note together, at most one link on the right. Table rows 10px × 12–20px, column heads 12px uppercase, numbers right-aligned with tabular figures, members start with a decorative two-letter monogram. Row buttons are 32px on a pointer screen and 44px on touch.
 
 Data is the GĐ0 testnet fixture (`packages/key-doctor/fixtures/reports/dao-kd-demo.report.json`), with one change listed under "Open items".
 
@@ -96,7 +96,7 @@ The `?target=` route is also the deep link the bot uses for "View on dashboard".
 
 ### 5. Telegram alerts
 - One dialog for every target. Steps: open `@KeyDoctorOnCallBot`, copy `/watch <target>` (button turns into "Copied"), group hint.
-- "You will get": every target gets the daily key comparison (02:00 UTC). A DAO also gets the pre-vote warning (every 15 minutes) and governance / upgrade proposal warnings. An account gets a hint to also watch its DAO.
+- "You will get": every target gets the daily key comparison (about every 24 hours). A DAO also gets the pre-vote warning (every 15 minutes) and governance / upgrade proposal warnings. An account gets a hint to also watch its DAO.
 - The page stores nothing; `/list` and `/unwatch` live in the bot.
 
 ### 6. Confirm a full-access delete

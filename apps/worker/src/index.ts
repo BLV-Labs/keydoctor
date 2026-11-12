@@ -7,12 +7,13 @@ import { runDailyJob } from "./jobs/daily.ts";
 import { runKeeperJob } from "./jobs/keeper.ts";
 import { runProposalJob } from "./jobs/proposals.ts";
 import { runYieldJob } from "./jobs/yield.ts";
+import { checkRate, clientKey } from "./mcp/rate-limit.ts";
 import { handleMcp } from "./mcp/server.ts";
 import { handleTelegram } from "./telegram/webhook.ts";
-import { createWatchLink } from "./watch-link.ts";
+import { clientId, createWatchLink } from "./watch-link.ts";
 
 export const PROPOSAL_CRON = "*/15 * * * *";
-export const DAILY_CRON = "0 2 * * *";
+export const DAILY_CRON = "2 * * * *";
 /** Its own trigger, off the proposal job's minutes: each invocation gets its own subrequest and CPU limits. */
 export const KEEPER_CRON = "7,22,37,52 * * * *";
 /** Yield push (plan Y20): its own offset again, so it shares CPU with neither the proposal job nor the keeper. */
@@ -37,7 +38,13 @@ async function runCheck(request: Request, env: Env): Promise<Response> {
   }
 }
 
-/** POST /api/watch-link {target, network?} (§8.4, P1): CORS only for DASHBOARD_ORIGIN; writes pending_subscriptions only. */
+/** Calls per minute to POST /api/watch-link from one client. The dashboard asks once per click. */
+export const WATCH_LINK_PER_MIN = 5;
+
+/**
+ * POST /api/watch-link {target, network?} (§8.4, P1): CORS only for DASHBOARD_ORIGIN; writes pending_subscriptions only.
+ * The Origin check stops other web pages, not curl (red-team M5), so each client is also rate-limited and capped.
+ */
 async function watchLink(request: Request, env: Env): Promise<Response> {
   const origin = request.headers.get("origin");
   const allowed = env.DASHBOARD_ORIGIN;
@@ -49,6 +56,17 @@ async function watchLink(request: Request, env: Env): Promise<Response> {
       headers: { ...cors, "access-control-allow-methods": "POST", "access-control-allow-headers": "content-type", "access-control-max-age": "600" },
     });
   }
+  const ip = request.headers.get("cf-connecting-ip");
+  const key = ip ? clientKey(ip) : null;
+  if (key !== null) {
+    const wait = checkRate(`watch-link:${key}`, WATCH_LINK_PER_MIN);
+    if (wait > 0) {
+      return json(kdErrorBody("RATE_LIMITED", { vi: "Quá nhiều yêu cầu. Hãy thử lại sau ít phút.", en: "Too many requests. Try again in a minute." }, true), 429, {
+        ...cors,
+        "retry-after": String(wait),
+      });
+    }
+  }
   const body = await readJson(request, 1024);
   const target = (body as { target?: unknown } | null)?.target;
   const network = (body as { network?: unknown } | null)?.network;
@@ -56,7 +74,7 @@ async function watchLink(request: Request, env: Env): Promise<Response> {
     return json(kdErrorBody("INVALID_TARGET", { vi: "Cần {target, network?}.", en: "Expected {target, network?}." }), 400, cors);
   }
   try {
-    return json(await createWatchLink({ target, ...(network !== undefined && { network }) }, env), 200, cors);
+    return json(await createWatchLink({ target, ...(network !== undefined && { network }) }, env, key && (await clientId(key))), 200, cors);
   } catch (e) {
     if (isKdError(e)) return json(e.kd, e.kd.code === "RATE_LIMITED" ? 429 : 400, cors);
     throw e;

@@ -4,6 +4,7 @@ import { diffReports, type KdAlert, type KdReport } from "key-doctor";
 import worker from "../src/index.ts";
 import type { Env } from "../src/env.ts";
 import { findNames, handleUpdate, incomingFrom, parseCommand, MAX_SUBS_PER_CHAT } from "../src/telegram/commands.ts";
+import { TelegramError, sendMessage, toPlain } from "../src/telegram/api.ts";
 import { langOf, renderAlert, renderChanges, renderCheck, renderHelp } from "../src/telegram/render.ts";
 import { testD1, type TestD1 } from "./support/d1.ts";
 import { DAO, addKey, fixture, installChain, type Chain } from "./support/rpc.ts";
@@ -108,7 +109,7 @@ describe("GĐ4 message rendering", () => {
   it("/check for a DAO follows §9.2 in both languages, with rule titles verbatim", () => {
     const en = renderCheck("en", daoReport(), "https://kd.example");
     assert.equal(
-      en.text,
+      toPlain(en.text),
       [
         "Key Doctor On Call",
         `${DAO}: HIGH RISK  (block 182,340,111)`,
@@ -125,33 +126,33 @@ describe("GĐ4 message rendering", () => {
     );
     assert.deepEqual(en.buttons, [{ text: "View on dashboard", url: `https://kd.example/?target=${DAO}` }]);
     const vi = renderCheck("vi", daoReport());
-    assert.match(vi.text, /Council 3 người: 1 rủi ro cao, 1 cần dọn, 1 sẵn sàng lượng tử\./);
-    assert.match(vi.text, /- a\.kd-demo\.testnet: Quá nhiều khóa toàn quyền/);
+    assert.match(toPlain(vi.text), /Council 3 người: 1 rủi ro cao, 1 cần dọn, 1 sẵn sàng lượng tử\./);
+    assert.match(toPlain(vi.text), /- a\.kd-demo\.testnet: Quá nhiều khóa toàn quyền/);
     assert.deepEqual(vi.buttons, []);
   });
 
   it("/check for an account lists its issues, most severe first", () => {
     const r = renderCheck("en", accountReport());
-    assert.match(r.text, /b\.kd-demo\.testnet: CLEANUP/);
-    assert.match(r.text, /1 full-access keys · 1 app keys · 0 ML-DSA · 0 never used/);
-    const issues = r.text.split("Issues:\n")[1]!.split("\n\n")[0]!.split("\n");
+    assert.match(toPlain(r.text), /b\.kd-demo\.testnet: CLEANUP/);
+    assert.match(toPlain(r.text), /1 full-access keys · 1 app keys · 0 ML-DSA · 0 never used/);
+    const issues = toPlain(r.text).split("Issues:\n")[1]!.split("\n\n")[0]!.split("\n");
     assert.deepEqual(issues, ["🟠 App key with unlimited allowance", "🟠 App key can call any method", "⚪ No post-quantum key"]);
   });
 
   it("/check marks members that could not be read as unknown risk", () => {
     const r = daoReport();
     r.members[2]!.error = "RPC_ERROR";
-    assert.match(renderCheck("en", r).text, /Could not read: 1 \(risk unknown, not low\)/);
+    assert.match(toPlain(renderCheck("en", r).text), /Could not read: 1 \(risk unknown, not low\)/);
   });
 
   it("/changes: baseline, no change, and changes with severity marks", () => {
     const base = daoReport();
-    assert.match(renderChanges("en", diffReports(null, base)).text, /baseline saved at 2026-11-03 02:00 UTC/);
+    assert.match(toPlain(renderChanges("en", diffReports(null, base)).text), /baseline saved at 2026-11-03 02:00 UTC/);
     const same = { ...daoReport(), generated_at: "2026-11-04T02:00:30Z", chain: { ...base.chain, block_height: base.chain.block_height + 10 } };
-    assert.match(renderChanges("vi", diffReports(base, same)).text, /không có thay đổi từ 2026-11-03 02:00 UTC đến 2026-11-04 02:00 UTC/);
+    assert.match(toPlain(renderChanges("vi", diffReports(base, same)).text), /không có thay đổi từ 2026-11-03 02:00 UTC đến 2026-11-04 02:00 UTC/);
     const curr = daoReport();
     curr.members[1]!.keys.push({ ...curr.members[1]!.keys[0]!, public_key: "ed25519:Fresh" });
-    const text = renderChanges("en", diffReports(base, curr)).text;
+    const text = toPlain(renderChanges("en", diffReports(base, curr)).text);
     assert.match(text, /🔴 b\.kd-demo\.testnet has a new full-access key/);
     assert.match(text, /changes from 2026-11-03 02:00 UTC to 2026-11-03 02:00 UTC/);
     assert.doesNotMatch(text, /block/);
@@ -162,7 +163,7 @@ describe("GĐ4 message rendering", () => {
     a.proposal!.ui_url = "https://ui.example/p/2";
     const vi = renderAlert("vi", a, "https://kd.example");
     assert.equal(
-      vi.text,
+      toPlain(vi.text),
       [
         "Key Doctor On Call",
         `CẢNH BÁO: ${DAO}`,
@@ -170,11 +171,11 @@ describe("GĐ4 message rendering", () => {
         a.messages.vi.body,
         "Phiếu: 1/2 đã duyệt. Còn chờ: b.kd-demo.testnet, c.kd-demo.testnet",
         "",
-        "Trước khi bỏ phiếu: xác minh với a.kd-demo.testnet qua kênh khác (gọi điện, gặp trực tiếp).",
+        "👉 Trước khi bỏ phiếu: xác minh với a.kd-demo.testnet qua kênh khác (gọi điện, gặp trực tiếp).",
       ].join("\n"),
     );
     assert.deepEqual(vi.buttons?.map((b) => b.text), ["Mở đề xuất", "Xem chi tiết trên dashboard"]);
-    assert.match(renderAlert("en", a).text, /Still to vote: b\.kd-demo\.testnet, c\.kd-demo\.testnet/);
+    assert.match(toPlain(renderAlert("en", a).text), /Still to vote: b\.kd-demo\.testnet, c\.kd-demo\.testnet/);
   });
 
   it("Guard alerts: pending names the council still to vote; auto shows the Guard's own approval", () => {
@@ -182,7 +183,7 @@ describe("GĐ4 message rendering", () => {
     pending.proposal!.ui_url = "https://ui.example/p/5";
     const en = renderAlert("en", pending, "https://kd.example");
     assert.equal(
-      en.text,
+      toPlain(en.text),
       [
         "Key Doctor On Call",
         `AGENT PAYMENT NEEDS THE COUNCIL: ${DAO}`,
@@ -190,22 +191,76 @@ describe("GĐ4 message rendering", () => {
         pending.messages.en.body,
         "Votes: 0/2 approved. Still to vote: a.kd-demo.testnet, b.kd-demo.testnet, c.kd-demo.testnet",
         "",
-        pending.messages.en.action,
+        `👉 ${pending.messages.en.action}`,
       ].join("\n"),
     );
     assert.deepEqual(en.buttons?.map((b) => b.text), ["Open proposal", "View on dashboard"]);
-    assert.match(renderAlert("vi", pending).text, /Lý do Guard không tự duyệt: người nhận không có trong danh sách được phép/);
+    assert.match(toPlain(renderAlert("vi", pending).text), /Lý do Guard không tự duyệt: người nhận không có trong danh sách được phép/);
 
     const auto = fixture<KdAlert>("alerts/guard-transfer-auto.alert.json");
-    const vi = renderAlert("vi", auto).text;
+    const vi = toPlain(renderAlert("vi", auto).text);
     assert.match(vi, /^GUARD ĐÃ TỰ CHI: /m);
     assert.match(vi, /Phiếu: 1\/1 đã duyệt\. Còn chờ: -/);
-    assert.match(renderAlert("en", auto).text, /Agent's note: "Hosting invoice inv-001"/);
+    assert.match(toPlain(renderAlert("en", auto).text), /Agent's note: "Hosting invoice inv-001"/);
   });
 
   it("help exists in both languages", () => {
-    assert.match(renderHelp("vi").text, /\/watch <account hoặc DAO>/);
-    assert.match(renderHelp("en").text, /uses no AI/);
+    assert.match(toPlain(renderHelp("vi").text), /\/watch <account hoặc DAO>/);
+    assert.match(toPlain(renderHelp("en").text), /uses no AI/);
+    assert.match(renderHelp("en").text, /\/watch &lt;account or DAO&gt;/, "a literal <…> would break Telegram's HTML parser");
+  });
+
+  it("formats with HTML: bold header and status, account ids in <code> so a tap copies them", () => {
+    const html = renderCheck("en", daoReport()).text;
+    assert.match(html, new RegExp(`^<b>Key Doctor On Call</b>\n<code>${DAO.replace(/\./g, "\\.")}</code>: <b>HIGH RISK</b>`));
+    assert.match(html, /- <code>a\.kd-demo\.testnet<\/code>: Too many full-access keys/);
+  });
+
+  it("chain text can never inject markup: every value is escaped and reads back as written", () => {
+    const a = fixture<KdAlert>("alerts/guard-request-pending.alert.json");
+    const body = 'Agent\'s note: "<a href="https://evil.example">claim</a> & <b>"';
+    a.messages.en.body = body;
+    const html = renderAlert("en", a).text;
+    assert.doesNotMatch(html, /<a |<\/a>|<b>"/, "no tag from the chain survives");
+    assert.match(html, /&lt;a href="https:\/\/evil\.example"&gt;claim&lt;\/a&gt; &amp; &lt;b&gt;/);
+    assert.ok(toPlain(html).includes(body), "the reader sees the text exactly as the chain wrote it");
+  });
+});
+
+describe("sendMessage", () => {
+  const sends = (chain: Chain) => chain.telegram.filter((x) => x.method === "sendMessage").map((x) => x.body);
+
+  it("sends HTML parse mode", async (t) => {
+    const chain = installChain(t);
+    await sendMessage("t", "1", { text: "<b>hi</b> &amp; bye" });
+    assert.deepEqual(sends(chain).map((b) => [b.parse_mode, b.html, b.text]), [["HTML", "<b>hi</b> &amp; bye", "hi & bye"]]);
+  });
+
+  it("a message Telegram cannot parse is sent again as plain text, so the alert is never lost", async (t) => {
+    const chain = installChain(t);
+    chain.telegramReply = (_m, body) =>
+      body.parse_mode === "HTML" ? { status: 400, json: { ok: false, description: "Bad Request: can't parse entities: unclosed tag" } } : undefined;
+    await sendMessage("t", "1", { text: "<b>x &lt; y" });
+    const [first, second] = sends(chain);
+    assert.equal(first.parse_mode, "HTML");
+    assert.equal(second.parse_mode, undefined);
+    assert.equal(second.text, "x < y");
+  });
+
+  it("any other error still throws, so the job's chat-gone and retry handling sees it", async (t) => {
+    const chain = installChain(t);
+    chain.telegramStatus = 403;
+    await assert.rejects(sendMessage("t", "1", { text: "<b>x</b>" }), (e) => e instanceof TelegramError && e.chatGone);
+    assert.equal(sends(chain).length, 1, "no plain-text retry");
+  });
+
+  it("a message over 4096 characters goes out as cut plain text: cutting HTML could leave a tag open", async (t) => {
+    const chain = installChain(t);
+    await sendMessage("t", "1", { text: `<b>${"a".repeat(5000)}</b>` });
+    const [only] = sends(chain);
+    assert.equal(only.parse_mode, undefined);
+    assert.equal(only.text.length, 4096);
+    assert.match(only.text, /^a+…$/);
   });
 });
 
@@ -240,7 +295,7 @@ describe("GĐ4 commands end to end (stub RPC, Telegram and D1)", () => {
     assert.match(again!.text, /already watches/);
     const subs = rows(db, "subscriptions");
     assert.equal(subs.length, 1);
-    assert.deepEqual({ ...subs[0], created_at: "x" }, { target: DAO, network: "testnet", target_type: "dao", chat_id: "-100", chat_type: "supergroup", created_at: "x" });
+    assert.deepEqual({ ...subs[0], created_at: "x" }, { target: DAO, network: "testnet", target_type: "dao", chat_id: "-100", chat_type: "supergroup", created_at: "x", added_by: "7" });
     assert.equal(rows(db, "snapshots").length, 1);
     assert.deepEqual(rows(db, "proposal_state").map((r) => [r.target, r.last_proposal_id, r.pending_json]), [[DAO, 4, "{}"]]);
   });
@@ -266,6 +321,26 @@ describe("GĐ4 commands end to end (stub RPC, Telegram and D1)", () => {
     assert.equal(rows(db, "subscriptions").length, 0);
   });
 
+  // Red-team M7: any member of a council group could silently turn off the council's alerts.
+  it("in a group only admins can /unwatch or /yield_unwatch; the subscription stays otherwise", async (t) => {
+    const { env, chain, db } = setup(t);
+    const group = { chat: -100, type: "supergroup" };
+    await say(env, chain, `/watch ${DAO}`, group);
+    let status = "member";
+    chain.telegramReply = (method) => (method === "getChatMember" ? { status: 200, json: { ok: true, result: { status } } } : undefined);
+    assert.match((await say(env, chain, `/unwatch ${DAO}`, group))!.text, /only admins can stop watching/);
+    assert.match((await say(env, chain, `/yield_unwatch ${DAO}`, group))!.text, /only admins can stop watching/);
+    assert.equal(rows(db, "subscriptions").length, 1);
+    const asked = chain.telegram.filter((x) => x.method === "getChatMember").at(-1)!.body;
+    assert.deepEqual([asked.chat_id, asked.user_id], ["-100", 7]);
+    chain.telegramReply = () => ({ status: 400, json: { ok: false, description: "Bad Request" } });
+    assert.match((await say(env, chain, `/unwatch ${DAO}`, group))!.text, /only admins/, "a failed lookup refuses");
+    status = "administrator";
+    chain.telegramReply = (method) => (method === "getChatMember" ? { status: 200, json: { ok: true, result: { status } } } : undefined);
+    assert.match((await say(env, chain, `/unwatch ${DAO}`, group))!.text, /Stopped watching/);
+    assert.equal(rows(db, "subscriptions").length, 0);
+  });
+
   it("/changes does not move the baseline", async (t) => {
     const { env, chain, db } = setup(t);
     assert.match((await say(env, chain, `/changes ${DAO}`))!.text, /baseline saved/);
@@ -280,7 +355,7 @@ describe("GĐ4 commands end to end (stub RPC, Telegram and D1)", () => {
   it("a chat over the subscription cap is refused", async (t) => {
     const { env, chain, db } = setup(t);
     for (let i = 0; i < MAX_SUBS_PER_CHAT; i++) {
-      db.raw.prepare("INSERT INTO subscriptions VALUES (?, 'testnet', 'account', '42', 'private', 'x')").run(`acc${i}.testnet`);
+      db.raw.prepare("INSERT INTO subscriptions (target, network, target_type, chat_id, chat_type, created_at) VALUES (?, 'testnet', 'account', '42', 'private', 'x')").run(`acc${i}.testnet`);
     }
     assert.match((await say(env, chain, `/watch ${DAO}`))!.text, /at most 20 targets/);
   });

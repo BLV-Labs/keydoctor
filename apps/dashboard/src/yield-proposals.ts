@@ -2,6 +2,7 @@
 // Every receiver, method and token comes from the allowlist below, never from chain text or the AI step. The args
 // are the ones scripts/yield-setup/spike.sh (YD0) uses. Testnet only: the mainnet builder waits for YD4b.
 import type { Network } from "key-doctor";
+import { groupDigits } from "./format.ts";
 import { base64Json, type AddProposalArgs } from "./guard-proposals.ts";
 
 /** Where YD0 sends funds on each network; null means the builder is off there. */
@@ -129,7 +130,7 @@ export function supplyProposal(network: Network, tokenId: string, amount: string
   const t = token(network, tokenId);
   if (!/^[1-9]\d*$/.test(amount)) throw new YieldProposalError("BAD_AMOUNT", "Enter an amount above 0.");
   if (!/^\d+$/.test(available) || BigInt(amount) > BigInt(available)) {
-    throw new YieldProposalError("OVER_AVAILABLE", `The amount is more than the ${tokenAmount(available, t.decimals)} ${t.symbol} available.`);
+    throw new YieldProposalError("OVER_AVAILABLE", `The amount is more than the ${readAmount(available, t.decimals)} ${t.symbol} available.`);
   }
   const lend = allowlist(network).lend;
   return yieldCall(network, `supply ${tokenAmount(amount, t.decimals)} ${t.symbol} to Rhea Lend`, t.token_id, "ft_transfer_call", { receiver_id: lend, amount, msg: "" }, ONE_YOCTO, MOVE_GAS);
@@ -151,7 +152,7 @@ export function withdrawProposal(network: Network, tokenId: string, amount: stri
   if (amount === null || amount === supplied) return withdrawAllProposal(network, tokenId);
   if (!/^[1-9]\d*$/.test(amount)) throw new YieldProposalError("BAD_AMOUNT", "Enter an amount above 0, or leave it empty to take all back.");
   if (!/^\d+$/.test(supplied) || BigInt(amount) > BigInt(supplied)) {
-    throw new YieldProposalError("OVER_AVAILABLE", `The amount is more than the ${tokenAmount(supplied, t.decimals)} ${t.symbol} on Rhea Lend.`);
+    throw new YieldProposalError("OVER_AVAILABLE", `The amount is more than the ${readAmount(supplied, t.decimals)} ${t.symbol} on Rhea Lend.`);
   }
   const inner = (BigInt(amount) * 10n ** BigInt(t.extra_decimals)).toString();
   return yieldCall(network, `withdraw ${tokenAmount(amount, t.decimals)} ${t.symbol} from Rhea Lend`, allowlist(network).lend, "execute", { actions: [{ Withdraw: { token_id: t.token_id, amount: inner } }] }, ONE_YOCTO, MOVE_GAS);
@@ -167,6 +168,14 @@ export function tokenAmount(raw: string, decimals: number): string {
 }
 
 /** A typed token amount to raw units: ("12.5", 6) → "12500000". Null if not a plain decimal with at most `decimals` places. */
+/**
+ * An amount in a sentence: exact, since it is what a vote would move, with thousands separators so a long
+ * number reads at a glance. Never for input values or `data-amount`: `tokenRaw` does not parse commas.
+ */
+export function readAmount(raw: string, decimals: number): string {
+  return groupDigits(tokenAmount(raw, decimals));
+}
+
 export function tokenRaw(text: string, decimals: number): string | null {
   const m = new RegExp(`^(\\d+)(?:\\.(\\d{1,${decimals}}))?$`).exec(text.trim());
   if (!m) return null;

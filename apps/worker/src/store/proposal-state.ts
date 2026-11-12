@@ -18,3 +18,8 @@ export async function saveProposalState(db: D1Database, target: string, network:
     .bind(target, network, state.last_proposal_id, JSON.stringify(state.pending), new Date().toISOString())
     .run();
 }
+
+/** Moves the DAO to the back of the proposal job's queue without changing its state (a retry after a failed send). */
+export async function touchProposalState(db: D1Database, target: string, network: Network): Promise<void> {
+  await db.prepare("UPDATE proposal_state SET updated_at = ? WHERE target = ? AND network = ?").bind(new Date().toISOString(), target, network).run();
+}

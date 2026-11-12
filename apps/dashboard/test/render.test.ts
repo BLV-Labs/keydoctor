@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { describe, it } from "node:test";
 import type { KdReport, ListProposalsResult, Member, ProposalInfo } from "key-doctor";
 import { escape, html } from "../src/html.ts";
-import { formatThreshold, formatUtc, relativeAge, truncateKey, yoctoToNear } from "../src/format.ts";
+import { formatThreshold, formatUtc, groupDigits, nearText, nearToYocto, relativeAge, truncateKey, yoctoToNear } from "../src/format.ts";
 import { renderAgents, renderAlertsDrawer, renderError, renderHome, renderLayout } from "../src/pages.ts";
 import { PROPOSALS_ID, renderProposals } from "../src/proposals-view.ts";
 import { renderKeyDetail } from "../src/key-detail.ts";
-import { renderAccount, renderCouncil } from "../src/report.ts";
+import { BUILT, FUTURE, NEXT, REVENUE, renderRoadmap } from "../src/roadmap.ts";
+import { councilGlance, renderAccount, renderCouncil } from "../src/report.ts";
+import { widthClass } from "../src/bar-width.ts";
+import { transferVotes } from "../src/key-verdict.ts";
 import { agentGuideHref, parseRoute, resolveInput, routeHref, settledHref } from "../src/route.ts";
 import { STATUS_LABEL, groupFlags, keyMix, mainReason, recentFullAccessKeys, sortMembers } from "../src/view.ts";
 import { viewButton } from "../src/key-detail.ts";
@@ -50,6 +53,19 @@ describe("format", () => {
     assert.equal(relativeAge(800 * 86_400_000), "About 2 years ago");
     assert.equal(relativeAge(null), "Unknown");
   });
+
+  it("groups digits in text but keeps values plain, since the amount parsers reject commas", () => {
+    // Text: a 7-digit balance must be readable at a glance.
+    assert.equal(groupDigits("2000046.5"), "2,000,046.5");
+    assert.equal(groupDigits("999"), "999");
+    assert.equal(nearText("1234567000000000000000000000000"), "1,234,567");
+    // Decimals are never grouped, and anything that is not a plain number comes back as is.
+    assert.equal(groupDigits("0.123456"), "0.123456");
+    assert.equal(groupDigits("abc"), "abc");
+    // Values: input values and data-amount use yoctoToNear, because the grouped form does not parse back.
+    assert.equal(yoctoToNear("1234567000000000000000000000000"), "1234567");
+    assert.equal(nearToYocto("1,234,567"), null);
+  });
 });
 
 describe("route", () => {
@@ -66,6 +82,7 @@ describe("route", () => {
       link: null,
       help: false,
       yieldNew: false,
+      budgetNew: false,
     });
     assert.deepEqual(parseRoute("?target=bad name&from=x"), {
       page: "check",
@@ -79,6 +96,7 @@ describe("route", () => {
       link: null,
       help: false,
       yieldNew: false,
+      budgetNew: false,
     });
     assert.equal(parseRoute("?target=a.kd-demo.testnet&from=%3Cx%3E").from, null);
     assert.equal(routeHref("a.kd-demo.testnet", "kd-demo.sputnik-dao.testnet"), "?target=a.kd-demo.testnet&from=kd-demo.sputnik-dao.testnet");
@@ -321,6 +339,19 @@ describe("proposal list (C7)", () => {
     assert.match(text(renderProposals(result([info({})], 3, ["proposal 1: NOT_A_DAO"]))), /1 vote\(s\) on this page could not be read/);
   });
 
+  it("an open proposal offers Reject and Approve, so a council member who got the alert can act from here", () => {
+    const out = renderProposals(result([info({})])).value;
+    assert.match(out, /data-action="council-vote" data-id="2" data-vote="VoteReject">Reject</);
+    assert.match(out, /data-action="council-vote" data-id="2" data-vote="VoteApprove">Approve</);
+    assert.match(out, /id="vote-status-2" role="status"/);
+  });
+
+  it("a closed proposal offers no vote: the chain would refuse it", () => {
+    for (const status of ["Approved", "Rejected", "Expired", "Failed"]) {
+      assert.doesNotMatch(renderProposals(result([info({ status })])).value, /council-vote/);
+    }
+  });
+
   it("hostile chain text in a description never becomes markup", () => {
     const out = renderProposals(result([info({ description: "<img src=x onerror=alert(1)>" })])).value;
     assert.doesNotMatch(out, /<img/);
@@ -330,15 +361,17 @@ describe("proposal list (C7)", () => {
 describe("nav and the alerts / MCP pages", () => {
   const nav = (page: "check" | "budget" | "my-agents" | "yield" | "mcp") => renderLayout(html`<p>x</p>`, "testnet", page).value.match(/<nav[\s\S]*?<\/nav>/)![0];
 
-  it("has Agents, Keys and an Alerts button; marks one item, so every budget and yield page stays under Agents", () => {
-    for (const [page, label] of [["check", "Keys"], ["my-agents", "Agents"], ["budget", "Agents"], ["yield", "Agents"], ["mcp", "Agents"]] as const) {
+  it("has one link per Sputnik DAO pillar and an Alerts button; marks one item, so every budget page stays under Agent Budget", () => {
+    for (const [page, label] of [["check", "Scan DAO"], ["my-agents", "Agent Budget"], ["budget", "Agent Budget"], ["yield", "Yield"]] as const) {
       const n = nav(page);
-      assert.equal((n.match(/<a /g) ?? []).length, 2);
+      assert.deepEqual([...n.matchAll(/<a [^>]*class="nav-(\w+)"/g)].map((m) => m[1]), ["scan", "budget", "yield"]);
       assert.equal((n.match(/aria-current="page"/g) ?? []).length, 1);
-      assert.match(n, new RegExp(`aria-current="page">${label}<`));
+      assert.match(n, new RegExp(`aria-current="page"><span class="pillar-dot" aria-hidden="true"></span>${label}<`));
       assert.match(n, /<button type="button" class="nav-btn" data-action="alerts-open">Alerts<\/button>/);
       assert.ok(!n.includes("t.me"));
     }
+    // The MCP page serves all three pillars, so no nav item claims it.
+    assert.doesNotMatch(nav("mcp"), /aria-current/);
   });
 
   it("shows the network in the header, so a mainnet page never passes for testnet", () => {
@@ -353,6 +386,7 @@ describe("nav and the alerts / MCP pages", () => {
     const footer = layout.match(/<footer[\s\S]*?<\/footer>/)![0];
     assert.ok(footer.includes("page=mcp"));
     assert.ok(footer.includes("For developers (MCP)"));
+    assert.ok(footer.includes("page=roadmap"));
     assert.ok(footer.includes("Key Doctor never holds your keys. Limits are enforced on-chain."));
   });
 
@@ -369,6 +403,7 @@ describe("nav and the alerts / MCP pages", () => {
 
   it("?page= picks the page without a target, and ?target= wins, with nothing left to open", () => {
     assert.equal(parseRoute("?page=mcp").page, "mcp");
+    assert.equal(parseRoute("?page=roadmap").page, "roadmap");
     assert.equal(parseRoute("?page=nope").page, "check");
     assert.equal(parseRoute("").page, "check");
     const target = parseRoute("?page=agents&target=kdoncall-p.testnet");
@@ -429,6 +464,55 @@ describe("nav and the alerts / MCP pages", () => {
     assert.ok(!none.includes("claude mcp add"));
   });
 
+  it("Roadmap keeps built, planned and future work apart, so a judge never reads a plan as a feature", () => {
+    const page = text(renderRoadmap());
+    const built = page.indexOf("Built Live on testnet");
+    const next = page.indexOf("Next Planned");
+    const future = page.indexOf("Future direction Not built");
+    assert.ok(built >= 0 && next > built && future > next, "lanes in order: Built, Next, Future direction");
+    // NEAR AI, Intents and cross-chain farming are direction only: they must sit under "Not built", never under "Built".
+    for (const [title] of FUTURE) assert.ok(page.indexOf(title, future) > future, title);
+    assert.ok(!page.slice(built, next).includes("NEAR Intents"));
+    // Revenue is the owner's chosen model (fees from agents) but not built: it sits in the future lane, the checks stay free,
+    // and the yield fee is a share of the yield, never the members' deposit.
+    const revenue = page.indexOf("Revenue: fees from agents Chosen, not built");
+    assert.ok(revenue > future);
+    assert.ok(page.includes("The checks stay free"));
+    for (const [title] of REVENUE) assert.ok(page.indexOf(title, revenue) > revenue, title);
+    assert.match(page.slice(revenue), /APR minus the fee\. Never taken from the deposit/);
+  });
+
+  it("every Roadmap point opens its own detail: a point with no panel or no CSS rule would be a dead click", () => {
+    const out = renderRoadmap().value;
+    const css = readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
+    const ids = [...out.matchAll(/<input type="radio" name="rm-point" id="([^"]+)"/g)].map((m) => m[1]!);
+    assert.equal(ids.length, BUILT.length + NEXT.length + FUTURE.length + 1, "one point per item, plus Revenue");
+    for (const id of ids) {
+      assert.ok(out.includes(`<label for="${id}"`), `label for ${id}`);
+      assert.equal(out.split(`data-for="${id}"`).length - 1, 1, `one panel for ${id}`);
+      assert.ok(css.includes(`.rm-lane:has(#${id}:checked) [data-for="${id}"]`), `CSS rule for ${id}`);
+    }
+    // One detail is open on load, so the page never starts as bare dots.
+    assert.equal(out.split(" checked>").length - 1, 1);
+  });
+
+  it("draws each lane as a road with numbered pins, text alternating above and below", () => {
+    // WHY: the winding-road layout only lines up when the grid has one column per point; a lane with no matching
+    // .rm-n-N rule would fall back to 4 columns and wrap the road.
+    const out = renderRoadmap().value;
+    const css = readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
+    const lanes = [...out.matchAll(/<ol class="rm-line rm-n-(\d+)"[\s\S]*?<\/ol>/g)];
+    assert.deepEqual(lanes.map((l) => Number(l[1])), [BUILT.length, NEXT.length, FUTURE.length + 1]);
+    for (const [lane, n] of lanes) {
+      assert.ok(css.includes(`.rm-n-${n} { grid-template-columns: repeat(${n}, minmax(0, 1fr)); }`), `CSS for rm-n-${n}`);
+      const pins = [...lane.matchAll(/class="rm-pin" aria-hidden="true"><span>(\d+)</g)].map((m) => m[1]);
+      assert.deepEqual(pins, Array.from({ length: Number(n) }, (_, i) => String(i + 1).padStart(2, "0")));
+      const sides = [...lane.matchAll(/class="rm-point (rm-up|rm-down)"/g)].map((m) => m[1]);
+      assert.deepEqual(sides, sides.map((_, i) => (i % 2 === 0 ? "rm-up" : "rm-down")));
+      assert.equal((lane.match(/<svg class="rm-road"/g) ?? []).length, Number(n), "one road segment per point");
+    }
+  });
+
 });
 
 describe("labels and key table wording", () => {
@@ -441,5 +525,51 @@ describe("labels and key table wording", () => {
 
   it("home page says checking needs no sign-in and a wallet is only for removing your own keys", () => {
     assert.match(text(renderHome("", null)), /No sign-in needed to check\. Connecting a wallet is only for removing your own keys\./);
+  });
+});
+
+describe("charts", () => {
+  it("never uses a style attribute: the CSP has no 'unsafe-inline' for styles, so the browser would drop it", () => {
+    // WHY: public/_headers sets style-src 'self'. A bar sized by style="" renders empty on the live site, while a
+    // local preview without the header looks fine.
+    const headers = readFileSync(new URL("../public/_headers", import.meta.url), "utf8");
+    assert.match(headers, /style-src 'self'/);
+    assert.doesNotMatch(headers, /style-src[^;]*unsafe-inline/);
+    const dir = new URL("../src/", import.meta.url);
+    for (const f of readdirSync(dir).filter((x) => x.endsWith(".ts"))) {
+      assert.doesNotMatch(readFileSync(new URL(f, dir), "utf8"), /\sstyle="/, f);
+    }
+  });
+
+  it("sizes bars by class, never hiding a non-zero share or filling a partial one", () => {
+    // WHY: 1 member in 400 must still show on the bar, and 399 of 400 must not look like all of them.
+    assert.equal(widthClass(0, 10), "w-0");
+    assert.equal(widthClass(3, 0), "w-0");
+    assert.equal(widthClass(1, 400), "w-1");
+    assert.equal(widthClass(399, 400), "w-99");
+    assert.equal(widthClass(400, 400), "w-100");
+    assert.equal(widthClass(1000, 2077), "w-48");
+    const css = readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
+    for (let i = 0; i <= 100; i++) assert.ok(css.includes(`.w-${i} { width: ${i}%; }`), `.w-${i}`);
+  });
+
+  it("council at a glance counts every member once and says how many votes move money", () => {
+    // WHY: the chart is a summary of the member list below it; a count that drifts from the list would mislead a council.
+    const r = dao();
+    const out = councilGlance(r).value;
+    const counts = [...out.matchAll(/<span class="legend-n">(\d+)<\/span>/g)].map((m) => Number(m[1]));
+    const states = (out.match(/<figure[\s\S]*?<\/figure>/)![0].match(/class="legend-n"/g) ?? []).length;
+    assert.equal(counts.slice(0, states).reduce((a, b) => a + b, 0), r.members.length);
+    // The state bar fills the row: every segment but the last has a width class, the last takes the rest.
+    const segs = [...out.matchAll(/class="bar-seg seg-(high|cleanup|ok|note) ([\w-]+)"/g)].map((m) => m[2]);
+    assert.equal(segs.length, states);
+    assert.equal(segs.at(-1), "bar-seg-rest");
+    const votes = transferVotes(r);
+    assert.ok(votes !== null, "the demo DAO has one transfer rule");
+    assert.match(text(councilGlance(r)), new RegExp(`${votes} of ${r.members.length} members must approve a payment`));
+    // Rules that are not one simple vote get a pointer, not a made-up number.
+    const odd = { ...r, dao: { ...r.dao!, transfer_vote_policy: [] } } as KdReport;
+    assert.match(text(councilGlance(odd)), /not one simple vote/);
+    assert.doesNotMatch(councilGlance(odd).value, /meter-votes/);
   });
 });

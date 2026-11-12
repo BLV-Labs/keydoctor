@@ -48,7 +48,7 @@ export const TOOLS = [
     name: "guard_get_policy",
     title: "Read the Agent Guard spending limits",
     description:
-      "The limits the Guard enforces on this agent: max NEAR per payment, max NEAR per 24 hours, what is already spent and what is left in the current window, when it resets, the whitelisted receivers, and whether the Guard is paused. Read-only. Payments over these limits are not refused: they wait for the owner or DAO council.",
+      "The limits the Guard enforces on this agent: max NEAR per payment, max NEAR per 24 hours, what is already spent and what is left in the last 24 hours, when the oldest spend stops counting (resets_at), the whitelisted receivers, and whether the Guard is paused. Read-only. Payments over these limits are not refused: they wait for the owner or DAO council.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true, openWorldHint: true },
   },
@@ -118,6 +118,7 @@ const PAUSE_TEXT: Record<string, string> = {
   insufficient_balance: "Paused: the Budget ran out of NEAR. The owner can top it up and resume.",
   guard_low_near: "Paused: the Guard needs NEAR for the proposal bond. The owner can top it up and resume.",
   failures: "Paused: it no longer fits the Budget's rules, or runs kept failing.",
+  price_floor_required: "Paused: this DCA plan has no lowest price. The owner cancels it and creates it again with one.",
 };
 
 /** §11.11.1. Payouts and DCA run; the rest have no dashboard setup yet, so they carry no link. DCA is testnet only (ADR 0007). */
@@ -420,7 +421,7 @@ export function createGuard({ config, rpc, key, newRequestId = randomUUID }: Gua
         strategy_id: p.strategy_id,
         action: p.action.type,
         receiver_id: p.action.type === "transfer" ? (p.action.receiver_id ?? null) : null,
-        token_out: p.action.type === "swap" ? (p.action.token_out ?? null) : null,
+        token_out: p.action.type === "swap" || p.action.type === "swap_with_floor" ? (p.action.token_out ?? null) : null,
         amount_per_run_near: yoctoToNear(p.amount_per_run),
         interval_sec: p.interval_sec,
         runs_done: p.runs_done,

@@ -8,7 +8,7 @@ It also tells a guardian's `pause` (GĐ28): `pause()` has no proposal for the pr
 
 ## Jobs
 
-`POST /run-check` with `{"job": "proposals" | "daily" | "keeper" | "yield", "target"?}` runs the same function as the cron. Crons (`wrangler.toml`): `proposals` `*/15 * * * *`, `daily` `0 2 * * *`, `keeper` `7,22,37,52 * * * *`, `yield` `11,26,41,56 * * * *`. The rest of this file is about the keeper.
+`POST /run-check` with `{"job": "proposals" | "daily" | "keeper" | "yield", "target"?}` runs the same function as the cron. Crons (`wrangler.toml`): `proposals` `*/15 * * * *`, `daily` `2 * * * *` (up to `MAX_DAILY_TARGETS_PER_RUN` targets due 23 h after their last attempt; a named `target` runs at once), `keeper` `7,22,37,52 * * * *`, `yield` `11,26,41,56 * * * *`. The rest of this file is about the keeper.
 
 ## Turn it on (owner)
 

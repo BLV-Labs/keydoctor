@@ -1,10 +1,10 @@
 // The Agent Budget page, pure. Everything shown is read from the chain (budget-read.ts); the owner's actions go
 // through the owner's wallet, and each button says how many signatures it takes (docs/final-idea.md §11.10.5).
-import { dcaPrice, DCA_TESTNET, formatUnits, type Network } from "key-doctor";
+import { dcaPrice, DCA_TESTNET, formatUnits, isSwapType, type Network } from "key-doctor";
 import { applyAutoFunding, createCost, fundingMinYocto, parseRecipientLines, planBudget, setupErrorText, SPUTNIK_FACTORY, WIZARD_STEPS, type RecipientRow, type SetupError } from "./budget-create.ts";
-import { DCA_DEFAULT_SLIPPAGE, DCA_SLIPPAGE_CHOICES, DCA_STRATEGY, DCA_UNITS, dcaFromForm, PLAN_UNITS, planFromForm, planTotals, type DcaUnit, type PlanUnit } from "./budget-flow.ts";
+import { DCA_DEFAULT_SLIPPAGE, DCA_FLOOR_MARGIN_BPS, DCA_SLIPPAGE_CHOICES, DCA_STRATEGY, DCA_UNITS, dcaFloorPrefill, dcaFromForm, PLAN_UNITS, planFromForm, planTotals, type DcaUnit, type PlanUnit } from "./budget-flow.ts";
 import { guardCanClose, guardNeedsUpdate, TOP_UP_TEXT, topUpBlocks, withdrawMaxYocto, type BudgetLive, type DcaReadiness, type BudgetPlan, type BudgetProposal, type BudgetRequest } from "./budget-read.ts";
-import { formatUtc, nearToYocto, plural, yoctoToNear } from "./format.ts";
+import { formatUtc, groupDigits, nearText, nearToYocto, plural, yoctoToNear } from "./format.ts";
 import { KEEPER_ACCOUNT } from "./guard-form.ts";
 import { hasSwapRights, NEW_AGENT_DEPOSIT } from "./guard-proposals.ts";
 import type { GuardLive } from "./guard-read.ts";
@@ -14,6 +14,7 @@ import { guardMcpCommand } from "./guard-view.ts";
 import { copyRow } from "./pages.ts";
 import { agentGuideHref, budgetHref, guardHref, pageHref, routeHref } from "./route.ts";
 import { avatar } from "./ui.ts";
+import { pillarTag } from "./pillars.ts";
 
 /** Shown in the form's placeholder text only; creation needs this factory to be deployed and set at build time. */
 export const BUDGET_FACTORY_NAME = "keydoctor-guards-v2.testnet";
@@ -67,18 +68,18 @@ const summaryOf = (g: GuardLive): string =>
     ? "We could not read the limits. Nothing was changed."
     : fenceSentence(g.agents?.length ?? g.config?.agents ?? null, near(g.policy.max_per_day), near(g.policy.max_per_tx), g.whitelist?.length ?? g.config?.whitelist ?? null);
 
-export const near = (yocto: string | null | undefined): string => (yocto === null || yocto === undefined ? "unknown" : `${yoctoToNear(yocto)} NEAR`);
-/** The Balance tile: two decimals, rounded down so it never shows more than can be spent. */
+export const near = (yocto: string | null | undefined): string => (yocto === null || yocto === undefined ? "unknown" : `${nearText(yocto)} NEAR`);
+/** The Balance tile: two decimals, rounded down so it never shows more than can be spent, with thousands separators. */
 export function nearShort(yocto: string | null | undefined): string {
   if (yocto === null || yocto === undefined || !/^\d+$/.test(yocto)) return "unknown";
   const cents = BigInt(yocto) / 10n ** 22n;
-  return `${cents / 100n}.${(cents % 100n).toString().padStart(2, "0")} NEAR`;
+  return `${(cents / 100n).toLocaleString("en-US")}.${(cents % 100n).toString().padStart(2, "0")} NEAR`;
 }
 
 const LEAD = "A budget your AI agent can spend, within rules you set. Larger payments wait for your approval. Top up or withdraw anytime.";
 
 function head(lead: string): Html {
-  return html`<section class="stack-xs"><h1 class="h1">Agent Budget</h1><p class="muted budget-lead">${lead}</p></section>`;
+  return html`<section class="stack-xs">${pillarTag("budget")}<h1 class="h1">Agent Budget</h1><p class="muted budget-lead">${lead}</p></section>`;
 }
 
 /** The DAO form. */
@@ -105,14 +106,14 @@ export function describeKind(kind: Record<string, unknown>): string {
   const t = kind.Transfer as { receiver_id?: unknown; amount?: unknown; token_id?: unknown } | undefined;
   if (t !== undefined) {
     const token = t.token_id === "" || t.token_id === undefined ? "NEAR" : String(t.token_id);
-    const amount = typeof t.amount === "string" && token === "NEAR" ? yoctoToNear(t.amount) : String(t.amount);
+    const amount = typeof t.amount === "string" && token === "NEAR" ? nearText(t.amount) : String(t.amount);
     return `Send ${amount} ${token} to ${String(t.receiver_id)}`;
   }
   const call = kind.FunctionCall as { receiver_id?: unknown; actions?: { method_name?: unknown; deposit?: unknown }[] } | undefined;
   if (call !== undefined) {
     const methods = (call.actions ?? []).map((a) => String(a.method_name)).join(", ");
     const deposit = (call.actions ?? []).reduce((sum, a) => sum + BigInt(typeof a.deposit === "string" && /^\d+$/.test(a.deposit) ? a.deposit : 0), 0n);
-    return `Call ${methods} on ${String(call.receiver_id)}${deposit > 0n ? `, attaching ${yoctoToNear(deposit.toString())} NEAR` : ""}`;
+    return `Call ${methods} on ${String(call.receiver_id)}${deposit > 0n ? `, attaching ${nearText(deposit.toString())} NEAR` : ""}`;
   }
   const other = Object.keys(kind)[0] ?? "Unknown request";
   return other.startsWith("ChangePolicy") ? `Change who controls this Budget (${other})` : other;
@@ -194,9 +195,9 @@ function tiles(b: BudgetLive, now: number): Html {
       ? html`<span class="tile-value">${near(plan.amount_per_run)}</span><span class="tile-note wrap">to ${plan.receiver_id ?? "a recipient"} · ${nsToUtc(plan.next_run_at ?? "0")}</span>`
       : html`<span class="tile-value">None</span>${b.plans === null ? html`<span class="tile-note">Not available right now</span>` : html`<span class="tile-note"><button type="button" class="btn btn-ghost btn-link" data-action="budget-open" data-panel="plan">Set one up</button></span>`}`;
   return html`<section class="tiles" aria-label="Budget summary">
-    ${tile("all", "Balance", nearShort(b.withdrawable), [runway === null ? "Top up any time" : runway, b.usdt === undefined || b.usdt === null ? "" : `USDT in your Budget: ${formatUnits(b.usdt, DCA_TESTNET.token_out_decimals)}`, held === null || held === 0n ? "" : `Plus ${near(held.toString())} kept for account storage, not spendable`])}
-    ${tile("auto", "Spent today", w === null ? "unknown" : p === null ? near(w.spent_in_window) : `${yoctoToNear(w.spent_in_window)} / ${near(p.max_per_day)}`,
-      [w === null ? "" : `resets ${localTime(w.resets_at)}`],
+    ${tile("all", "Balance", nearShort(b.withdrawable), [runway === null ? "Top up any time" : runway, b.usdt === undefined || b.usdt === null ? "" : `USDT in your Budget: ${groupDigits(formatUnits(b.usdt, DCA_TESTNET.token_out_decimals))}`, held === null || held === 0n ? "" : `Plus ${near(held.toString())} kept for account storage, not spendable`])}
+    ${tile("auto", "Spent today", w === null ? "unknown" : p === null ? near(w.spent_in_window) : `${nearText(w.spent_in_window)} / ${near(p.max_per_day)}`,
+      [w === null || w.spent_in_window === "0" ? "" : `frees up from ${localTime(w.resets_at)}`],
       w !== null && p !== null ? html`<progress class="progress" max="100" value="${percent(w.spent_in_window, p.max_per_day)}" aria-label="Share of the daily limit spent"></progress>` : "")}
     ${tile("waiting", "Waiting for you", b.proposals === null ? "unknown" : String(b.proposals.length), [left === null || left === 0 ? "Review them below" : `Soonest: ${hours(left)} left`])}
     <div class="card tile">${html`<span class="tile-label">Next scheduled payout</span>`}${payout}</div>
@@ -284,7 +285,7 @@ export function activityRow(r: BudgetRequest, g: GuardLive | null, plans: Budget
   const tone = group === "rejected" ? "pill-high" : group === "waiting" ? "pill-cleanup" : "pill-ok";
   const mark = group === "rejected" ? icon.alertSmall() : group === "waiting" ? icon.clock() : group === "auto" ? icon.check() : "";
   // A DCA step pays the wrap contract to swap: it is a sale of NEAR, not a payment to anyone.
-  const swap = r.plan_id !== null && plans?.find((p) => p.plan_id === r.plan_id)?.action_type === "swap";
+  const swap = r.plan_id !== null && isSwapType(plans?.find((p) => p.plan_id === r.plan_id)?.action_type ?? "");
   const paid = r.status === "Executed";
   const label = group === "auto" && paid ? (swap ? "Swapped automatically" : "Paid automatically") : (REQUEST_STATUS[r.status] ?? r.status);
   const reasons = r.reasons.map((c) => reasonText(c, g, r.receiver_id)).join(", ");
@@ -390,6 +391,7 @@ const PAUSE_TEXT: Record<string, string> = {
   insufficient_balance: "Paused: the Budget ran out of NEAR",
   guard_low_near: "Paused: the Budget account needs more NEAR to file the request",
   failures: "Paused: it no longer fits your rules, or runs kept failing",
+  price_floor_required: "Paused: made before the lowest price was required. Cancel it and create it again",
 };
 
 export function planStatus(p: BudgetPlan): string {
@@ -400,7 +402,7 @@ export function planStatus(p: BudgetPlan): string {
 /** One plan with its two-signature Pause / Resume / Cancel. Row id `plan-<id>` is the `&plan=` deep link target. */
 function planRow(p: BudgetPlan): Html {
   const what =
-    p.action_type === "swap"
+    isSwapType(p.action_type)
       ? `Sell ${near(p.amount_per_run)} for USDT every ${everyText(p.interval_sec)}`
       : p.receiver_id === null
         ? `Plan #${p.plan_id} (${p.action_type})`
@@ -435,7 +437,7 @@ function technical(b: BudgetLive, g: GuardLive, network: Network): Html {
       <div class="tech-row"><dt>Guard factory</dt><dd class="mono">${b.dao.factory}</dd></div>
       <div class="tech-row"><dt>Requests expire after</dt><dd>${proposalPeriod(b) === null ? "unknown" : hours(Number(proposalPeriod(b)! / 3_600_000_000_000n))}</dd></div>
       <div class="tech-row"><dt>Network</dt><dd>${network}</dd></div>
-      ${network === "testnet" && (b.plans ?? []).some((p) => p.action_type === "swap")
+      ${network === "testnet" && (b.plans ?? []).some((p) => isSwapType(p.action_type))
         ? html`<div class="tech-row"><dt>Swap exchange</dt><dd class="mono">${DCA_TESTNET.exchange} · pool ${DCA_TESTNET.pool_id}</dd></div>
           <div class="tech-row"><dt>Swap tokens</dt><dd class="mono">${DCA_TESTNET.wrap} → ${DCA_TESTNET.token_out}</dd></div>`
         : ""}</dl>
@@ -549,11 +551,27 @@ export function closeBlockers(b: BudgetLive, version: string | null): string[] {
   return out;
 }
 
+/** True when the Guard is known to lack the NEAR an Update needs; `short` is from `readUpgradeShortfall`. */
+const lacksUpgradeRoom = (short: string | null): boolean => short !== null && short !== "0";
+
+/**
+ * Next to an Update button: how much NEAR to send the Budget account first (the button is then disabled), or that
+ * the check could not run (the button stays, since a failed read is not a known shortfall). Nothing when it has enough.
+ */
+function upgradeRoomNote(guardId: string, short: string | null): Html | "" {
+  if (short === "0") return "";
+  if (short === null) {
+    return html`<p class="small muted">We could not check that the Budget account <span class="mono">${guardId}</span> holds enough NEAR for the update. If it does not, the update fails and nothing changes.</p>`;
+  }
+  return html`<p class="banner banner-cleanup">${icon.alertSmall()}<span>Send <strong>${near(short)}</strong> to the Budget account <span class="mono">${guardId}</span> first, from any wallet, then open this again. The update stores the Budget's own copy of its code, paid from that account's NEAR; without it the update fails and nothing changes. Top up does not cover this: it adds to what agents can spend.</span></p>`;
+}
+
 /**
  * Close this Budget (Guard 1.4.0): what is lost for good, or what stops it first. Cancel has the first focus. A Budget
  * on an older version gets only the Update button; `version` is `kd_guard_info.version`, null when unread.
+ * `upgradeShort` is the NEAR the Guard lacks for that update (`readUpgradeShortfall`), null when unread.
  */
-export function renderBudgetClose(b: BudgetLive, version: string | null): Html {
+export function renderBudgetClose(b: BudgetLive, version: string | null, upgradeShort: string | null = null): Html {
   const g = b.guard;
   const blockers = closeBlockers(b, version);
   const update = version !== null && !guardCanClose(version);
@@ -563,9 +581,9 @@ export function renderBudgetClose(b: BudgetLive, version: string | null): Html {
       <div class="drawer-body">
         <p>Before you can close it:</p>
         <ul class="list">${blockers.map((t) => html`<li>${t}</li>`)}</ul>
-        ${update ? twoSignatureSteps(b.dao.policy.proposal_bond) : ""}
+        ${update ? html`${upgradeRoomNote(g?.guard_id ?? "", upgradeShort)}${twoSignatureSteps(b.dao.policy.proposal_bond)}` : ""}
       </div>
-      <div class="drawer-foot">${CANCEL}${update ? html`<button type="button" class="btn btn-primary" data-action="budget-close-update">Update this Budget</button>` : ""}</div></div>`;
+      <div class="drawer-foot">${CANCEL}${update ? html`<button type="button" class="btn btn-primary" data-action="budget-close-update"${lacksUpgradeRoom(upgradeShort) ? " disabled" : ""}>Update this Budget</button>` : ""}</div></div>`;
   }
   return html`<div class="drawer-form">${drawerHead("Close this Budget?", note, true)}
     <div class="drawer-body">
@@ -630,19 +648,19 @@ export function renderBudgetPanel(panel: BudgetPanel, b: BudgetLive, error: stri
           <label class="label" for="bp-amount">Amount</label>
           <div class="input-unit">
             <input id="bp-amount" name="amount" type="text" class="input" value="${v("amount")}" placeholder="1" autocomplete="off" spellcheck="false" inputmode="decimal"${maxNear === null ? "" : html` aria-describedby="bp-amount-hint${error ? " bp-error" : ""}"`}>
-            ${maxNear === null ? "" : html`<button type="button" class="btn btn-ghost btn-max" data-action="budget-full" data-amount="${maxNear}" aria-label="Withdraw the most you can, ${maxNear} NEAR">Max</button>`}
+            ${maxNear === null ? "" : html`<button type="button" class="btn btn-ghost btn-max" data-action="budget-full" data-amount="${maxNear}" aria-label="Withdraw the most you can, ${groupDigits(maxNear)} NEAR">Max</button>`}
             <span class="muted">NEAR</span>
           </div>
           ${maxNear === null
             ? ""
-            : html`<p id="bp-amount-hint" class="small muted">Up to <button type="button" class="link-btn" data-action="budget-full" data-amount="${maxNear}">${maxNear} NEAR</button>. Requests waiting for you keep their deposit in the budget.</p>`}
+            : html`<p id="bp-amount-hint" class="small muted">Up to <button type="button" class="link-btn" data-action="budget-full" data-amount="${maxNear}">${groupDigits(maxNear)} NEAR</button>. Requests waiting for you keep their deposit in the budget.</p>`}
         </div>
         <div class="sum-box">${sumRow("To", html`<span class="mono">${v("to", "your connected wallet")}</span>`)}</div>
         <p id="bp-left" class="small ${left.empty ? "tone-cleanup" : "muted"}">${left.text}</p>
         ${twoSignatureSteps(b.dao.policy.proposal_bond, html`<span id="bp-echo">${typed === "" ? "the amount above" : `${typed} NEAR`}</span>`)}`, "Withdraw");
     }
     case "rules": {
-      const was = (yocto: string | undefined) => (yocto === undefined ? undefined : `${yoctoToNear(yocto)} NEAR`);
+      const was = (yocto: string | undefined) => (yocto === undefined ? undefined : `${nearText(yocto)} NEAR`);
       const agents = b.guard?.agents?.length ?? b.guard?.config?.agents ?? null;
       const recipients = b.guard?.whitelist?.length ?? b.guard?.config?.whitelist ?? null;
       const perTx = v("maxPerTx", near2(p?.max_per_tx));
@@ -663,7 +681,7 @@ export function renderBudgetPanel(panel: BudgetPanel, b: BudgetLive, error: stri
       return form("Add an agent", "It follows the same fence.", html`
         ${field("label", "Agent name", v("label"), "payroll bot")}
         ${agentLimits(b.dao.dao)}
-        <p class="small muted">This page makes the agent's key and its own account. ${yoctoToNear(NEW_AGENT_DEPOSIT)} NEAR leaves the Budget: 0.5 NEAR is the agent's gas, the rest pays for storage and what is not used comes back. You then get the key file and the command for your agent.</p>
+        <p class="small muted">This page makes the agent's key and its own account. ${nearText(NEW_AGENT_DEPOSIT)} NEAR leaves the Budget: 0.5 NEAR is the agent's gas, the rest pays for storage and what is not used comes back. You then get the key file and the command for your agent.</p>
         ${twoSignatureSteps(b.dao.policy.proposal_bond)}`, "Add agent");
     case "recipients":
       return form("Who agents can pay", "Payments to anyone else wait for you.", html`
@@ -687,8 +705,12 @@ export interface DcaView {
   readiness: DcaReadiness | null;
   /** The exchange's answer for one run, in USDT base units; null when unread. */
   quote: string | null;
+  /** The exchange's answer for 1 NEAR, in USDT base units: the lowest-price field starts from it. null when unread. */
+  price: string | null;
   /** True when this build knows the factory to update from. */
   canUpdate: boolean;
+  /** The NEAR the Guard lacks for an Update (`readUpgradeShortfall`), "0" when enough; null when unread. */
+  upgradeShort: string | null;
 }
 
 type CheckState = "done" | "todo" | "unknown";
@@ -697,6 +719,8 @@ interface CheckItem {
   state: CheckState;
   /** The button that fixes a todo item. */
   fix?: Html;
+  /** A line under the label, about the fix. */
+  note?: Html | "";
 }
 
 /** The DCA checklist (§11.11.4), in the order the owner does it. Start is possible only when every item is done. */
@@ -712,7 +736,15 @@ function dcaChecklist(b: BudgetLive, dca: DcaView | null, connected: boolean): C
   ];
   if (r === null) items.push({ label: "Checking your Budget…", state: "unknown" });
   else if (r.version === null) items.push({ label: "Could not read the Budget version", state: "unknown" });
-  else if (guardNeedsUpdate(r.version)) items.push({ label: "Update your Budget so it can swap", state: "todo", fix: fixBtn("dca-upgrade", "Update your Budget", !dca?.canUpdate || r.latestHash === null) });
+  else if (guardNeedsUpdate(r.version)) {
+    const short = dca?.upgradeShort ?? null;
+    items.push({
+      label: "Update your Budget so it can swap",
+      state: "todo",
+      fix: fixBtn("dca-upgrade", "Update your Budget", !dca?.canUpdate || r.latestHash === null || lacksUpgradeRoom(short)),
+      note: upgradeRoomNote(g?.guard_id ?? "", short),
+    });
+  }
   else items.push({ label: "Budget is up to date", state: "done" });
   items.push(g !== null && hasSwapRights(b.dao.policy, g.guard_id) ? { label: "Swaps are allowed", state: "done" } : { label: "Allow swaps for this Budget", state: "todo", fix: fixBtn("dca-allow", "Allow swaps") });
   if (r === null || r.registrations === null) items.push({ label: "Could not read the USDT setup", state: "unknown" });
@@ -724,7 +756,7 @@ function dcaChecklist(b: BudgetLive, dca: DcaView | null, connected: boolean): C
 }
 
 const checklistHtml = (items: CheckItem[]): Html =>
-  html`<ul class="plain-list k5-checks">${items.map((i) => html`<li class="k5-check"><span class="k5-mark ${i.state === "done" ? "k5-ok" : "k5-warn"}">${i.state === "done" ? icon.check() : icon.alertSmall()}</span><span class="grow-min">${i.label}</span>${i.fix ?? ""}</li>`)}</ul>`;
+  html`<ul class="plain-list k5-checks">${items.map((i) => html`<li class="k5-check"><span class="k5-mark ${i.state === "done" ? "k5-ok" : "k5-warn"}">${i.state === "done" ? icon.check() : icon.alertSmall()}</span><div class="grow-min">${i.label}${i.note ?? ""}</div>${i.fix ?? ""}</li>`)}</ul>`;
 
 const DCA_UNIT_LABELS: Record<DcaUnit, string> = { minutes: "minutes", hours: "hours", days: "days", weeks: "weeks" };
 
@@ -751,12 +783,15 @@ function dcaPanel(b: BudgetLive, error: string | null, values: Record<string, st
   if (checked !== null && checked.ok) {
     const plan = checked.value;
     const t = planTotals(plan, b.withdrawable);
-    const hidden = ["amount", "every", "unit", "stop", "runs", "end", "slippage", "start"].map((k) => html`<input type="hidden" name="${k}" value="${v(k)}">`);
+    const hidden = ["amount", "every", "unit", "stop", "runs", "end", "slippage", "floor", "start"].map((k) => html`<input type="hidden" name="${k}" value="${v(k)}">`);
     const maxDay = g?.policy?.max_per_day ?? null;
     const overDay = maxDay !== null && BigInt(t.per_day) > BigInt(maxDay);
     const left = maxDay === null || g?.window == null ? null : BigInt(maxDay) - BigInt(g.window.spent_in_window);
     const quote = dca?.quote ?? null;
     const price = quote === null ? null : dcaPrice(plan.amount.yocto, quote);
+    // The Guard's own test (on_quote): the run goes only when quote * (1 - max drop) reaches amount * floor / 1 NEAR.
+    const runFloor = (BigInt(plan.amount.yocto) * BigInt(plan.min_out_per_near)) / 10n ** 24n;
+    const belowFloor = quote !== null && (BigInt(quote) * BigInt(10_000 - plan.slippage_bps)) / 10_000n < runFloor;
     return shell(html`<input type="hidden" name="step" value="confirm">${hidden}
       <div class="sum-box">
         ${sumRow("Sell each time", `${plan.amount.near} NEAR`)}
@@ -766,12 +801,14 @@ function dcaPanel(b: BudgetLive, error: string | null, values: Record<string, st
         ${sumRow("Last run", formatUtc(new Date(t.last_run_ms).toISOString()))}
         ${sumRow("Total to sell", near(t.total))}
         ${sumRow("Max price drop", `${plan.slippage_bps / 100} %`)}
+        ${sumRow("Lowest price", `${groupDigits(formatUnits(plan.min_out_per_near, DCA_TESTNET.token_out_decimals))} USDT per NEAR`)}
         ${sumRow("Spendable now", near(b.withdrawable))}
         ${left === null ? "" : sumRow("Left today for agents", near((left > 0n ? left : 0n).toString()))}
       </div>
       ${quote === null
         ? html`<p class="small muted">The current price could not be read. The sale still checks it at every run.</p>`
-        : html`<p class="small">Right now ${plan.amount.near} NEAR gets about ${formatUnits(quote, DCA_TESTNET.token_out_decimals)} USDT${price === null ? "" : html` (${price} USDT per NEAR)`}, testnet price.</p>`}
+        : html`<p class="small">Right now ${plan.amount.near} NEAR gets about ${groupDigits(formatUnits(quote, DCA_TESTNET.token_out_decimals))} USDT${price === null ? "" : html` (${price} USDT per NEAR)`}, testnet price.</p>`}
+      ${belowFloor ? html`<p class="banner banner-cleanup">${icon.alertSmall()}<span>At today's price a run would be skipped: it is below your lowest price. Go back and lower it, or wait for the price to rise.</span></p>` : ""}
       ${t.short === null
         ? html`<p class="check-line">${icon.alert()}<span>Could not read the balance, so the page cannot tell whether it covers every run.</span></p>`
         : BigInt(t.short) > 0n
@@ -804,12 +841,28 @@ function dcaPanel(b: BudgetLive, error: string | null, values: Record<string, st
     </div>
     <div class="stack-xs"><label class="label" for="bp-start">First run (your local time, optional)</label>
       <input id="bp-start" name="start" type="datetime-local" class="input" value="${v("start")}"><p class="small muted">Empty or past: the first run is due right away.</p></div>
+    ${floorField(v("floor") || dcaFloorPrefill(dca?.price ?? null), dca?.price ?? null, error !== null)}
     <p class="small muted">If the price drops more than the max between the quote and the swap, that run is skipped. Runs must fit your fence: ${near(g?.policy?.max_per_tx)} per payment, ${near(g?.policy?.max_per_day)} a day.</p>
     ${twoSignatureSteps(b.dao.policy.proposal_bond)}`;
   return shell(body, html`${CANCEL}<button type="submit" class="btn btn-primary">Review</button>`);
 }
 
 type Field = (name: string, label: string, value: string, placeholder?: string, opts?: { mono?: boolean; unit?: boolean }) => Html;
+
+/**
+ * The DCA lowest price, in USDT per NEAR as people read a price. Anyone may run a step, so the price at run time can
+ * be pushed down on purpose; this floor is the one the DAO chose, and a run below it is skipped.
+ */
+function floorField(value: string, pricePerNear: string | null, hasError: boolean): Html {
+  const now = pricePerNear === null ? null : formatUnits(pricePerNear, DCA_TESTNET.token_out_decimals);
+  const hint =
+    now === null
+      ? "The current price could not be read. A run below this price is skipped, so no NEAR is sold cheaper."
+      : `Now about ${groupDigits(now)} USDT per NEAR; this starts ${DCA_FLOOR_MARGIN_BPS / 100} % lower. A run below it is skipped, so no NEAR is sold cheaper.`;
+  return html`<div class="stack-xs"><label class="label" for="bp-floor">Lowest price</label>
+    <div class="input-unit"><input id="bp-floor" name="floor" type="text" inputmode="decimal" class="input" value="${value}" placeholder="8.5" autocomplete="off" spellcheck="false" aria-describedby="bp-floor-hint${hasError ? " bp-error" : ""}"><span class="muted">USDT per NEAR</span></div>
+    <p id="bp-floor-hint" class="small muted">${hint}</p></div>`;
+}
 
 const PLAN_UNIT_LABELS: Record<PlanUnit, string> = { minutes: "minutes", hours: "hours", days: "days" };
 
@@ -912,7 +965,7 @@ export function renderBudgetApprove(p: BudgetProposal, b: BudgetLive, now: numbe
     return html`<ul class="plain-list k5-checks">
       ${check(!unknown, unknown ? `${req.receiver_id} is not on your recipient list` : `${req.receiver_id} is on your recipient list${cap === null ? "" : `, up to ${near(cap)} per payment`}`)}
       ${after === null ? check(false, "Balance unknown right now") : check(after >= 0n, after >= 0n ? `Balance after: ${near(after.toString())}. ${near(g?.policy?.min_reserve)} stays in the budget.` : `The balance is ${near(b.withdrawable)}: not enough for this payment`)}
-      ${dayAfter === null || dayMax === null ? check(false, "Today's spending unknown right now") : check(dayAfter <= BigInt(dayMax), `Today: ${yoctoToNear(dayAfter.toString())} of ${near(dayMax)} after this payment`)}
+      ${dayAfter === null || dayMax === null ? check(false, "Today's spending unknown right now") : check(dayAfter <= BigInt(dayMax), `Today: ${nearText(dayAfter.toString())} of ${near(dayMax)} after this payment`)}
     </ul>`;
   };
   const why = r === null || r.reasons.length === 0 ? "" : html`<div class="stack-xs"><h3 class="drawer-h3">Why it waited</h3><ul class="list small">${r.reasons.map((c) => html`<li>${reasonText(c, g, r.receiver_id)}</li>`)}</ul></div>`;
@@ -1047,7 +1100,7 @@ const FENCE_LABELS: ReadonlyArray<readonly [string, string, string]> = [
 export function setupCostText(values: Record<string, string>, codeStorageYocto: string | null): string {
   const cost = createCost(values.funding ?? "", codeStorageYocto);
   if (cost === null) return "Creating this budget costs at least 6 NEAR in signature 1. The exact amount shows once it is read from the chain.";
-  return `Creating this budget costs about ${yoctoToNear(cost.total)} NEAR in signature 1: ${yoctoToNear(cost.account)} NEAR for the budget account's storage, ${yoctoToNear(cost.contract)} NEAR for the spending contract and ${yoctoToNear(cost.fees)} NEAR set aside for fees. Spending money comes later, with Top up.`;
+  return `Creating this budget costs about ${nearText(cost.total)} NEAR in signature 1: ${nearText(cost.account)} NEAR for the budget account's storage, ${nearText(cost.contract)} NEAR for the spending contract and ${nearText(cost.fees)} NEAR set aside for fees. Spending money comes later, with Top up.`;
 }
 
 const nearAmount = (v: string): string => `${v.trim()} NEAR`;
@@ -1110,7 +1163,7 @@ export function renderBudgetSetup(available: boolean, values: Record<string, str
     </fieldset>
     <details id="bs-advanced" class="setup-advanced"${advancedOpen ? " open" : ""}><summary class="strong">Advanced</summary>
       <div class="grid-2">
-        ${field("funding", "Set aside for fees (NEAR)", "", html`<p id="bs-funding-hint" class="small muted">Not spending money. Pays the 0.1 NEAR deposit of each waiting payment and your agent's network fees. <span id="bs-funding-min">${min === null ? "" : auto ? `Filled in for your rules: at least ${yoctoToNear(min.toString())} NEAR.` : `At least ${yoctoToNear(min.toString())} NEAR for your rules.`}</span>${auto ? "" : html` <button type="button" class="link-btn" data-action="budget-funding-auto">Use the minimum</button>`}</p>`)}
+        ${field("funding", "Set aside for fees (NEAR)", "", html`<p id="bs-funding-hint" class="small muted">Not spending money. Pays the 0.1 NEAR deposit of each waiting payment and your agent's network fees. <span id="bs-funding-min">${min === null ? "" : auto ? `Filled in for your rules: at least ${nearText(min.toString())} NEAR.` : `At least ${nearText(min.toString())} NEAR for your rules.`}</span>${auto ? "" : html` <button type="button" class="link-btn" data-action="budget-funding-auto">Use the minimum</button>`}</p>`)}
         ${field("minReserve", "Contract keeps for its fees (NEAR)", "0", hintText("minReserve", "NEAR the spending contract keeps for itself, never budget money. 0 is fine."))}
       </div>
       <input type="hidden" name="fundingAuto" value="${auto ? "1" : "0"}">
@@ -1142,7 +1195,7 @@ export function renderBudgetSetup(available: boolean, values: Record<string, str
       planned === null
         ? "Not read from the chain yet. Your wallet shows the exact amount before you approve."
         : planned.ok
-          ? `About ${yoctoToNear(planned.plan.firstDepositYocto)} NEAR in signature 1: the budget account's storage, the spending contract and the fee set-aside. The 0.2 NEAR of deposits in signature 2 come back.`
+          ? `About ${nearText(planned.plan.firstDepositYocto)} NEAR in signature 1: the budget account's storage, the spending contract and the fee set-aside. The 0.2 NEAR of deposits in signature 2 come back.`
           : "Fix the earlier steps to see it.";
     review = html`<h2 id="bs-h" class="wiz-h" tabindex="-1">Review and create</h2>
       <p class="strong">${reviewSentence(agent === "" ? "Your agent" : agent, val("maxPerTx"), val("maxPerDay"), count)}</p>
@@ -1250,14 +1303,14 @@ export function renderLeaveKey(agent: string): Html {
 /** The page without a Budget: what it is until a wallet is connected, then the form. `syncWallet` picks which half shows. */
 export function renderBudgetCreate(form: Html): Html {
   return html`<div class="budget-intro" data-wallet-off>
-      <section class="budget-hero"><h1 class="display">Agent Budget</h1><p class="budget-hero-lead">${LEAD}</p>
+      <section class="budget-hero">${pillarTag("budget")}<h1 class="display">Agent Budget</h1><p class="budget-hero-lead">${LEAD}</p>
         <button type="button" class="btn btn-primary" data-action="open-wallet">${icon.wallet()}Connect wallet</button></section>
       <ol class="plain how-steps">${STEPS.map(([title, note], i) => html`<li><span class="step-dot">${i + 1}</span><div class="stack-xs"><strong>${title}</strong><p class="small muted">${note}</p></div></li>`)}</ol>
       <section class="stack-sm" aria-labelledby="b-strategies"><h2 id="b-strategies" class="h2">Strategies</h2>
         <div class="strategy-grid">${STRATEGIES.map(([name, note]) => html`<article class="card strategy-card"><div class="strategy-head"><h3 class="strategy-h">${name}</h3><span class="pill pill-note">${name === PAYOUTS || name === DCA ? "After setup" : "Coming soon"}</span></div><p class="small muted">${note}</p></article>`)}</div></section>
     </div>
     <div class="stack" data-wallet-on hidden>
-      <section class="stack-xs"><h1 class="h1">New agent budget</h1><p class="muted budget-lead">${WIZARD_LEAD}</p></section>
+      <section class="stack-xs">${pillarTag("budget")}<h1 class="h1">New agent budget</h1><p class="muted budget-lead">${WIZARD_LEAD}</p></section>
       ${form}
     </div>`;
 }

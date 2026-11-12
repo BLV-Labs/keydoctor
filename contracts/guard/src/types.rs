@@ -25,7 +25,8 @@ pub struct AgentInfo {
     pub creating: bool,
     /// Requests whose proposal still waits on the DAO (statuses `Submitted` and `Pending`).
     pub pending: u32,
-    /// This agent's share of `spent_in_window`, valid only while `spent_window` is the Guard's current window.
+    /// 1.5.0's per-agent part of its fixed window. Unused since 1.6.0 (`Guard::agent_spends`); `migrate` reads it
+    /// once. Kept so the stored layout of `AgentInfo` does not change.
     pub spent: U128,
     pub spent_window: U64,
 }
@@ -106,7 +107,7 @@ pub struct WhitelistInput {
     pub max_per_tx: Option<U128>,
 }
 
-/// What one step does (§4.11, §11.11.2). `Swap` is last so the borsh bytes of stored plans stay valid.
+/// What one step does (§4.11, §11.11.2). New variants go last so the borsh bytes of stored plans stay valid.
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -122,12 +123,22 @@ pub enum PlanAction {
         deposit: U128,
         gas: U64,
     },
-    /// DCA (§11.11.3, 4c). Sells `amount_per_run` NEAR on the network's Rhea exchange (`policy::dex_for`);
-    /// `min_amount_out` is set at run time from a quote.
+    /// DCA from Guard 1.3.0, with no price floor. Kept only so stored plans still read: `create_plan` refuses it and
+    /// a step that comes due pauses it with `PRICE_FLOOR_REQUIRED` (ADR 0007, 2026-11-12), since a quote alone can be
+    /// skewed by anyone who also calls `execute_plan_step`.
     Swap {
         pool_id: u64,
         token_out: AccountId,
         max_slippage_bps: u16,
+    },
+    /// DCA (§11.11.3, 4c). Sells `amount_per_run` NEAR on the network's Rhea exchange (`policy::dex_for`).
+    /// `min_amount_out` is set at run time from a quote, and never below the DAO's own floor: `min_out_per_near` is
+    /// the least `token_out` (base units) the DAO takes for 1 NEAR (10^24 yocto). A quote under it skips the run.
+    SwapWithFloor {
+        pool_id: u64,
+        token_out: AccountId,
+        max_slippage_bps: u16,
+        min_out_per_near: U128,
     },
 }
 
@@ -149,6 +160,8 @@ pub enum PlanPauseReason {
     GuardLowNear,
     Owner,
     Failures,
+    /// A plan made before the price floor (`PlanAction::Swap`): the DAO cancels it and creates it again with a floor.
+    PriceFloorRequired,
 }
 
 /// §4.11. `next_run_at` is `None` once the plan ended. `runs_done` counts runs the Guard approved and the DAO did

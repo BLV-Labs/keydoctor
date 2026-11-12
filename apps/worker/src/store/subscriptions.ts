@@ -9,22 +9,27 @@ export interface Subscription {
   chat_id: string;
   chat_type: string;
   created_at: string;
+  /** The Telegram user who subscribed the chat; null for rows written before migration 0007. */
+  added_by?: string | null;
 }
 
-/** Returns false when this chat already watches the target. */
+/**
+ * Returns false when this chat already watches the target, or when the target or the user is at its cap. The caps are
+ * checked in the insert itself, so two /watch updates handled at once cannot both take the last slot.
+ */
 export async function addSubscription(db: D1Database, s: Subscription): Promise<boolean> {
-  const existing = await db
-    .prepare("SELECT 1 AS x FROM subscriptions WHERE target = ? AND network = ? AND chat_id = ?")
-    .bind(s.target, s.network, s.chat_id)
-    .first();
-  if (existing !== null) return false;
-  await db
+  const user = s.added_by ?? null;
+  const row = await db
     .prepare(
-      "INSERT OR IGNORE INTO subscriptions (target, network, target_type, chat_id, chat_type, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+      `INSERT OR IGNORE INTO subscriptions (target, network, target_type, chat_id, chat_type, created_at, added_by)
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
+       WHERE (SELECT COUNT(*) FROM subscriptions WHERE target = ?1 AND network = ?2) < ?8
+         AND (?7 IS NULL OR (SELECT COUNT(*) FROM subscriptions WHERE target = ?1 AND network = ?2 AND added_by = ?7) < ?9)
+       RETURNING 1 AS x`,
     )
-    .bind(s.target, s.network, s.target_type, s.chat_id, s.chat_type, s.created_at)
-    .run();
-  return true;
+    .bind(s.target, s.network, s.target_type, s.chat_id, s.chat_type, s.created_at, user, MAX_CHATS_PER_TARGET, MAX_CHATS_PER_USER_TARGET)
+    .first();
+  return row !== null;
 }
 
 /** Returns false when there was nothing to remove. */
@@ -59,10 +64,41 @@ export async function deleteChat(db: D1Database, chatId: string): Promise<void> 
   ]);
 }
 
+/** Chats one target may have (red-team M8): every chat costs one subrequest per alert. */
+export const MAX_CHATS_PER_TARGET = 25;
+
+export async function countChatsFor(db: D1Database, target: string, network: Network): Promise<number> {
+  const row = await db.prepare("SELECT COUNT(*) AS n FROM subscriptions WHERE target = ? AND network = ?").bind(target, network).first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+/**
+ * Most chats one Telegram user may subscribe to one target. Without it, one user could make MAX_CHATS_PER_TARGET
+ * groups and take every slot, so no new chat of the real DAO members could watch it.
+ */
+export const MAX_CHATS_PER_USER_TARGET = 3;
+
+export async function isSubscribed(db: D1Database, target: string, network: Network, chatId: string): Promise<boolean> {
+  const row = await db
+    .prepare("SELECT 1 AS x FROM subscriptions WHERE target = ? AND network = ? AND chat_id = ?")
+    .bind(target, network, chatId)
+    .first();
+  return row !== null;
+}
+
+export async function countChatsByUser(db: D1Database, target: string, network: Network, user: string): Promise<number> {
+  const row = await db
+    .prepare("SELECT COUNT(*) AS n FROM subscriptions WHERE target = ? AND network = ? AND added_by = ?")
+    .bind(target, network, user)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+/** The oldest MAX_CHATS_PER_TARGET chats watching the target: fan-out per alert stays bounded. */
 export async function chatsFor(db: D1Database, target: string, network: Network): Promise<string[]> {
   const { results } = await db
-    .prepare("SELECT chat_id FROM subscriptions WHERE target = ? AND network = ? ORDER BY created_at")
-    .bind(target, network)
+    .prepare("SELECT chat_id FROM subscriptions WHERE target = ? AND network = ? ORDER BY created_at, chat_id LIMIT ?")
+    .bind(target, network, MAX_CHATS_PER_TARGET)
     .all<{ chat_id: string }>();
   return results.map((r) => r.chat_id);
 }

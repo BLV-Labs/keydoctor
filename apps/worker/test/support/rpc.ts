@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import type { TestContext } from "node:test";
+import { toPlain } from "../../src/telegram/api.ts";
 
 const require = createRequire(import.meta.url);
 export const fixture = <T = any>(rel: string): T =>
@@ -63,7 +64,9 @@ export function installChain(t: TestContext): Chain {
     const tg = /^https:\/\/api\.telegram\.org\/bot[^/]+\/(\w+)$/.exec(String(url));
     if (tg) {
       const sentBody = JSON.parse(String(init?.body));
-      chain.telegram.push({ method: tg[1] as string, body: sentBody });
+      // `text` is what the reader sees (tags dropped, entities read back); `html` keeps the markup that was sent.
+      const seen = sentBody.parse_mode === "HTML" ? { ...sentBody, text: toPlain(sentBody.text), html: sentBody.text } : sentBody;
+      chain.telegram.push({ method: tg[1] as string, body: seen });
       const custom = chain.telegramReply?.(tg[1] as string, sentBody);
       if (custom) return new Response(JSON.stringify(custom.json), { status: custom.status });
       const ok = chain.telegramStatus === 200;
