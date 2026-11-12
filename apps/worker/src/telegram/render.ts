@@ -112,7 +112,14 @@ export function renderCheck(lang: Lang, r: KdReport, dashboardUrl?: string): Out
 export function renderChanges(lang: Lang, d: KdDiff, dashboardUrl?: string): Outgoing {
   const target = d.target.id;
   const lines = [HEADER];
-  if (d.is_baseline) {
+  if (d.is_baseline && !d.baseline_updated) {
+    // compare stores no baseline once too many unwatched targets hold one (red-team M9).
+    lines.push(
+      lang === "vi"
+        ? `${id(target)}: chưa có mốc so sánh và lúc này không lưu được. Dùng /watch ${target} để giữ mốc và nhận cảnh báo.`
+        : `${id(target)}: no baseline yet, and none can be saved right now. Use /watch ${target} to keep one and get alerts.`,
+    );
+  } else if (d.is_baseline) {
     lines.push(
       lang === "vi"
         ? `${id(target)}: đã lưu mốc so sánh lúc ${fmtTime(d.to.generated_at)}. Lần sau gọi /changes sẽ thấy thay đổi.`
@@ -366,6 +373,12 @@ export const TEXT = {
       lang === "vi"
         ? `${id(target)} đã có ${max} chat theo dõi, mức tối đa. Hãy nhận cảnh báo trong một nhóm đang theo dõi nó.`
         : `${id(target)} already has ${max} watching chats, the most allowed. Get its alerts in a group that already watches it.`,
+  }),
+  userTargetFull: (lang: Lang, target: string, max: number): Outgoing => ({
+    text:
+      lang === "vi"
+        ? `Bạn đã cho ${max} chat theo dõi ${id(target)}, mức tối đa cho một người. Hãy /unwatch ở một chat khác trước.`
+        : `You already have ${max} chats watching ${id(target)}, the most one person may add. /unwatch it in another chat first.`,
   }),
   unwatched: (lang: Lang, target: string): Outgoing => ({
     text: lang === "vi" ? `Đã tắt theo dõi ${id(target)}.` : `Stopped watching ${id(target)}.`,

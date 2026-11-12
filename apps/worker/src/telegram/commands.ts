@@ -9,10 +9,13 @@ import { getProposalState, saveProposalState } from "../store/proposal-state.ts"
 import { latestSnapshot, saveSnapshot } from "../store/snapshots.ts";
 import {
   addSubscription,
+  countChatsByUser,
   countChatsFor,
   countSubscriptions,
   deleteChat,
+  isSubscribed,
   MAX_CHATS_PER_TARGET,
+  MAX_CHATS_PER_USER_TARGET,
   listSubscriptions,
   removeSubscription,
 } from "../store/subscriptions.ts";
@@ -186,7 +189,12 @@ async function watchTarget(
 ): Promise<Outgoing> {
   const { lang, chatId } = inc;
   if ((await countSubscriptions(env.DB, chatId)) >= MAX_SUBS_PER_CHAT) return TEXT.tooMany(lang, MAX_SUBS_PER_CHAT);
+  // Already watching comes first: a chat that holds a slot should hear that, not "full".
+  if (await isSubscribed(env.DB, id, network, chatId)) return TEXT.alreadyWatched(lang, id);
   if ((await countChatsFor(env.DB, id, network)) >= MAX_CHATS_PER_TARGET) return TEXT.targetFull(lang, id, MAX_CHATS_PER_TARGET);
+  if (inc.fromId !== null && (await countChatsByUser(env.DB, id, network, inc.fromId)) >= MAX_CHATS_PER_USER_TARGET) {
+    return TEXT.userTargetFull(lang, id, MAX_CHATS_PER_USER_TARGET);
+  }
   typing();
   const report = await scan({ target: id, network }, env);
   const type = report.target.type;
@@ -197,6 +205,7 @@ async function watchTarget(
     chat_id: chatId,
     chat_type: inc.chatType,
     created_at: new Date().toISOString(),
+    added_by: inc.fromId,
   });
   if (!added) return TEXT.alreadyWatched(lang, id);
   // First subscription to a target with no baseline: this scan becomes the baseline (one of the two baseline writers).

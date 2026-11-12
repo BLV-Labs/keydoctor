@@ -9,6 +9,8 @@ export interface Subscription {
   chat_id: string;
   chat_type: string;
   created_at: string;
+  /** The Telegram user who subscribed the chat; null for rows written before migration 0007. */
+  added_by?: string | null;
 }
 
 /** Returns false when this chat already watches the target. */
@@ -20,9 +22,9 @@ export async function addSubscription(db: D1Database, s: Subscription): Promise<
   if (existing !== null) return false;
   await db
     .prepare(
-      "INSERT OR IGNORE INTO subscriptions (target, network, target_type, chat_id, chat_type, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT OR IGNORE INTO subscriptions (target, network, target_type, chat_id, chat_type, created_at, added_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
-    .bind(s.target, s.network, s.target_type, s.chat_id, s.chat_type, s.created_at)
+    .bind(s.target, s.network, s.target_type, s.chat_id, s.chat_type, s.created_at, s.added_by ?? null)
     .run();
   return true;
 }
@@ -64,6 +66,28 @@ export const MAX_CHATS_PER_TARGET = 25;
 
 export async function countChatsFor(db: D1Database, target: string, network: Network): Promise<number> {
   const row = await db.prepare("SELECT COUNT(*) AS n FROM subscriptions WHERE target = ? AND network = ?").bind(target, network).first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+/**
+ * Most chats one Telegram user may subscribe to one target. Without it, one user could make MAX_CHATS_PER_TARGET
+ * groups and take every slot, so no new chat of the real DAO members could watch it.
+ */
+export const MAX_CHATS_PER_USER_TARGET = 3;
+
+export async function isSubscribed(db: D1Database, target: string, network: Network, chatId: string): Promise<boolean> {
+  const row = await db
+    .prepare("SELECT 1 AS x FROM subscriptions WHERE target = ? AND network = ? AND chat_id = ?")
+    .bind(target, network, chatId)
+    .first();
+  return row !== null;
+}
+
+export async function countChatsByUser(db: D1Database, target: string, network: Network, user: string): Promise<number> {
+  const row = await db
+    .prepare("SELECT COUNT(*) AS n FROM subscriptions WHERE target = ? AND network = ? AND added_by = ?")
+    .bind(target, network, user)
+    .first<{ n: number }>();
   return row?.n ?? 0;
 }
 

@@ -4,7 +4,7 @@ import worker, { DAILY_CRON, PROPOSAL_CRON } from "../src/index.ts";
 import type { Env } from "../src/env.ts";
 import { handleUpdate } from "../src/telegram/commands.ts";
 import { saveProposalState } from "../src/store/proposal-state.ts";
-import { MAX_CHATS_PER_TARGET, addSubscription } from "../src/store/subscriptions.ts";
+import { MAX_CHATS_PER_TARGET, MAX_CHATS_PER_USER_TARGET, addSubscription } from "../src/store/subscriptions.ts";
 import { testD1, type TestD1 } from "./support/d1.ts";
 import { DAO, addKey, bytes, fixture, installChain, type Chain } from "./support/rpc.ts";
 
@@ -285,6 +285,30 @@ describe("GĐ28 owner action on an Agent Budget", () => {
     const chats = new Set(sends(chain).filter((m) => /Just withdrew/.test(m.body.text)).map((m) => m.body.chat_id));
     assert.equal(chats.size, MAX_CHATS_PER_TARGET);
     assert.ok(!chats.has(String(-1000 - MAX_CHATS_PER_TARGET)), "the newest rows past the cap are left out");
+  });
+
+  it("one Telegram user cannot take every chat slot of a target; a chat already watching hears so, not 'full'", async (t) => {
+    // Without a per-user cap, one person could make MAX_CHATS_PER_TARGET groups and block the DAO's real members.
+    const { env, chain, db } = setup(t, open);
+    const byUser = (chat: number, user: number) =>
+      handleUpdate({ message: { text: `/watch ${DAO}`, chat: { id: chat, type: "group" }, from: { id: user, language_code: "en" } } }, env);
+    for (let i = 0; i < MAX_CHATS_PER_USER_TARGET; i++) await byUser(-2000 - i, 42);
+    const n = () => (db.raw.prepare("SELECT COUNT(*) AS n FROM subscriptions WHERE added_by = '42'").get() as { n: number }).n;
+    assert.equal(n(), MAX_CHATS_PER_USER_TARGET);
+    chain.telegram.length = 0;
+    await byUser(-2999, 42);
+    assert.match(sends(chain).at(-1)!.body.text, new RegExp(`You already have ${MAX_CHATS_PER_USER_TARGET} chats watching`));
+    assert.equal(n(), MAX_CHATS_PER_USER_TARGET, "the extra chat was not added");
+    await byUser(-2999, 43);
+    assert.equal(rows(db, "SELECT 1 FROM subscriptions WHERE chat_id = '-2999'").length, 1, "another user still can");
+    // Fill the target, then a chat that already holds a slot asks again.
+    for (let i = 0; i < MAX_CHATS_PER_TARGET; i++) {
+      await addSubscription(db, { target: DAO, network: "testnet", target_type: "dao", chat_id: String(-3000 - i), chat_type: "group", created_at: "2026-11-02T00:00:00.000Z" });
+    }
+    chain.telegram.length = 0;
+    await byUser(-2000, 42);
+    assert.match(sends(chain).at(-1)!.body.text, /already/i);
+    assert.doesNotMatch(sends(chain).at(-1)!.body.text, /watching chats, the most allowed/);
   });
 
   it("does not ask the testnet factory about a mainnet DAO: it would answer no, and a wrong answer would be silence", async (t) => {

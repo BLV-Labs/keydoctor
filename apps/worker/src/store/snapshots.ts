@@ -22,6 +22,23 @@ export async function saveSnapshot(db: D1Database, report: KdReport): Promise<vo
     .run();
 }
 
+/**
+ * Most targets that may hold a baseline with no chat watching them (red-team M9). The first compare or /changes of a
+ * target stores a baseline, and /mcp is open, so without a cap a loop over made-up names fills D1. Watched targets
+ * are not counted: a chat has to subscribe first, and subscriptions have their own caps.
+ */
+export const MAX_UNWATCHED_BASELINES = 500;
+
+export async function countUnwatchedBaselines(db: D1Database): Promise<number> {
+  const row = await db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM (SELECT DISTINCT target, network FROM snapshots s WHERE NOT EXISTS (
+         SELECT 1 FROM subscriptions u WHERE u.target = s.target AND u.network = s.network))`,
+    )
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
 /** Keeps the newest `keep` snapshots of a target. */
 export async function pruneSnapshots(db: D1Database, target: string, network: Network, keep = 7): Promise<void> {
   await db

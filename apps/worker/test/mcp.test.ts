@@ -3,6 +3,7 @@ import { describe, it, type TestContext } from "node:test";
 import worker from "../src/index.ts";
 import type { Env } from "../src/env.ts";
 import { TOOLS } from "../src/mcp/server.ts";
+import { MAX_UNWATCHED_BASELINES } from "../src/store/snapshots.ts";
 import { OVERFLOW_KEY, checkRate, clientKey } from "../src/mcp/rate-limit.ts";
 import { testD1, type TestD1 } from "./support/d1.ts";
 import { DAO, addKey, bytes, fixture, installChain } from "./support/rpc.ts";
@@ -267,6 +268,23 @@ describe("GĐ3 compare and the baseline", () => {
     assert.equal(snapshots(db), 1);
     const after = (await call(env, "compare", { target: DAO })).structuredContent;
     assert.equal(after.changes[0].type, "key_added", "the new key still shows against the old baseline");
+  });
+});
+
+describe("compare baselines are capped (red-team M9)", () => {
+  it("past MAX_UNWATCHED_BASELINES unwatched targets, a first compare answers but stores nothing; watched targets do not count", async (t) => {
+    // /mcp is open and the first compare of a target stores a baseline, so a loop over made-up names would fill D1.
+    const { env, db } = setup(t);
+    const ins = db.raw.prepare("INSERT INTO snapshots (target, network, generated_at, block_height, report_json) VALUES (?, 'testnet', '2026-11-01T00:00:00Z', 1, '{}')");
+    for (let i = 0; i < MAX_UNWATCHED_BASELINES; i++) ins.run(`x${i}.kd-demo.testnet`);
+    const full = (await call(env, "compare", { target: DAO })).structuredContent;
+    assert.equal(full.is_baseline, true);
+    assert.equal(full.baseline_updated, false);
+    assert.equal(snapshots(db), MAX_UNWATCHED_BASELINES, "nothing stored");
+    // A chat watching one of them frees a slot: watched baselines are not counted.
+    db.raw.prepare("INSERT INTO subscriptions (target, network, target_type, chat_id, chat_type, created_at) VALUES ('x0.kd-demo.testnet', 'testnet', 'account', '1', 'private', '2026-11-01T00:00:00Z')").run();
+    assert.equal((await call(env, "compare", { target: DAO })).structuredContent.baseline_updated, true);
+    assert.equal(snapshots(db), MAX_UNWATCHED_BASELINES + 1);
   });
 });
 

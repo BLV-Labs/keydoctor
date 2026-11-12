@@ -147,7 +147,11 @@ describe("GĐ4 message rendering", () => {
 
   it("/changes: baseline, no change, and changes with severity marks", () => {
     const base = daoReport();
-    assert.match(toPlain(renderChanges("en", diffReports(null, base)).text), /baseline saved at 2026-11-03 02:00 UTC/);
+    assert.match(toPlain(renderChanges("en", { ...diffReports(null, base), baseline_updated: true }).text), /baseline saved at 2026-11-03 02:00 UTC/);
+    // compare stored nothing (unwatched-baseline cap, red-team M9): the bot must not claim it saved one.
+    const unsaved = toPlain(renderChanges("en", diffReports(null, base)).text);
+    assert.doesNotMatch(unsaved, /baseline saved/);
+    assert.match(unsaved, /none can be saved right now\. Use \/watch/);
     const same = { ...daoReport(), generated_at: "2026-11-04T02:00:30Z", chain: { ...base.chain, block_height: base.chain.block_height + 10 } };
     assert.match(toPlain(renderChanges("vi", diffReports(base, same)).text), /không có thay đổi từ 2026-11-03 02:00 UTC đến 2026-11-04 02:00 UTC/);
     const curr = daoReport();
@@ -295,7 +299,7 @@ describe("GĐ4 commands end to end (stub RPC, Telegram and D1)", () => {
     assert.match(again!.text, /already watches/);
     const subs = rows(db, "subscriptions");
     assert.equal(subs.length, 1);
-    assert.deepEqual({ ...subs[0], created_at: "x" }, { target: DAO, network: "testnet", target_type: "dao", chat_id: "-100", chat_type: "supergroup", created_at: "x" });
+    assert.deepEqual({ ...subs[0], created_at: "x" }, { target: DAO, network: "testnet", target_type: "dao", chat_id: "-100", chat_type: "supergroup", created_at: "x", added_by: "7" });
     assert.equal(rows(db, "snapshots").length, 1);
     assert.deepEqual(rows(db, "proposal_state").map((r) => [r.target, r.last_proposal_id, r.pending_json]), [[DAO, 4, "{}"]]);
   });
@@ -355,7 +359,7 @@ describe("GĐ4 commands end to end (stub RPC, Telegram and D1)", () => {
   it("a chat over the subscription cap is refused", async (t) => {
     const { env, chain, db } = setup(t);
     for (let i = 0; i < MAX_SUBS_PER_CHAT; i++) {
-      db.raw.prepare("INSERT INTO subscriptions VALUES (?, 'testnet', 'account', '42', 'private', 'x')").run(`acc${i}.testnet`);
+      db.raw.prepare("INSERT INTO subscriptions (target, network, target_type, chat_id, chat_type, created_at) VALUES (?, 'testnet', 'account', '42', 'private', 'x')").run(`acc${i}.testnet`);
     }
     assert.match((await say(env, chain, `/watch ${DAO}`))!.text, /at most 20 targets/);
   });
