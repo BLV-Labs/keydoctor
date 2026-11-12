@@ -360,7 +360,7 @@ describe("proposal list (C7)", () => {
 });
 
 describe("nav and the alerts / MCP pages", () => {
-  const nav = (page: "check" | "budget" | "my-agents" | "yield" | "mcp") => renderLayout(html`<p>x</p>`, "testnet", page).value.match(/<nav[\s\S]*?<\/nav>/)![0];
+  const nav = (page: "check" | "budget" | "my-agents" | "yield" | "mcp" | "guide") => renderLayout(html`<p>x</p>`, "testnet", page).value.match(/<nav[\s\S]*?<\/nav>/)![0];
 
   it("has one link per Sputnik DAO pillar and an Alerts button; marks one item, so every budget page stays under Agent Budget", () => {
     for (const [page, label] of [["check", "Scan DAO"], ["my-agents", "Agent Budget"], ["budget", "Agent Budget"], ["yield", "Yield"]] as const) {
@@ -368,11 +368,13 @@ describe("nav and the alerts / MCP pages", () => {
       assert.deepEqual([...n.matchAll(/<a [^>]*class="nav-(\w+)"/g)].map((m) => m[1]), ["scan", "budget", "yield"]);
       assert.equal((n.match(/aria-current="page"/g) ?? []).length, 1);
       assert.match(n, new RegExp(`aria-current="page"><span class="pillar-dot" aria-hidden="true"></span>${label}<`));
-      assert.match(n, /<button type="button" class="nav-btn" data-action="alerts-open">Alerts<\/button>/);
+      assert.match(n, /<button type="button" class="nav-btn" data-action="alerts-open">Alerts<\/button>\s*<a href="[^"]*page=guide[^"]*" data-nav>Guide<\/a>/);
       assert.ok(!n.includes("t.me"));
     }
     // The MCP page serves all three pillars, so no nav item claims it.
     assert.doesNotMatch(nav("mcp"), /aria-current/);
+    // The guide page marks only the Guide link, never a pillar.
+    assert.match(nav("guide"), /^(?:(?!aria-current)[\s\S])*page=guide[^"]*" data-nav aria-current="page">Guide</);
   });
 
   it("shows the network in the header, so a mainnet page never passes for testnet", () => {

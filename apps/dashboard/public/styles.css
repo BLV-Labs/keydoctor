@@ -379,7 +379,7 @@ li:last-child > .member-row { border-bottom: 0; }
   .header-inner { padding-top: 4px; padding-bottom: 4px; gap: 0 8px; }
   .brand { margin-right: auto; }
   .header-tools { order: 1; }
-  /* One row: it fits at 375px; narrower phones scroll it sideways instead of wrapping "Alerts" onto a second row. */
+  /* One row: the pillars and Alerts fit at 375px; Guide and narrower phones scroll it sideways instead of wrapping onto a second row. */
   .main-nav { order: 2; flex: 1 1 100%; flex-wrap: nowrap; gap: 8px; overflow-x: auto; scrollbar-width: none; }
   .main-nav a, .nav-btn { flex: none; white-space: nowrap; }
   .wallet-name { max-width: 120px; }

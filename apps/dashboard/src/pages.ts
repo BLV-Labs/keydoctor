@@ -14,7 +14,8 @@ export const EXAMPLE_ACCOUNT = "kdoncall-p.testnet";
 
 /**
  * One nav item per Sputnik DAO pillar and the pages it stays current on. Your agents lists Budget and Yield agents
- * together, so it stays under Agent Budget, where an owner starts. Alerts is a button, never current.
+ * together, so it stays under Agent Budget, where an owner starts. Alerts is a button, never current. Guide follows
+ * Alerts as a plain link, outside the pillars.
  */
 const NAV: ReadonlyArray<readonly [Page, Pillar, string, ReadonlyArray<Page>]> = [
   ["check", "scan", "Scan DAO", ["check"]],
@@ -33,6 +34,7 @@ export function renderLayout(content: Html, network: Network = "testnet", page: 
         <nav aria-label="Main" class="main-nav">
           ${NAV.map(link)}
           <button type="button" class="nav-btn" data-action="alerts-open">Alerts</button>
+          <a href="${pageHref("guide", network)}" data-nav${page === "guide" ? html` aria-current="page"` : ""}>Guide</a>
         </nav>
         <div class="header-tools">
           ${network === "testnet" ? html`<span class="pill pill-cleanup net-pill">Testnet</span>` : html`<span class="pill pill-note net-pill">Mainnet</span>`}
