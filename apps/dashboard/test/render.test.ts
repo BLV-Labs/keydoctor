@@ -9,6 +9,7 @@ import { renderAgents, renderAlertsDrawer, renderError, renderHome, renderLayout
 import { PROPOSALS_ID, renderProposals } from "../src/proposals-view.ts";
 import { renderKeyDetail } from "../src/key-detail.ts";
 import { BUILT, FUTURE, NEXT, REVENUE, renderRoadmap } from "../src/roadmap.ts";
+import { SHOTS, renderGuide } from "../src/guide.ts";
 import { councilGlance, renderAccount, renderCouncil } from "../src/report.ts";
 import { widthClass } from "../src/bar-width.ts";
 import { transferVotes } from "../src/key-verdict.ts";
@@ -387,6 +388,7 @@ describe("nav and the alerts / MCP pages", () => {
     assert.ok(footer.includes("page=mcp"));
     assert.ok(footer.includes("For developers (MCP)"));
     assert.ok(footer.includes("page=roadmap"));
+    assert.ok(footer.includes("page=guide"));
     assert.ok(footer.includes("Key Doctor never holds your keys. Limits are enforced on-chain."));
   });
 
@@ -404,6 +406,7 @@ describe("nav and the alerts / MCP pages", () => {
   it("?page= picks the page without a target, and ?target= wins, with nothing left to open", () => {
     assert.equal(parseRoute("?page=mcp").page, "mcp");
     assert.equal(parseRoute("?page=roadmap").page, "roadmap");
+    assert.equal(parseRoute("?page=guide").page, "guide");
     assert.equal(parseRoute("?page=nope").page, "check");
     assert.equal(parseRoute("").page, "check");
     const target = parseRoute("?page=agents&target=kdoncall-p.testnet");
@@ -571,5 +574,40 @@ describe("charts", () => {
     const odd = { ...r, dao: { ...r.dao!, transfer_vote_policy: [] } } as KdReport;
     assert.match(text(councilGlance(odd)), /not one simple vote/);
     assert.doesNotMatch(councilGlance(odd).value, /meter-votes/);
+  });
+});
+
+describe("user guide (?page=guide)", () => {
+  const page = renderGuide().value;
+
+  it("shows every screenshot it names, so a renamed or missing file cannot ship as a broken image", () => {
+    const srcs = [...page.matchAll(/<img src="guide\/([^"]+)"/g)].map((m) => m[1]);
+    assert.equal(srcs.length, Object.keys(SHOTS).length, "every shot is placed on the page once");
+    const files = new Set(readdirSync(new URL("../public/guide/", import.meta.url)));
+    for (const f of srcs) assert.ok(files.has(f!), `public/guide/${f!} exists`);
+  });
+
+  it("gives every image alt text and its own size, so screen readers get the content and the page does not jump", () => {
+    for (const m of page.matchAll(/<img [^>]+>/g)) {
+      assert.match(m[0], /alt="[^"]{20,}"/);
+      assert.match(m[0], /width="\d+" height="\d+"/);
+      assert.match(m[0], /loading="lazy"/);
+    }
+  });
+
+  it("covers every built tool, so the guide does not silently drop a feature the README promises", () => {
+    for (const title of ["Check keys", "Alerts in Telegram", "For AI agents (MCP)", "Agent Budget", "Agent Guard", "Scheduled payouts and DCA", "Yield"]) {
+      assert.ok(page.includes(`>${title}</h2>`), title);
+    }
+    for (const tool of ["diagnose", "list_keys", "list_proposals", "compare", "watch", "preflight", "yield_suggestions"]) {
+      assert.ok(page.includes(`<code class="mono">${tool}</code>`), tool);
+    }
+    assert.ok(page.includes("page=roadmap"));
+  });
+
+  it("names only testnet accounts: examples never point at a real mainnet DAO or person", () => {
+    const names = [...text({ value: page }).matchAll(/\b[a-z0-9_-]+(?:\.[a-z0-9_-]+)*\.(near|testnet)\b/g)];
+    assert.ok(names.length > 0);
+    for (const m of names) assert.equal(m[1], "testnet", m[0]);
   });
 });
