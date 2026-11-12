@@ -138,7 +138,7 @@ export function renderGuardCard(g: GuardLive, network: Network): Html {
       ${p === null ? "" : html`<div class="table-scroll"><table class="info-table"><tbody>
         ${row("Per transfer", near(p.max_per_tx))}
         ${row("Per 24 hours", near(p.max_per_day))}
-        ${row("Spent in window", w === null ? "unknown" : html`${near(w.spent_in_window)}, ${near(w.remaining)} left, resets ${formatUtc(w.resets_at)}`)}
+        ${row("Spent in window", w === null ? "unknown" : html`${near(w.spent_in_window)}, ${near(w.remaining)} left${w.spent_in_window === "0" ? "" : `, frees up from ${formatUtc(w.resets_at)}`}`)}
         ${row("Pending per agent", String(p.max_pending_per_agent))}
         ${row("Reserve kept", near(p.min_reserve))}
         ${g.config === null ? "" : row("Whitelisted receivers", String(g.config.whitelist))}
