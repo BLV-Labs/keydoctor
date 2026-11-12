@@ -1,23 +1,24 @@
 # Demo video: recording script
 
-A video of about 2 minutes for the X post the hackathon asks for (HACKATHON.md "The demo post"): lead with the
-user's problem, show one full moment from a user action to a result, say what NEAR makes possible, end with a next
-step. No architecture slide, no setup on screen. Tracks: `security` (main) and `social`.
+A video of about 2 minutes 15 seconds for the X post the hackathon asks for (HACKATHON.md "The demo post"): lead
+with the user's problem, show one full moment from a user action to a result, say what NEAR makes possible, end
+with a next step. No architecture slide, no setup on screen. Tracks: `security` (main) and `social`.
 
-The story, in order: a hook; why Key Doctor has the features it has (the two weak spots of a DAO fund); how it solves
-each one (two live scenes); where it goes next; a close with the link. The "why" and "next" parts stay short (about
-15 seconds each), because the brief asks for no long intro. Every terminal command runs off camera: on screen there
-is one prompt in Claude Code, the dashboard and Telegram. Each part lists what to show, the line to say (or show as
-a caption) and how to tell it worked. Testnet only.
+The story, in order: a hook; why Key Doctor has the features it has (the three weak spots of a DAO fund); how it
+solves each one (three live scenes); where it goes next; a close with the link. The "why" and "next" parts stay
+short (under 20 seconds each), because the brief asks for no long intro. Every terminal command runs off camera:
+on screen there is one prompt in Claude Code, the dashboard and Telegram. Each part lists what to show, the line to
+say (or show as a caption) and how to tell it worked. Testnet only.
 
 | Time | Part | Shows |
 |---|---|---|
 | 0:00–0:08 | Hook | An agent that pays needs a key, and a normal key spends the whole fund |
-| 0:08–0:22 | Why | A DAO fund has two weak spots: agents need keys, council accounts get taken over. One feature for each |
-| 0:22–1:02 | How, scene 1: Agent Budget | Claude Code pays 3 invoices by itself; the injected 500 NEAR invoice waits; the owner rejects it |
-| 1:02–1:37 | How, scene 2: Council attack | A council member's account is taken over and votes; Telegram warns before the last vote; the scan and preflight name the account |
-| 1:37–1:52 | Next | Roadmap: NEAR Intents, a hosted Guard agent, yield on other chains, fees from agents |
-| 1:52–2:00 | Close | What NEAR makes possible, link |
+| 0:08–0:26 | Why | A DAO fund has three weak spots: agents need keys, council accounts get taken over, idle stablecoins earn nothing. One feature for each |
+| 0:26–1:02 | How, scene 1: Agent Budget | Claude Code pays 3 invoices by itself; the injected 500 NEAR invoice waits; the owner rejects it |
+| 1:02–1:35 | How, scene 2: Council attack | A council member's account is taken over and votes; Telegram warns before the last vote; the scan and preflight name the account |
+| 1:35–1:52 | How, scene 3: Yield | The DAO's idle test USDC, the Rhea Lend rate, a suggested move capped at the free balance, a council vote to make it |
+| 1:52–2:07 | Next | Roadmap: the yield agent supplies within council limits and farms on other chains, swaps through NEAR Intents, a fee from yield |
+| 2:07–2:15 | Close | What NEAR makes possible, link |
 
 ## Before the day
 
@@ -55,7 +56,10 @@ a caption) and how to tell it worked. Testnet only.
    yet, B about 2 NEAR. Owner decision 2026-11-11: use the neutral `kdoncall-*` set, so no personal account name
    shows on screen. A = `kdoncall-b.testnet` (9.99 NEAR), B = `kdoncall-c.testnet` (10 NEAR), one full-access key
    each, about 12 days old. C = `kdoncall-p.testnet` (10 NEAR) is the third member and never signs. Read
-   2026-11-11. Short of NEAR: top up from `duonghb3.testnet`.
+   2026-11-11. Short of NEAR: top up from `duonghb3.testnet`. Read 2026-11-12: `kdoncall-b` now has a second
+   full-access key, `ed25519:DknZ6MFSCtdBBZkuVzofTjrNNqbGbMJyGEvTsdUZVATQ`, added 2026-11-11 08:20 UTC (a leftover
+   `compromise` from a rehearsal?), so preflight says `block` and the readiness check fails on A. If it is not a key
+   you use, delete it before recording (the `delete-keys` command in "After recording").
 
    ```bash
    export KD_DEMO_PREFIX=kdv$(date +%s) KD_DEMO_A=kdoncall-b.testnet KD_DEMO_B=kdoncall-c.testnet KD_DEMO_C=kdoncall-p.testnet KD_DEMO_SIGN=sign-with-legacy-keychain
@@ -71,7 +75,13 @@ a caption) and how to tell it worked. Testnet only.
 
    Then add the bot to a Telegram group and send `/watch <prefix>.sputnik-v2.testnet` there. Proposals made before
    `/watch` never alert.
-3. **Readiness check.** Read-only: it signs nothing and never prints a key. Run it with the env of steps 1 and 2
+3. **Yield (scene 3).** Nothing to set up: scene 3 reads `kdoncall.sputnik-v2.testnet`, the README and Yield page
+   example, which already holds 10,000 test USDC (`usdc.fakes.testnet`) and is not registered with Rhea Lend. Read
+   2026-11-12: the page shows "Idle now 10,000.00 USDC (test)", "Rate today 10.61% a year" and the suggestion
+   "Register with Rhea Lend first … Then 10,000 USDC (test) can go to work". Do not register it or supply from it
+   before recording, or the idle amount on screen changes. Open the page once the day before to check it still
+   reads the same.
+4. **Readiness check.** Read-only: it signs nothing and never prints a key. Run it with the env of steps 1 and 2
    plus `KD_WORKER_URL` and `RUN_CHECK_TOKEN`, and fix every `FAIL` before recording:
 
    ```bash
@@ -100,18 +110,20 @@ Screen: a plain title card, or the Budget page.
 
 > Your DAO wants an AI agent to pay invoices. A normal NEAR key lets it spend the whole fund.
 
-### Why (0:08–0:22)
+### Why (0:08–0:26)
 
 Screen: the dashboard home page (`https://key-doctor-dashboard.pages.dev/`), holding on the mainnet meter "of council
-members are at high risk", then the cards Agent Budget and Scan DAO under "Three tools for one Sputnik DAO".
+members are at high risk", then the three cards Agent Budget, Scan DAO and Yield under "Three tools for one Sputnik
+DAO".
 
-> A DAO fund moves by council vote, and has two weak spots. Agents get a key to everything. And council accounts
-> get taken over: on mainnet, 48% of council members are high risk. Key Doctor fixes both.
+> A DAO fund moves by council vote, and has three weak spots. Agents get a key to everything. Council accounts get
+> taken over: on mainnet, 48% of council members are high risk. And idle stablecoins earn nothing. Key Doctor fixes
+> all three.
 
 The 48% is the README stats table ("Council members at high risk", all DAOs, block 223,787,777, 2026-11-09). If the
 home page shows a newer number, say that one.
 
-### How, scene 1: Agent Budget (0:22–1:02)
+### How, scene 1: Agent Budget (0:26–1:02)
 
 Before: `check.mjs` all `ok`; Claude Code open in this repo; the Budget page open in the browser.
 
@@ -139,7 +151,7 @@ Done when: the three receivers got their NEAR (Budget page, Activity: "Paid auto
 
 Keep this Claude Code session open: scene 2 ends in it.
 
-### How, scene 2: Council attack (1:02–1:37)
+### How, scene 2: Council attack (1:02–1:35)
 
 Before: the DAO from step 2 exists and the group watches it. Telegram, the dashboard and Claude Code are open.
 
@@ -167,15 +179,33 @@ Do not reject before the warning has arrived: a proposal already closed when Key
 
 Done when: the Telegram warning, A's high flag and preflight `block` are each on screen.
 
-### Next (1:37–1:52)
+### How, scene 3: Yield (1:35–1:52)
+
+Before: the Yield page is open in the browser, no wallet connected.
+
+1. Yield page (`https://key-doctor-dashboard.pages.dev/?page=yield&dao=kdoncall.sputnik-v2.testnet`): hold on the
+   three tiles (Working on Rhea Lend 0.00, Idle now 10,000.00 USDC (test), Rate today 10.61% a year), then the
+   Suggestion card and its "Propose · 1 signature + vote" button. Hover the button; do not click it (with no wallet
+   it does nothing on screen). Caption: "Testnet: test rates, not real yield."
+   > Many DAO treasuries hold stablecoins that sit idle. Key Doctor reads Rhea Lend rates and suggests a move, never
+   > more than what is idle. The council votes on every move; Key Doctor never moves funds by itself.
+
+Done when: the idle amount, the rate and the suggestion with its Propose button are on screen.
+
+Telegram `/yield kdoncall.sputnik-v2.testnet` also works and can show an order and reasons from a TEE model on NEAR
+AI Cloud, but only once the model step has run for this DAO; leave it out of the cut unless a rehearsal shows the
+model id.
+
+### Next (1:52–2:07)
 
 Screen: the dashboard roadmap page (`https://key-doctor-dashboard.pages.dev/?page=roadmap`). Everything here is
 README "Roadmap": say "next", never "it does".
 
-> Next: swaps through NEAR Intents, a hosted Guard agent in each DAO's Telegram, and yield on other chains with
-> Chain Signatures, always by council vote. The checks stay free; agents that move money pay a small fee.
+> Next: the yield agent supplies by itself within council limits, and farms on other chains with Chain Signatures.
+> Swaps go through NEAR Intents. The checks stay free; Key Doctor keeps a small share of the yield, never the
+> deposit.
 
-### Close (1:52–2:00)
+### Close (2:07–2:15)
 
 Screen: the repo page, then the dashboard.
 
@@ -184,9 +214,10 @@ Screen: the repo page, then the dashboard.
 
 About 22 words, so it fits the 8 seconds; the repo link goes in the X post, not the voice-over.
 
-Word budget at about 150 words a minute (2.5 words a second): hook 18, why about 35, scene 1 about 70, scene 2 about
-60, next about 35, close about 22. The two scenes leave about 12 seconds each for the typing, the wait and the wallet
-signature. Time a read-through before recording; if a
+Word budget at about 150 words a minute (2.5 words a second): hook 18, why about 45, scene 1 about 70, scene 2 about
+60, scene 3 about 35, next about 37, close about 22. Scenes 1 and 2 leave about 10 seconds each for the typing, the
+wait and the wallet signature. If the cut must stay at 2:00, drop scene 1 step 4 (Strategies) and the scene 2
+preflight line first. Time a read-through before recording; if a
 part runs long, cut the line, not the moment on screen.
 
 ## After recording
