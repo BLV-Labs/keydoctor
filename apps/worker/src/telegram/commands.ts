@@ -125,7 +125,7 @@ async function run(cmd: Command, inc: Incoming, env: Env, typing: () => void): P
       return renderCheck(lang, await scan({ target: t.id }, env), env.DASHBOARD_URL);
     case "changes":
       typing();
-      return renderChanges(lang, await compare({ target: t.id, update_baseline: false }, env), env.DASHBOARD_URL);
+      return renderChanges(lang, await compare({ target: t.id }, env), env.DASHBOARD_URL);
     case "unwatch":
       return (await removeSubscription(env.DB, t.id, t.network, chatId)) ? TEXT.unwatched(lang, t.id) : TEXT.notWatched(lang, t.id);
     case "watch":

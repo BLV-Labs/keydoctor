@@ -1,5 +1,5 @@
 // Baseline snapshots (§8.7). Writes happen only in the daily job, the first subscription,
-// and compare with update_baseline (or with no baseline yet).
+// and compare (only when no baseline exists yet).
 import type { KdReport, Network } from "key-doctor";
 import type { D1Database } from "../env.ts";
 

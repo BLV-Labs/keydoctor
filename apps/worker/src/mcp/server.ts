@@ -34,10 +34,10 @@ export const TOOLS = [
     name: "compare",
     title: "Compare keys with the last baseline",
     description:
-      "Scans the target and compares it with the stored baseline, returning kd.diff.v1 (keys added or removed, members, roles, flags). Only set update_baseline=true when explicitly asked; by default the baseline does not move. The first call for a target stores the baseline and reports no changes.",
+      "Scans the target and compares it with the stored baseline, returning kd.diff.v1 (keys added or removed, members, roles, flags). The first call for a target stores the baseline and reports no changes; later calls never move it (only the daily job does).",
     inputSchema: {
       type: "object",
-      properties: { ...targetProps, update_baseline: { type: "boolean", default: false } },
+      properties: { ...targetProps },
       required: ["target"],
       additionalProperties: false,
     },
@@ -114,7 +114,6 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object
 function badArgs(name: string, args: Record<string, unknown>): string | null {
   const extra: Record<string, string[]> = {
     diagnose: ["detail"],
-    compare: ["update_baseline"],
     list_keys: ["account_id", "permission", "flagged_only"],
     list_proposals: ["limit", "offset"],
   };
@@ -123,7 +122,6 @@ function badArgs(name: string, args: Record<string, unknown>): string | null {
   if (typeof args.target !== "string" || args.target.length === 0 || args.target.length > TARGET_MAX_LEN) return "target must be a NEAR account name";
   if (args.network !== undefined && args.network !== "mainnet" && args.network !== "testnet") return "network must be mainnet or testnet";
   if (args.detail !== undefined && args.detail !== "summary" && args.detail !== "full") return "detail must be summary or full";
-  if (args.update_baseline !== undefined && typeof args.update_baseline !== "boolean") return "update_baseline must be a boolean";
   if (args.account_id !== undefined && (typeof args.account_id !== "string" || args.account_id.length > TARGET_MAX_LEN)) return "account_id must be a NEAR account name";
   if (args.permission !== undefined && args.permission !== "full_access" && args.permission !== "function_call") return "permission must be full_access or function_call";
   if (args.flagged_only !== undefined && typeof args.flagged_only !== "boolean") return "flagged_only must be a boolean";
@@ -198,7 +196,7 @@ export async function handleMcp(request: Request, env: Env): Promise<Response> {
           capabilities: { tools: { listChanged: false } },
           serverInfo: SERVER_INFO,
           instructions:
-            "Key Doctor checks NEAR access keys and DAO proposals with fixed rules. diagnose, list_keys, list_proposals, preflight and yield_suggestions are read-only. yield_suggestions is filtered data for a DAO council, not financial advice. Call preflight on an agent's account before it signs or pays, and stop on verdict block. compare moves the baseline only with update_baseline=true. It never signs or holds keys.",
+            "Key Doctor checks NEAR access keys and DAO proposals with fixed rules. diagnose, list_keys, list_proposals, preflight and yield_suggestions are read-only. yield_suggestions is filtered data for a DAO council, not financial advice. Call preflight on an agent's account before it signs or pays, and stop on verdict block. compare never moves an existing baseline. It never signs or holds keys.",
         }),
       );
     }

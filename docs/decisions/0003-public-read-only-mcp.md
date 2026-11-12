@@ -35,6 +35,6 @@ The issue first proposed a split: those three public, `compare` and `watch` behi
 **Tradeoffs**:
 - The rate limit is soft. Each isolate counts alone, so several isolates, or a caller spreading over several IPs, can pass 30 per minute. The README says "soft limit".
 - `compare` writes a baseline (`snapshots`) on the first call for a target. `watch` creates one-time pending subscription rows (30-minute expiry). Anyone can trigger both. This is bounded by the rate limit, and `watch` subscribes nothing until a person opens the Telegram link.
-- This breaks the invariant "baseline writes happen only in the daily job and the first subscription" in a small way: the first `compare` of a target also stores a baseline. It never moves an existing baseline unless `update_baseline: true` is passed, and that flag is also open.
+- This breaks the invariant "baseline writes happen only in the daily job and the first subscription" in a small way: the first `compare` of a target also stores a baseline. It never moves an existing baseline. (Until 2026-11-12 an open `update_baseline: true` flag could: a caller who added a key could fold it into the baseline before the daily job and suppress the "key added" alert. The flag was removed.)
 
 **Revisit trigger**: any sign of abuse, or a D1 write rate that is not explained by the demo. First step then: put `compare` and `watch` back behind a token, keep the three read-only tools open, and move the limiter to a shared store.

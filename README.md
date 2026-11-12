@@ -111,7 +111,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 
    For a local Worker use `http://localhost:8787/mcp` instead.
 
-   Then ask "check the keys of kdoncall.sputnik-v2.testnet". The agent calls `diagnose`. For the dashboard's detail it has two read-only tools: `list_keys` (one row per access key: member, what it is approved for, age, uses, flags; filter by `account_id`, `permission`, `flagged_only`) and `list_proposals` (the DAO's proposals newest first with votes and who still has to vote; page with `limit` and `offset`). `compare` returns `kd.diff.v1` against the stored baseline and moves the baseline only when you ask (`update_baseline: true`). `watch` returns two one-time Telegram links (`kd.watch_link.v1`): opening one subscribes that chat. `preflight` is a pre-flight for an agent's own account before it signs or pays: it returns `kd.preflight.v1` with `verdict` `allow`, `review` or `block`.
+   Then ask "check the keys of kdoncall.sputnik-v2.testnet". The agent calls `diagnose`. For the dashboard's detail it has two read-only tools: `list_keys` (one row per access key: member, what it is approved for, age, uses, flags; filter by `account_id`, `permission`, `flagged_only`) and `list_proposals` (the DAO's proposals newest first with votes and who still has to vote; page with `limit` and `offset`). `compare` returns `kd.diff.v1` against the stored baseline. It stores a baseline on the first call and never moves an existing one: only the daily job does. `watch` returns two one-time Telegram links (`kd.watch_link.v1`): opening one subscribes that chat. `preflight` is a pre-flight for an agent's own account before it signs or pays: it returns `kd.preflight.v1` with `verdict` `allow`, `review` or `block`.
 
    `scripts/demo-testnet/demo.sh` (step 5) adds a new full-access key to member a (`<prefix>-a.testnet`). For the next 48 hours, ask "can I pay from <prefix>-a.testnet?": the agent calls `preflight` and gets `verdict: "block"` with reason `FA_RECENT`. After 48 hours the same account gets `review` or `allow`. With curl, on a demo account that has no new key (it returned `allow` on 2026-11-04; put your member a in `target` to see `block`, as member a of the 2026-11-09 demo run did):
 
@@ -204,7 +204,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 
 ## Agents
 
-The Worker serves MCP over Streamable HTTP at `https://key-doctor.duonghb53.workers.dev/mcp`. There is no auth for now, so anyone can call every tool. `diagnose`, `list_keys`, `list_proposals`, `preflight` and `yield_suggestions` are read-only. `compare` and `watch` write to D1 (`compare` moves the baseline only with `update_baseline: true`). Each client IP is limited to 30 `tools/call` per minute (`429 RATE_LIMITED`); the counter lives in each Worker isolate's memory, so it is a soft limit. The dashboard shows the same commands on its **Agents** page.
+The Worker serves MCP over Streamable HTTP at `https://key-doctor.duonghb53.workers.dev/mcp`. There is no auth for now, so anyone can call every tool. `diagnose`, `list_keys`, `list_proposals`, `preflight` and `yield_suggestions` are read-only. `compare` and `watch` write to D1 (`compare` only stores a baseline when the target has none). Each client IP is limited to 30 `tools/call` per minute (`429 RATE_LIMITED`); the counter lives in each Worker isolate's memory, so it is a soft limit. The dashboard shows the same commands on its **Agents** page.
 
 ```bash
 claude mcp add --transport http key-doctor https://key-doctor.duonghb53.workers.dev/mcp
@@ -233,7 +233,7 @@ apps/worker           one Cloudflare Worker + D1
 - **Key age** comes from the access-key nonce: `floor(nonce / 10^6)` is the block where the key was added.
 - **Per-member failures** go into `members[].error` with the text "risk is unknown, not low". They never fail the whole scan.
 - **Data contracts** (`kd.report.v1`, `kd.diff.v1`, `kd.alert.v1`, `kd.preflight.v1`, `kd.error.v1`, ...) are in `packages/key-doctor/src/types.ts`.
-- **Only the Worker writes subscriptions.** Baselines are written only by the daily job, the first subscription to a target, and `compare` with `update_baseline: true` (or when no baseline exists yet).
+- **Only the Worker writes subscriptions.** Baselines are written only by the daily job, the first subscription to a target, and the first `compare` of a target that has no baseline yet. Nothing on the open `/mcp` can move an existing baseline, so nobody can fold a new key into it and hide it from the daily alert.
 - **Proposal job:** one `checkProposals` per DAO. Each alert is sent first and recorded in `alerts_sent` after, so a crash causes a duplicate, never a missed alert. A failed send keeps the old state and retries on the next run.
 
 ### Rules (ruleset `2026-11-03`)

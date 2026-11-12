@@ -95,7 +95,7 @@ describe("GĐ3 MCP protocol", () => {
 
     const list = await rpc(env, "tools/list");
     assert.deepEqual(list.body.result.tools.map((x: any) => x.name), ["diagnose", "compare", "list_keys", "list_proposals", "watch", "preflight", "yield_suggestions"]);
-    assert.match(TOOLS[1]!.description, /Only set update_baseline=true when explicitly asked; by default the baseline does not move\./);
+    assert.match(TOOLS[1]!.description, /later calls never move it/);
     assert.equal((await rpc(env, "nope")).body.error.code, -32601);
   });
 
@@ -202,40 +202,31 @@ describe("GĐ3 compare and the baseline", () => {
     assert.equal(snapshots(db), 1);
   });
 
-  it("later calls do not move the baseline unless update_baseline is true (UC3 done-when)", async (t) => {
+  it("later calls do not move the baseline (UC3 done-when)", async (t) => {
     const { env, db, chain } = setup(t);
     await call(env, "compare", { target: DAO });
     addKey(chain, "b.kd-demo.testnet", "ed25519:NewKeyAddedToB1111111111111111111111111111");
     const first = (await call(env, "compare", { target: DAO })).structuredContent;
-    const second = (await call(env, "compare", { target: DAO, update_baseline: false })).structuredContent;
+    const second = (await call(env, "compare", { target: DAO })).structuredContent;
     assert.equal(first.baseline_updated, false);
     assert.equal(snapshots(db), 1);
     assert.deepEqual(second.changes, first.changes);
     assert.equal(first.changes[0].type, "key_added");
     assert.equal(first.changes[0].severity, "high");
     assert.equal(first.changes[0].account_id, "b.kd-demo.testnet");
-
-    const moved = (await call(env, "compare", { target: DAO, update_baseline: true })).structuredContent;
-    assert.equal(moved.baseline_updated, true);
-    const after = (await call(env, "compare", { target: DAO })).structuredContent;
-    assert.deepEqual(after.changes, []);
   });
 
-  it("repeated update_baseline keeps at most 7 snapshots", async (t) => {
-    const { env, db } = setup(t);
+  it("an anonymous caller cannot move the baseline to hide a new key from the daily alert (red-team H1)", async (t) => {
+    // /mcp has no auth. If compare could move the baseline, whoever added a key could fold it into the baseline
+    // before 02:00 UTC and the daily job would see no change and send no "key added" alert.
+    const { env, db, chain } = setup(t);
     await call(env, "compare", { target: DAO });
-    for (let i = 0; i < 9; i++) {
-      db.raw.prepare("INSERT INTO snapshots VALUES (?, 'testnet', ?, ?, '{}')").run(DAO, `2026-10-0${i}T00:00:00Z`, i);
-    }
+    addKey(chain, "b.kd-demo.testnet", "ed25519:NewKeyAddedToB1111111111111111111111111111");
     const r = await call(env, "compare", { target: DAO, update_baseline: true });
-    assert.equal(r.isError, undefined);
-    assert.equal(snapshots(db), 7);
-  });
-
-  it("validates update_baseline", async (t) => {
-    const { env } = setup(t);
-    const r = await call(env, "compare", { target: DAO, update_baseline: "yes" });
     assert.equal(r.isError, true);
+    assert.equal(snapshots(db), 1);
+    const after = (await call(env, "compare", { target: DAO })).structuredContent;
+    assert.equal(after.changes[0].type, "key_added", "the new key still shows against the old baseline");
   });
 });
 
