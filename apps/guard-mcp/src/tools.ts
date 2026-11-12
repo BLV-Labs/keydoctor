@@ -48,7 +48,7 @@ export const TOOLS = [
     name: "guard_get_policy",
     title: "Read the Agent Guard spending limits",
     description:
-      "The limits the Guard enforces on this agent: max NEAR per payment, max NEAR per 24 hours, what is already spent and what is left in the current window, when it resets, the whitelisted receivers, and whether the Guard is paused. Read-only. Payments over these limits are not refused: they wait for the owner or DAO council.",
+      "The limits the Guard enforces on this agent: max NEAR per payment, max NEAR per 24 hours, what is already spent and what is left in the last 24 hours, when the oldest spend stops counting (resets_at), the whitelisted receivers, and whether the Guard is paused. Read-only. Payments over these limits are not refused: they wait for the owner or DAO council.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true, openWorldHint: true },
   },

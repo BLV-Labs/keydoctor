@@ -21,7 +21,7 @@ const WRAP: &str = "wrap.testnet";
 const EXCHANGE: &str = "ref-finance-101.testnet";
 const USDT: &str = "usdt.fakes.testnet";
 
-/// What the keeper attaches (plan Change 1.4: the step needs 80 + F Tgas of promises plus its own receipt).
+/// What the keeper attaches (plan Change 1.4: the step needs 100 + F Tgas of promises plus its own receipt; 1.6.0 asks for at least 280).
 const KEEPER_GAS: Gas = Gas::from_tgas(300);
 const MILLI: u128 = 1_000_000_000_000_000_000_000;
 
@@ -363,15 +363,17 @@ async fn a_swap_plan_step_sells_near_for_usdt_on_the_real_contracts() -> anyhow:
 
 #[tokio::test]
 async fn a_swap_step_needs_the_gas_the_plan_budgets_and_a_short_caller_burns_no_run() -> anyhow::Result<()> {
-    // K2a for the swap path: the static gas is the sum in the plan's table (80 + F). Less must fail in the first
+    // K2a for the swap path: the static gas is the sum in the plan's table (100 + F). Less must fail in the first
     // receipt, before the slot moves; the real cost (burnt) is reported for sizing F.
     let e = Dca::new().await?;
     e.create_swap_plan(milli(100), 100, 2).await?;
     let before = e.plan(0).await?;
-    for g in [100, 200] {
+    // 270 holds the static sum (100 + F) but leaves the callbacks no slack: refused up front (red team M3).
+    for g in [100, 200, 270] {
         let short = e.step(Gas::from_tgas(g)).await?;
         println!("GAS {g} Tgas attached: success={}", short.is_success());
         assert!(short.is_failure(), "{g} Tgas cannot hold the promise chain");
+        assert!(format!("{:?}", short.failures()).contains("SWAP_STEP_NEEDS_300_TGAS"), "{:?}", short.failures());
         assert_eq!(e.plan(0).await?, before, "a short call must not move the slot or the run");
     }
     let window: Value = e.guard.view(e.guard.id(), "get_window").await?.json()?;

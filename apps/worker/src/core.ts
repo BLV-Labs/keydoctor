@@ -22,7 +22,7 @@ import {
 } from "key-doctor";
 import type { Env } from "./env.ts";
 import { kdErrorBody } from "./http.ts";
-import { latestSnapshot, saveSnapshot } from "./store/snapshots.ts";
+import { latestSnapshot, makeRoomForBaseline, saveSnapshot } from "./store/snapshots.ts";
 
 export interface TargetArgs {
   target: string;
@@ -112,7 +112,8 @@ export async function preflight(args: TargetArgs, env: Env): Promise<KdPreflight
 /**
  * UC3: compares a fresh scan with the stored baseline. It stores a baseline only when there is none yet and never
  * moves an existing one: the daily job diffs against the same baseline, so a caller who could move it (the open
- * /mcp has no auth) could add a key and then hide it from the daily "key added" alert.
+ * /mcp has no auth) could add a key and then hide it from the daily "key added" alert. Baselines of targets no chat
+ * watches are bounded by MAX_UNWATCHED_BASELINES, oldest out first.
  */
 export async function compare(args: TargetArgs, env: Env): Promise<KdDiff> {
   const t = resolve(args, env);
@@ -120,6 +121,8 @@ export async function compare(args: TargetArgs, env: Env): Promise<KdDiff> {
   const curr = await scan(args, env);
   const diff = diffReports(baseline, curr);
   if (baseline === null) {
+    // Unwatched baselines are bounded: the oldest make room (red-team M9).
+    await makeRoomForBaseline(env.DB);
     await saveSnapshot(env.DB, curr);
     return { ...diff, baseline_updated: true };
   }

@@ -467,7 +467,7 @@ impl Env {
 /// The Guard's own wasm with another version, so a test can see which code answers.
 fn guard_wasm_with_version(version: &[u8; 5]) -> Vec<u8> {
     let mut code = std::fs::read(GUARD_WASM).unwrap();
-    let hits: Vec<usize> = code.windows(5).enumerate().filter(|(_, w)| w == b"1.5.0").map(|(i, _)| i).collect();
+    let hits: Vec<usize> = code.windows(5).enumerate().filter(|(_, w)| w == b"1.6.0").map(|(i, _)| i).collect();
     assert!(!hits.is_empty(), "the version string must be in the wasm");
     for i in hits {
         code[i..i + 5].copy_from_slice(version);
@@ -591,7 +591,7 @@ async fn installed_sputnik_cannot_send_a_guard_sized_wasm_through_upgrade_remote
 #[tokio::test]
 async fn a_dao_upgrades_the_guard_and_every_record_survives() -> anyhow::Result<()> {
     let e = setup().await?;
-    assert_eq!(e.version().await?, "1.5.0");
+    assert_eq!(e.version().await?, "1.6.0");
     let held = e.request("up-pend-01", &e.stranger, NearToken::from_millinear(100)).await?;
     assert_eq!(held["status"], "Pending");
     let config: Value = e.guard.view("get_config").await?.json()?;
@@ -650,7 +650,7 @@ async fn nobody_outside_the_dao_reaches_upgrade_or_its_callbacks() -> anyhow::Re
     assert!(on_code.is_failure(), "on_code is private");
     let migrate = e.stranger.call(e.guard.id(), "migrate").max_gas().transact().await?;
     assert!(migrate.is_failure(), "migrate is private");
-    assert_eq!(e.version().await?, "1.5.0");
+    assert_eq!(e.version().await?, "1.6.0");
     Ok(())
 }
 

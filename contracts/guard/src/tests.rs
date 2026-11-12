@@ -10,6 +10,8 @@ const NEAR: u128 = 1_000_000_000_000_000_000_000_000;
 const BOND: u128 = NEAR / 10;
 const T0: u64 = 1_800_000_000_000_000_000;
 const PERIOD: u64 = 7 * policy::DAY_NS;
+/// A spend made in the hour starting at T0 stops counting here (`policy::spent`: 24 to 25 h, never less).
+const FREED: u64 = T0 + 25 * policy::HOUR_NS;
 
 const GUARD: &str = "guard.testnet";
 const DAO: &str = "kd-demo.sputnik-v2.testnet";
@@ -371,14 +373,32 @@ fn daily_limit_turns_the_fifth_request_pending() {
 }
 
 #[test]
-fn window_resets_after_24_hours() {
+fn a_spend_frees_its_room_after_24_hours_and_not_before() {
     let mut g = setup();
     auto_approved(&mut g, T0, "req-0001", 5 * NEAR, 1);
     env_as(STRANGER, T0 + policy::DAY_NS);
+    assert_eq!(spent(&g), 5 * NEAR, "24 h later the spend still counts: the window rolls, it does not reset");
+    env_as(STRANGER, FREED);
     assert_eq!(spent(&g), 0, "the view shows the window the next request will see");
-    ask(&mut g, T0 + policy::DAY_NS, "req-0002", VENDOR, 5 * NEAR);
+    ask(&mut g, FREED, "req-0002", VENDOR, 5 * NEAR);
     assert_eq!(rec(&g, "req-0002").decision, Decision::Auto);
     assert_eq!(spent(&g), 5 * NEAR);
+}
+
+#[test]
+fn twice_the_daily_limit_cannot_leave_across_the_old_reset() {
+    // Red team M4: 1.5.0 reset its window at the first request 24 h after the window opened, so an agent that
+    // filled the limit just before the reset could fill it again just after: 2 × max_per_day within minutes.
+    let mut g = setup();
+    auto_approved(&mut g, T0, "req-0000", NEAR, 1);
+    let late = T0 + policy::DAY_NS - MINUTE;
+    for i in 1..4u64 {
+        auto_approved(&mut g, late, &format!("req-000{i}"), 5 * NEAR, 1 + i);
+    }
+    assert_eq!(spent(&g), 16 * NEAR);
+    ask(&mut g, T0 + policy::DAY_NS + MINUTE, "req-0009", VENDOR, 5 * NEAR);
+    assert_eq!(rec(&g, "req-0009").reasons, ["OVER_DAILY_LIMIT"], "the 15 NEAR from a minute ago still count");
+    assert_eq!(spent(&g), 16 * NEAR);
 }
 
 #[test]
@@ -416,15 +436,25 @@ fn failed_execution_refunds_in_the_same_window() {
 
 #[test]
 fn no_refund_into_a_later_window() {
-    // A refund after the reset would let today's window spend more than max_per_day.
+    // A refund after the spend stopped counting would free room in today's window that today never used.
     let mut g = setup();
     auto_approved(&mut g, T0, "req-0001", 5 * NEAR, 1);
-    let next_day = T0 + policy::DAY_NS + 1;
-    auto_approved(&mut g, next_day, "req-0002", 3 * NEAR, 2);
-    synced(&mut g, next_day, "req-0001", "Failed", T0);
+    auto_approved(&mut g, FREED, "req-0002", 3 * NEAR, 2);
+    synced(&mut g, FREED, "req-0001", "Failed", T0);
     let r = rec(&g, "req-0001");
     assert_eq!((r.status, r.counted_in_window), (RequestStatus::Failed, true));
     assert_eq!(spent(&g), 3 * NEAR);
+}
+
+#[test]
+fn a_refund_while_the_spend_still_counts_comes_back() {
+    // 24 h after the request its spend still counts (until FREED), so a failure then gives that room back.
+    let mut g = setup();
+    auto_approved(&mut g, T0, "req-0001", 5 * NEAR, 1);
+    synced(&mut g, T0 + policy::DAY_NS + 1, "req-0001", "Failed", T0);
+    let r = rec(&g, "req-0001");
+    assert_eq!((r.status, r.counted_in_window), (RequestStatus::Failed, false));
+    assert_eq!((spent(&g), agent_spent(&g, AGENT)), (0, 0));
 }
 
 #[test]
@@ -1059,10 +1089,10 @@ fn agent_spend_resets_with_the_window() {
     // No request runs at the reset, so the view must not show yesterday's spend as today's.
     let mut g = setup();
     auto_approved(&mut g, T0 + 1, "req-0001", 3 * NEAR, 1);
-    env_as(STRANGER, T0 + policy::DAY_NS);
-    assert_eq!(agent_spent(&g, AGENT), 0, "the view reads a past window as reset");
+    env_as(STRANGER, FREED);
+    assert_eq!(agent_spent(&g, AGENT), 0, "the view drops a spend that no longer counts");
 
-    auto_approved(&mut g, T0 + policy::DAY_NS, "req-0002", NEAR, 2);
+    auto_approved(&mut g, FREED, "req-0002", NEAR, 2);
     assert_eq!(agent_spent(&g, AGENT), NEAR, "the first request of a new window does not add to the old amount");
 }
 
@@ -1071,8 +1101,8 @@ fn a_late_failure_does_not_touch_the_next_windows_agent_spend() {
     // Same rule as `no_refund_into_a_later_window`: yesterday's payment is not part of today's amount.
     let mut g = setup();
     auto_approved(&mut g, T0 + 1, "req-0001", 3 * NEAR, 1);
-    auto_approved(&mut g, T0 + policy::DAY_NS, "req-0002", 2 * NEAR, 2);
-    synced(&mut g, T0 + policy::DAY_NS + 1, "req-0001", "Failed", T0 + 1);
+    auto_approved(&mut g, FREED, "req-0002", 2 * NEAR, 2);
+    synced(&mut g, FREED + 1, "req-0001", "Failed", T0 + 1);
     assert_eq!(agent_spent(&g, AGENT), 2 * NEAR);
 }
 
@@ -1350,8 +1380,7 @@ fn a_day_over_the_limit_skips_the_slot_and_keeps_the_run() {
     let p = plan(&g, 0);
     assert_eq!((p.runs_done, p.status, p.next_run_at), (0, PlanStatus::Active, Some(U64(due + MINUTE))));
 
-    let tomorrow = T0 + policy::DAY_NS + 1;
-    step(&mut g, tomorrow, 0);
+    step(&mut g, FREED, 0);
     assert!(method_called("add_proposal"), "the run still happens once the window rolls");
 }
 
@@ -1856,6 +1885,32 @@ fn the_swap_vote_gets_the_swap_gas_and_a_transfer_vote_keeps_its_own() {
 }
 
 #[test]
+fn each_swap_callback_keeps_15_tgas_of_its_own() {
+    // Red team M3: a callback that runs out of gas after its parent moved the slot leaves the request in Submitted,
+    // which holds a pending slot and blocks close(). 5 Tgas of own margin was too thin for on_quote's work.
+    let own = Gas::from_tgas(15).as_gas();
+    let on_added = GAS_ACT_PROPOSAL_SWAP.as_gas() + GAS_ON_VOTED.as_gas() + own;
+    assert!(GAS_ON_ADDED_SWAP.as_gas() >= on_added);
+    assert!(GAS_ON_QUOTE.as_gas() >= GAS_ADD_PROPOSAL.as_gas() + GAS_ON_ADDED_SWAP.as_gas() + own);
+    assert!(MIN_SWAP_STEP_GAS.as_gas() >= GAS_QUOTE_VIEW.as_gas() + GAS_ON_QUOTE.as_gas() + own);
+    assert!(MIN_SWAP_STEP_GAS <= Gas::from_tgas(300), "the keeper's 300 Tgas must pass");
+}
+
+#[test]
+fn a_swap_step_called_with_too_little_gas_fails_before_anything_moves() {
+    let mut g = setup();
+    create(&mut g, dca(100, 2));
+    testing_env!(VMContextBuilder::new()
+        .current_account_id(id(GUARD))
+        .predecessor_account_id(id(STRANGER))
+        .block_timestamp(T0 + MINUTE)
+        .prepaid_gas(Gas::from_tgas(270))
+        .build());
+    let err = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| { let _ = g.execute_plan_step(0); })).unwrap_err();
+    assert_eq!(err.downcast_ref::<String>().map(String::as_str), Some("SWAP_STEP_NEEDS_300_TGAS"));
+}
+
+#[test]
 fn a_failed_vote_on_a_swap_pauses_for_balance_and_gives_the_limit_back() {
     // The DAO is short of NEAR: near_deposit fails inside act_proposal, so the vote fails (F4). Like a transfer, the
     // owner is told to top up (a call would say Failures), and the NEAR counted for the run goes back.
@@ -1953,10 +2008,81 @@ fn a_swap_over_the_daily_limit_skips_the_slot_without_a_quote() {
 }
 
 #[test]
-fn the_guard_reports_version_1_5_0() {
-    // The dashboard and the upgrade script read this to know which Guard a Budget runs (1.5.0: the DCA price floor).
+fn the_guard_reports_version_1_6_0() {
+    // The dashboard and the upgrade script read this to know which Guard a Budget runs (1.6.0: the rolling window).
     let g = setup();
-    assert_eq!(g.kd_guard_info()["version"], "1.5.0");
+    assert_eq!(g.kd_guard_info()["version"], "1.6.0");
+}
+
+// ---- 1.5.0 → 1.6.0 state (red team M4)
+
+/// The bytes 1.5.0 wrote for `g`: today's layout without `spends` and `agent_spends`, with its fixed window.
+fn state_1_5_0(mut g: Guard, window_start: u64, spent_in_window: u128, agent_spent: u128) -> Vec<u8> {
+    g.window_start = window_start;
+    g.spent_in_window = spent_in_window;
+    let a = g.agents.get_mut(&id(AGENT)).unwrap();
+    a.spent = U128(agent_spent);
+    a.spent_window = U64(window_start);
+    g.agents.flush();
+    let full = near_sdk::borsh::to_vec(&g).unwrap();
+    let tail = near_sdk::borsh::to_vec(&(&g.spends, &g.agent_spends)).unwrap();
+    assert!(g.spends.is_empty() && full.ends_with(&tail));
+    full[..full.len() - tail.len()].to_vec()
+}
+
+fn migrated(state: Vec<u8>, now: u64) -> Guard {
+    env_as(GUARD, now);
+    env::storage_write(b"STATE", &state);
+    Guard::migrate()
+}
+
+#[test]
+fn migrate_carries_a_live_1_5_0_window_into_the_rolling_one() {
+    // A Budget upgraded mid-window keeps what it spent: the upgrade must not become a free reset.
+    let g = setup();
+    let now = T0 + 20 * policy::HOUR_NS;
+    let mut g = migrated(state_1_5_0(g, T0, 12 * NEAR, 7 * NEAR), now);
+    env_as(STRANGER, now);
+    assert_eq!((spent(&g), agent_spent(&g, AGENT)), (12 * NEAR, 7 * NEAR));
+    assert_eq!((g.window_start, g.spent_in_window), (0, 0), "the old fields are left unused");
+    ask(&mut g, now, "req-0001", VENDOR, 5 * NEAR);
+    assert_eq!(rec(&g, "req-0001").decision, Decision::Auto);
+    ask(&mut g, now, "req-0002", VENDOR, 5 * NEAR);
+    assert_eq!(rec(&g, "req-0002").reasons, ["OVER_DAILY_LIMIT"]);
+}
+
+#[test]
+fn migrate_drops_a_1_5_0_window_that_had_ended() {
+    let g = setup();
+    let g = migrated(state_1_5_0(g, T0, 12 * NEAR, 7 * NEAR), T0 + policy::DAY_NS);
+    env_as(STRANGER, T0 + policy::DAY_NS);
+    assert_eq!((spent(&g), agent_spent(&g, AGENT)), (0, 0));
+    assert_eq!(g.get_agents().len(), 1);
+}
+
+#[test]
+fn migrate_leaves_a_1_6_0_state_as_it_is() {
+    let mut g = setup();
+    auto_approved(&mut g, T0, "req-0001", 3 * NEAR, 1);
+    g.agents.flush();
+    g.agent_spends.flush();
+    g.requests.flush();
+    let state = near_sdk::borsh::to_vec(&g).unwrap();
+    let g = migrated(state, T0 + 1);
+    assert_eq!((spent(&g), agent_spent(&g, AGENT)), (3 * NEAR, 3 * NEAR));
+    assert_eq!(rec(&g, "req-0001").status, RequestStatus::AutoApproved);
+}
+
+#[test]
+fn a_re_added_agent_starts_with_no_spend_of_its_own() {
+    // The Guard's total keeps the removed agent's spend; the agent's own view does not carry it over.
+    let mut g = setup();
+    auto_approved(&mut g, T0 + 1, "req-0001", 3 * NEAR, 1);
+    env_as(DAO, T0 + 2);
+    g.remove_agent(id(AGENT));
+    env_full(DAO, T0 + 3, NEAR, 10 * NEAR);
+    g.add_agent(id(AGENT), "payroll bot".into(), None);
+    assert_eq!((spent(&g), agent_spent(&g, AGENT)), (3 * NEAR, 0));
 }
 
 // ---- DCA price floor (red team H2, ADR 0007 2026-11-12)

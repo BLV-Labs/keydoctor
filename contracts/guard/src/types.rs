@@ -25,7 +25,8 @@ pub struct AgentInfo {
     pub creating: bool,
     /// Requests whose proposal still waits on the DAO (statuses `Submitted` and `Pending`).
     pub pending: u32,
-    /// This agent's share of `spent_in_window`, valid only while `spent_window` is the Guard's current window.
+    /// 1.5.0's per-agent part of its fixed window. Unused since 1.6.0 (`Guard::agent_spends`); `migrate` reads it
+    /// once. Kept so the stored layout of `AgentInfo` does not change.
     pub spent: U128,
     pub spent_window: U64,
 }

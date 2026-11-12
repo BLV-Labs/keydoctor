@@ -4,7 +4,7 @@ import worker, { DAILY_CRON, PROPOSAL_CRON } from "../src/index.ts";
 import type { Env } from "../src/env.ts";
 import { handleUpdate } from "../src/telegram/commands.ts";
 import { saveProposalState } from "../src/store/proposal-state.ts";
-import { addSubscription } from "../src/store/subscriptions.ts";
+import { MAX_CHATS_PER_TARGET, MAX_CHATS_PER_USER_TARGET, addSubscription } from "../src/store/subscriptions.ts";
 import { testD1, type TestD1 } from "./support/d1.ts";
 import { DAO, addKey, bytes, fixture, installChain, type Chain } from "./support/rpc.ts";
 
@@ -238,12 +238,83 @@ describe("GĐ28 owner action on an Agent Budget", () => {
     budget(chain);
     chain.telegramStatus = 500;
     await runCheck(env, { job: "proposals" });
-    assert.deepEqual(rows(db, "SELECT * FROM proposal_state"), before);
+    const after = rows(db, "SELECT * FROM proposal_state");
+    assert.deepEqual(after.map(({ updated_at, ...r }) => r), before.map(({ updated_at, ...r }) => r));
+    assert.ok(after[0].updated_at >= before[0].updated_at, "the DAO moves to the back of the queue (red-team M8)");
     chain.telegramStatus = 200;
     chain.telegram.length = 0;
     await runCheck(env, { job: "proposals" });
     await runCheck(env, { job: "proposals" });
     assert.equal(sends(chain).filter((m) => /Just withdrew/.test(m.body.text)).length, 2, "proposals 4 and 5, each once");
+  });
+
+  // Red-team M8: a retry used to resend to every chat, so the chats that got the alert got it again every 15 min.
+  it("a retry sends only to the chats that missed the alert", async (t) => {
+    const { env, chain } = setup(t, open);
+    await watch(env, DAO);
+    await watch(env, DAO, -501);
+    chain.telegram.length = 0;
+    budget(chain);
+    let failing = true;
+    chain.telegramReply = (method, body) => (method === "sendMessage" && failing && body.chat_id === "-501" ? { status: 500, json: { ok: false } } : undefined);
+    await runCheck(env, { job: "proposals" });
+    const first = (chat: string) => sends(chain).filter((m) => m.body.chat_id === chat && /Just withdrew/.test(m.body.text)).length;
+    assert.equal(first(String(GROUP)), 2, "run 1 reaches one chat with proposals 4 and 5");
+    failing = false;
+    chain.telegram.length = 0;
+    await runCheck(env, { job: "proposals" });
+    assert.equal(first(String(GROUP)), 0, "run 2 does not send them again to the chat that got them");
+    assert.equal(first("-501"), 2, "run 2 sends both to the chat that missed them");
+    chain.telegram.length = 0;
+    await runCheck(env, { job: "proposals" });
+    assert.equal(sends(chain).length, 0, "once every chat has them, nothing more goes out");
+  });
+
+  it("a target takes at most MAX_CHATS_PER_TARGET chats, and an alert goes to at most that many", async (t) => {
+    const { env, chain, db } = setup(t, open);
+    // Raw rows: addSubscription itself stops at the cap, and rows from before the cap may be past it.
+    for (let i = 0; i < MAX_CHATS_PER_TARGET + 2; i++) {
+      db.raw
+        .prepare("INSERT INTO subscriptions (target, network, target_type, chat_id, chat_type, created_at) VALUES (?, 'testnet', 'dao', ?, 'group', ?)")
+        .run(DAO, String(-1000 - i), `2026-11-01T00:00:${String(i).padStart(2, "0")}.000Z`);
+    }
+    await saveProposalState(db, DAO, "testnet", { last_proposal_id: 4, pending: {} });
+    chain.telegram.length = 0;
+    await watch(env, DAO);
+    assert.match(sends(chain).at(-1)!.body.text, new RegExp(`already has ${MAX_CHATS_PER_TARGET} watching chats`));
+    chain.telegram.length = 0;
+    budget(chain);
+    await runCheck(env, { job: "proposals" });
+    const chats = new Set(sends(chain).filter((m) => /Just withdrew/.test(m.body.text)).map((m) => m.body.chat_id));
+    assert.equal(chats.size, MAX_CHATS_PER_TARGET);
+    assert.ok(!chats.has(String(-1000 - MAX_CHATS_PER_TARGET)), "the newest rows past the cap are left out");
+  });
+
+  it("one Telegram user cannot take every chat slot of a target; a chat already watching hears so, not 'full'", async (t) => {
+    // Without a per-user cap, one person could make MAX_CHATS_PER_TARGET groups and block the DAO's real members.
+    const { env, chain, db } = setup(t, open);
+    const byUser = (chat: number, user: number) =>
+      handleUpdate({ message: { text: `/watch ${DAO}`, chat: { id: chat, type: "group" }, from: { id: user, language_code: "en" } } }, env);
+    for (let i = 0; i < MAX_CHATS_PER_USER_TARGET; i++) await byUser(-2000 - i, 42);
+    const n = () => (db.raw.prepare("SELECT COUNT(*) AS n FROM subscriptions WHERE added_by = '42'").get() as { n: number }).n;
+    assert.equal(n(), MAX_CHATS_PER_USER_TARGET);
+    chain.telegram.length = 0;
+    await byUser(-2999, 42);
+    assert.match(sends(chain).at(-1)!.body.text, new RegExp(`You already have ${MAX_CHATS_PER_USER_TARGET} chats watching`));
+    assert.equal(n(), MAX_CHATS_PER_USER_TARGET, "the extra chat was not added");
+    const extra = { target: DAO, network: "testnet" as const, target_type: "dao" as const, chat_id: "-2998", chat_type: "group", created_at: "2026-11-02T00:00:00.000Z" };
+    assert.equal(await addSubscription(db, { ...extra, added_by: "42" }), false, "the insert itself checks the user cap");
+    await byUser(-2999, 43);
+    assert.equal(rows(db, "SELECT 1 FROM subscriptions WHERE chat_id = '-2999'").length, 1, "another user still can");
+    // Fill the target, then a chat that already holds a slot asks again.
+    for (let i = 0; i < MAX_CHATS_PER_TARGET; i++) {
+      await addSubscription(db, { target: DAO, network: "testnet", target_type: "dao", chat_id: String(-3000 - i), chat_type: "group", created_at: "2026-11-02T00:00:00.000Z" });
+    }
+    assert.equal(rows(db, "SELECT 1 FROM subscriptions").length, MAX_CHATS_PER_TARGET, "the insert itself stops at the cap");
+    chain.telegram.length = 0;
+    await byUser(-2000, 42);
+    assert.match(sends(chain).at(-1)!.body.text, /already/i);
+    assert.doesNotMatch(sends(chain).at(-1)!.body.text, /watching chats, the most allowed/);
   });
 
   it("does not ask the testnet factory about a mainnet DAO: it would answer no, and a wrong answer would be silence", async (t) => {
@@ -320,9 +391,12 @@ describe("daily key diff rotation (red-team H3)", () => {
     const { env, db } = setup(t, { MAX_DAILY_TARGETS_PER_RUN: "2" });
     for (const a of ["c.kd-demo.testnet", "a.kd-demo.testnet", "b.kd-demo.testnet"]) await sub(env, a);
     assert.equal((await runCheck(env, { job: "daily" })).body.targets_checked, 2);
+    // Never checked, then by name: the first run takes a and b. (Read the rows, not checked_at order: two runs can
+    // land in the same millisecond.)
+    assert.deepEqual(rows(db, "SELECT target FROM daily_checks ORDER BY target").map((r) => r.target), ["a.kd-demo.testnet", "b.kd-demo.testnet"]);
     const second = await runCheck(env, { job: "daily" });
     assert.equal(second.body.targets_checked, 1);
-    assert.deepEqual(rows(db, "SELECT target FROM daily_checks ORDER BY checked_at DESC, target LIMIT 1").map((r) => r.target), ["c.kd-demo.testnet"]);
+    assert.equal(rows(db, "SELECT target FROM daily_checks").length, 3, "the second run takes c, the one left");
     assert.equal((await runCheck(env, { job: "daily" })).body.targets_checked, 0);
     dayPasses(db);
     assert.equal((await runCheck(env, { job: "daily" })).body.targets_checked, 2);

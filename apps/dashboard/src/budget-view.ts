@@ -197,7 +197,7 @@ function tiles(b: BudgetLive, now: number): Html {
   return html`<section class="tiles" aria-label="Budget summary">
     ${tile("all", "Balance", nearShort(b.withdrawable), [runway === null ? "Top up any time" : runway, b.usdt === undefined || b.usdt === null ? "" : `USDT in your Budget: ${groupDigits(formatUnits(b.usdt, DCA_TESTNET.token_out_decimals))}`, held === null || held === 0n ? "" : `Plus ${near(held.toString())} kept for account storage, not spendable`])}
     ${tile("auto", "Spent today", w === null ? "unknown" : p === null ? near(w.spent_in_window) : `${nearText(w.spent_in_window)} / ${near(p.max_per_day)}`,
-      [w === null ? "" : `resets ${localTime(w.resets_at)}`],
+      [w === null || w.spent_in_window === "0" ? "" : `frees up from ${localTime(w.resets_at)}`],
       w !== null && p !== null ? html`<progress class="progress" max="100" value="${percent(w.spent_in_window, p.max_per_day)}" aria-label="Share of the daily limit spent"></progress>` : "")}
     ${tile("waiting", "Waiting for you", b.proposals === null ? "unknown" : String(b.proposals.length), [left === null || left === 0 ? "Review them below" : `Soonest: ${hours(left)} left`])}
     <div class="card tile">${html`<span class="tile-label">Next scheduled payout</span>`}${payout}</div>

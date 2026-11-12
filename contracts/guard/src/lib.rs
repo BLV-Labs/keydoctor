@@ -30,12 +30,16 @@ const GAS_ON_VIEW: Gas = Gas::from_tgas(15);
 const GAS_ON_AGENT_CREATED: Gas = Gas::from_tgas(5);
 // Fixed, so it caps the code size: 30 Tgas stopped at about 340 KB, and the Guard is 333 KB.
 // Swap step (Change 1.4): each hop holds what the hops after it attach, with F = GAS_FT_TRANSFER_CALL.
-// act_proposal 15 own + near_deposit + F; on_proposal_added 5 + act + on_voted; on_quote 5 + add_proposal + on_added;
-// execute_plan_step 10 + get_return + on_quote = 80 + F, inside the keeper's 300 Tgas.
+// act_proposal 15 own + near_deposit + F; on_proposal_added 15 + act + on_voted; on_quote 15 + add_proposal + on_added;
+// execute_plan_step 10 + get_return + on_quote = 100 + F, inside the keeper's 300 Tgas. The two Guard callbacks keep
+// 15 Tgas of their own (red team M3, 1.6.0): with 5, a caller who attached just the static sum could run one out of
+// gas after the step had moved its slot, and the request would sit in Submitted with no callback to end it.
 const GAS_QUOTE_VIEW: Gas = Gas::from_tgas(10);
 const GAS_ACT_PROPOSAL_SWAP: Gas = Gas::from_tgas(20 + 150);
-const GAS_ON_ADDED_SWAP: Gas = Gas::from_tgas(35 + 150);
-const GAS_ON_QUOTE: Gas = Gas::from_tgas(60 + 150);
+const GAS_ON_ADDED_SWAP: Gas = Gas::from_tgas(45 + 150);
+const GAS_ON_QUOTE: Gas = Gas::from_tgas(80 + 150);
+// What a swap step must be called with: the 100 + F above plus room the callbacks share as unused-gas weight.
+const MIN_SWAP_STEP_GAS: Gas = Gas::from_tgas(280);
 const GAS_GET_CODE: Gas = Gas::from_tgas(60);
 const GAS_ON_CODE: Gas = Gas::from_tgas(60);
 const GAS_MIGRATE: Gas = Gas::from_tgas(20);
@@ -63,6 +67,7 @@ enum StorageKey {
     ByProposal,
     Recent,
     Plans,
+    AgentSpends,
 }
 
 #[near(contract_state)]
@@ -75,9 +80,9 @@ pub struct Guard {
     /// May pause; only the DAO unpauses.
     guardians: IterableSet<AccountId>,
     paused: bool,
-    /// ns, start of the rolling 24 h window.
+    /// 1.5.0's fixed window, zero since 1.6.0 (`spends` replaced it). Kept so that a 1.5.0 state is this layout
+    /// without its last two fields, which is how `migrate` tells the two apart.
     window_start: u64,
-    /// yoctoNEAR self-approved in the window.
     spent_in_window: u128,
     /// Cached from `dao.get_policy` at init and by `refresh_bond`.
     proposal_bond: u128,
@@ -90,6 +95,10 @@ pub struct Guard {
     recent_total: u64,
     /// `plan_id` is the index. A plan is never removed, so a request can always find its plan.
     plans: Vector<Plan>,
+    /// yoctoNEAR self-approved per hour: the rolling 24 h window (`policy::Spends`, red-team M4).
+    spends: policy::Spends,
+    /// Each agent's part of `spends`, for `get_agents`. A removed agent's entry goes with it.
+    agent_spends: LookupMap<AccountId, policy::Spends>,
 }
 
 #[near]
@@ -113,7 +122,7 @@ impl Guard {
             whitelist: IterableMap::new(StorageKey::Whitelist),
             guardians: IterableSet::new(StorageKey::Guardians),
             paused: false,
-            window_start: env::block_timestamp(),
+            window_start: 0,
             spent_in_window: 0,
             proposal_bond: 0,
             proposal_period: 0,
@@ -122,6 +131,8 @@ impl Guard {
             recent: Vector::new(StorageKey::Recent),
             recent_total: 0,
             plans: Vector::new(StorageKey::Plans),
+            spends: policy::Spends::new(),
+            agent_spends: LookupMap::new(StorageKey::AgentSpends),
         };
         for a in agents {
             assert_label(&a.label);
@@ -167,18 +178,13 @@ impl Guard {
         );
 
         let now = env::block_timestamp();
-        self.roll_window(now);
-        let (decision, reasons) =
-            policy::decide(&self.policy, self.whitelist.get(&receiver_id), self.spent_in_window, amount.0);
+        let spent = policy::spent(&self.spends, now);
+        let (decision, reasons) = policy::decide(&self.policy, self.whitelist.get(&receiver_id), spent, amount.0);
         let counted = decision == Decision::Auto;
-        let window = self.window_start;
-        let a = self.agents.get_mut(&agent).unwrap();
-        a.pending += 1;
+        self.agents.get_mut(&agent).unwrap().pending += 1;
         if counted {
-            let so_far = if a.spent_window.0 == window { a.spent.0 } else { 0 };
-            a.spent = U128(so_far.saturating_add(amount.0));
-            a.spent_window = U64(window);
-            self.spent_in_window = self.spent_in_window.saturating_add(amount.0);
+            policy::add_spend(&mut self.spends, now, amount.0);
+            policy::add_spend(self.agent_spends.entry(agent.clone()).or_default(), now, amount.0);
         }
 
         let memo = policy::clean_memo(memo.as_deref().unwrap_or(""));
@@ -446,7 +452,6 @@ impl Guard {
         require!(now >= due, "PLAN_NOT_DUE");
         let run = plan.runs_done + 1;
         let amount = plan.amount_per_run;
-        self.roll_window(now);
 
         // A plan made before the price floor (ADR 0007, 2026-11-12) never swaps again; the DAO makes it anew.
         if matches!(plan.action, PlanAction::Swap { .. }) {
@@ -455,13 +460,18 @@ impl Guard {
             return PromiseOrValue::Value(None);
         }
 
+        // Before anything moves: a short swap call must fail whole, not strand a request in a callback (red team M3).
+        if matches!(plan.action, PlanAction::SwapWithFloor { .. }) {
+            require!(env::prepaid_gas() >= MIN_SWAP_STEP_GAS, "SWAP_STEP_NEEDS_300_TGAS");
+        }
+
         // The rules changed since `create_plan`, and only the owner can settle that.
         if let Some(reason) = self.plan_limit_failure(&plan.action, amount.0) {
             self.halt_plan(&mut plan, PlanPauseReason::Failures, &reason);
             self.plans.set(plan_id, plan);
             return PromiseOrValue::Value(None);
         }
-        if self.spent_in_window.saturating_add(amount.0) > self.policy.max_per_day.0 {
+        if policy::spent(&self.spends, now).saturating_add(amount.0) > self.policy.max_per_day.0 {
             plan.next_run_at = Some(U64(policy::next_run(due, plan.interval_sec, now)));
             emit("plan_step_skipped", json!({ "plan_id": plan_id, "run": run, "reason": "OVER_DAILY_LIMIT", "due": U64(due) }));
             self.plans.set(plan_id, plan);
@@ -474,7 +484,7 @@ impl Guard {
         }
 
         plan.next_run_at = Some(U64(policy::next_run(due, plan.interval_sec, now)));
-        self.spent_in_window = self.spent_in_window.saturating_add(amount.0);
+        policy::add_spend(&mut self.spends, now, amount.0);
         let guard = env::current_account_id();
         // The slot, not the run: a run that failed is tried again under a new id, and its old record stays.
         let request_id = format!("{}{plan_id}-{due}", policy::PLAN_REQUEST_PREFIX);
@@ -601,6 +611,7 @@ impl Guard {
         // key never reaches the account: the removed key would pass as the new agent. A `creating` agent cannot request.
         require!(!self.agents.get(&account_id).is_some_and(|a| a.creating), "AGENT_CREATING");
         self.agents.remove(&account_id);
+        self.agent_spends.remove(&account_id);
         emit("agent_updated", json!({ "account_id": account_id, "action": "removed" }));
         refund_deposit(0);
     }
@@ -753,25 +764,26 @@ impl Guard {
             .collect()
     }
 
-    /// `spent_24h` is the agent's part of `get_window`'s `spent_in_window`, so it resets with that window.
+    /// `spent_24h` is the agent's part of `get_window`'s `spent_in_window`, over the same rolling 24 h.
     pub fn get_agents(&self) -> Vec<Value> {
-        let (window, _) = policy::roll_window(self.window_start, self.spent_in_window, env::block_timestamp());
+        let now = env::block_timestamp();
         self.agents
             .iter()
             .map(|(id, a)| {
-                let spent = if a.spent_window.0 == window { a.spent } else { U128(0) };
+                let spent = U128(self.agent_spends.get(id).map_or(0, |s| policy::spent(s, now)));
                 json!({ "account_id": id, "label": a.label, "enabled": a.enabled && !a.creating, "pending": a.pending, "spent_24h": spent })
             })
             .collect()
     }
 
-    /// The window as the next request would see it (a window past 24 h reads as already reset).
+    /// The rolling 24 h window as the next request would see it. `resets_at` is when the oldest spend that still
+    /// counts drops out and frees part of the limit (`now` when nothing counts).
     pub fn get_window(&self) -> Value {
         let now = env::block_timestamp();
-        let (start, spent) = policy::roll_window(self.window_start, self.spent_in_window, now);
+        let spent = policy::spent(&self.spends, now);
         json!({
-            "window_start": U64(start),
-            "resets_at": U64(start.saturating_add(policy::DAY_NS)),
+            "window_start": U64(now.saturating_sub(policy::DAY_NS)),
+            "resets_at": U64(policy::frees_at(&self.spends, now)),
             "spent_in_window": U128(spent),
             "remaining": U128(self.policy.max_per_day.0.saturating_sub(spent)),
         })
@@ -809,7 +821,7 @@ impl Guard {
 
     /// Key Doctor reads this to recognise a DAO member as a Guard (§5.3).
     pub fn kd_guard_info(&self) -> Value {
-        json!({ "standard": "kd_guard", "version": "1.5.0", "dao_id": self.dao_id })
+        json!({ "standard": "kd_guard", "version": "1.6.0", "dao_id": self.dao_id })
     }
 
     // ---- upgrade (§11.5.12, ADR 0006)
@@ -838,10 +850,21 @@ impl Guard {
     }
 
     /// Reads the state the previous code wrote. A release that changes `Guard` reads the old layout here.
+    /// 1.5.0 wrote this layout without `spends` and `agent_spends`, so its bytes never parse as the full layout:
+    /// they get those two fields appended empty, then its window moves over (`carry_window`).
     #[private]
     #[init(ignore_state)]
     pub fn migrate() -> Self {
-        env::state_read().unwrap_or_else(|| env::panic_str("NO_STATE"))
+        let state = env::storage_read(b"STATE").unwrap_or_else(|| env::panic_str("NO_STATE"));
+        if let Ok(guard) = near_sdk::borsh::from_slice::<Self>(&state) {
+            return guard;
+        }
+        let tail = (policy::Spends::new(), LookupMap::<AccountId, policy::Spends>::new(StorageKey::AgentSpends));
+        let tail = near_sdk::borsh::to_vec(&tail).unwrap_or_else(|_| env::panic_str("UNKNOWN_STATE"));
+        let mut guard: Self =
+            near_sdk::borsh::from_slice(&[state, tail].concat()).unwrap_or_else(|_| env::panic_str("UNKNOWN_STATE"));
+        guard.carry_window(env::block_timestamp());
+        guard
     }
 }
 
@@ -885,8 +908,27 @@ impl Guard {
         r
     }
 
-    fn roll_window(&mut self, now: u64) {
-        (self.window_start, self.spent_in_window) = policy::roll_window(self.window_start, self.spent_in_window, now);
+    /// 1.5.0's window, if it has not ended, goes into the current hour. 1.5.0 did not record when in the window each
+    /// payment was, and the last could be this minute, so it counts 24 to 25 h from now: never less than a rolling
+    /// window would, at worst a day longer than the old reset. The agents' parts move the same way.
+    fn carry_window(&mut self, now: u64) {
+        let start = self.window_start;
+        if now < start.saturating_add(policy::DAY_NS) {
+            if self.spent_in_window > 0 {
+                policy::add_spend(&mut self.spends, now, self.spent_in_window);
+            }
+            let parts: Vec<(AccountId, u128)> = self
+                .agents
+                .iter()
+                .filter(|(_, a)| a.spent_window.0 == start && a.spent.0 > 0)
+                .map(|(id, a)| (id.clone(), a.spent.0))
+                .collect();
+            for (id, amount) in parts {
+                policy::add_spend(self.agent_spends.entry(id).or_default(), now, amount);
+            }
+        }
+        self.window_start = 0;
+        self.spent_in_window = 0;
     }
 
     fn plan(&self, plan_id: u32) -> Plan {
@@ -957,7 +999,7 @@ impl Guard {
     }
 
     /// Moves a request to `status`: frees the agent's pending slot when the request stops waiting on the DAO, and
-    /// gives the daily limit back when counted money did not leave, if the request is still in the same window.
+    /// gives the daily limit back when counted money did not leave, while its spend still counts.
     fn finish(&mut self, r: &mut RequestRecord, status: RequestStatus, now: u64) {
         if let Some(plan_id) = r.plan_id {
             self.move_plan(r, plan_id, status);
@@ -972,15 +1014,15 @@ impl Guard {
                 a.pending = a.pending.saturating_sub(1);
             }
         }
-        if status.is_final() && status != RequestStatus::Executed && r.counted_in_window {
-            self.roll_window(now);
-            if r.created_at.0 >= self.window_start {
-                self.spent_in_window = self.spent_in_window.saturating_sub(r.amount.0);
-                r.counted_in_window = false;
-                // `created_at` is in this window, so the agent's amount is too; a re-added agent has none to lose.
-                if let Some(a) = self.agents.get_mut(&r.agent) {
-                    a.spent = U128(a.spent.0.saturating_sub(r.amount.0));
-                }
+        // Off the hour the request was counted in: a refund into a later hour would free room it never took.
+        if status.is_final()
+            && status != RequestStatus::Executed
+            && r.counted_in_window
+            && policy::refund_spend(&mut self.spends, r.created_at.0, now, r.amount.0)
+        {
+            r.counted_in_window = false;
+            if let Some(mine) = self.agent_spends.get_mut(&r.agent) {
+                policy::refund_spend(mine, r.created_at.0, now, r.amount.0);
             }
         }
         r.status = status;

@@ -49,7 +49,7 @@ function setup(t: TestContext, extra: Partial<Env> = {}) {
 }
 
 const say = (env: Env, text: string, chat: number, type = "group") =>
-  handleUpdate({ message: { text, chat: { id: chat, type }, from: { language_code: "en" } } }, env);
+  handleUpdate({ message: { text, chat: { id: chat, type }, from: { id: 7, language_code: "en" } } }, env);
 const sends = (chain: Chain) => chain.telegram.filter((x) => x.method === "sendMessage");
 const lastText = (chain: Chain): string => sends(chain).at(-1)?.body.text ?? "";
 const rows = (db: TestD1, sql: string) => db.raw.prepare(sql).all().map((r) => ({ ...r })) as any[];
@@ -124,6 +124,8 @@ describe("YD3 /yield_watch and /yield_unwatch", () => {
     assert.match(lastText(chain), /already/i);
     assert.equal(rows(db, "SELECT * FROM yield_watches").length, 1);
 
+    // The chat is a group, and in a group only an admin may turn yield messages off (red-team M7).
+    chain.telegramReply = (method) => (method === "getChatMember" ? { status: 200, json: { ok: true, result: { status: "creator" } } } : undefined);
     await say(env, `/yield_unwatch ${DAO}`, chat);
     assert.equal(rows(db, "SELECT * FROM yield_watches").length, 0);
     await say(env, `/yield_unwatch ${DAO}`, chat);

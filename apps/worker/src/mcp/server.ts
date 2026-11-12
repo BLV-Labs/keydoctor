@@ -4,8 +4,8 @@ import type { Env } from "../env.ts";
 import { compare, diagnose, preflight, listKeys, listProposals, yieldCheck } from "../core.ts";
 import { yieldAdvice } from "../yield/agent.ts";
 import { json, kdErrorBody, readJson } from "../http.ts";
-import { createWatchLink } from "../watch-link.ts";
-import { checkRate } from "./rate-limit.ts";
+import { clientId, createWatchLink } from "../watch-link.ts";
+import { checkRate, clientKey } from "./rate-limit.ts";
 
 const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const SERVER_INFO = { name: "key-doctor", version: "0.1.0" };
@@ -139,14 +139,14 @@ const toolResult = (payload: unknown, isError = false) => ({
 const TOOL_NAMES = ["diagnose", "compare", "list_keys", "list_proposals", "watch", "preflight", "yield_suggestions"] as const;
 type ToolName = (typeof TOOL_NAMES)[number];
 
-async function callTool(name: ToolName, args: Record<string, unknown>, env: Env) {
+async function callTool(name: ToolName, args: Record<string, unknown>, env: Env, client: string | null) {
   const bad = badArgs(name, args);
   if (bad !== null) return toolResult(kdErrorBody("INVALID_TARGET", { vi: bad, en: bad }), true);
   try {
     if (name === "diagnose") return toolResult(await diagnose(args as unknown as Parameters<typeof diagnose>[0], env));
     if (name === "list_keys") return toolResult(await listKeys(args as unknown as Parameters<typeof listKeys>[0], env));
     if (name === "list_proposals") return toolResult(await listProposals(args as unknown as Parameters<typeof listProposals>[0], env));
-    if (name === "watch") return toolResult(await createWatchLink(args as unknown as Parameters<typeof createWatchLink>[0], env));
+    if (name === "watch") return toolResult(await createWatchLink(args as unknown as Parameters<typeof createWatchLink>[0], env, client && (await clientId(client))));
     if (name === "preflight") return toolResult(await preflight(args as unknown as Parameters<typeof preflight>[0], env));
     if (name === "yield_suggestions") {
       const checked = await yieldCheck(args as unknown as Parameters<typeof yieldCheck>[0], env);
@@ -176,8 +176,9 @@ export async function handleMcp(request: Request, env: Env): Promise<Response> {
 
   // Cloudflare always sets cf-connecting-ip; without it (local dev, tests) there is nothing to key on.
   const ip = request.headers.get("cf-connecting-ip");
-  if (msg.method === "tools/call" && ip) {
-    const wait = checkRate(ip, Number(env.MCP_RATE_LIMIT_PER_MIN) || 30);
+  const client = ip ? clientKey(ip) : null;
+  if (msg.method === "tools/call" && client) {
+    const wait = checkRate(client, Number(env.MCP_RATE_LIMIT_PER_MIN) || 30);
     if (wait > 0) {
       return json(
         kdErrorBody("RATE_LIMITED", { vi: "Quá nhiều lệnh gọi MCP. Hãy thử lại sau ít phút.", en: "Too many MCP calls. Try again in a minute." }, true),
@@ -208,7 +209,7 @@ export async function handleMcp(request: Request, env: Env): Promise<Response> {
       const name = params.name;
       if (!TOOL_NAMES.some((n) => n === name)) return json(rpcError(id, -32602, "Unknown tool"));
       const args = isObj(params.arguments) ? params.arguments : {};
-      return json(rpcResult(id, await callTool(name as ToolName, args, env)));
+      return json(rpcResult(id, await callTool(name as ToolName, args, env, client)));
     }
     default:
       return json(rpcError(id, -32601, "Method not found"));

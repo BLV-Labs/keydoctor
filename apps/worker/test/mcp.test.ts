@@ -3,6 +3,8 @@ import { describe, it, type TestContext } from "node:test";
 import worker from "../src/index.ts";
 import type { Env } from "../src/env.ts";
 import { TOOLS } from "../src/mcp/server.ts";
+import { MAX_UNWATCHED_BASELINES } from "../src/store/snapshots.ts";
+import { OVERFLOW_KEY, checkRate, clientKey } from "../src/mcp/rate-limit.ts";
 import { testD1, type TestD1 } from "./support/d1.ts";
 import { DAO, addKey, bytes, fixture, installChain } from "./support/rpc.ts";
 
@@ -52,6 +54,45 @@ describe("MCP rate limit", () => {
     assert.ok(Number(over.headers.get("retry-after")) > 0);
     assert.notEqual((await callFrom(env, "203.0.113.2")).status, 429);
     assert.equal((await rpc(env, "tools/list")).status, 200);
+  });
+});
+
+// Red-team M6: an IPv6 user rotates freely inside a /64, so keying on the exact address gave each call a fresh budget.
+describe("rate-limit keys", () => {
+  it("IPv6 is keyed on its /64, IPv4 on the exact address", () => {
+    assert.equal(clientKey("2001:db8:1:2::1"), "2001:db8:1:2::/64");
+    assert.equal(clientKey("2001:0DB8:0001:0002:aaaa:bbbb:cccc:dddd"), "2001:db8:1:2::/64");
+    assert.equal(clientKey("2001:db8::7"), "2001:db8:0:0::/64");
+    assert.equal(clientKey("::1"), "0:0:0:0::/64");
+    assert.notEqual(clientKey("2001:db8:1:3::1"), clientKey("2001:db8:1:2::1"));
+    assert.equal(clientKey("203.0.113.1"), "203.0.113.1");
+  });
+
+  it("the MCP limit holds across addresses in one /64", async () => {
+    const env: Env = { DB: testD1(), MCP_RATE_LIMIT_PER_MIN: "2" };
+    const from = (ip: string) =>
+      worker.fetch(
+        new Request("https://kd.test/mcp", {
+          method: "POST",
+          headers: { "content-type": "application/json", "cf-connecting-ip": ip },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "nope", arguments: {} } }),
+        }),
+        env,
+        ctx,
+      );
+    assert.notEqual((await from("2001:db8:9:9::1")).status, 429);
+    assert.notEqual((await from("2001:db8:9:9::2")).status, 429);
+    assert.equal((await from("2001:db8:9:9::3")).status, 429);
+  });
+
+  it("a flood of fresh keys shares one overflow bucket instead of growing the map", () => {
+    // An old window, so these entries are expired for every other test that runs later in real time.
+    const t0 = 1_000_000_000_000;
+    for (let i = 0; i < 1000; i++) checkRate(`flood-${i}`, 1, t0);
+    checkRate("flood-new-a", 1, t0 + 1);
+    assert.ok(checkRate("flood-new-b", 1, t0 + 2) > 0, "a second new key lands in the same, already used, bucket");
+    assert.ok(checkRate(OVERFLOW_KEY, 1, t0 + 3) > 0);
+    assert.equal(checkRate("flood-new-c", 1, t0 + 120_000), 0, "once the old window passes, expired keys are pruned");
   });
 });
 
@@ -227,6 +268,26 @@ describe("GĐ3 compare and the baseline", () => {
     assert.equal(snapshots(db), 1);
     const after = (await call(env, "compare", { target: DAO })).structuredContent;
     assert.equal(after.changes[0].type, "key_added", "the new key still shows against the old baseline");
+  });
+});
+
+describe("compare baselines are bounded (red-team M9)", () => {
+  it("past MAX_UNWATCHED_BASELINES unwatched targets, the oldest unwatched one makes room; a watched baseline is never pushed out", async (t) => {
+    // /mcp is open and the first compare of a target stores a baseline, so a loop over made-up names would fill D1.
+    // Pushing out a watched baseline would let that loop reset the baseline the daily alert diffs against.
+    const { env, db } = setup(t);
+    const ins = db.raw.prepare("INSERT INTO snapshots (target, network, generated_at, block_height, report_json) VALUES (?, 'testnet', ?, 1, '{}')");
+    ins.run("watched.kd-demo.testnet", "2026-10-01T00:00:00Z");
+    db.raw.prepare("INSERT INTO subscriptions (target, network, target_type, chat_id, chat_type, created_at) VALUES ('watched.kd-demo.testnet', 'testnet', 'account', '1', 'private', 'x')").run();
+    for (let i = 0; i < MAX_UNWATCHED_BASELINES; i++) ins.run(`x${String(i).padStart(3, "0")}.kd-demo.testnet`, `2026-11-01T00:${String(Math.floor(i / 60)).padStart(2, "0")}:${String(i % 60).padStart(2, "0")}Z`);
+    const d = (await call(env, "compare", { target: DAO })).structuredContent;
+    assert.equal(d.baseline_updated, true);
+    const has = (target: string) => (db.raw.prepare("SELECT COUNT(*) AS n FROM snapshots WHERE target = ?").get(target) as { n: number }).n > 0;
+    assert.ok(has(DAO), "the new baseline is stored");
+    assert.ok(!has("x000.kd-demo.testnet"), "the oldest unwatched baseline made room");
+    assert.ok(has("x001.kd-demo.testnet"));
+    assert.ok(has("watched.kd-demo.testnet"), "older, but watched: never pushed out");
+    assert.equal(snapshots(db), MAX_UNWATCHED_BASELINES + 1, "still bounded");
   });
 });
 

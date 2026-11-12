@@ -44,13 +44,62 @@ pub fn decide(p: &GuardPolicy, wl: Option<&WhitelistEntry>, spent: u128, amount:
     (decision, reasons.into_iter().map(String::from).collect())
 }
 
-/// Rolling 24 h window: once `now` reaches `start + 24h` a new window starts at `now` with nothing spent.
-pub fn roll_window(start: u64, spent: u128, now: u64) -> (u64, u128) {
-    if now >= start.saturating_add(DAY_NS) {
-        (now, 0)
-    } else {
-        (start, spent)
+pub const HOUR_NS: u64 = 3_600 * 1_000_000_000;
+
+/// Self-approved yoctoNEAR per hour (`block_timestamp / HOUR_NS`), oldest first: the rolling 24 h window (red-team
+/// M4). A fixed window that restarts at the first request after 24 h let twice `max_per_day` leave in a few minutes
+/// across the restart. At most 25 hours are live, so the list stays small.
+pub type Spends = Vec<(u32, u128)>;
+
+fn hour_of(ns: u64) -> u32 {
+    (ns / HOUR_NS) as u32
+}
+
+/// A spend counts until the hour 25 hours after its own starts, so every 24 h span that holds it sees it: the limit
+/// errs on the safe side by up to one hour.
+fn live(hour: u32, now: u64) -> bool {
+    hour_of(now) <= hour.saturating_add(24)
+}
+
+pub fn prune(spends: &mut Spends, now: u64) {
+    spends.retain(|&(hour, _)| live(hour, now));
+}
+
+/// What counts against the daily limit at `now`.
+pub fn spent(spends: &Spends, now: u64) -> u128 {
+    spends.iter().filter(|&&(hour, _)| live(hour, now)).fold(0u128, |sum, &(_, a)| sum.saturating_add(a))
+}
+
+pub fn add_spend(spends: &mut Spends, now: u64, amount: u128) {
+    prune(spends, now);
+    let hour = hour_of(now);
+    match spends.last_mut() {
+        Some((h, a)) if *h == hour => *a = a.saturating_add(amount),
+        _ => spends.push((hour, amount)),
     }
+}
+
+/// Gives back `amount` spent at `created_at`, if that spend still counts. Returns whether it did. A spend that
+/// already dropped out of the window has nothing left to give back.
+pub fn refund_spend(spends: &mut Spends, created_at: u64, now: u64, amount: u128) -> bool {
+    prune(spends, now);
+    let hour = hour_of(created_at);
+    let Some(i) = spends.iter().position(|&(h, _)| h == hour) else {
+        return false;
+    };
+    spends[i].1 = spends[i].1.saturating_sub(amount);
+    if spends[i].1 == 0 {
+        spends.remove(i);
+    }
+    true
+}
+
+/// When the oldest spend that still counts drops out, freeing part of the limit; `now` when nothing counts.
+pub fn frees_at(spends: &Spends, now: u64) -> u64 {
+    spends
+        .iter()
+        .find(|&&(hour, _)| live(hour, now))
+        .map_or(now, |&(hour, _)| (hour as u64 + 25).saturating_mul(HOUR_NS))
 }
 
 /// 8 to 64 chars of `[A-Za-z0-9_-]`, outside the prefix plan steps use. The id goes into the proposal description,
@@ -252,11 +301,57 @@ mod tests {
         assert!(reasons(Some(&listed(None)), 10 * NEAR, u128::MAX).contains(&"OVER_DAILY_LIMIT".to_string()));
     }
 
+    const H0: u64 = 500_000 * HOUR_NS;
+
     #[test]
-    fn window_resets_at_exactly_24_hours() {
-        // One nanosecond early keeps the spent amount; at the boundary the window starts over.
-        assert_eq!(roll_window(1_000, 7, 1_000 + DAY_NS - 1), (1_000, 7));
-        assert_eq!(roll_window(1_000, 7, 1_000 + DAY_NS), (1_000 + DAY_NS, 0));
+    fn no_24_hours_can_hold_more_than_the_limit_across_the_old_reset() {
+        // Red-team M4: the fixed window let 20 NEAR leave just before its reset and 20 more just after. A rolling
+        // window still counts the first 20 a minute later, and frees them only once 24 h have passed.
+        let mut s = Spends::new();
+        add_spend(&mut s, H0 + DAY_NS - 60_000_000_000, 20 * NEAR);
+        assert_eq!(spent(&s, H0 + DAY_NS + 60_000_000_000), 20 * NEAR, "a minute after the old reset");
+        assert_eq!(spent(&s, H0 + 2 * DAY_NS - 61_000_000_000), 20 * NEAR, "still inside its own 24 h");
+        assert_eq!(spent(&s, H0 + 2 * DAY_NS + HOUR_NS), 0, "out once its hour is 25 h old");
+    }
+
+    #[test]
+    fn a_spend_counts_for_24_to_25_hours_never_less() {
+        // Hour buckets round the expiry up, never down: a spend late in its hour counts a little over 24 h.
+        let mut s = Spends::new();
+        add_spend(&mut s, H0 + HOUR_NS - 1, 7);
+        assert_eq!(spent(&s, H0 + HOUR_NS - 1 + DAY_NS), 7, "exactly 24 h later");
+        assert_eq!(spent(&s, H0 + 25 * HOUR_NS), 0, "first ns of the 25th hour after");
+        assert_eq!(frees_at(&s, H0), H0 + 25 * HOUR_NS);
+        assert_eq!(frees_at(&Spends::new(), H0), H0, "nothing counts: nothing to wait for");
+    }
+
+    #[test]
+    fn spends_in_one_hour_share_a_bucket_and_old_ones_are_dropped() {
+        // The state stays at most 25 entries however many requests run.
+        let mut s = Spends::new();
+        for m in 0..60 {
+            add_spend(&mut s, H0 + m * 60_000_000_000, 1);
+        }
+        assert_eq!(s, vec![(500_000, 60)]);
+        for h in 1..=40u64 {
+            add_spend(&mut s, H0 + h * HOUR_NS, 1);
+        }
+        assert_eq!(s.len(), 25);
+        assert_eq!(s[0].0, 500_016);
+    }
+
+    #[test]
+    fn a_refund_comes_off_its_own_hour_and_only_while_it_counts() {
+        // A refund into a later hour would free room the failed request never took; after expiry there is none left.
+        let mut s = Spends::new();
+        add_spend(&mut s, H0, 5);
+        add_spend(&mut s, H0 + HOUR_NS, 3);
+        assert!(refund_spend(&mut s, H0 + 10, H0 + 2 * HOUR_NS, 5));
+        assert_eq!(s, vec![(500_001, 3)], "an emptied hour is removed");
+        assert!(!refund_spend(&mut s, H0, H0 + 2 * HOUR_NS, 5), "nothing left in that hour");
+        assert_eq!(spent(&s, H0 + 2 * HOUR_NS), 3, "the other hour is untouched");
+        assert!(!refund_spend(&mut s, H0 + HOUR_NS, H0 + 26 * HOUR_NS, 3), "expired");
+        assert_eq!(spent(&s, H0 + 26 * HOUR_NS), 0);
     }
 
     #[test]

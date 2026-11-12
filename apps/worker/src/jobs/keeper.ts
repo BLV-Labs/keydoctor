@@ -5,7 +5,7 @@ import type { Env } from "../env.ts";
 import { rpcUrlsFor } from "../core.ts";
 import { RpcFailed, createKeeperRpc, guardEvents, loadKeeperKey, panicCode, signCall, swapOutcome, type KeeperKey, type KeeperMethod, type KeeperRpc, type TxOutcome } from "../keeper/near.ts";
 import { MAX_MARKS, alertSent, clearSent, markSent, markSentMany, sentIds } from "../store/alerts.ts";
-import { acquireLease, releaseLease, saveStep, stepsFor } from "../store/plan-steps.ts";
+import { acquireLease, keeperTxsOn, releaseLease, saveStep, stepsFor } from "../store/plan-steps.ts";
 import { chatsFor } from "../store/subscriptions.ts";
 import { esc, sendMessage, type Outgoing } from "../telegram/api.ts";
 import { renderBudgetAlert } from "../telegram/render.ts";
@@ -15,6 +15,12 @@ import { intVar, type JobResult } from "./proposals.ts";
 /** Longer than any cycle can run: a cycle that died frees the lease by itself. */
 const LEASE_MS = 10 * 60_000;
 const PAGE = 50;
+/**
+ * Guards read from the factory per cycle, one view call. The factory takes any contract with a `get_policy` as a DAO
+ * (red-team M2), so only Guards of a Sputnik DAO get one of the cycle's few slots; the rest are skipped for free.
+ */
+const SCAN = 50;
+const SPUTNIK_DAO = /^[a-z0-9_-]+\.sputnik-dao\.testnet$/;
 /** The free plan allows 50 subrequests per invocation, D1 included. Worst case with these limits: test "stays inside". */
 const MAX_SYNCS = 2;
 const MAX_SENDS = 4;
@@ -37,6 +43,7 @@ interface Config {
   maxBalance: bigint;
   maxGuards: number;
   maxSteps: number;
+  maxTxsPerDao: number;
 }
 
 interface GuardView {
@@ -58,6 +65,10 @@ interface Cycle {
   stepsLeft: number;
   syncsLeft: number;
   sendsLeft: number;
+  /** UTC day, and keeper transactions per DAO: before this cycle, and in it. */
+  day: string;
+  txsBefore: Map<string, number>;
+  txsNow: Map<string, number>;
 }
 
 /** "1.5" NEAR to yocto, or null. */
@@ -95,38 +106,46 @@ export async function runKeeperJob(env: Env): Promise<KeeperResult> {
     maxBalance,
     maxGuards: intVar(env.KEEPER_MAX_GUARDS_PER_RUN, 3, 1, 3),
     maxSteps: intVar(env.KEEPER_MAX_STEPS_PER_RUN, 3, 0, 3),
+    maxTxsPerDao: intVar(env.KEEPER_MAX_TXS_PER_DAO_PER_DAY, 48, 1, 1000),
   };
 
   const started = Date.now();
   const cursor = await acquireLease(env.DB, new Date(started).toISOString(), new Date(started + LEASE_MS).toISOString());
   if (cursor === null) return { ...result, skipped: "locked" };
   let next = cursor;
+  const txs = { day: new Date(started).toISOString().slice(0, 10), sent: new Map<string, number>() };
   try {
-    next = await runCycle(env, cfg, cursor, result);
+    next = await runCycle(env, cfg, cursor, result, txs);
   } catch (e) {
     // Nothing was decided here: the Guard keeps the plan due, so the next cycle picks it up.
     result.errors.push(`keeper: ${reason(e)}`);
   } finally {
-    await releaseLease(env.DB, new Date().toISOString(), next);
+    // The day's transaction counts go with the lease release: one subrequest for both.
+    await releaseLease(env.DB, new Date().toISOString(), next, txs);
   }
   return result;
 }
 
-async function runCycle(env: Env, cfg: Config, cursor: number, result: KeeperResult): Promise<number> {
+async function runCycle(env: Env, cfg: Config, cursor: number, result: KeeperResult, txs: { day: string; sent: Map<string, number> }): Promise<number> {
   const rpc = createKeeperRpc(rpcUrlsFor(env, NETWORK) ?? DEFAULT_RPC_URLS[NETWORK]);
   const head = await rpc.head();
   await checkBalance(env, cfg, await rpc.balance(cfg.accountId), result);
 
-  const page = (from: number) => rpc.view<GuardView[]>(cfg.factoryId, "list_guards", { from_index: from, limit: cfg.maxGuards });
-  let guards = await page(cursor);
+  const page = (from: number) => rpc.view<GuardView[]>(cfg.factoryId, "list_guards", { from_index: from, limit: SCAN });
+  let listed = await page(cursor);
   // A full last page leaves the cursor at the end of the list. Wrap now, or this cycle checks nothing.
-  if (guards.length === 0 && cursor > 0) {
+  if (listed.length === 0 && cursor > 0) {
     cursor = 0;
-    guards = await page(0);
+    listed = await page(0);
   }
-  const cycle: Cycle = { env, cfg, rpc, head, result, key: null, nonce: null, canSign: true, stepsLeft: cfg.maxSteps, syncsLeft: MAX_SYNCS, sendsLeft: MAX_SENDS };
-  for (const g of guards) {
-    if (!g.ready) continue;
+  const picked: { g: GuardView; at: number }[] = [];
+  for (const [at, g] of listed.entries()) {
+    if (picked.length === cfg.maxGuards) break;
+    if (g.ready && SPUTNIK_DAO.test(g.dao_id)) picked.push({ g, at });
+  }
+  const txsBefore = await keeperTxsOn(env.DB, txs.day, [...new Set(picked.map((p) => p.g.dao_id))]);
+  const cycle: Cycle = { env, cfg, rpc, head, result, key: null, nonce: null, canSign: true, stepsLeft: cfg.maxSteps, syncsLeft: MAX_SYNCS, sendsLeft: MAX_SENDS, day: txs.day, txsBefore, txsNow: txs.sent };
+  for (const { g } of picked) {
     result.targets_checked += 1;
     try {
       await runGuard(cycle, g);
@@ -135,7 +154,9 @@ async function runCycle(env: Env, cfg: Config, cursor: number, result: KeeperRes
       result.errors.push(`${g.guard_id}: ${reason(e)}`);
     }
   }
-  return guards.length < cfg.maxGuards ? 0 : cursor + guards.length;
+  // Full: the next cycle starts after the last Guard taken. Otherwise this page was all there was to take from it.
+  if (picked.length === cfg.maxGuards) return cursor + picked.at(-1)!.at + 1;
+  return listed.length < SCAN ? 0 : cursor + listed.length;
 }
 
 /** K4: the team tops the account up by hand. Anyone can send NEAR here, so too much is told, not acted on. */
@@ -163,8 +184,10 @@ async function checkBalance(env: Env, cfg: Config, balance: bigint, result: Keep
 }
 
 /** Key and nonce load on the first signature, so a cycle with nothing due spends no CPU on them. */
-async function send(c: Cycle, guardId: string, method: KeeperMethod, args: Record<string, unknown>): Promise<{ tx: TxOutcome; hash: string } | null> {
+async function send(c: Cycle, guardId: string, daoId: string, method: KeeperMethod, args: Record<string, unknown>): Promise<{ tx: TxOutcome; hash: string } | null> {
   let hash = "";
+  // Counted before it is sent: a send that throws may still land, and its gas is spent either way.
+  c.txsNow.set(daoId, (c.txsNow.get(daoId) ?? 0) + 1);
   try {
     c.key ??= await loadKeeperKey(c.cfg.accountId, c.cfg.secret);
     c.nonce = (c.nonce ?? (await c.rpc.nonce(c.cfg.accountId, c.key.publicKey))) + 1n;
@@ -224,7 +247,16 @@ async function runGuard(c: Cycle, g: GuardView): Promise<void> {
 
   // Read once per Guard, and fail closed: an unreadable policy throws before anything is signed.
   let allowed: boolean | null = null;
+  let toldShare = false;
   const maySign = async (): Promise<boolean> => {
+    // Red-team M2: the keeper pays the gas, so the Guards of one DAO share maxTxsPerDao transactions a day,
+    // so many Guards made for one DAO get no more than one.
+    const used = (c.txsBefore.get(g.dao_id) ?? 0) + (c.txsNow.get(g.dao_id) ?? 0);
+    if (used >= c.cfg.maxTxsPerDao) {
+      if (!toldShare) result.errors.push(`${g.guard_id}: ${g.dao_id} used its ${c.cfg.maxTxsPerDao} keeper transactions for ${c.day}`);
+      toldShare = true;
+      return false;
+    }
     if (allowed === null) {
       allowed = !(await keeperInDao(c, g.dao_id));
       if (!allowed) result.errors.push(`${g.guard_id}: K1: keeper is a member of ${g.dao_id}, nothing signed`);
@@ -241,7 +273,7 @@ async function runGuard(c: Cycle, g: GuardView): Promise<void> {
       continue;
     }
     c.stepsLeft -= 1;
-    const sent = await send(c, g.guard_id, "execute_plan_step", { plan_id: plan.plan_id });
+    const sent = await send(c, g.guard_id, g.dao_id, "execute_plan_step", { plan_id: plan.plan_id });
     if (!sent) break;
     result.steps_run += 1;
     changed = true;
@@ -261,7 +293,7 @@ async function runGuard(c: Cycle, g: GuardView): Promise<void> {
   for (const r of requests.filter((x) => x.status === "AutoApproved").reverse()) {
     if (!c.canSign || c.syncsLeft === 0 || !(await maySign())) break;
     c.syncsLeft -= 1;
-    const sent = await send(c, g.guard_id, "sync_request", { request_id: r.request_id });
+    const sent = await send(c, g.guard_id, g.dao_id, "sync_request", { request_id: r.request_id });
     if (!sent) break;
     if (sent.tx.status.SuccessValue) r.status = (JSON.parse(atob(sent.tx.status.SuccessValue)) as { status: string }).status;
     const paused = guardEvents(sent.tx, g.guard_id).find((e) => e.event === "plan_paused" && e.data?.plan_id === r.plan_id);

@@ -295,7 +295,7 @@ describe("GĐ4 commands end to end (stub RPC, Telegram and D1)", () => {
     assert.match(again!.text, /already watches/);
     const subs = rows(db, "subscriptions");
     assert.equal(subs.length, 1);
-    assert.deepEqual({ ...subs[0], created_at: "x" }, { target: DAO, network: "testnet", target_type: "dao", chat_id: "-100", chat_type: "supergroup", created_at: "x" });
+    assert.deepEqual({ ...subs[0], created_at: "x" }, { target: DAO, network: "testnet", target_type: "dao", chat_id: "-100", chat_type: "supergroup", created_at: "x", added_by: "7" });
     assert.equal(rows(db, "snapshots").length, 1);
     assert.deepEqual(rows(db, "proposal_state").map((r) => [r.target, r.last_proposal_id, r.pending_json]), [[DAO, 4, "{}"]]);
   });
@@ -321,6 +321,26 @@ describe("GĐ4 commands end to end (stub RPC, Telegram and D1)", () => {
     assert.equal(rows(db, "subscriptions").length, 0);
   });
 
+  // Red-team M7: any member of a council group could silently turn off the council's alerts.
+  it("in a group only admins can /unwatch or /yield_unwatch; the subscription stays otherwise", async (t) => {
+    const { env, chain, db } = setup(t);
+    const group = { chat: -100, type: "supergroup" };
+    await say(env, chain, `/watch ${DAO}`, group);
+    let status = "member";
+    chain.telegramReply = (method) => (method === "getChatMember" ? { status: 200, json: { ok: true, result: { status } } } : undefined);
+    assert.match((await say(env, chain, `/unwatch ${DAO}`, group))!.text, /only admins can stop watching/);
+    assert.match((await say(env, chain, `/yield_unwatch ${DAO}`, group))!.text, /only admins can stop watching/);
+    assert.equal(rows(db, "subscriptions").length, 1);
+    const asked = chain.telegram.filter((x) => x.method === "getChatMember").at(-1)!.body;
+    assert.deepEqual([asked.chat_id, asked.user_id], ["-100", 7]);
+    chain.telegramReply = () => ({ status: 400, json: { ok: false, description: "Bad Request" } });
+    assert.match((await say(env, chain, `/unwatch ${DAO}`, group))!.text, /only admins/, "a failed lookup refuses");
+    status = "administrator";
+    chain.telegramReply = (method) => (method === "getChatMember" ? { status: 200, json: { ok: true, result: { status } } } : undefined);
+    assert.match((await say(env, chain, `/unwatch ${DAO}`, group))!.text, /Stopped watching/);
+    assert.equal(rows(db, "subscriptions").length, 0);
+  });
+
   it("/changes does not move the baseline", async (t) => {
     const { env, chain, db } = setup(t);
     assert.match((await say(env, chain, `/changes ${DAO}`))!.text, /baseline saved/);
@@ -335,7 +355,7 @@ describe("GĐ4 commands end to end (stub RPC, Telegram and D1)", () => {
   it("a chat over the subscription cap is refused", async (t) => {
     const { env, chain, db } = setup(t);
     for (let i = 0; i < MAX_SUBS_PER_CHAT; i++) {
-      db.raw.prepare("INSERT INTO subscriptions VALUES (?, 'testnet', 'account', '42', 'private', 'x')").run(`acc${i}.testnet`);
+      db.raw.prepare("INSERT INTO subscriptions (target, network, target_type, chat_id, chat_type, created_at) VALUES (?, 'testnet', 'account', '42', 'private', 'x')").run(`acc${i}.testnet`);
     }
     assert.match((await say(env, chain, `/watch ${DAO}`))!.text, /at most 20 targets/);
   });
