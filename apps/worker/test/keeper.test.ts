@@ -72,12 +72,12 @@ class FakeGuard {
     const run = plan.runs_done + 1;
     if (this.next === "over_limit") {
       plan.next_run_at = (BigInt(due) + HOUR_NS).toString();
-      return success(null, [event("plan_step_skipped", { plan_id: planId, run, reason: "OVER_DAILY_LIMIT", due })]);
+      return success(this.guard_id, null, [event("plan_step_skipped", { plan_id: planId, run, reason: "OVER_DAILY_LIMIT", due })]);
     }
     if (this.next === "short") {
       plan.status = "paused";
       plan.pause_reason = "insufficient_balance";
-      return success(null, [event("plan_paused", { plan_id: planId, reason: "insufficient_balance", code: "VOTE_FAILED" })]);
+      return success(this.guard_id, null, [event("plan_paused", { plan_id: planId, reason: "insufficient_balance", code: "VOTE_FAILED" })]);
     }
     plan.next_run_at = (BigInt(due) + HOUR_NS).toString();
     plan.runs_done = run;
@@ -89,31 +89,31 @@ class FakeGuard {
     }
     const record = { request_id: `plan-${planId}-${due}`, memo: `plan ${planId} run ${run}`, proposal_id: 40 + run, status: "AutoApproved", plan_id: planId, updated_at: due };
     this.requests.unshift(record);
-    return success(record, logs);
+    return success(this.guard_id, record, logs);
   }
 
   sync(requestId: string) {
     const r = this.requests.find((x) => x.request_id === requestId);
     const finds = this.syncFinds;
     this.syncFinds = "paid";
-    if (finds === "open") return success(r, []);
+    if (finds === "open") return success(this.guard_id, r, []);
     if (finds === "paid") {
       r.status = "Executed";
-      return success(r, []);
+      return success(this.guard_id, r, []);
     }
     r.status = "Failed";
     const plan = this.plans[r.plan_id]!;
     plan.runs_done -= 1;
     plan.status = "paused";
     plan.pause_reason = "failures";
-    return success(r, [event("plan_paused", { plan_id: r.plan_id, reason: "failures", code: "PROPOSAL_FAILED" })]);
+    return success(this.guard_id, r, [event("plan_paused", { plan_id: r.plan_id, reason: "failures", code: "PROPOSAL_FAILED" })]);
   }
 }
 
 const event = (name: string, data: unknown) => `EVENT_JSON:${JSON.stringify({ standard: "kd_guard", version: "1.0.0", event: name, data: [data] })}`;
-const success = (value: unknown, logs: string[]) => ({
+const success = (executor: string, value: unknown, logs: string[]) => ({
   status: { SuccessValue: btoa(JSON.stringify(value)) },
-  receipts_outcome: [{ outcome: { logs } }],
+  receipts_outcome: [{ outcome: { logs, executor_id: executor } }],
 });
 const panic = (code: string) => ({
   status: { Failure: { ActionError: { kind: { FunctionCallError: { ExecutionError: `Smart contract panicked: ${code}` } } } } },

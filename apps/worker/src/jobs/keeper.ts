@@ -192,9 +192,9 @@ const paysKeeper = (plan: Plan, keeper: string): boolean =>
   (plan.action.type === "transfer" && plan.action.receiver_id === keeper) || (plan.action.type === "call" && plan.action.target === keeper);
 
 /** What the Guard made of a step, from its events. Null when it changed nothing. */
-function stepRecord(plan: Plan, due: string, hash: string, tx: TxOutcome, now: string): (PlanStepRecord & { tx_hash: string }) | null {
+function stepRecord(guard: string, plan: Plan, due: string, hash: string, tx: TxOutcome, now: string): (PlanStepRecord & { tx_hash: string }) | null {
   const base = { plan_id: plan.plan_id, run: plan.runs_done + 1, amount_in: plan.amount_per_run, tx_hash: hash, executed_at: now, due };
-  for (const { event, data } of guardEvents(tx)) {
+  for (const { event, data } of guardEvents(tx, guard)) {
     if (data?.plan_id !== plan.plan_id) continue;
     if (event === "plan_step_executed") {
       const executed: PlanStepRecord & { tx_hash: string } = { ...base, run: data.run, status: "executed", proposal_id: data.proposal_id };
@@ -248,7 +248,7 @@ async function runGuard(c: Cycle, g: GuardView): Promise<void> {
     const code = panicCode(sent.tx.status.Failure);
     // Not due or not active: someone else called first (K2 lets anyone), and that is fine.
     if (code === "PLAN_NOT_DUE" || code === "PLAN_NOT_ACTIVE") continue;
-    const step = stepRecord(plan, plan.next_run_at!, sent.hash, sent.tx, now);
+    const step = stepRecord(g.guard_id, plan, plan.next_run_at!, sent.hash, sent.tx, now);
     if (step) await saveStep(env.DB, g.guard_id, step);
     else result.errors.push(`${g.guard_id}: plan ${plan.plan_id}: ${code ?? "NO_EVENT"} ${sent.hash}`);
   }
@@ -264,7 +264,7 @@ async function runGuard(c: Cycle, g: GuardView): Promise<void> {
     const sent = await send(c, g.guard_id, "sync_request", { request_id: r.request_id });
     if (!sent) break;
     if (sent.tx.status.SuccessValue) r.status = (JSON.parse(atob(sent.tx.status.SuccessValue)) as { status: string }).status;
-    const paused = guardEvents(sent.tx).find((e) => e.event === "plan_paused" && e.data?.plan_id === r.plan_id);
+    const paused = guardEvents(sent.tx, g.guard_id).find((e) => e.event === "plan_paused" && e.data?.plan_id === r.plan_id);
     const plan = plans.find((p) => p.plan_id === r.plan_id);
     if (paused && plan) {
       const run = Number(/ run (\d+)$/.exec(r.memo)?.[1]);
