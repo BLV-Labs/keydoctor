@@ -24,19 +24,24 @@ export async function saveSnapshot(db: D1Database, report: KdReport): Promise<vo
 
 /**
  * Most targets that may hold a baseline with no chat watching them (red-team M9). The first compare or /changes of a
- * target stores a baseline, and /mcp is open, so without a cap a loop over made-up names fills D1. Watched targets
- * are not counted: a chat has to subscribe first, and subscriptions have their own caps.
+ * target stores a baseline, and /mcp is open, so without a bound a loop over made-up names fills D1. Past it, the
+ * oldest unwatched baselines go first: a caller can push out another unwatched baseline, which only resets that
+ * target's next compare, but never a watched one (the daily job and its alerts diff against those).
  */
 export const MAX_UNWATCHED_BASELINES = 500;
 
-export async function countUnwatchedBaselines(db: D1Database): Promise<number> {
-  const row = await db
-    .prepare(
-      `SELECT COUNT(*) AS n FROM (SELECT DISTINCT target, network FROM snapshots s WHERE NOT EXISTS (
-         SELECT 1 FROM subscriptions u WHERE u.target = s.target AND u.network = s.network))`,
-    )
-    .first<{ n: number }>();
-  return row?.n ?? 0;
+const UNWATCHED = `SELECT target, network, MIN(generated_at) AS first FROM snapshots s WHERE NOT EXISTS (
+  SELECT 1 FROM subscriptions u WHERE u.target = s.target AND u.network = s.network) GROUP BY target, network`;
+
+/** Deletes the oldest unwatched baselines until one more fits under MAX_UNWATCHED_BASELINES. */
+export async function makeRoomForBaseline(db: D1Database): Promise<void> {
+  const row = await db.prepare(`SELECT COUNT(*) AS n FROM (${UNWATCHED})`).first<{ n: number }>();
+  const over = (row?.n ?? 0) - MAX_UNWATCHED_BASELINES + 1;
+  if (over <= 0) return;
+  await db
+    .prepare(`DELETE FROM snapshots WHERE (target, network) IN (SELECT target, network FROM (${UNWATCHED}) ORDER BY first, target LIMIT ?)`)
+    .bind(over)
+    .run();
 }
 
 /** Keeps the newest `keep` snapshots of a target. */

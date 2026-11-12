@@ -112,14 +112,7 @@ export function renderCheck(lang: Lang, r: KdReport, dashboardUrl?: string): Out
 export function renderChanges(lang: Lang, d: KdDiff, dashboardUrl?: string): Outgoing {
   const target = d.target.id;
   const lines = [HEADER];
-  if (d.is_baseline && !d.baseline_updated) {
-    // compare stores no baseline once too many unwatched targets hold one (red-team M9).
-    lines.push(
-      lang === "vi"
-        ? `${id(target)}: chưa có mốc so sánh và lúc này không lưu được. Dùng /watch ${target} để giữ mốc và nhận cảnh báo.`
-        : `${id(target)}: no baseline yet, and none can be saved right now. Use /watch ${target} to keep one and get alerts.`,
-    );
-  } else if (d.is_baseline) {
+  if (d.is_baseline) {
     lines.push(
       lang === "vi"
         ? `${id(target)}: đã lưu mốc so sánh lúc ${fmtTime(d.to.generated_at)}. Lần sau gọi /changes sẽ thấy thay đổi.`

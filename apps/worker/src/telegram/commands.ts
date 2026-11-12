@@ -207,7 +207,8 @@ async function watchTarget(
     created_at: new Date().toISOString(),
     added_by: inc.fromId,
   });
-  if (!added) return TEXT.alreadyWatched(lang, id);
+  // Another update took the last slot while this one scanned.
+  if (!added) return (await isSubscribed(env.DB, id, network, chatId)) ? TEXT.alreadyWatched(lang, id) : TEXT.targetFull(lang, id, MAX_CHATS_PER_TARGET);
   // First subscription to a target with no baseline: this scan becomes the baseline (one of the two baseline writers).
   if ((await latestSnapshot(env.DB, id, network)) === null) await saveSnapshot(env.DB, report);
   // A DAO is watched only from now on: record the current last proposal, no alerts.

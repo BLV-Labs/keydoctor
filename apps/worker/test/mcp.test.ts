@@ -271,20 +271,23 @@ describe("GĐ3 compare and the baseline", () => {
   });
 });
 
-describe("compare baselines are capped (red-team M9)", () => {
-  it("past MAX_UNWATCHED_BASELINES unwatched targets, a first compare answers but stores nothing; watched targets do not count", async (t) => {
+describe("compare baselines are bounded (red-team M9)", () => {
+  it("past MAX_UNWATCHED_BASELINES unwatched targets, the oldest unwatched one makes room; a watched baseline is never pushed out", async (t) => {
     // /mcp is open and the first compare of a target stores a baseline, so a loop over made-up names would fill D1.
+    // Pushing out a watched baseline would let that loop reset the baseline the daily alert diffs against.
     const { env, db } = setup(t);
-    const ins = db.raw.prepare("INSERT INTO snapshots (target, network, generated_at, block_height, report_json) VALUES (?, 'testnet', '2026-11-01T00:00:00Z', 1, '{}')");
-    for (let i = 0; i < MAX_UNWATCHED_BASELINES; i++) ins.run(`x${i}.kd-demo.testnet`);
-    const full = (await call(env, "compare", { target: DAO })).structuredContent;
-    assert.equal(full.is_baseline, true);
-    assert.equal(full.baseline_updated, false);
-    assert.equal(snapshots(db), MAX_UNWATCHED_BASELINES, "nothing stored");
-    // A chat watching one of them frees a slot: watched baselines are not counted.
-    db.raw.prepare("INSERT INTO subscriptions (target, network, target_type, chat_id, chat_type, created_at) VALUES ('x0.kd-demo.testnet', 'testnet', 'account', '1', 'private', '2026-11-01T00:00:00Z')").run();
-    assert.equal((await call(env, "compare", { target: DAO })).structuredContent.baseline_updated, true);
-    assert.equal(snapshots(db), MAX_UNWATCHED_BASELINES + 1);
+    const ins = db.raw.prepare("INSERT INTO snapshots (target, network, generated_at, block_height, report_json) VALUES (?, 'testnet', ?, 1, '{}')");
+    ins.run("watched.kd-demo.testnet", "2026-10-01T00:00:00Z");
+    db.raw.prepare("INSERT INTO subscriptions (target, network, target_type, chat_id, chat_type, created_at) VALUES ('watched.kd-demo.testnet', 'testnet', 'account', '1', 'private', 'x')").run();
+    for (let i = 0; i < MAX_UNWATCHED_BASELINES; i++) ins.run(`x${String(i).padStart(3, "0")}.kd-demo.testnet`, `2026-11-01T00:${String(Math.floor(i / 60)).padStart(2, "0")}:${String(i % 60).padStart(2, "0")}Z`);
+    const d = (await call(env, "compare", { target: DAO })).structuredContent;
+    assert.equal(d.baseline_updated, true);
+    const has = (target: string) => (db.raw.prepare("SELECT COUNT(*) AS n FROM snapshots WHERE target = ?").get(target) as { n: number }).n > 0;
+    assert.ok(has(DAO), "the new baseline is stored");
+    assert.ok(!has("x000.kd-demo.testnet"), "the oldest unwatched baseline made room");
+    assert.ok(has("x001.kd-demo.testnet"));
+    assert.ok(has("watched.kd-demo.testnet"), "older, but watched: never pushed out");
+    assert.equal(snapshots(db), MAX_UNWATCHED_BASELINES + 1, "still bounded");
   });
 });
 

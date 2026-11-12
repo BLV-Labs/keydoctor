@@ -147,11 +147,7 @@ describe("GĐ4 message rendering", () => {
 
   it("/changes: baseline, no change, and changes with severity marks", () => {
     const base = daoReport();
-    assert.match(toPlain(renderChanges("en", { ...diffReports(null, base), baseline_updated: true }).text), /baseline saved at 2026-11-03 02:00 UTC/);
-    // compare stored nothing (unwatched-baseline cap, red-team M9): the bot must not claim it saved one.
-    const unsaved = toPlain(renderChanges("en", diffReports(null, base)).text);
-    assert.doesNotMatch(unsaved, /baseline saved/);
-    assert.match(unsaved, /none can be saved right now\. Use \/watch/);
+    assert.match(toPlain(renderChanges("en", diffReports(null, base)).text), /baseline saved at 2026-11-03 02:00 UTC/);
     const same = { ...daoReport(), generated_at: "2026-11-04T02:00:30Z", chain: { ...base.chain, block_height: base.chain.block_height + 10 } };
     assert.match(toPlain(renderChanges("vi", diffReports(base, same)).text), /không có thay đổi từ 2026-11-03 02:00 UTC đến 2026-11-04 02:00 UTC/);
     const curr = daoReport();

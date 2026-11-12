@@ -13,20 +13,23 @@ export interface Subscription {
   added_by?: string | null;
 }
 
-/** Returns false when this chat already watches the target. */
+/**
+ * Returns false when this chat already watches the target, or when the target or the user is at its cap. The caps are
+ * checked in the insert itself, so two /watch updates handled at once cannot both take the last slot.
+ */
 export async function addSubscription(db: D1Database, s: Subscription): Promise<boolean> {
-  const existing = await db
-    .prepare("SELECT 1 AS x FROM subscriptions WHERE target = ? AND network = ? AND chat_id = ?")
-    .bind(s.target, s.network, s.chat_id)
-    .first();
-  if (existing !== null) return false;
-  await db
+  const user = s.added_by ?? null;
+  const row = await db
     .prepare(
-      "INSERT OR IGNORE INTO subscriptions (target, network, target_type, chat_id, chat_type, created_at, added_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      `INSERT OR IGNORE INTO subscriptions (target, network, target_type, chat_id, chat_type, created_at, added_by)
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
+       WHERE (SELECT COUNT(*) FROM subscriptions WHERE target = ?1 AND network = ?2) < ?8
+         AND (?7 IS NULL OR (SELECT COUNT(*) FROM subscriptions WHERE target = ?1 AND network = ?2 AND added_by = ?7) < ?9)
+       RETURNING 1 AS x`,
     )
-    .bind(s.target, s.network, s.target_type, s.chat_id, s.chat_type, s.created_at, s.added_by ?? null)
-    .run();
-  return true;
+    .bind(s.target, s.network, s.target_type, s.chat_id, s.chat_type, s.created_at, user, MAX_CHATS_PER_TARGET, MAX_CHATS_PER_USER_TARGET)
+    .first();
+  return row !== null;
 }
 
 /** Returns false when there was nothing to remove. */

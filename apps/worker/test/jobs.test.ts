@@ -272,8 +272,11 @@ describe("GĐ28 owner action on an Agent Budget", () => {
 
   it("a target takes at most MAX_CHATS_PER_TARGET chats, and an alert goes to at most that many", async (t) => {
     const { env, chain, db } = setup(t, open);
+    // Raw rows: addSubscription itself stops at the cap, and rows from before the cap may be past it.
     for (let i = 0; i < MAX_CHATS_PER_TARGET + 2; i++) {
-      await addSubscription(db, { target: DAO, network: "testnet", target_type: "dao", chat_id: String(-1000 - i), chat_type: "group", created_at: `2026-11-01T00:00:${String(i).padStart(2, "0")}.000Z` });
+      db.raw
+        .prepare("INSERT INTO subscriptions (target, network, target_type, chat_id, chat_type, created_at) VALUES (?, 'testnet', 'dao', ?, 'group', ?)")
+        .run(DAO, String(-1000 - i), `2026-11-01T00:00:${String(i).padStart(2, "0")}.000Z`);
     }
     await saveProposalState(db, DAO, "testnet", { last_proposal_id: 4, pending: {} });
     chain.telegram.length = 0;
@@ -299,12 +302,15 @@ describe("GĐ28 owner action on an Agent Budget", () => {
     await byUser(-2999, 42);
     assert.match(sends(chain).at(-1)!.body.text, new RegExp(`You already have ${MAX_CHATS_PER_USER_TARGET} chats watching`));
     assert.equal(n(), MAX_CHATS_PER_USER_TARGET, "the extra chat was not added");
+    const extra = { target: DAO, network: "testnet" as const, target_type: "dao" as const, chat_id: "-2998", chat_type: "group", created_at: "2026-11-02T00:00:00.000Z" };
+    assert.equal(await addSubscription(db, { ...extra, added_by: "42" }), false, "the insert itself checks the user cap");
     await byUser(-2999, 43);
     assert.equal(rows(db, "SELECT 1 FROM subscriptions WHERE chat_id = '-2999'").length, 1, "another user still can");
     // Fill the target, then a chat that already holds a slot asks again.
     for (let i = 0; i < MAX_CHATS_PER_TARGET; i++) {
       await addSubscription(db, { target: DAO, network: "testnet", target_type: "dao", chat_id: String(-3000 - i), chat_type: "group", created_at: "2026-11-02T00:00:00.000Z" });
     }
+    assert.equal(rows(db, "SELECT 1 FROM subscriptions").length, MAX_CHATS_PER_TARGET, "the insert itself stops at the cap");
     chain.telegram.length = 0;
     await byUser(-2000, 42);
     assert.match(sends(chain).at(-1)!.body.text, /already/i);
