@@ -331,12 +331,15 @@ export interface DcaReadiness {
   registrations: { contract: string; registered: boolean; min: string }[] | null;
 }
 
-/** True when `version` ("1.2.0") is lower than 1.3.0; an unreadable version is not old. */
+/**
+ * True when `version` ("1.4.0") is lower than 1.5.0, the first Guard that takes a DCA lowest price
+ * (`swap_with_floor`); an unreadable version is not old.
+ */
 export function guardNeedsUpdate(version: string | null): boolean {
   const m = version === null ? null : /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
   if (m === null) return false;
   const [a, b] = [Number(m[1]), Number(m[2])];
-  return a < 1 || (a === 1 && b < 3);
+  return a < 1 || (a === 1 && b < 5);
 }
 
 /** True from Guard 1.4.0, the first version with `close`; an unread version is false. */

@@ -1,8 +1,8 @@
 // The Agent Budget page, pure. Everything shown is read from the chain (budget-read.ts); the owner's actions go
 // through the owner's wallet, and each button says how many signatures it takes (docs/final-idea.md §11.10.5).
-import { dcaPrice, DCA_TESTNET, formatUnits, type Network } from "key-doctor";
+import { dcaPrice, DCA_TESTNET, formatUnits, isSwapType, type Network } from "key-doctor";
 import { applyAutoFunding, createCost, fundingMinYocto, parseRecipientLines, planBudget, setupErrorText, SPUTNIK_FACTORY, WIZARD_STEPS, type RecipientRow, type SetupError } from "./budget-create.ts";
-import { DCA_DEFAULT_SLIPPAGE, DCA_SLIPPAGE_CHOICES, DCA_STRATEGY, DCA_UNITS, dcaFromForm, PLAN_UNITS, planFromForm, planTotals, type DcaUnit, type PlanUnit } from "./budget-flow.ts";
+import { DCA_DEFAULT_SLIPPAGE, DCA_FLOOR_MARGIN_BPS, DCA_SLIPPAGE_CHOICES, DCA_STRATEGY, DCA_UNITS, dcaFloorPrefill, dcaFromForm, PLAN_UNITS, planFromForm, planTotals, type DcaUnit, type PlanUnit } from "./budget-flow.ts";
 import { guardCanClose, guardNeedsUpdate, TOP_UP_TEXT, topUpBlocks, withdrawMaxYocto, type BudgetLive, type DcaReadiness, type BudgetPlan, type BudgetProposal, type BudgetRequest } from "./budget-read.ts";
 import { formatUtc, groupDigits, nearText, nearToYocto, plural, yoctoToNear } from "./format.ts";
 import { KEEPER_ACCOUNT } from "./guard-form.ts";
@@ -285,7 +285,7 @@ export function activityRow(r: BudgetRequest, g: GuardLive | null, plans: Budget
   const tone = group === "rejected" ? "pill-high" : group === "waiting" ? "pill-cleanup" : "pill-ok";
   const mark = group === "rejected" ? icon.alertSmall() : group === "waiting" ? icon.clock() : group === "auto" ? icon.check() : "";
   // A DCA step pays the wrap contract to swap: it is a sale of NEAR, not a payment to anyone.
-  const swap = r.plan_id !== null && plans?.find((p) => p.plan_id === r.plan_id)?.action_type === "swap";
+  const swap = r.plan_id !== null && isSwapType(plans?.find((p) => p.plan_id === r.plan_id)?.action_type ?? "");
   const paid = r.status === "Executed";
   const label = group === "auto" && paid ? (swap ? "Swapped automatically" : "Paid automatically") : (REQUEST_STATUS[r.status] ?? r.status);
   const reasons = r.reasons.map((c) => reasonText(c, g, r.receiver_id)).join(", ");
@@ -391,6 +391,7 @@ const PAUSE_TEXT: Record<string, string> = {
   insufficient_balance: "Paused: the Budget ran out of NEAR",
   guard_low_near: "Paused: the Budget account needs more NEAR to file the request",
   failures: "Paused: it no longer fits your rules, or runs kept failing",
+  price_floor_required: "Paused: made before the lowest price was required. Cancel it and create it again",
 };
 
 export function planStatus(p: BudgetPlan): string {
@@ -401,7 +402,7 @@ export function planStatus(p: BudgetPlan): string {
 /** One plan with its two-signature Pause / Resume / Cancel. Row id `plan-<id>` is the `&plan=` deep link target. */
 function planRow(p: BudgetPlan): Html {
   const what =
-    p.action_type === "swap"
+    isSwapType(p.action_type)
       ? `Sell ${near(p.amount_per_run)} for USDT every ${everyText(p.interval_sec)}`
       : p.receiver_id === null
         ? `Plan #${p.plan_id} (${p.action_type})`
@@ -436,7 +437,7 @@ function technical(b: BudgetLive, g: GuardLive, network: Network): Html {
       <div class="tech-row"><dt>Guard factory</dt><dd class="mono">${b.dao.factory}</dd></div>
       <div class="tech-row"><dt>Requests expire after</dt><dd>${proposalPeriod(b) === null ? "unknown" : hours(Number(proposalPeriod(b)! / 3_600_000_000_000n))}</dd></div>
       <div class="tech-row"><dt>Network</dt><dd>${network}</dd></div>
-      ${network === "testnet" && (b.plans ?? []).some((p) => p.action_type === "swap")
+      ${network === "testnet" && (b.plans ?? []).some((p) => isSwapType(p.action_type))
         ? html`<div class="tech-row"><dt>Swap exchange</dt><dd class="mono">${DCA_TESTNET.exchange} · pool ${DCA_TESTNET.pool_id}</dd></div>
           <div class="tech-row"><dt>Swap tokens</dt><dd class="mono">${DCA_TESTNET.wrap} → ${DCA_TESTNET.token_out}</dd></div>`
         : ""}</dl>
@@ -688,6 +689,8 @@ export interface DcaView {
   readiness: DcaReadiness | null;
   /** The exchange's answer for one run, in USDT base units; null when unread. */
   quote: string | null;
+  /** The exchange's answer for 1 NEAR, in USDT base units: the lowest-price field starts from it. null when unread. */
+  price: string | null;
   /** True when this build knows the factory to update from. */
   canUpdate: boolean;
 }
@@ -752,12 +755,15 @@ function dcaPanel(b: BudgetLive, error: string | null, values: Record<string, st
   if (checked !== null && checked.ok) {
     const plan = checked.value;
     const t = planTotals(plan, b.withdrawable);
-    const hidden = ["amount", "every", "unit", "stop", "runs", "end", "slippage", "start"].map((k) => html`<input type="hidden" name="${k}" value="${v(k)}">`);
+    const hidden = ["amount", "every", "unit", "stop", "runs", "end", "slippage", "floor", "start"].map((k) => html`<input type="hidden" name="${k}" value="${v(k)}">`);
     const maxDay = g?.policy?.max_per_day ?? null;
     const overDay = maxDay !== null && BigInt(t.per_day) > BigInt(maxDay);
     const left = maxDay === null || g?.window == null ? null : BigInt(maxDay) - BigInt(g.window.spent_in_window);
     const quote = dca?.quote ?? null;
     const price = quote === null ? null : dcaPrice(plan.amount.yocto, quote);
+    // The Guard's own test (on_quote): the run goes only when quote * (1 - max drop) reaches amount * floor / 1 NEAR.
+    const runFloor = (BigInt(plan.amount.yocto) * BigInt(plan.min_out_per_near)) / 10n ** 24n;
+    const belowFloor = quote !== null && (BigInt(quote) * BigInt(10_000 - plan.slippage_bps)) / 10_000n < runFloor;
     return shell(html`<input type="hidden" name="step" value="confirm">${hidden}
       <div class="sum-box">
         ${sumRow("Sell each time", `${plan.amount.near} NEAR`)}
@@ -767,12 +773,14 @@ function dcaPanel(b: BudgetLive, error: string | null, values: Record<string, st
         ${sumRow("Last run", formatUtc(new Date(t.last_run_ms).toISOString()))}
         ${sumRow("Total to sell", near(t.total))}
         ${sumRow("Max price drop", `${plan.slippage_bps / 100} %`)}
+        ${sumRow("Lowest price", `${groupDigits(formatUnits(plan.min_out_per_near, DCA_TESTNET.token_out_decimals))} USDT per NEAR`)}
         ${sumRow("Spendable now", near(b.withdrawable))}
         ${left === null ? "" : sumRow("Left today for agents", near((left > 0n ? left : 0n).toString()))}
       </div>
       ${quote === null
         ? html`<p class="small muted">The current price could not be read. The sale still checks it at every run.</p>`
         : html`<p class="small">Right now ${plan.amount.near} NEAR gets about ${groupDigits(formatUnits(quote, DCA_TESTNET.token_out_decimals))} USDT${price === null ? "" : html` (${price} USDT per NEAR)`}, testnet price.</p>`}
+      ${belowFloor ? html`<p class="banner banner-cleanup">${icon.alertSmall()}<span>At today's price a run would be skipped: it is below your lowest price. Go back and lower it, or wait for the price to rise.</span></p>` : ""}
       ${t.short === null
         ? html`<p class="check-line">${icon.alert()}<span>Could not read the balance, so the page cannot tell whether it covers every run.</span></p>`
         : BigInt(t.short) > 0n
@@ -805,12 +813,28 @@ function dcaPanel(b: BudgetLive, error: string | null, values: Record<string, st
     </div>
     <div class="stack-xs"><label class="label" for="bp-start">First run (your local time, optional)</label>
       <input id="bp-start" name="start" type="datetime-local" class="input" value="${v("start")}"><p class="small muted">Empty or past: the first run is due right away.</p></div>
+    ${floorField(v("floor") || dcaFloorPrefill(dca?.price ?? null), dca?.price ?? null, error !== null)}
     <p class="small muted">If the price drops more than the max between the quote and the swap, that run is skipped. Runs must fit your fence: ${near(g?.policy?.max_per_tx)} per payment, ${near(g?.policy?.max_per_day)} a day.</p>
     ${twoSignatureSteps(b.dao.policy.proposal_bond)}`;
   return shell(body, html`${CANCEL}<button type="submit" class="btn btn-primary">Review</button>`);
 }
 
 type Field = (name: string, label: string, value: string, placeholder?: string, opts?: { mono?: boolean; unit?: boolean }) => Html;
+
+/**
+ * The DCA lowest price, in USDT per NEAR as people read a price. Anyone may run a step, so the price at run time can
+ * be pushed down on purpose; this floor is the one the DAO chose, and a run below it is skipped.
+ */
+function floorField(value: string, pricePerNear: string | null, hasError: boolean): Html {
+  const now = pricePerNear === null ? null : formatUnits(pricePerNear, DCA_TESTNET.token_out_decimals);
+  const hint =
+    now === null
+      ? "The current price could not be read. A run below this price is skipped, so no NEAR is sold cheaper."
+      : `Now about ${groupDigits(now)} USDT per NEAR; this starts ${DCA_FLOOR_MARGIN_BPS / 100} % lower. A run below it is skipped, so no NEAR is sold cheaper.`;
+  return html`<div class="stack-xs"><label class="label" for="bp-floor">Lowest price</label>
+    <div class="input-unit"><input id="bp-floor" name="floor" type="text" inputmode="decimal" class="input" value="${value}" placeholder="8.5" autocomplete="off" spellcheck="false" aria-describedby="bp-floor-hint${hasError ? " bp-error" : ""}"><span class="muted">USDT per NEAR</span></div>
+    <p id="bp-floor-hint" class="small muted">${hint}</p></div>`;
+}
 
 const PLAN_UNIT_LABELS: Record<PlanUnit, string> = { minutes: "minutes", hours: "hours", days: "days" };
 

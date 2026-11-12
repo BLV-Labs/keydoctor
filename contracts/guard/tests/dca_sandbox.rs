@@ -246,7 +246,8 @@ impl Dca {
 
     async fn create_swap_plan(&self, amount: NearToken, slippage_bps: u16, runs: u32) -> anyhow::Result<()> {
         let plan = json!({ "plan": {
-            "action": { "type": "swap", "pool_id": 0, "token_out": USDT, "max_slippage_bps": slippage_bps },
+            // Floor 1 USDT per NEAR: far under the seeded pool's ~9.6, so it never decides these tests (unit tests cover it).
+            "action": { "type": "swap_with_floor", "pool_id": 0, "token_out": USDT, "max_slippage_bps": slippage_bps, "min_out_per_near": "1000000" },
             "strategy_id": "dca-near",
             "token_in": "",
             "amount_per_run": amount.as_yoctonear().to_string(),

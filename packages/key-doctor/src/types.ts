@@ -364,9 +364,18 @@ export interface KdPreflight {
 export type PlanAction =
   | { type: "transfer"; receiver_id: string }
   | { type: "call"; target: string; method: string; args_base64: string; deposit: string; gas: string }
-  | { type: "swap"; pool_id: number; token_out: string; max_slippage_bps: number };
+  /** Guard 1.4.0 DCA without a price floor. A 1.5.0 Guard refuses to create it and pauses a stored one. */
+  | { type: "swap"; pool_id: number; token_out: string; max_slippage_bps: number }
+  /** Guard 1.5.0 DCA. `min_out_per_near`: the least token_out base units one NEAR (10^24 yocto) may buy. */
+  | { type: "swap_with_floor"; pool_id: number; token_out: string; max_slippage_bps: number; min_out_per_near: string };
 export type PlanStatus = "active" | "paused" | "completed" | "cancelled";
-export type PlanPauseReason = "insufficient_balance" | "guard_low_near" | "owner" | "failures" | null;
+export type PlanPauseReason =
+  | "insufficient_balance"
+  | "guard_low_near"
+  | "owner"
+  | "failures"
+  | "price_floor_required"
+  | null;
 
 /** Stored on chain, in the Guard. Times are nanoseconds as strings, as the Guard's `get_plans` returns them. */
 export interface Plan {

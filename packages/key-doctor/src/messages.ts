@@ -1,4 +1,4 @@
-import { DCA_TESTNET, formatUnits } from "./dca.ts";
+import { DCA_TESTNET, formatUnits, isSwapAction } from "./dca.ts";
 import type { Messages, PlanAction, PlanPauseReason } from "./types.ts";
 import { BLOCK_TIME_MS, FA_OLD_DAYS, MAX_KEYS, ROLE_LABEL_MAX_LEN } from "./rules/thresholds.ts";
 
@@ -483,7 +483,7 @@ export interface SwapFigures {
 
 const stepDone = (action: PlanAction, amount: string, swap?: SwapFigures): Text => {
   const near = formatNear(amount);
-  if (action.type === "swap") {
+  if (isSwapAction(action)) {
     const out = swap?.amount_out === undefined ? null : formatUnits(swap.amount_out, DCA_TESTNET.token_out_decimals);
     if (out === null) return { vi: `Đã bán ${near} NEAR lấy USDT.`, en: `Sold ${near} NEAR for USDT.` };
     const p = swap?.price;
@@ -503,7 +503,7 @@ function textOf(title: Text, vi: string[], en: string[], action: Text = { vi: ""
 
 /** The totals line of a message: what a swap plan got back, or what any other plan spent. */
 const totalsLines = (action: PlanAction, spent: string, swap?: SwapFigures): { vi: string; en: string } => {
-  if (action.type !== "swap") return { vi: `Tổng đã chi: ${formatNear(spent)} NEAR`, en: `Total spent: ${formatNear(spent)} NEAR` };
+  if (!isSwapAction(action)) return { vi: `Tổng đã chi: ${formatNear(spent)} NEAR`, en: `Total spent: ${formatNear(spent)} NEAR` };
   const got = swap?.received == null ? null : formatUnits(swap.received, DCA_TESTNET.token_out_decimals);
   const avg = swap?.avg_price;
   return {
@@ -525,7 +525,7 @@ export function planStepText(strategyId: string, action: PlanAction, amount: str
 
 export function planCompletedText(strategyId: string, action: PlanAction, amount: string, total: number, spent: string, swap?: SwapFigures): AlertText {
   const done = stepDone(action, amount, swap);
-  const totals = action.type === "swap" ? totalsLines(action, spent, swap) : null;
+  const totals = isSwapAction(action) ? totalsLines(action, spent, swap) : null;
   return textOf(
     planTitle(strategyId, total, total),
     [done.vi, ...(totals ? [totals.vi] : []), `Kế hoạch hoàn tất: ${total}/${total} lần, tổng đã chi ${formatNear(spent)} NEAR.`],
@@ -546,7 +546,12 @@ export function planSkippedText(strategyId: string, run: number, total: number, 
       [`Skipped this run: ${why.en}. ${near} NEAR stays in your Budget as wrapped NEAR.`, ...(next ? [`Next run: ${next}`] : [])],
     );
   }
-  const why: Text = reason === "OVER_DAILY_LIMIT" ? { vi: "vượt hạn mức 24 giờ", en: "over the 24 h limit" } : { vi: reason, en: reason };
+  const why: Text =
+    reason === "OVER_DAILY_LIMIT"
+      ? { vi: "vượt hạn mức 24 giờ", en: "over the 24 h limit" }
+      : reason === "PRICE_BELOW_FLOOR"
+        ? { vi: "giá thấp hơn giá sàn bạn đặt", en: "the price was below the lowest price you set" }
+        : { vi: reason, en: reason };
   return textOf(
     title,
     [`Bỏ qua lần này: ${why.vi}. Không có tiền nào được chi.`, ...(next ? [`Lần tới: ${next}`] : [])],
@@ -567,6 +572,18 @@ export function planPausedText(strategyId: string, run: number, total: number, r
       vi: "Top up Guard rồi bấm Resume để chạy tiếp.",
       en: "Top up the Guard, then press Resume to continue.",
     });
+  }
+  if (reason === "price_floor_required") {
+    // Guard 1.5.0 will not run a DCA plan made without a lowest price: a price read at run time alone can be skewed.
+    return textOf(
+      title,
+      ["Kế hoạch tạm dừng: kế hoạch này được tạo trước khi có giá sàn nên không chạy được nữa."],
+      ["Plan paused: it was made before the lowest-price rule, so it cannot run any more."],
+      {
+        vi: "Hủy kế hoạch trong Agent Budget rồi tạo lại với một giá sàn.",
+        en: "Cancel it in Agent Budget and create it again with a lowest price.",
+      },
+    );
   }
   const detail = code === null ? "" : ` (${code})`;
   return textOf(title, [`Kế hoạch tạm dừng: bước không chạy được${detail}.`], [`Plan paused: the step could not run${detail}.`], {
