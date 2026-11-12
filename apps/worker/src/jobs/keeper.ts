@@ -43,7 +43,7 @@ interface Config {
   maxBalance: bigint;
   maxGuards: number;
   maxSteps: number;
-  maxTxsPerGuard: number;
+  maxTxsPerDao: number;
 }
 
 interface GuardView {
@@ -65,7 +65,7 @@ interface Cycle {
   stepsLeft: number;
   syncsLeft: number;
   sendsLeft: number;
-  /** UTC day, and keeper transactions per Guard: before this cycle, and in it. */
+  /** UTC day, and keeper transactions per DAO: before this cycle, and in it. */
   day: string;
   txsBefore: Map<string, number>;
   txsNow: Map<string, number>;
@@ -106,7 +106,7 @@ export async function runKeeperJob(env: Env): Promise<KeeperResult> {
     maxBalance,
     maxGuards: intVar(env.KEEPER_MAX_GUARDS_PER_RUN, 3, 1, 3),
     maxSteps: intVar(env.KEEPER_MAX_STEPS_PER_RUN, 3, 0, 3),
-    maxTxsPerGuard: intVar(env.KEEPER_MAX_TXS_PER_GUARD_PER_DAY, 48, 1, 1000),
+    maxTxsPerDao: intVar(env.KEEPER_MAX_TXS_PER_DAO_PER_DAY, 48, 1, 1000),
   };
 
   const started = Date.now();
@@ -143,7 +143,7 @@ async function runCycle(env: Env, cfg: Config, cursor: number, result: KeeperRes
     if (picked.length === cfg.maxGuards) break;
     if (g.ready && SPUTNIK_DAO.test(g.dao_id)) picked.push({ g, at });
   }
-  const txsBefore = await keeperTxsOn(env.DB, txs.day, picked.map((p) => p.g.guard_id));
+  const txsBefore = await keeperTxsOn(env.DB, txs.day, [...new Set(picked.map((p) => p.g.dao_id))]);
   const cycle: Cycle = { env, cfg, rpc, head, result, key: null, nonce: null, canSign: true, stepsLeft: cfg.maxSteps, syncsLeft: MAX_SYNCS, sendsLeft: MAX_SENDS, day: txs.day, txsBefore, txsNow: txs.sent };
   for (const { g } of picked) {
     result.targets_checked += 1;
@@ -184,10 +184,10 @@ async function checkBalance(env: Env, cfg: Config, balance: bigint, result: Keep
 }
 
 /** Key and nonce load on the first signature, so a cycle with nothing due spends no CPU on them. */
-async function send(c: Cycle, guardId: string, method: KeeperMethod, args: Record<string, unknown>): Promise<{ tx: TxOutcome; hash: string } | null> {
+async function send(c: Cycle, guardId: string, daoId: string, method: KeeperMethod, args: Record<string, unknown>): Promise<{ tx: TxOutcome; hash: string } | null> {
   let hash = "";
   // Counted before it is sent: a send that throws may still land, and its gas is spent either way.
-  c.txsNow.set(guardId, (c.txsNow.get(guardId) ?? 0) + 1);
+  c.txsNow.set(daoId, (c.txsNow.get(daoId) ?? 0) + 1);
   try {
     c.key ??= await loadKeeperKey(c.cfg.accountId, c.cfg.secret);
     c.nonce = (c.nonce ?? (await c.rpc.nonce(c.cfg.accountId, c.key.publicKey))) + 1n;
@@ -249,10 +249,11 @@ async function runGuard(c: Cycle, g: GuardView): Promise<void> {
   let allowed: boolean | null = null;
   let toldShare = false;
   const maySign = async (): Promise<boolean> => {
-    // Red-team M2: the keeper pays the gas, so one Guard gets at most maxTxsPerGuard transactions a day.
-    const used = (c.txsBefore.get(g.guard_id) ?? 0) + (c.txsNow.get(g.guard_id) ?? 0);
-    if (used >= c.cfg.maxTxsPerGuard) {
-      if (!toldShare) result.errors.push(`${g.guard_id}: used its ${c.cfg.maxTxsPerGuard} keeper transactions for ${c.day}`);
+    // Red-team M2: the keeper pays the gas, so the Guards of one DAO share maxTxsPerDao transactions a day,
+    // so many Guards made for one DAO get no more than one.
+    const used = (c.txsBefore.get(g.dao_id) ?? 0) + (c.txsNow.get(g.dao_id) ?? 0);
+    if (used >= c.cfg.maxTxsPerDao) {
+      if (!toldShare) result.errors.push(`${g.guard_id}: ${g.dao_id} used its ${c.cfg.maxTxsPerDao} keeper transactions for ${c.day}`);
       toldShare = true;
       return false;
     }
@@ -272,7 +273,7 @@ async function runGuard(c: Cycle, g: GuardView): Promise<void> {
       continue;
     }
     c.stepsLeft -= 1;
-    const sent = await send(c, g.guard_id, "execute_plan_step", { plan_id: plan.plan_id });
+    const sent = await send(c, g.guard_id, g.dao_id, "execute_plan_step", { plan_id: plan.plan_id });
     if (!sent) break;
     result.steps_run += 1;
     changed = true;
@@ -292,7 +293,7 @@ async function runGuard(c: Cycle, g: GuardView): Promise<void> {
   for (const r of requests.filter((x) => x.status === "AutoApproved").reverse()) {
     if (!c.canSign || c.syncsLeft === 0 || !(await maySign())) break;
     c.syncsLeft -= 1;
-    const sent = await send(c, g.guard_id, "sync_request", { request_id: r.request_id });
+    const sent = await send(c, g.guard_id, g.dao_id, "sync_request", { request_id: r.request_id });
     if (!sent) break;
     if (sent.tx.status.SuccessValue) r.status = (JSON.parse(atob(sent.tx.status.SuccessValue)) as { status: string }).status;
     const paused = guardEvents(sent.tx, g.guard_id).find((e) => e.event === "plan_paused" && e.data?.plan_id === r.plan_id);

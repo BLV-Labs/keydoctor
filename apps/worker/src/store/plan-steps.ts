@@ -27,24 +27,24 @@ export async function releaseLease(db: D1Database, now: string, cursor: number, 
   await db.batch([release, ...keeperTxsStatements(db, txs.day, txs.sent)]);
 }
 
-/** Keeper transactions sent to each of `guardIds` on `day` (red-team M2). One subrequest. */
-export async function keeperTxsOn(db: D1Database, day: string, guardIds: string[]): Promise<Map<string, number>> {
-  if (guardIds.length === 0) return new Map();
+/** Keeper transactions sent for the Guards of each of `daoIds` on `day` (red-team M2). One subrequest. */
+export async function keeperTxsOn(db: D1Database, day: string, daoIds: string[]): Promise<Map<string, number>> {
+  if (daoIds.length === 0) return new Map();
   const { results } = await db
-    .prepare(`SELECT guard_id, txs FROM keeper_txs WHERE day = ? AND guard_id IN (${guardIds.map(() => "?").join(", ")})`)
-    .bind(day, ...guardIds)
-    .all<{ guard_id: string; txs: number }>();
-  return new Map(results.map((r) => [r.guard_id, r.txs]));
+    .prepare(`SELECT dao_id, txs FROM keeper_txs WHERE day = ? AND dao_id IN (${daoIds.map(() => "?").join(", ")})`)
+    .bind(day, ...daoIds)
+    .all<{ dao_id: string; txs: number }>();
+  return new Map(results.map((r) => [r.dao_id, r.txs]));
 }
 
 /** Adds a cycle's transactions and drops earlier days. */
 function keeperTxsStatements(db: D1Database, day: string, sent: Map<string, number>) {
   return [
     db.prepare("DELETE FROM keeper_txs WHERE day < ?").bind(day),
-    ...[...sent].map(([guard, n]) =>
+    ...[...sent].map(([dao, n]) =>
       db
-        .prepare("INSERT INTO keeper_txs (guard_id, day, txs) VALUES (?, ?, ?) ON CONFLICT(guard_id, day) DO UPDATE SET txs = txs + excluded.txs")
-        .bind(guard, day, n),
+        .prepare("INSERT INTO keeper_txs (dao_id, day, txs) VALUES (?, ?, ?) ON CONFLICT(dao_id, day) DO UPDATE SET txs = txs + excluded.txs")
+        .bind(dao, day, n),
     ),
   ];
 }

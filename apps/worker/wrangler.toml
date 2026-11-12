@@ -36,6 +36,6 @@ KEEPER_MIN_BALANCE = "1"
 KEEPER_MAX_BALANCE = "5"
 KEEPER_MAX_GUARDS_PER_RUN = "3"
 KEEPER_MAX_STEPS_PER_RUN = "3"
-KEEPER_MAX_TXS_PER_GUARD_PER_DAY = "48"
+KEEPER_MAX_TXS_PER_DAO_PER_DAY = "48"
 # Yield push (YD3): DAOs read per cycle; watched DAOs take turns. Above 1 only on the paid plan.
 MAX_YIELD_DAOS_PER_RUN = "1"

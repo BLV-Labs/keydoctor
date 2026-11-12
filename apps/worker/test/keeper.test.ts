@@ -403,23 +403,27 @@ describe("GĐ29 keeper: what it signs", () => {
     assert.equal(rows(env.DB as TestD1, "SELECT guard_cursor FROM keeper_state")[0].guard_cursor, 0, "the whole list was one page");
   });
 
-  it("one Guard gets at most KEEPER_MAX_TXS_PER_GUARD_PER_DAY keeper transactions a day (red-team M2)", async (t) => {
-    // A plan may be due every minute and the keeper pays the gas: without a share, one Guard drains it below the minimum.
+  it("the Guards of one DAO share KEEPER_MAX_TXS_PER_DAO_PER_DAY keeper transactions a day (red-team M2)", async (t) => {
+    // A plan may be due every minute and the keeper pays the gas: without a share, one DAO drains it below the minimum,
+    // and a share per Guard would let that DAO make more Guards to get more.
     const greedy = new FakeGuard();
+    const twin = new FakeGuard("twin.kd-guards.testnet", greedy.dao_id);
     const other = new FakeGuard("other.kd-guards.testnet", "other.sputnik-dao.testnet");
-    const { env, chain } = setup(t, [greedy, other], { KEEPER_MAX_TXS_PER_GUARD_PER_DAY: "2" });
+    const { env, chain } = setup(t, [greedy, twin, other], { KEEPER_MAX_TXS_PER_DAO_PER_DAY: "2" });
     chain.views.get_policy = () => bytes({ roles: [] });
     for (let i = 0; i < 3; i++) greedy.plan();
+    twin.plan();
     other.plan();
     const first = await runKeeperJob(env);
-    assert.equal(greedy.calls.length, 2, "stopped at its share");
+    assert.equal(greedy.calls.length, 2, "stopped at the DAO's share");
+    assert.equal(twin.calls.length, 0, "a second Guard of the same DAO gets nothing more");
     assert.ok(first.errors.some((e) => /used its 2 keeper transactions/.test(e)));
-    assert.equal(other.calls.filter((c) => c.method === "execute_plan_step").length, 1, "another Guard still runs");
+    assert.equal(other.calls.filter((c) => c.method === "execute_plan_step").length, 1, "another DAO still runs");
     nextHour(chain);
     await runKeeperJob(env);
-    assert.equal(greedy.calls.length, 2, "the share holds across cycles of the same day");
+    assert.equal(greedy.calls.length + twin.calls.length, 2, "the share holds across cycles of the same day");
     const today = new Date().toISOString().slice(0, 10);
-    assert.deepEqual(rows(env.DB as TestD1, `SELECT txs FROM keeper_txs WHERE guard_id = '${greedy.guard_id}' AND day = '${today}'`).map((r) => r.txs), [2]);
+    assert.deepEqual(rows(env.DB as TestD1, `SELECT txs FROM keeper_txs WHERE dao_id = '${greedy.dao_id}' AND day = '${today}'`).map((r) => r.txs), [2]);
   });
 
   it("works through every Guard of the factory in turn, however many there are", async (t) => {
