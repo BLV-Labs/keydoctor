@@ -1,6 +1,6 @@
 // Keeper (ADR 0005, GĐ29): calls the plan steps that are due and tells the Budget's chats what happened.
 // The Guard decides everything: this job only pays the gas (K2). It never takes an amount, a receiver or a choice.
-import { DCA_TESTNET, DEFAULT_RPC_URLS, budgetAlerts, dcaPrice, guardPausedAlert, type KdBudgetAlert, type Plan, type PlanRequest, type PlanStepRecord } from "key-doctor";
+import { DCA_TESTNET, DEFAULT_RPC_URLS, budgetAlerts, dcaPrice, guardPausedAlert, isSwapAction, type KdBudgetAlert, type Plan, type PlanRequest, type PlanStepRecord } from "key-doctor";
 import type { Env } from "../env.ts";
 import { rpcUrlsFor } from "../core.ts";
 import { RpcFailed, createKeeperRpc, guardEvents, loadKeeperKey, panicCode, signCall, swapOutcome, type KeeperKey, type KeeperMethod, type KeeperRpc, type TxOutcome } from "../keeper/near.ts";
@@ -192,13 +192,13 @@ const paysKeeper = (plan: Plan, keeper: string): boolean =>
   (plan.action.type === "transfer" && plan.action.receiver_id === keeper) || (plan.action.type === "call" && plan.action.target === keeper);
 
 /** What the Guard made of a step, from its events. Null when it changed nothing. */
-function stepRecord(plan: Plan, due: string, hash: string, tx: TxOutcome, now: string): (PlanStepRecord & { tx_hash: string }) | null {
+function stepRecord(guard: string, plan: Plan, due: string, hash: string, tx: TxOutcome, now: string): (PlanStepRecord & { tx_hash: string }) | null {
   const base = { plan_id: plan.plan_id, run: plan.runs_done + 1, amount_in: plan.amount_per_run, tx_hash: hash, executed_at: now, due };
-  for (const { event, data } of guardEvents(tx)) {
+  for (const { event, data } of guardEvents(tx, guard)) {
     if (data?.plan_id !== plan.plan_id) continue;
     if (event === "plan_step_executed") {
       const executed: PlanStepRecord & { tx_hash: string } = { ...base, run: data.run, status: "executed", proposal_id: data.proposal_id };
-      if (plan.action.type !== "swap") return executed;
+      if (!isSwapAction(plan.action)) return executed;
       // The Guard cannot see the exchange's outcome (ADR 0007): the number and the refusal come from Rhea's own receipts.
       const swap = swapOutcome(tx, DCA_TESTNET.exchange, DCA_TESTNET.wrap, plan.action.token_out);
       if (swap === null) return executed;
@@ -248,7 +248,7 @@ async function runGuard(c: Cycle, g: GuardView): Promise<void> {
     const code = panicCode(sent.tx.status.Failure);
     // Not due or not active: someone else called first (K2 lets anyone), and that is fine.
     if (code === "PLAN_NOT_DUE" || code === "PLAN_NOT_ACTIVE") continue;
-    const step = stepRecord(plan, plan.next_run_at!, sent.hash, sent.tx, now);
+    const step = stepRecord(g.guard_id, plan, plan.next_run_at!, sent.hash, sent.tx, now);
     if (step) await saveStep(env.DB, g.guard_id, step);
     else result.errors.push(`${g.guard_id}: plan ${plan.plan_id}: ${code ?? "NO_EVENT"} ${sent.hash}`);
   }
@@ -264,7 +264,7 @@ async function runGuard(c: Cycle, g: GuardView): Promise<void> {
     const sent = await send(c, g.guard_id, "sync_request", { request_id: r.request_id });
     if (!sent) break;
     if (sent.tx.status.SuccessValue) r.status = (JSON.parse(atob(sent.tx.status.SuccessValue)) as { status: string }).status;
-    const paused = guardEvents(sent.tx).find((e) => e.event === "plan_paused" && e.data?.plan_id === r.plan_id);
+    const paused = guardEvents(sent.tx, g.guard_id).find((e) => e.event === "plan_paused" && e.data?.plan_id === r.plan_id);
     const plan = plans.find((p) => p.plan_id === r.plan_id);
     if (paused && plan) {
       const run = Number(/ run (\d+)$/.exec(r.memo)?.[1]);

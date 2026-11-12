@@ -6,7 +6,7 @@ Design: `docs/final-idea.md` §1, §7, §8, §11, §12. The code is built; the s
 
 - **TypeScript, pnpm workspaces** — monorepo (`packages/*`, `apps/dashboard`, `apps/worker`, `apps/guard-mcp`, `examples/near-ai-agent`; list in `pnpm-workspace.yaml`). `contracts/*` are Rust crates outside the workspace.
 - **`packages/key-doctor`** — pure library using only `fetch` (browser, Node, Workers): `scanDao`, `scanAccount`, `checkProposals`, `diffReports`, `toSummary`.
-- **Cloudflare Workers + D1 (free plan)** — `apps/worker`: Telegram webhook, MCP (Streamable HTTP), `/run-check`, `POST /api/watch-link`, and four crons (`apps/worker/wrangler.toml`; the `scheduled` handler in `src/index.ts` picks the job by cron string): `*/15 * * * *` proposal watch, `0 2 * * *` daily key diff, `7,22,37,52 * * * *` keeper, `11,26,41,56 * * * *` yield push.
+- **Cloudflare Workers + D1 (free plan)** — `apps/worker`: Telegram webhook, MCP (Streamable HTTP), `/run-check`, `POST /api/watch-link`, and four crons (`apps/worker/wrangler.toml`; the `scheduled` handler in `src/index.ts` picks the job by cron string): `*/15 * * * *` proposal watch, `2 * * * *` daily key diff (a few targets per run, oldest check first), `7,22,37,52 * * * *` keeper, `11,26,41,56 * * * *` yield push.
 - **Cloudflare Pages** — `apps/dashboard`: static site, scans run in the browser.
 - **NEAR RPC (public)** — read-only data source; every query in one scan is pinned to one `block_height`.
 - **Telegram Bot API** — the only alert channel.

@@ -139,7 +139,8 @@ interface Sign2 {
 }
 let budgetSign2: Sign2 | null = null;
 /** The DCA pop-up's reads: the checklist state and the price of one run. */
-let dcaRead: { readiness: DcaReadiness | null; quote: string | null } = { readiness: null, quote: null };
+/** `price`: what 1 NEAR buys now (token_out base units), to start the lowest-price field from. */
+let dcaRead: { readiness: DcaReadiness | null; quote: string | null; price: string | null } = { readiness: null, quote: null, price: null };
 /** An agent whose last signature has started. Its private key exists only here: leaving the page loses it. */
 let budgetNewAgent: NewAgent | null = null;
 /** A Budget being created. `key` exists from sign 2 on, and only here: leaving the page loses it. */
@@ -1755,7 +1756,7 @@ const isBudgetPanel = (v: unknown): v is BudgetPanel =>
 const formValues = (form: HTMLFormElement): Record<string, string> => Object.fromEntries([...new FormData(form).entries()].map(([k, v]) => [k, String(v)]));
 
 const dcaContract = (): string => BUDGET_FACTORY || BUDGET_FACTORY_NAME;
-const dcaView = (): DcaView => ({ network: budgetNetwork(), readiness: dcaRead.readiness, quote: dcaRead.quote, canUpdate: true });
+const dcaView = (): DcaView => ({ network: budgetNetwork(), readiness: dcaRead.readiness, quote: dcaRead.quote, price: dcaRead.price, canUpdate: true });
 
 function renderDcaPanel(error: string | null, values: Record<string, string>, now: number = Date.now()): Html {
   return renderBudgetPanel("dca", budgetState as BudgetLive, error, { ...budgetPanelTo(), ...values, connected: connected === null ? "" : "1" }, now, dcaView());
@@ -1764,7 +1765,7 @@ function renderDcaPanel(error: string | null, values: Record<string, string>, no
 /** Opens the DCA pop-up at once, then fills the checklist when the chain reads are back. */
 function openDca(trigger: HTMLElement): void {
   if (budgetState === null) return;
-  dcaRead = { readiness: null, quote: null };
+  dcaRead = { readiness: null, quote: null, price: null };
   showBudgetDrawer(renderDcaPanel(null, {}), trigger, false);
   void refreshDca();
 }
@@ -1778,11 +1779,17 @@ function repaintDca(): void {
   if (activeId !== "") document.getElementById(activeId)?.focus();
 }
 
+const NEAR_IN_YOCTO = (10n ** 24n).toString();
+
 async function refreshDca(): Promise<void> {
   const state = budgetState;
   if (state === null || state.guard === null) return;
-  const readiness = await readDcaReadiness(state.dao.dao, state.guard.guard_id, dcaContract(), budgetNetwork()).catch(() => null);
-  dcaRead = { ...dcaRead, readiness };
+  const network = budgetNetwork();
+  const [readiness, price] = await Promise.all([
+    readDcaReadiness(state.dao.dao, state.guard.guard_id, dcaContract(), network).catch(() => null),
+    readDcaQuote(NEAR_IN_YOCTO, network).catch(() => null),
+  ]);
+  dcaRead = { ...dcaRead, readiness, price };
   repaintDca();
 }
 

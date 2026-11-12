@@ -52,3 +52,22 @@ GĐ31 sells NEAR for USDT on Rhea (`ref-finance-101.testnet`, pool 57) on a sche
 - Withdrawing USDT is not built yet (Roadmap). The USDT stays in the DAO.
 
 **Revisit trigger**: mainnet support, a second exchange, or a Sputnik version that calls back on a `FunctionCall`.
+
+## 2026-11-12: DAO price floor (red-team H2)
+
+**Problem.** Anyone can call `execute_plan_step` (ADR 0005 K2), and Decision 4 set `min_out` from a spot quote read in the same step. An attacker could move pool 57 just before calling the step, let the Guard quote the skewed price, then move it back: a sandwich that sells the DAO's NEAR cheap with the slippage check passing.
+
+**Decision** (owner, 2026-11-12):
+
+| # | Decision |
+|---|---|
+| 10 | New `PlanAction::SwapWithFloor { pool_id, token_out, max_slippage_bps, min_out_per_near }`, appended last (borsh order kept, no `migrate` change). JSON tag `swap_with_floor`. `min_out_per_near` is `token_out` base units per whole NEAR (10^24 yocto), set by the DAO when it votes the plan. |
+| 11 | `create_plan` refuses `swap` (`PRICE_FLOOR_REQUIRED`) and a zero floor (`INVALID_PRICE_FLOOR`). |
+| 12 | In `on_quote`: `dao_floor = amount_per_run × min_out_per_near / 10^24` (256-bit, no overflow). If `quote × (10000 − bps) / 10000 < dao_floor`, or `dao_floor` does not fit in `u128`, the run is skipped: no proposal, the request is saved `Failed`, the daily limit is given back, `runs_done` does not move, the slot moves on, and `plan_step_skipped { plan_id, run, reason: "PRICE_BELOW_FLOOR", due }` is emitted. Otherwise `min_out = max(quote_floor, dao_floor)`. |
+| 13 | A plan made with the old `swap` pauses with the new `PlanPauseReason::PriceFloorRequired` (appended last) and code `PRICE_FLOOR_REQUIRED`: when it comes due, and also when its quote was in flight at the upgrade. The DAO cancels it and creates it again with a floor. |
+| 14 | Guard version 1.5.0. |
+| 15 | The dashboard asks for a "lowest price" in USDT per NEAR, prefilled 5 % under the current Rhea quote and editable; code turns it into base units with the token's 6 decimals. Below 1.5.0 the dashboard asks for the Budget update before a DCA. |
+
+**Why a new tag, not a field on `swap`.** A 1.4.0 Guard ignores unknown JSON fields, so a `swap` with a floor sent to a Guard that has not upgraded would create a plan with no floor and no error. `swap_with_floor` fails loudly on such a Guard.
+
+**Consequences.** A sandwich can now only make a run skip, never sell under the DAO's floor. A floor set too high makes every run skip until the DAO changes the plan; the review step warns when today's price is already below it. Existing swap plans stop until recreated. The `kd.budget_alert.v1` `Plan` action gains an additive variant.

@@ -33,7 +33,7 @@ class FakeGuard {
   /** What `get_config` says. */
   paused = false;
   /** What the next step meets. */
-  next: "ok" | "over_limit" | "short" | "paused_guard" = "ok";
+  next: "ok" | "over_limit" | "short" | "paused_guard" | "below_floor" | "floor_required" = "ok";
   /** What the next sync finds: the DAO has paid, has not settled yet, or the payment failed. */
   syncFinds: "paid" | "open" | "failed" = "paid";
   calls: { method: string; args: any; nonce: bigint; gas: bigint; deposit: bigint; signer: string }[] = [];
@@ -72,12 +72,22 @@ class FakeGuard {
     const run = plan.runs_done + 1;
     if (this.next === "over_limit") {
       plan.next_run_at = (BigInt(due) + HOUR_NS).toString();
-      return success(null, [event("plan_step_skipped", { plan_id: planId, run, reason: "OVER_DAILY_LIMIT", due })]);
+      return success(this.guard_id, null, [event("plan_step_skipped", { plan_id: planId, run, reason: "OVER_DAILY_LIMIT", due })]);
+    }
+    if (this.next === "below_floor") {
+      // Guard 1.5.0 on_quote: the slot moves on, runs_done does not, and the daily limit is given back.
+      plan.next_run_at = (BigInt(due) + HOUR_NS).toString();
+      return success(this.guard_id, null, [event("plan_step_skipped", { plan_id: planId, run, reason: "PRICE_BELOW_FLOOR", due })]);
+    }
+    if (this.next === "floor_required") {
+      plan.status = "paused";
+      plan.pause_reason = "price_floor_required";
+      return success(this.guard_id, null, [event("plan_paused", { plan_id: planId, reason: "price_floor_required", code: "PRICE_FLOOR_REQUIRED" })]);
     }
     if (this.next === "short") {
       plan.status = "paused";
       plan.pause_reason = "insufficient_balance";
-      return success(null, [event("plan_paused", { plan_id: planId, reason: "insufficient_balance", code: "VOTE_FAILED" })]);
+      return success(this.guard_id, null, [event("plan_paused", { plan_id: planId, reason: "insufficient_balance", code: "VOTE_FAILED" })]);
     }
     plan.next_run_at = (BigInt(due) + HOUR_NS).toString();
     plan.runs_done = run;
@@ -89,31 +99,31 @@ class FakeGuard {
     }
     const record = { request_id: `plan-${planId}-${due}`, memo: `plan ${planId} run ${run}`, proposal_id: 40 + run, status: "AutoApproved", plan_id: planId, updated_at: due };
     this.requests.unshift(record);
-    return success(record, logs);
+    return success(this.guard_id, record, logs);
   }
 
   sync(requestId: string) {
     const r = this.requests.find((x) => x.request_id === requestId);
     const finds = this.syncFinds;
     this.syncFinds = "paid";
-    if (finds === "open") return success(r, []);
+    if (finds === "open") return success(this.guard_id, r, []);
     if (finds === "paid") {
       r.status = "Executed";
-      return success(r, []);
+      return success(this.guard_id, r, []);
     }
     r.status = "Failed";
     const plan = this.plans[r.plan_id]!;
     plan.runs_done -= 1;
     plan.status = "paused";
     plan.pause_reason = "failures";
-    return success(r, [event("plan_paused", { plan_id: r.plan_id, reason: "failures", code: "PROPOSAL_FAILED" })]);
+    return success(this.guard_id, r, [event("plan_paused", { plan_id: r.plan_id, reason: "failures", code: "PROPOSAL_FAILED" })]);
   }
 }
 
 const event = (name: string, data: unknown) => `EVENT_JSON:${JSON.stringify({ standard: "kd_guard", version: "1.0.0", event: name, data: [data] })}`;
-const success = (value: unknown, logs: string[]) => ({
+const success = (executor: string, value: unknown, logs: string[]) => ({
   status: { SuccessValue: btoa(JSON.stringify(value)) },
-  receipts_outcome: [{ outcome: { logs } }],
+  receipts_outcome: [{ outcome: { logs, executor_id: executor } }],
 });
 const panic = (code: string) => ({
   status: { Failure: { ActionError: { kind: { FunctionCallError: { ExecutionError: `Smart contract panicked: ${code}` } } } } },
@@ -791,6 +801,52 @@ describe("GD31 keeper: a DCA swap step (stepRecord, S3)", () => {
     await runKeeperJob(env);
     assert.equal(saved(db)[0]!.reason, "SWAP_FAILED");
     assert.match(texts(chain)[0]!, /the exchange refused the swap\. 0\.1 NEAR stays/);
+  });
+
+  const SWAP_FLOOR = { ...SWAP, type: "swap_with_floor", min_out_per_near: "8500000" } as const;
+
+  it("a swap_with_floor plan reads the exchange's receipt like an old swap plan (Guard 1.5.0, H2)", async (t) => {
+    const { env, chain, guard, db } = setup(t);
+    await watched(env, chain);
+    guard.plan({ action: SWAP_FLOOR, strategy_id: "dca-near", amount_per_run: TENTH });
+    withReceipts(chain, () => [rhea("896500")]);
+    await runKeeperJob(env);
+    const [s] = saved(db);
+    assert.equal(s!.status, "executed");
+    assert.equal(s!.amount_out, "896500");
+    assert.equal(guard.calls[0]!.gas, 300n * 10n ** 12n, "a floored swap is still a 5-contract chain");
+    assert.match(texts(chain)[0]!, /Sold 0\.1 NEAR for 0\.8965 USDT · price 8\.965/);
+  });
+
+  it("a price below the lowest price is stored skipped PRICE_BELOW_FLOOR and told as 'no money moved'", async (t) => {
+    // WHY: a skewed pool must cost the owner nothing; the message must not claim wrapped NEAR is left over.
+    const { env, chain, guard, db } = setup(t);
+    await watched(env, chain);
+    const plan = guard.plan({ action: SWAP_FLOOR, strategy_id: "dca-near", amount_per_run: TENTH });
+    guard.next = "below_floor";
+    await runKeeperJob(env);
+    const [s] = saved(db);
+    assert.equal(s!.status, "skipped");
+    assert.equal(s!.reason, "PRICE_BELOW_FLOOR");
+    assert.equal(plan.runs_done, 0);
+    assert.match(texts(chain)[0]!, /Skipped this run: the price was below the lowest price you set\. No money moved\./);
+  });
+
+  it("an old swap plan pauses with PRICE_FLOOR_REQUIRED and tells the owner to recreate it, not to Resume", async (t) => {
+    const { env, chain, guard, db } = setup(t);
+    await watched(env, chain);
+    guard.plan({ action: SWAP, strategy_id: "dca-near", amount_per_run: TENTH });
+    guard.next = "floor_required";
+    await runKeeperJob(env);
+    const [s] = saved(db);
+    assert.equal(s!.status, "failed");
+    assert.equal(s!.reason, "PRICE_FLOOR_REQUIRED");
+    const text = texts(chain)[0]!;
+    assert.match(text, /Plan paused: it was made before the lowest-price rule, so it cannot run any more\./);
+    assert.match(text, /Cancel it in Agent Budget and create it again with a lowest price\./);
+    assert.doesNotMatch(text, /press Resume/);
+    await runKeeperJob(env);
+    assert.equal(sends(chain).length, 1, "a paused plan is not stepped or told again");
   });
 
   it("a plain transfer plan is not touched by swap parsing, even if the receipts carry an exchange failure", async (t) => {

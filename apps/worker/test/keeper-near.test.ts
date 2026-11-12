@@ -80,15 +80,39 @@ describe("keeper signing", () => {
 });
 
 describe("keeper outcome parsing", () => {
+  const log = (o: unknown) => `EVENT_JSON:${JSON.stringify(o)}`;
+  const G = "payroll.kd-guards.testnet";
+
   it("keeps only kd_guard events and survives other logs", () => {
-    const log = (o: unknown) => `EVENT_JSON:${JSON.stringify(o)}`;
-    const events = guardEvents({
-      status: {},
-      receipts_outcome: [
-        { outcome: { logs: ["hello", "EVENT_JSON:{broken", log({ standard: "nep141", event: "ft_transfer", data: [{}] })] } },
-        { outcome: { logs: [log({ standard: "kd_guard", version: "1.0.0", event: "plan_step_executed", data: [{ plan_id: 1, run: 2 }] })] } },
-      ],
-    });
+    const events = guardEvents(
+      {
+        status: {},
+        receipts_outcome: [
+          { outcome: { executor_id: G, logs: ["hello", "EVENT_JSON:{broken", log({ standard: "nep141", event: "ft_transfer", data: [{}] })] } },
+          { outcome: { executor_id: G, logs: [log({ standard: "kd_guard", version: "1.0.0", event: "plan_step_executed", data: [{ plan_id: 1, run: 2 }] })] } },
+        ],
+      },
+      G,
+    );
+    assert.deepEqual(events, [{ event: "plan_step_executed", data: { plan_id: 1, run: 2 } }]);
+  });
+
+  it("ignores kd_guard events another contract logged: a call plan's target cannot fake a skip", () => {
+    // The target of a DAO-approved `call` plan runs in the same transaction. If its forged "skipped, no money
+    // moved" came first, the keeper would store it under the tx hash and tell the chat money did not move.
+    const forged = log({ standard: "kd_guard", version: "1.0.0", event: "plan_step_skipped", data: [{ plan_id: 1, reason: "no money moved" }] });
+    const real = log({ standard: "kd_guard", version: "1.0.0", event: "plan_step_executed", data: [{ plan_id: 1, run: 2 }] });
+    const events = guardEvents(
+      {
+        status: {},
+        receipts_outcome: [
+          { outcome: { executor_id: "evil.testnet", logs: [forged] } },
+          { outcome: { logs: [forged] } },
+          { outcome: { executor_id: G, logs: [real] } },
+        ],
+      },
+      G,
+    );
     assert.deepEqual(events, [{ event: "plan_step_executed", data: { plan_id: 1, run: 2 } }]);
   });
 
