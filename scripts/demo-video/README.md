@@ -57,13 +57,12 @@ say (or show as a caption) and how to tell it worked. Testnet only.
    yet, B about 2 NEAR. Owner decision 2026-11-11: use the neutral `kdoncall-*` set, so no personal account name
    shows on screen. A = `kdoncall-b.testnet` (9.99 NEAR), B = `kdoncall-c.testnet` (10 NEAR), one full-access key
    each, about 12 days old. C = `kdoncall-p.testnet` (10 NEAR) is the third member and never signs. Read
-   2026-11-11. Short of NEAR: top up from `duonghb3.testnet`. Read 2026-11-12: `kdoncall-b` now has a second
-   full-access key, `ed25519:DknZ6MFSCtdBBZkuVzofTjrNNqbGbMJyGEvTsdUZVATQ`, added 2026-11-11 08:20 UTC (a leftover
-   `compromise` from a rehearsal?), so preflight says `block` and the readiness check fails on A. If it is not a key
-   you use, delete it before recording (the `delete-keys` command in "After recording").
+   2026-11-11. Short of NEAR: top up from `duonghb3.testnet`. Read 2026-11-12, after a top-up and deleting a
+   leftover rehearsal key on `kdoncall-b`: A 7.98 NEAR, B 9.00, C 9.99; A and B preflight `allow`. Their keys are in
+   the macOS Keychain, not `~/.near-credentials`, so sign with `sign-with-keychain` (the `demo.sh` default).
 
    ```bash
-   export KD_DEMO_PREFIX=kdv$(date +%s) KD_DEMO_A=kdoncall-b.testnet KD_DEMO_B=kdoncall-c.testnet KD_DEMO_C=kdoncall-p.testnet KD_DEMO_SIGN=sign-with-legacy-keychain
+   export KD_DEMO_PREFIX=kdv$(date +%s) KD_DEMO_A=kdoncall-b.testnet KD_DEMO_B=kdoncall-c.testnet KD_DEMO_C=kdoncall-p.testnet
    ```
 
    A and B also sit on the council of `kdoncall.sputnik-v2.testnet`, the README and dashboard example. While the
@@ -229,7 +228,7 @@ part runs long, cut the line, not the moment on screen.
   scripts/demo-testnet/demo.sh reject
   ```
 
-- Delete A's attacker key (the one `compromise` added): `near account delete-keys kdoncall-b.testnet public-keys <key> network-config testnet sign-with-legacy-keychain send`.
+- Delete A's attacker key (the one `compromise` added): `near account delete-keys kdoncall-b.testnet public-keys <key> network-config testnet sign-with-keychain send`.
 - Delete the old demo key `ed25519:5ECiGvMnr7EqyA64Fo4cydTwK2aPYpXnNeMRQUAL1wgC` on `bot2.duonghb3.testnet` if it is
   still there.
 - Leave the hosted demo up until at least 2026-11-18 (ideally 2026-11-25).
