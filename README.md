@@ -54,7 +54,7 @@ Fixed rules make every conclusion. Key Doctor **never signs transactions or hold
 - Council report: <https://key-doctor-dashboard.pages.dev/?target=kdoncall.sputnik-v2.testnet>
 - Account cleanup plan: <https://key-doctor-dashboard.pages.dev/?target=kdoncall-p.testnet&view=cleanup>
 
-The scan runs in your browser against public testnet RPC. Revoke and Delete need Meteor Wallet (extension), Here Wallet or HOT Wallet, and the account's own key. **Connect Wallet**, Revoke and Delete open a dialog where you pick the wallet. Meteor is the only wallet checked on testnet so far; Here and HOT load and open their widget but have not signed a Delete yet. The home page shows the mainnet network numbers from `data/network-stats-all.json` (`apps/dashboard/src/network-stats.ts`).
+The scan runs in your browser against public testnet RPC. Revoke and Delete need Meteor Wallet (extension), Here Wallet or HOT Wallet, and the account's own key. **Connect Wallet**, Revoke and Delete open a dialog where you pick the wallet. Meteor is the only wallet checked on testnet so far; Here and HOT load and open their widget but have not signed a Delete yet. Cleanup also works on mainnet: the team deleted a key of its own mainnet account from the dashboard on 2026-11-12 (the `DELETE_KEY` transaction succeeded). The home page shows the mainnet network numbers from `data/network-stats-all.json` (`apps/dashboard/src/network-stats.ts`).
 
 ## Try it: do X, see Y
 
@@ -185,7 +185,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 | GĐ5 | `checkProposals` | Built; of four Sputnik proposal facts, two confirmed live and two partly (`packages/key-doctor/fixtures/README.md`) |
 | GĐ6 | Proposal watch cron, `alerts_sent`, `/run-check`, demo script | Deployed; live testnet run 2026-10-30: voter-key and governance alerts reached the group, the second `run-check` repeated nothing ([`docs/demo-testnet-run-2026-10-30.md`](docs/demo-testnet-run-2026-10-30.md)). Rerun 2026-11-09 with the same two alerts and nothing else ([`docs/live-test-plan.md`](docs/live-test-plan.md) L1) |
 | GĐ7 | Dashboard: check, council, proposal list, account, key detail (what a key is approved for, the dApp), alerts dialog | Deployed to Pages |
-| GĐ8 | Cleanup plan, per-key Revoke / Delete signed in Meteor Wallet | Built; Revoke and Delete verified on testnet with a real Meteor account (2026-10-30). No bulk delete |
+| GĐ8 | Cleanup plan, per-key Revoke / Delete signed in Meteor Wallet | Built; Revoke and Delete verified on testnet with a real Meteor account (2026-10-30), and a Delete on mainnet from the live dashboard (2026-11-12). No bulk delete |
 | GĐ9 | Daily key diff | Built; the cron fired live at 02:00 UTC on 2026-11-10 and wrote a new baseline for each of 6 targets (live-test W3). Since 2026-11-12 it runs hourly and checks up to `MAX_DAILY_TARGETS_PER_RUN` (3) targets per run, oldest check first, so each target gets about one check a day; not yet seen live |
 | GĐ10 | Network stats script | Ran 2026-11-10 on mainnet at block 223,787,777 over all 2,112 factory DAOs; a second run gave a byte-identical file ([`data/network-stats-all.md`](data/network-stats-all.md)) |
 | GĐ12 | One-tap watch links: `POST /api/watch-link`, MCP `watch`, `/start <code>`, dashboard "Create links" | Deployed with the Worker; MCP `watch` is in `tools/list`; a link was opened and `/start <code>` taken live (2026-11-10, live-test B6) |
