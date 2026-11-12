@@ -251,6 +251,8 @@ impl Guard {
 
     /// Step 4c, second hop. A failed or empty quote pauses the plan with `QUOTE_FAILED` before the request fails,
     /// because `finish` would otherwise pause it with `ADD_PROPOSAL_FAILED`; `finish` also gives the daily limit back.
+    /// A quote under the DAO's floor skips the run instead (ADR 0007, 2026-11-12): the caller may have skewed the pool,
+    /// so no proposal is made, the slot stays moved on and the daily limit is given back.
     #[private]
     pub fn on_quote(
         &mut self,
@@ -261,8 +263,19 @@ impl Guard {
         let mut r = self.record(&request_id);
         let now = env::block_timestamp();
         let mut plan = self.plan(plan_id);
-        let PlanAction::Swap { pool_id: _, ref token_out, max_slippage_bps } = plan.action else {
-            env::panic_str("NOT_A_SWAP_PLAN");
+        let (pool_id, token_out, max_slippage_bps, min_out_per_near) = match &plan.action {
+            PlanAction::SwapWithFloor { pool_id, token_out, max_slippage_bps, min_out_per_near } => {
+                (*pool_id, token_out.clone(), *max_slippage_bps, min_out_per_near.0)
+            }
+            // A step of a plan with no floor that was in flight at the upgrade: it must not swap either.
+            PlanAction::Swap { .. } => {
+                self.halt_plan(&mut plan, PlanPauseReason::PriceFloorRequired, "PRICE_FLOOR_REQUIRED");
+                self.plans.set(plan_id, plan);
+                self.finish(&mut r, RequestStatus::Failed, now);
+                emit("request_failed", with_note(&r, "swap plan has no price floor"));
+                return PromiseOrValue::Value(self.save(r));
+            }
+            _ => env::panic_str("NOT_A_SWAP_PLAN"),
         };
         let quote = quote.map(|q| q.0).unwrap_or(0);
         if quote == 0 {
@@ -274,11 +287,22 @@ impl Guard {
         }
         // quote * (10000 - bps) / 10000 without the overflow of the product.
         let keep = 10_000 - max_slippage_bps as u128;
-        let min_out = quote / 10_000 * keep + quote % 10_000 * keep / 10_000;
+        let quote_floor = quote / 10_000 * keep + quote % 10_000 * keep / 10_000;
+        let min_out = match policy::dao_floor(plan.amount_per_run.0, min_out_per_near) {
+            Some(floor) if quote_floor >= floor => quote_floor.max(floor),
+            // Below the floor, or a floor no swap can reach.
+            _ => {
+                // Not `finish`: its plan move would pause the plan with `ADD_PROPOSAL_FAILED`. A skip is no failure.
+                self.settle(&mut r, RequestStatus::Failed, now);
+                emit("request_failed", with_note(&r, "swap price below the DAO floor"));
+                let due = request_id.rsplit('-').next().and_then(|d| d.parse::<u64>().ok()).unwrap_or_default();
+                emit("plan_step_skipped", json!({ "plan_id": plan_id, "run": plan.runs_done + 1, "reason": "PRICE_BELOW_FLOOR", "due": U64(due) }));
+                return PromiseOrValue::Value(self.save(r));
+            }
+        };
         let guard = env::current_account_id();
         let (wrap, exchange) = policy::dex_for(&guard).unwrap_or_else(|| env::panic_str("SWAP_NOT_SUPPORTED"));
-        let PlanAction::Swap { pool_id, .. } = plan.action else { unreachable!() };
-        let kind = swap_kind(wrap, exchange, plan.amount_per_run, pool_id, token_out, min_out);
+        let kind = swap_kind(wrap, exchange, plan.amount_per_run, pool_id, &token_out, min_out);
         let description = policy::description(&request_id, guard.as_str(), Decision::Auto, &[], &r.memo);
         PromiseOrValue::Promise(
             ext_dao::ext(self.dao_id.clone())
@@ -424,6 +448,13 @@ impl Guard {
         let amount = plan.amount_per_run;
         self.roll_window(now);
 
+        // A plan made before the price floor (ADR 0007, 2026-11-12) never swaps again; the DAO makes it anew.
+        if matches!(plan.action, PlanAction::Swap { .. }) {
+            self.halt_plan(&mut plan, PlanPauseReason::PriceFloorRequired, "PRICE_FLOOR_REQUIRED");
+            self.plans.set(plan_id, plan);
+            return PromiseOrValue::Value(None);
+        }
+
         // The rules changed since `create_plan`, and only the owner can settle that.
         if let Some(reason) = self.plan_limit_failure(&plan.action, amount.0) {
             self.halt_plan(&mut plan, PlanPauseReason::Failures, &reason);
@@ -452,7 +483,7 @@ impl Guard {
         let receiver_id = match &plan.action {
             PlanAction::Transfer { receiver_id } => receiver_id.clone(),
             PlanAction::Call { target, .. } => target.clone(),
-            PlanAction::Swap { .. } => {
+            PlanAction::Swap { .. } | PlanAction::SwapWithFloor { .. } => {
                 let (wrap, _) = policy::dex_for(&guard).unwrap_or_else(|| env::panic_str("SWAP_NOT_SUPPORTED"));
                 wrap.parse().unwrap_or_else(|_| env::panic_str("SWAP_NOT_SUPPORTED"))
             }
@@ -476,7 +507,7 @@ impl Guard {
         self.requests.insert(request_id.clone(), record);
         self.push_recent(request_id.clone());
         let swap = match &plan.action {
-            PlanAction::Swap { pool_id, token_out, .. } => Some((*pool_id, token_out.clone())),
+            PlanAction::SwapWithFloor { pool_id, token_out, .. } => Some((*pool_id, token_out.clone())),
             _ => None,
         };
         // A swap has no proposal kind yet: it needs the quote first (`on_quote`).
@@ -778,7 +809,7 @@ impl Guard {
 
     /// Key Doctor reads this to recognise a DAO member as a Guard (§5.3).
     pub fn kd_guard_info(&self) -> Value {
-        json!({ "standard": "kd_guard", "version": "1.4.0", "dao_id": self.dao_id })
+        json!({ "standard": "kd_guard", "version": "1.5.0", "dao_id": self.dao_id })
     }
 
     // ---- upgrade (§11.5.12, ADR 0006)
@@ -866,7 +897,7 @@ impl Guard {
     fn plan_limit_failure(&self, action: &PlanAction, amount: u128) -> Option<String> {
         let wl = match action {
             PlanAction::Transfer { receiver_id } => self.whitelist.get(receiver_id),
-            PlanAction::Call { .. } | PlanAction::Swap { .. } => None,
+            PlanAction::Call { .. } | PlanAction::Swap { .. } | PlanAction::SwapWithFloor { .. } => None,
         };
         policy::plan_reasons(&self.policy, action, wl, 0, amount).into_iter().next()
     }
@@ -913,7 +944,9 @@ impl Guard {
                 // A failed callback carries no cause. A `call` can also fail for a role without `call:VoteApprove`,
                 // and a top-up would not help that.
                 let reason = match plan.action {
-                    PlanAction::Transfer { .. } | PlanAction::Swap { .. } => PlanPauseReason::InsufficientBalance,
+                    PlanAction::Transfer { .. } | PlanAction::Swap { .. } | PlanAction::SwapWithFloor { .. } => {
+                        PlanPauseReason::InsufficientBalance
+                    }
                     PlanAction::Call { .. } => PlanPauseReason::Failures,
                 };
                 self.halt_plan(&mut plan, reason, "VOTE_FAILED");
@@ -929,6 +962,11 @@ impl Guard {
         if let Some(plan_id) = r.plan_id {
             self.move_plan(r, plan_id, status);
         }
+        self.settle(r, status, now);
+    }
+
+    /// `finish` without the plan move: the pending slot, the daily limit and the status.
+    fn settle(&mut self, r: &mut RequestRecord, status: RequestStatus, now: u64) {
         if r.status.holds_pending() && !status.holds_pending() {
             if let Some(a) = self.agents.get_mut(&r.agent) {
                 a.pending = a.pending.saturating_sub(1);
@@ -1008,7 +1046,7 @@ fn plan_kind(plan: &Plan) -> Value {
             function_call_kind(target, method, args_base64, *deposit, *gas)
         }
         // The swap kind needs the run-time quote, so `on_quote` builds it.
-        PlanAction::Swap { .. } => env::panic_str("SWAP_KIND_AT_RUN_TIME"),
+        PlanAction::Swap { .. } | PlanAction::SwapWithFloor { .. } => env::panic_str("SWAP_KIND_AT_RUN_TIME"),
     }
 }
 

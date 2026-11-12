@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { budgetAlerts, dcaPrice, formatUnits, type BudgetAlertInput, type Plan, type PlanRequest, type PlanStepRecord } from "../src/index.ts";
-import { planCompletedText, planSkippedText, planStepText } from "../src/messages.ts";
+import { budgetAlerts, dcaPrice, formatUnits, isSwapAction, isSwapType, type BudgetAlertInput, type Plan, type PlanRequest, type PlanStepRecord } from "../src/index.ts";
+import { planCompletedText, planPausedText, planSkippedText, planStepText } from "../src/messages.ts";
 
 const NEAR = 10n ** 24n;
 const TENTH = (NEAR / 10n).toString(); // 0.1 NEAR per run
 const SWAP = { type: "swap", pool_id: 57, token_out: "usdt.fakes.testnet", max_slippage_bps: 100 } as const;
+// Guard 1.5.0 (red-team H2): a DCA plan carries a lowest price in USDT raw units per whole NEAR.
+const SWAP_FLOOR = { type: "swap_with_floor", pool_id: 57, token_out: "usdt.fakes.testnet", max_slippage_bps: 100, min_out_per_near: "8500000" } as const;
 
 describe("GD31 formatUnits / dcaPrice: exact bigint, never a float", () => {
   it("896500 with 6 decimals is 0.8965; whole, zero and non-numeric are not mangled", () => {
@@ -101,6 +103,40 @@ describe("GD31 swap messages (S3)", () => {
 
   it("other skips keep 'No money moved' (OVER_DAILY_LIMIT is a Guard skip, nothing was sold)", () => {
     assert.match(planSkippedText("dca-near", 1, 3, "OVER_DAILY_LIMIT", null, TENTH).en.body, /over the 24 h limit\. No money moved\./);
+  });
+
+  it("a PRICE_BELOW_FLOOR skip names the lowest price and says no money moved: the Guard sells nothing (H2)", () => {
+    // WHY: the Guard skips before any wrap or swap, so the NEAR is still plain NEAR, unlike SLIPPAGE.
+    const t = planSkippedText("dca-near", 1, 3, "PRICE_BELOW_FLOOR", null, TENTH);
+    assert.match(t.en.body, /the price was below the lowest price you set\. No money moved\./);
+    assert.match(t.vi.body, /giá thấp hơn giá sàn bạn đặt\. Không có tiền nào được chi\./);
+    assert.doesNotMatch(t.en.body, /wrapped NEAR|PRICE_BELOW_FLOOR/);
+  });
+
+  it("a price_floor_required pause tells the owner to cancel and recreate, not to Resume (Resume would pause again)", () => {
+    const t = planPausedText("dca-near", 1, 3, "price_floor_required", "PRICE_FLOOR_REQUIRED");
+    const all = JSON.stringify(t);
+    assert.match(t.en.body, /made before the lowest-price rule/);
+    assert.match(t.vi.body, /trước khi có giá sàn/);
+    assert.match(all, /Cancel it in Agent Budget and create it again with a lowest price\./);
+    assert.match(all, /Hủy kế hoạch trong Agent Budget rồi tạo lại với một giá sàn\./);
+    assert.doesNotMatch(all, /Resume|PRICE_FLOOR_REQUIRED/);
+  });
+
+  it("a swap_with_floor plan renders the same swap figures as an old swap plan", () => {
+    const swap = { amount_out: "896500", price: "8.965", received: "896500", avg_price: "8.965" };
+    const t = planStepText("dca-near", SWAP_FLOOR, TENTH, 1, 3, TENTH, null, swap);
+    assert.equal(t.en.body, planStepText("dca-near", SWAP, TENTH, 1, 3, TENTH, null, swap).en.body);
+    assert.match(t.en.body, /^Sold 0\.1 NEAR for 0\.8965 USDT · price 8\.965\n/);
+  });
+
+  it("isSwapType / isSwapAction accept both swap shapes and nothing else", () => {
+    assert.equal(isSwapType("swap"), true);
+    assert.equal(isSwapType("swap_with_floor"), true);
+    assert.equal(isSwapType("transfer"), false);
+    assert.equal(isSwapType("swap_with_floor_v2"), false);
+    assert.equal(isSwapAction(SWAP_FLOOR), true);
+    assert.equal(isSwapAction({ type: "transfer", receiver_id: "bob.testnet" }), false);
   });
 });
 

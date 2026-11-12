@@ -1,6 +1,6 @@
 // Keeper (ADR 0005, GĐ29): calls the plan steps that are due and tells the Budget's chats what happened.
 // The Guard decides everything: this job only pays the gas (K2). It never takes an amount, a receiver or a choice.
-import { DCA_TESTNET, DEFAULT_RPC_URLS, budgetAlerts, dcaPrice, guardPausedAlert, type KdBudgetAlert, type Plan, type PlanRequest, type PlanStepRecord } from "key-doctor";
+import { DCA_TESTNET, DEFAULT_RPC_URLS, budgetAlerts, dcaPrice, guardPausedAlert, isSwapAction, type KdBudgetAlert, type Plan, type PlanRequest, type PlanStepRecord } from "key-doctor";
 import type { Env } from "../env.ts";
 import { rpcUrlsFor } from "../core.ts";
 import { RpcFailed, createKeeperRpc, guardEvents, loadKeeperKey, panicCode, signCall, swapOutcome, type KeeperKey, type KeeperMethod, type KeeperRpc, type TxOutcome } from "../keeper/near.ts";
@@ -198,7 +198,7 @@ function stepRecord(guard: string, plan: Plan, due: string, hash: string, tx: Tx
     if (data?.plan_id !== plan.plan_id) continue;
     if (event === "plan_step_executed") {
       const executed: PlanStepRecord & { tx_hash: string } = { ...base, run: data.run, status: "executed", proposal_id: data.proposal_id };
-      if (plan.action.type !== "swap") return executed;
+      if (!isSwapAction(plan.action)) return executed;
       // The Guard cannot see the exchange's outcome (ADR 0007): the number and the refusal come from Rhea's own receipts.
       const swap = swapOutcome(tx, DCA_TESTNET.exchange, DCA_TESTNET.wrap, plan.action.token_out);
       if (swap === null) return executed;

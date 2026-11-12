@@ -126,7 +126,11 @@ pub fn check_plan(plan: &PlanInput, guard: &AccountId, dao: &AccountId, factory:
             return Err("INVALID_CALL_GAS");
         }
     }
-    if let PlanAction::Swap { token_out, max_slippage_bps, .. } = &plan.action {
+    // A swap with no floor of its own takes whatever price a quote gives, and anyone can skew the quote (ADR 0007).
+    if let PlanAction::Swap { .. } = &plan.action {
+        return Err("PRICE_FLOOR_REQUIRED");
+    }
+    if let PlanAction::SwapWithFloor { token_out, max_slippage_bps, min_out_per_near, .. } = &plan.action {
         let Some((wrap, exchange)) = dex_for(guard) else {
             return Err("SWAP_NOT_SUPPORTED");
         };
@@ -137,14 +141,46 @@ pub fn check_plan(plan: &PlanInput, guard: &AccountId, dao: &AccountId, factory:
         if t == wrap || t == exchange || token_out == guard || token_out == dao || factory == Some(t) {
             return Err("INVALID_TOKEN_OUT");
         }
+        if min_out_per_near.0 == 0 {
+            return Err("INVALID_PRICE_FLOOR");
+        }
     }
     Ok(())
+}
+
+const YOCTO_PER_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
+
+/// `amount * min_out_per_near / 10^24`, rounded down: the least `token_out` the DAO takes for `amount` yoctoNEAR.
+/// Exact on the full 256-bit product, since 1e9 NEAR at 10 USDT (6 decimals) already passes `u128::MAX`. `None` when
+/// the answer does not fit a `u128`: no swap can return that much, so the floor cannot be met.
+pub fn dao_floor(amount: u128, min_out_per_near: u128) -> Option<u128> {
+    const LO: u128 = u64::MAX as u128;
+    let (a1, a0, b1, b0) = (amount >> 64, amount & LO, min_out_per_near >> 64, min_out_per_near & LO);
+    let (p00, p01, p10, p11) = (a0 * b0, a0 * b1, a1 * b0, a1 * b1);
+    let mid = (p00 >> 64) + (p01 & LO) + (p10 & LO);
+    let lo = (p00 & LO) | ((mid & LO) << 64);
+    let hi = p11 + (p01 >> 64) + (p10 >> 64) + (mid >> 64);
+    // The quotient fits 128 bits only when the high half is below the divisor.
+    if hi >= YOCTO_PER_NEAR {
+        return None;
+    }
+    // Long division of (hi, lo) by 10^24 one bit at a time; the remainder stays below 2^81.
+    let (mut rem, mut q) = (hi, 0u128);
+    for bit in (0..128).rev() {
+        rem = (rem << 1) | ((lo >> bit) & 1);
+        q <<= 1;
+        if rem >= YOCTO_PER_NEAR {
+            rem -= YOCTO_PER_NEAR;
+            q |= 1;
+        }
+    }
+    Some(q)
 }
 
 /// The agent limits, which hold for a plan too. A `call` or `swap` has no receiver to whitelist.
 pub fn plan_reasons(p: &GuardPolicy, action: &PlanAction, wl: Option<&WhitelistEntry>, spent: u128, amount: u128) -> Vec<String> {
     let (_, mut reasons) = decide(p, wl, spent, amount);
-    if matches!(action, PlanAction::Call { .. } | PlanAction::Swap { .. }) {
+    if matches!(action, PlanAction::Call { .. } | PlanAction::Swap { .. } | PlanAction::SwapWithFloor { .. }) {
         reasons.retain(|r| r != "NOT_WHITELISTED");
     }
     reasons
@@ -364,7 +400,45 @@ mod tests {
     }
 
     fn swap_to(token_out: &str, bps: u16) -> PlanAction {
-        PlanAction::Swap { pool_id: 57, token_out: token_out.parse().unwrap(), max_slippage_bps: bps }
+        PlanAction::SwapWithFloor { pool_id: 57, token_out: token_out.parse().unwrap(), max_slippage_bps: bps, min_out_per_near: U128(8_500_000) }
+    }
+
+    #[test]
+    fn a_swap_without_a_dao_floor_is_refused_since_a_quote_alone_can_be_skewed() {
+        // ADR 0007, 2026-11-12: anyone can run a step, so a quote-only bound lets them sandwich the sale. The old shape
+        // stays readable for stored plans but no new plan may use it, on any network.
+        let old = plan(PlanAction::Swap { pool_id: 57, token_out: "usdt.fakes.testnet".parse().unwrap(), max_slippage_bps: 100 });
+        assert_eq!(check(&old), Err("PRICE_FLOOR_REQUIRED"));
+        let (guard, dao) = ("g.factory.near".parse().unwrap(), "dao.testnet".parse().unwrap());
+        assert_eq!(check_plan(&old, &guard, &dao, None), Err("PRICE_FLOOR_REQUIRED"));
+    }
+
+    #[test]
+    fn a_zero_floor_is_refused_because_it_is_no_floor_at_all() {
+        let mut zero = plan(swap_to("usdt.fakes.testnet", 100));
+        let PlanAction::SwapWithFloor { min_out_per_near, .. } = &mut zero.action else { unreachable!() };
+        *min_out_per_near = U128(0);
+        assert_eq!(check(&zero), Err("INVALID_PRICE_FLOOR"));
+        let mut one = zero.clone();
+        let PlanAction::SwapWithFloor { min_out_per_near, .. } = &mut one.action else { unreachable!() };
+        *min_out_per_near = U128(1);
+        assert_eq!(check(&one), Ok(()), "any floor above 0 is the DAO's call");
+    }
+
+    #[test]
+    fn the_dao_floor_is_exact_where_the_plain_product_would_overflow() {
+        // A rounding or overflow error here moves the line between a run and a skip, so the values come from
+        // Python's exact integers.
+        assert_eq!(dao_floor(NEAR / 10, 8_500_000), Some(850_000));
+        assert_eq!(dao_floor(123_456_789_012_345_678_901_234_567, 987_654_321_098_765), Some(121_932_631_137_021_741));
+        // 1e9 NEAR at 10 USDT: the product passes u128::MAX, the answer does not.
+        assert_eq!(dao_floor(1_000_000_000 * NEAR, 10_000_000), Some(10_000_000_000_000_000));
+        assert_eq!(dao_floor(u128::MAX, NEAR), Some(u128::MAX));
+        assert_eq!(dao_floor(u128::MAX, NEAR - 1), Some(340_282_366_920_938_463_463_374_267_149_401_290_516));
+        assert_eq!(dao_floor(u128::MAX, NEAR + 1), None, "an answer over u128 cannot be met by any swap");
+        assert_eq!(dao_floor(u128::MAX, u128::MAX), None);
+        assert_eq!(dao_floor(0, u128::MAX), Some(0));
+        assert_eq!(dao_floor(NEAR - 1, 1), Some(0), "rounded down");
     }
 
     #[test]
@@ -408,9 +482,14 @@ mod tests {
     fn a_swap_is_checked_for_network_before_slippage_and_slippage_before_token() {
         // Each code must name the first thing the owner has to fix; a wrong order would send them to the wrong field.
         let (guard, dao) = ("g.factory.near".parse().unwrap(), "dao.testnet".parse().unwrap());
-        let both = plan(swap_to("wrap.testnet", 7));
-        assert_eq!(check_plan(&both, &guard, &dao, None), Err("SWAP_NOT_SUPPORTED"));
-        assert_eq!(check(&both), Err("INVALID_SLIPPAGE"));
+        let mut all = plan(swap_to("wrap.testnet", 7));
+        let PlanAction::SwapWithFloor { min_out_per_near, .. } = &mut all.action else { unreachable!() };
+        *min_out_per_near = U128(0);
+        assert_eq!(check_plan(&all, &guard, &dao, None), Err("SWAP_NOT_SUPPORTED"));
+        assert_eq!(check(&all), Err("INVALID_SLIPPAGE"));
+        let PlanAction::SwapWithFloor { max_slippage_bps, .. } = &mut all.action else { unreachable!() };
+        *max_slippage_bps = 100;
+        assert_eq!(check(&all), Err("INVALID_TOKEN_OUT"), "the token before the floor");
     }
 
     #[test]

@@ -1200,12 +1200,22 @@ fn a_new_plan_waits_for_its_start_time_and_reads_as_section_4_11() {
 
 #[test]
 fn a_swap_plan_parses_now_that_it_can_run() {
-    // GĐ31 added `swap`: it must parse, with the fields the dashboard sends.
-    let input = near_sdk::serde_json::json!({
-        "action": { "type": "swap", "pool_id": 1, "token_out": "wrap.testnet", "max_slippage_bps": 50 },
-        "strategy_id": "dca", "token_in": "", "amount_per_run": "1", "interval_sec": 60, "runs_total": 1, "start_at": "0",
-    });
-    assert!(near_sdk::serde_json::from_value::<PlanInput>(input).is_ok());
+    // 1.5.0: `swap_with_floor` must parse with the fields the dashboard sends. The legacy `swap` still parses (stored
+    // plans and old views use it), and create_plan refuses it.
+    let input = |action: Value| {
+        near_sdk::serde_json::json!({
+            "action": action, "strategy_id": "dca", "token_in": "", "amount_per_run": "1", "interval_sec": 60,
+            "runs_total": 1, "start_at": "0",
+        })
+    };
+    let floored = input(near_sdk::serde_json::json!({
+        "type": "swap_with_floor", "pool_id": 1, "token_out": "usdt.fakes.testnet", "max_slippage_bps": 50,
+        "min_out_per_near": "8500000",
+    }));
+    let parsed = near_sdk::serde_json::from_value::<PlanInput>(floored).unwrap();
+    assert!(matches!(parsed.action, PlanAction::SwapWithFloor { min_out_per_near: U128(8_500_000), .. }));
+    let legacy = input(near_sdk::serde_json::json!({ "type": "swap", "pool_id": 1, "token_out": "usdt.fakes.testnet", "max_slippage_bps": 50 }));
+    assert!(matches!(near_sdk::serde_json::from_value::<PlanInput>(legacy).unwrap().action, PlanAction::Swap { .. }));
 }
 
 #[test]
@@ -1579,8 +1589,13 @@ const EXCHANGE: &str = "ref-finance-101.testnet";
 const WRAP: &str = "wrap.testnet";
 const USDT: &str = "usdt.fakes.testnet";
 
+/// A floored swap. Floor 1 base unit per NEAR is 0 for 0.1 NEAR, so it never decides a test that is not about it.
 fn swap_of(bps: u16) -> PlanAction {
-    PlanAction::Swap { pool_id: 57, token_out: id(USDT), max_slippage_bps: bps }
+    swap_floored(bps, 1)
+}
+
+fn swap_floored(bps: u16, min_out_per_near: u128) -> PlanAction {
+    PlanAction::SwapWithFloor { pool_id: 57, token_out: id(USDT), max_slippage_bps: bps, min_out_per_near: U128(min_out_per_near) }
 }
 
 /// A DCA plan: sells 0.1 NEAR per run.
@@ -1919,7 +1934,8 @@ fn create_plan_refuses_a_slippage_outside_the_three_choices() {
 #[should_panic(expected = "INVALID_TOKEN_OUT")]
 fn create_plan_refuses_wnear_as_the_token_to_buy() {
     let mut g = setup();
-    create(&mut g, plan_of(PlanAction::Swap { pool_id: 57, token_out: id(WRAP), max_slippage_bps: 100 }, NEAR / 10, 2));
+    let wnear = PlanAction::SwapWithFloor { pool_id: 57, token_out: id(WRAP), max_slippage_bps: 100, min_out_per_near: U128(1) };
+    create(&mut g, plan_of(wnear, NEAR / 10, 2));
 }
 
 #[test]
@@ -1937,10 +1953,153 @@ fn a_swap_over_the_daily_limit_skips_the_slot_without_a_quote() {
 }
 
 #[test]
-fn the_guard_reports_version_1_4_0() {
-    // The dashboard and the upgrade script read this to know which Guard a Budget runs.
+fn the_guard_reports_version_1_5_0() {
+    // The dashboard and the upgrade script read this to know which Guard a Budget runs (1.5.0: the DCA price floor).
     let g = setup();
-    assert_eq!(g.kd_guard_info()["version"], "1.4.0");
+    assert_eq!(g.kd_guard_info()["version"], "1.5.0");
+}
+
+// ---- DCA price floor (red team H2, ADR 0007 2026-11-12)
+//
+// Anyone may call execute_plan_step (K2), so an attacker can skew pool 57, run the step and trade back. The quote is
+// then the attacker's price; only a floor the DAO set at creation bounds what one run can lose.
+
+/// 8.5 USDT (6 decimals) per NEAR: 850_000 base units for the 0.1 NEAR run of `dca`.
+const FLOOR: u128 = 8_500_000;
+const RUN_FLOOR: u128 = 850_000;
+
+fn floored_dca(bps: u16) -> PlanInput {
+    plan_of(swap_floored(bps, FLOOR), NEAR / 10, 2)
+}
+
+#[test]
+fn a_skewed_quote_below_the_dao_floor_skips_the_run_without_a_proposal_and_gives_the_window_back() {
+    // (a) The attacker pushed the price to 800_000 per 0.1 NEAR: quote_floor 792_000 < 850_000. The run is skipped
+    // like an over-limit slot: no proposal, nothing counted, the plan stays Active for the next slot.
+    let mut g = setup();
+    create(&mut g, floored_dca(100));
+    let (due, rid) = (T0 + MINUTE, step_id(0, T0 + MINUTE));
+    step(&mut g, due, 0);
+    assert_eq!(spent(&g), NEAR / 10);
+    quoted(&mut g, due, &rid, 0, Ok(800_000));
+    assert!(!method_called("add_proposal"), "no proposal at the attacker's price");
+    let p = plan(&g, 0);
+    assert_eq!((p.status, p.pause_reason, p.runs_done), (PlanStatus::Active, None, 0));
+    assert_eq!(p.next_run_at, Some(U64(due + MINUTE)), "the next slot runs as usual");
+    assert_eq!(spent(&g), 0, "nothing moved, so the daily window is given back");
+    assert_eq!(pending(&g), 0);
+    assert_eq!(rec(&g, &rid).status, RequestStatus::Failed);
+    assert!(logged("PRICE_BELOW_FLOOR") && logged("plan_step_skipped"));
+    let skipped = get_logs().into_iter().find(|l| l.contains("plan_step_skipped")).unwrap();
+    assert!(skipped.contains(&format!("\"due\":\"{due}\"")) && skipped.contains("\"run\":1"), "{skipped}");
+    assert!(!logged("plan_paused") && !logged("ADD_PROPOSAL_FAILED"), "a skip is not a failure");
+}
+
+#[test]
+fn a_fair_quote_sets_min_out_to_the_larger_of_the_quote_floor_and_the_dao_floor() {
+    // (b) 896_500 at 1%: quote_floor 887_535 >= 850_000, so the run goes with 887_535. At exactly the DAO floor
+    // (quote 858_586 -> 850_000.14 -> 850_000) it runs too, and min_out is never below the DAO floor.
+    for (quote, want) in [(896_500u128, 887_535u128), (858_586, RUN_FLOOR)] {
+        let mut g = setup();
+        create(&mut g, floored_dca(100));
+        let (due, rid) = (T0 + MINUTE, step_id(0, T0 + MINUTE));
+        step(&mut g, due, 0);
+        quoted(&mut g, due, &rid, 0, Ok(quote));
+        let min_out: u128 = min_out_of(&swap_proposal_kind()).as_str().unwrap().parse().unwrap();
+        assert_eq!(min_out, want, "quote {quote}");
+        assert!(min_out >= RUN_FLOOR);
+        assert!(!logged("plan_step_skipped"));
+    }
+    // One base unit under the DAO floor skips (858_585 * 0.99 = 849_999.15).
+    let mut g = setup();
+    create(&mut g, floored_dca(100));
+    let (due, rid) = (T0 + MINUTE, step_id(0, T0 + MINUTE));
+    step(&mut g, due, 0);
+    quoted(&mut g, due, &rid, 0, Ok(858_585));
+    assert!(!method_called("add_proposal") && logged("PRICE_BELOW_FLOOR"));
+}
+
+#[test]
+fn a_dao_floor_too_large_to_compute_skips_rather_than_running_unprotected() {
+    let mut g = setup();
+    create(&mut g, plan_of(swap_floored(100, u128::MAX), NEAR, 2));
+    let (due, rid) = (T0 + MINUTE, step_id(0, T0 + MINUTE));
+    step(&mut g, due, 0);
+    quoted(&mut g, due, &rid, 0, Ok(u128::MAX));
+    assert!(!method_called("add_proposal") && logged("PRICE_BELOW_FLOOR"));
+}
+
+/// A plan stored by a 1.4.0 Guard: the legacy variant, which create_plan no longer accepts.
+fn legacy_swap_plan(g: &mut Guard) -> u32 {
+    let plan_id = g.plans.len();
+    g.plans.push(Plan {
+        plan_id,
+        action: PlanAction::Swap { pool_id: 57, token_out: id(USDT), max_slippage_bps: 100 },
+        strategy_id: "dca".into(),
+        token_in: "".into(),
+        amount_per_run: U128(NEAR / 10),
+        interval_sec: 60,
+        runs_total: 2,
+        runs_done: 0,
+        start_at: U64(T0 + MINUTE),
+        next_run_at: Some(U64(T0 + MINUTE)),
+        status: PlanStatus::Active,
+        pause_reason: None,
+    });
+    plan_id
+}
+
+#[test]
+fn an_old_swap_plan_coming_due_pauses_with_price_floor_required() {
+    // (c) It has no floor, so it must not run at a quote alone. Paused, not cancelled: the owner sees why.
+    let mut g = setup();
+    let id0 = legacy_swap_plan(&mut g);
+    step(&mut g, T0 + MINUTE, id0);
+    let p = plan(&g, id0);
+    assert_eq!((p.status, p.pause_reason, p.runs_done), (PlanStatus::Paused, Some(PlanPauseReason::PriceFloorRequired), 0));
+    assert!(logged("PRICE_FLOOR_REQUIRED") && logged("plan_paused"));
+    assert!(!method_called("get_return") && !method_called("add_proposal"), "no quote, no proposal");
+    assert_eq!(spent(&g), 0);
+    assert_eq!(pending(&g), 0);
+    let json = near_sdk::serde_json::to_value(&p).unwrap();
+    assert_eq!(json["pause_reason"], "price_floor_required");
+}
+
+#[test]
+fn an_old_swap_plan_with_a_quote_in_flight_at_the_upgrade_pauses_and_gives_the_window_back() {
+    // A 1.4.0 step asked for a quote, then the Guard was upgraded before on_quote ran.
+    let mut g = setup();
+    let id0 = legacy_swap_plan(&mut g);
+    let (due, rid) = (T0 + MINUTE, step_id(id0, T0 + MINUTE));
+    // Recreate the 1.4.0 step state: a counted, pending record for the run.
+    env_as(STRANGER, due);
+    g.plans.replace(id0, Plan { action: PlanAction::SwapWithFloor { pool_id: 57, token_out: id(USDT), max_slippage_bps: 100, min_out_per_near: U128(1) }, ..plan(&g, id0) });
+    let _ = g.execute_plan_step(id0);
+    assert_eq!(spent(&g), NEAR / 10);
+    g.plans.replace(id0, Plan { action: PlanAction::Swap { pool_id: 57, token_out: id(USDT), max_slippage_bps: 100 }, ..plan(&g, id0) });
+    quoted(&mut g, due, &rid, id0, Ok(896_500));
+    let p = plan(&g, id0);
+    assert_eq!((p.status, p.pause_reason), (PlanStatus::Paused, Some(PlanPauseReason::PriceFloorRequired)));
+    assert!(!method_called("add_proposal"));
+    assert_eq!(spent(&g), 0);
+    assert_eq!(pending(&g), 0);
+    assert_eq!(rec(&g, &rid).status, RequestStatus::Failed);
+}
+
+#[test]
+#[should_panic(expected = "PRICE_FLOOR_REQUIRED")]
+fn create_plan_refuses_the_old_swap_without_a_floor() {
+    // (d)
+    let mut g = setup();
+    create(&mut g, plan_of(PlanAction::Swap { pool_id: 57, token_out: id(USDT), max_slippage_bps: 100 }, NEAR / 10, 2));
+}
+
+#[test]
+#[should_panic(expected = "INVALID_PRICE_FLOOR")]
+fn create_plan_refuses_a_zero_floor() {
+    // (d)
+    let mut g = setup();
+    create(&mut g, plan_of(swap_floored(100, 0), NEAR / 10, 2));
 }
 
 // ---- close (issue #81)

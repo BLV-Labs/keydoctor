@@ -1,6 +1,6 @@
 // kd.budget_alert.v1 from chain state (§4.11, §9.5). Pure, like diffReports: the keeper passes what it read and
 // sends whatever `alerts_sent` does not hold yet, so a message missed in one cycle comes out of the next.
-import { dcaPrice } from "./dca.ts";
+import { dcaPrice, isSwapAction } from "./dca.ts";
 import { OWNER_TEXT, ownerActionText, planCompletedText, planPausedText, planSkippedText, planStepText, type AlertText, type SwapFigures, type Text } from "./messages.ts";
 import type { BudgetAlertKind, KdBudgetAlert, Network, Plan, PlanStepResult } from "./types.ts";
 
@@ -92,7 +92,7 @@ export function budgetAlerts(input: BudgetAlertInput): KdBudgetAlert[] {
       ...(r.proposal_id !== null && { proposal_id: r.proposal_id }),
       executed_at: iso(r.updated_at),
     };
-    const swap = plan.action.type === "swap" ? swapFigures(plan, run, step, steps) : undefined;
+    const swap = isSwapAction(plan.action) ? swapFigures(plan, run, step, steps) : undefined;
     const totals = { spent: spent(plan, run), received: swap?.received ?? null, avg_price: swap?.avg_price ?? null };
     // The last run is one message, not two: UC18 expects one message per run, each with its transaction.
     if (plan.status === "completed" && run === plan.runs_total) {

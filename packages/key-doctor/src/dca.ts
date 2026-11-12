@@ -1,5 +1,6 @@
 // GĐ31 DCA NEAR -> USDT on the testnet Rhea exchange (docs/stories/epics/guard/gd31-dca-plan.md). The Guard holds the
 // same ids as a constant per network (contracts/guard/src/policy.rs `dex_for`); the keeper and the dashboard read them here.
+import type { PlanAction } from "./types.ts";
 export const DCA_TESTNET = {
   wrap: "wrap.testnet",
   exchange: "ref-finance-101.testnet",
@@ -9,6 +10,15 @@ export const DCA_TESTNET = {
 } as const;
 
 const YOCTO_PER_NEAR = 10n ** 24n;
+
+/** Both DCA swap shapes: the 1.4.0 `swap` (no floor) and the 1.5.0 `swap_with_floor`. */
+export function isSwapType(type: string): boolean {
+  return type === "swap" || type === "swap_with_floor";
+}
+
+export function isSwapAction(action: PlanAction): action is Extract<PlanAction, { type: "swap" | "swap_with_floor" }> {
+  return isSwapType(action.type);
+}
 
 /** "896500" with 6 decimals to "0.8965". Not a number: "?". */
 export function formatUnits(raw: string, decimals: number): string {
