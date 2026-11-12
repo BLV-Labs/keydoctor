@@ -388,6 +388,40 @@ describe("GĐ29 keeper: what it signs", () => {
     assert.equal(fine.calls.filter((c) => c.method === "execute_plan_step").length, 1);
   });
 
+  it("a Guard whose DAO is not a Sputnik DAO takes no slot and gets no signature (red-team M2)", async (t) => {
+    // The factory takes any contract that answers get_policy as a DAO, so anyone can flood it with Guards.
+    // Those must not push a real Budget's plan out of the cycle's few slots or spend the keeper's gas.
+    const junk = [0, 1, 2, 3].map((i) => new FakeGuard(`j${i}.kd-guards.testnet`, `fake${i}.testnet`));
+    const real = new FakeGuard("real.kd-guards.testnet", "real.sputnik-dao.testnet");
+    const { env, chain } = setup(t, [...junk, real]);
+    chain.views.get_policy = () => bytes({ roles: [] });
+    [...junk, real].forEach((g) => g.plan());
+    const r = await runKeeperJob(env);
+    assert.equal(r.targets_checked, 1);
+    assert.equal(real.calls.filter((c) => c.method === "execute_plan_step").length, 1, "the real Budget runs in the first cycle");
+    assert.deepEqual(junk.map((g) => g.calls.length), [0, 0, 0, 0]);
+    assert.equal(rows(env.DB as TestD1, "SELECT guard_cursor FROM keeper_state")[0].guard_cursor, 0, "the whole list was one page");
+  });
+
+  it("one Guard gets at most KEEPER_MAX_TXS_PER_GUARD_PER_DAY keeper transactions a day (red-team M2)", async (t) => {
+    // A plan may be due every minute and the keeper pays the gas: without a share, one Guard drains it below the minimum.
+    const greedy = new FakeGuard();
+    const other = new FakeGuard("other.kd-guards.testnet", "other.sputnik-dao.testnet");
+    const { env, chain } = setup(t, [greedy, other], { KEEPER_MAX_TXS_PER_GUARD_PER_DAY: "2" });
+    chain.views.get_policy = () => bytes({ roles: [] });
+    for (let i = 0; i < 3; i++) greedy.plan();
+    other.plan();
+    const first = await runKeeperJob(env);
+    assert.equal(greedy.calls.length, 2, "stopped at its share");
+    assert.ok(first.errors.some((e) => /used its 2 keeper transactions/.test(e)));
+    assert.equal(other.calls.filter((c) => c.method === "execute_plan_step").length, 1, "another Guard still runs");
+    nextHour(chain);
+    await runKeeperJob(env);
+    assert.equal(greedy.calls.length, 2, "the share holds across cycles of the same day");
+    const today = new Date().toISOString().slice(0, 10);
+    assert.deepEqual(rows(env.DB as TestD1, `SELECT txs FROM keeper_txs WHERE guard_id = '${greedy.guard_id}' AND day = '${today}'`).map((r) => r.txs), [2]);
+  });
+
   it("works through every Guard of the factory in turn, however many there are", async (t) => {
     const guards = [0, 1, 2, 3, 4].map((i) => new FakeGuard(`g${i}.kd-guards.testnet`, `d${i}.sputnik-dao.testnet`));
     const { env, chain } = setup(t, guards);
