@@ -342,6 +342,73 @@ export function guardNeedsUpdate(version: string | null): boolean {
   return a < 1 || (a === 1 && b < 5);
 }
 
+/** What `view_account` shows as `code_hash` for an account with no code of its own: none, or a global contract by hash. */
+const NO_OWN_CODE_HASH = "11111111111111111111111111111111";
+
+/** Room for the state `migrate` adds (1,000 bytes); the rest stays spare NEAR on the Guard. */
+export const UPGRADE_STORAGE_MARGIN_YOCTO = 10n ** 22n;
+
+/**
+ * The NEAR the Guard lacks before `upgrade` can deploy `newCodeBytes` onto it, "0" when it has enough. `upgrade`
+ * deploys the bytes, so the Guard pays storage for its own copy: all of it on a Guard that runs global code
+ * (`ownCodeBytes` 0), only the growth on a Guard that already holds a copy. Short of that, the deploy and `migrate`
+ * fail together, the old code stays and the approved request did nothing.
+ */
+export function upgradeShortfallYocto(freeYocto: string, newCodeBytes: number, ownCodeBytes: number): string {
+  const grows = BigInt(Math.max(0, newCodeBytes - ownCodeBytes)) * STORAGE_YOCTO_PER_BYTE;
+  const short = grows + UPGRADE_STORAGE_MARGIN_YOCTO - BigInt(freeYocto);
+  // Rounded up to 0.01 NEAR, so the amount the page asks for is a short number and still enough.
+  const cent = 10n ** 22n;
+  return (short > 0n ? ((short + cent - 1n) / cent) * cent : 0n).toString();
+}
+
+/** The byte length of a base64 string, without decoding it. */
+const base64Bytes = (b64: string): number => Math.floor((b64.length * 3) / 4) - (b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0);
+
+/** One raw RPC `query` at `height`, tried on each endpoint; null when every endpoint fails or the chain says no. */
+async function rawQuery(network: Network, params: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+  for (const url of DEFAULT_RPC_URLS[network]) {
+    try {
+      const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: "kd", method: "query", params }) });
+      if (!res.ok) continue;
+      const body: unknown = await res.json();
+      return isRecord(body) && isRecord(body.result) ? body.result : null;
+    } catch {
+      // try the next endpoint
+    }
+  }
+  return null;
+}
+
+/**
+ * What the Guard lacks before an Update can work (`upgradeShortfallYocto`), read at one block: the Guard's balance
+ * and storage, the size of the code the factory hands `upgrade` (`get_guard_code`, about 370 KB, so read only when
+ * Update is offered) and the size of the Guard's own code. Null when any read fails.
+ */
+export async function readUpgradeShortfall(guardId: string, factory: string, network: Network): Promise<string | null> {
+  if (factory === "") return null;
+  try {
+    const { height } = await budgetRpc(network).block();
+    const [account, code] = await Promise.all([
+      rawQuery(network, { request_type: "view_account", block_id: height, account_id: guardId }),
+      rawQuery(network, { request_type: "call_function", block_id: height, account_id: factory, method_name: "get_guard_code", args_base64: "" }),
+    ]);
+    const amount = account?.amount;
+    const storage = account?.storage_usage;
+    const newBytes = code?.result;
+    if (typeof amount !== "string" || !/^\d+$/.test(amount) || typeof storage !== "number" || !Array.isArray(newBytes) || newBytes.length === 0) return null;
+    let ownBytes = 0;
+    if (account?.code_hash !== NO_OWN_CODE_HASH) {
+      const own = await rawQuery(network, { request_type: "view_code", block_id: height, account_id: guardId });
+      if (typeof own?.code_base64 !== "string") return null;
+      ownBytes = base64Bytes(own.code_base64);
+    }
+    return upgradeShortfallYocto(withdrawableYocto(amount, storage), newBytes.length, ownBytes);
+  } catch {
+    return null;
+  }
+}
+
 /** True from Guard 1.4.0, the first version with `close`; an unread version is false. */
 export function guardCanClose(version: string | null): boolean {
   const m = version === null ? null : /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
