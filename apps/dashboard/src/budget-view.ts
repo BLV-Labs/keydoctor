@@ -551,11 +551,27 @@ export function closeBlockers(b: BudgetLive, version: string | null): string[] {
   return out;
 }
 
+/** True when the Guard is known to lack the NEAR an Update needs; `short` is from `readUpgradeShortfall`. */
+const lacksUpgradeRoom = (short: string | null): boolean => short !== null && short !== "0";
+
+/**
+ * Next to an Update button: how much NEAR to send the Budget account first (the button is then disabled), or that
+ * the check could not run (the button stays, since a failed read is not a known shortfall). Nothing when it has enough.
+ */
+function upgradeRoomNote(guardId: string, short: string | null): Html | "" {
+  if (short === "0") return "";
+  if (short === null) {
+    return html`<p class="small muted">We could not check that the Budget account <span class="mono">${guardId}</span> holds enough NEAR for the update. If it does not, the update fails and nothing changes.</p>`;
+  }
+  return html`<p class="banner banner-cleanup">${icon.alertSmall()}<span>Send <strong>${near(short)}</strong> to the Budget account <span class="mono">${guardId}</span> first, from any wallet, then open this again. The update stores the Budget's own copy of its code, paid from that account's NEAR; without it the update fails and nothing changes. Top up does not cover this: it adds to what agents can spend.</span></p>`;
+}
+
 /**
  * Close this Budget (Guard 1.4.0): what is lost for good, or what stops it first. Cancel has the first focus. A Budget
  * on an older version gets only the Update button; `version` is `kd_guard_info.version`, null when unread.
+ * `upgradeShort` is the NEAR the Guard lacks for that update (`readUpgradeShortfall`), null when unread.
  */
-export function renderBudgetClose(b: BudgetLive, version: string | null): Html {
+export function renderBudgetClose(b: BudgetLive, version: string | null, upgradeShort: string | null = null): Html {
   const g = b.guard;
   const blockers = closeBlockers(b, version);
   const update = version !== null && !guardCanClose(version);
@@ -565,9 +581,9 @@ export function renderBudgetClose(b: BudgetLive, version: string | null): Html {
       <div class="drawer-body">
         <p>Before you can close it:</p>
         <ul class="list">${blockers.map((t) => html`<li>${t}</li>`)}</ul>
-        ${update ? twoSignatureSteps(b.dao.policy.proposal_bond) : ""}
+        ${update ? html`${upgradeRoomNote(g?.guard_id ?? "", upgradeShort)}${twoSignatureSteps(b.dao.policy.proposal_bond)}` : ""}
       </div>
-      <div class="drawer-foot">${CANCEL}${update ? html`<button type="button" class="btn btn-primary" data-action="budget-close-update">Update this Budget</button>` : ""}</div></div>`;
+      <div class="drawer-foot">${CANCEL}${update ? html`<button type="button" class="btn btn-primary" data-action="budget-close-update"${lacksUpgradeRoom(upgradeShort) ? " disabled" : ""}>Update this Budget</button>` : ""}</div></div>`;
   }
   return html`<div class="drawer-form">${drawerHead("Close this Budget?", note, true)}
     <div class="drawer-body">
@@ -693,6 +709,8 @@ export interface DcaView {
   price: string | null;
   /** True when this build knows the factory to update from. */
   canUpdate: boolean;
+  /** The NEAR the Guard lacks for an Update (`readUpgradeShortfall`), "0" when enough; null when unread. */
+  upgradeShort: string | null;
 }
 
 type CheckState = "done" | "todo" | "unknown";
@@ -701,6 +719,8 @@ interface CheckItem {
   state: CheckState;
   /** The button that fixes a todo item. */
   fix?: Html;
+  /** A line under the label, about the fix. */
+  note?: Html | "";
 }
 
 /** The DCA checklist (§11.11.4), in the order the owner does it. Start is possible only when every item is done. */
@@ -716,7 +736,15 @@ function dcaChecklist(b: BudgetLive, dca: DcaView | null, connected: boolean): C
   ];
   if (r === null) items.push({ label: "Checking your Budget…", state: "unknown" });
   else if (r.version === null) items.push({ label: "Could not read the Budget version", state: "unknown" });
-  else if (guardNeedsUpdate(r.version)) items.push({ label: "Update your Budget so it can swap", state: "todo", fix: fixBtn("dca-upgrade", "Update your Budget", !dca?.canUpdate || r.latestHash === null) });
+  else if (guardNeedsUpdate(r.version)) {
+    const short = dca?.upgradeShort ?? null;
+    items.push({
+      label: "Update your Budget so it can swap",
+      state: "todo",
+      fix: fixBtn("dca-upgrade", "Update your Budget", !dca?.canUpdate || r.latestHash === null || lacksUpgradeRoom(short)),
+      note: upgradeRoomNote(g?.guard_id ?? "", short),
+    });
+  }
   else items.push({ label: "Budget is up to date", state: "done" });
   items.push(g !== null && hasSwapRights(b.dao.policy, g.guard_id) ? { label: "Swaps are allowed", state: "done" } : { label: "Allow swaps for this Budget", state: "todo", fix: fixBtn("dca-allow", "Allow swaps") });
   if (r === null || r.registrations === null) items.push({ label: "Could not read the USDT setup", state: "unknown" });
@@ -728,7 +756,7 @@ function dcaChecklist(b: BudgetLive, dca: DcaView | null, connected: boolean): C
 }
 
 const checklistHtml = (items: CheckItem[]): Html =>
-  html`<ul class="plain-list k5-checks">${items.map((i) => html`<li class="k5-check"><span class="k5-mark ${i.state === "done" ? "k5-ok" : "k5-warn"}">${i.state === "done" ? icon.check() : icon.alertSmall()}</span><span class="grow-min">${i.label}</span>${i.fix ?? ""}</li>`)}</ul>`;
+  html`<ul class="plain-list k5-checks">${items.map((i) => html`<li class="k5-check"><span class="k5-mark ${i.state === "done" ? "k5-ok" : "k5-warn"}">${i.state === "done" ? icon.check() : icon.alertSmall()}</span><div class="grow-min">${i.label}${i.note ?? ""}</div>${i.fix ?? ""}</li>`)}</ul>`;
 
 const DCA_UNIT_LABELS: Record<DcaUnit, string> = { minutes: "minutes", hours: "hours", days: "days", weeks: "weeks" };
 

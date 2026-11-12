@@ -41,7 +41,7 @@ import {
   type ConfirmedProposal,
   type VoteAction,
 } from "./budget-flow.ts";
-import { budgetRpc, guardCanClose, guardNeedsUpdate, proposalLabel, readBalance, withdrawMaxYocto, readBudget, readDcaQuote, readDcaReadiness, readProposal, topUpBlocks, TOP_UP_TEXT, type BudgetLive, type DcaReadiness } from "./budget-read.ts";
+import { budgetRpc, guardCanClose, guardNeedsUpdate, proposalLabel, readBalance, withdrawMaxYocto, readBudget, readDcaQuote, readDcaReadiness, readProposal, readUpgradeShortfall, topUpBlocks, TOP_UP_TEXT, type BudgetLive, type DcaReadiness } from "./budget-read.ts";
 import {
   BALANCED_RULES,
   CAUTIOUS_RULES,
@@ -140,7 +140,7 @@ interface Sign2 {
 let budgetSign2: Sign2 | null = null;
 /** The DCA pop-up's reads: the checklist state and the price of one run. */
 /** `price`: what 1 NEAR buys now (token_out base units), to start the lowest-price field from. */
-let dcaRead: { readiness: DcaReadiness | null; quote: string | null; price: string | null } = { readiness: null, quote: null, price: null };
+let dcaRead: { readiness: DcaReadiness | null; quote: string | null; price: string | null; upgradeShort: string | null } = { readiness: null, quote: null, price: null, upgradeShort: null };
 /** An agent whose last signature has started. Its private key exists only here: leaving the page loses it. */
 let budgetNewAgent: NewAgent | null = null;
 /** A Budget being created. `key` exists from sign 2 on, and only here: leaving the page loses it. */
@@ -1484,8 +1484,11 @@ async function openBudgetClose(button: HTMLElement): Promise<void> {
   if (state === null || state.guard === null || status === null) return;
   status.textContent = "Reading the Budget version…";
   closeRead = await readDcaReadiness(state.dao.dao, state.guard.guard_id, dcaContract(), budgetNetwork()).catch(() => null);
+  const version = closeRead?.version ?? null;
+  // Only an old Guard is offered Update, and only it needs the code-size read (about 370 KB).
+  const short = version !== null && !guardCanClose(version) ? await readUpgradeShortfall(state.guard.guard_id, dcaContract(), budgetNetwork()) : null;
   status.textContent = "";
-  showBudgetDrawer(renderBudgetClose(state, closeRead?.version ?? null), button, true);
+  showBudgetDrawer(renderBudgetClose(state, version, short), button, true);
 }
 
 /** Sign the close, or the update it waits for. Each ends with a chain read, since Sputnik shows a failed call as Approved. */
@@ -1756,7 +1759,7 @@ const isBudgetPanel = (v: unknown): v is BudgetPanel =>
 const formValues = (form: HTMLFormElement): Record<string, string> => Object.fromEntries([...new FormData(form).entries()].map(([k, v]) => [k, String(v)]));
 
 const dcaContract = (): string => BUDGET_FACTORY || BUDGET_FACTORY_NAME;
-const dcaView = (): DcaView => ({ network: budgetNetwork(), readiness: dcaRead.readiness, quote: dcaRead.quote, price: dcaRead.price, canUpdate: true });
+const dcaView = (): DcaView => ({ network: budgetNetwork(), readiness: dcaRead.readiness, quote: dcaRead.quote, price: dcaRead.price, canUpdate: true, upgradeShort: dcaRead.upgradeShort });
 
 function renderDcaPanel(error: string | null, values: Record<string, string>, now: number = Date.now()): Html {
   return renderBudgetPanel("dca", budgetState as BudgetLive, error, { ...budgetPanelTo(), ...values, connected: connected === null ? "" : "1" }, now, dcaView());
@@ -1765,7 +1768,7 @@ function renderDcaPanel(error: string | null, values: Record<string, string>, no
 /** Opens the DCA pop-up at once, then fills the checklist when the chain reads are back. */
 function openDca(trigger: HTMLElement): void {
   if (budgetState === null) return;
-  dcaRead = { readiness: null, quote: null, price: null };
+  dcaRead = { readiness: null, quote: null, price: null, upgradeShort: null };
   showBudgetDrawer(renderDcaPanel(null, {}), trigger, false);
   void refreshDca();
 }
@@ -1789,7 +1792,8 @@ async function refreshDca(): Promise<void> {
     readDcaReadiness(state.dao.dao, state.guard.guard_id, dcaContract(), network).catch(() => null),
     readDcaQuote(NEAR_IN_YOCTO, network).catch(() => null),
   ]);
-  dcaRead = { ...dcaRead, readiness, price };
+  const upgradeShort = readiness !== null && guardNeedsUpdate(readiness.version) ? await readUpgradeShortfall(state.guard.guard_id, dcaContract(), network) : null;
+  dcaRead = { ...dcaRead, readiness, price, upgradeShort };
   repaintDca();
 }
 

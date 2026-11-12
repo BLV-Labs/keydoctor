@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, describe, it, mock } from "node:test";
 import { DCA_TESTNET } from "key-doctor";
 import { createDcaProposal, dcaFloorFromText, dcaFloorPrefill, dcaFromForm, DCA_SLIPPAGE_CHOICES } from "../src/budget-flow.ts";
-import { DCA_TOKEN_CONTRACTS, guardNeedsUpdate, readDcaQuote, readDcaReadiness } from "../src/budget-read.ts";
+import { DCA_TOKEN_CONTRACTS, guardNeedsUpdate, readDcaQuote, readDcaReadiness, readUpgradeShortfall, upgradeShortfallYocto } from "../src/budget-read.ts";
 import type { BudgetLive, BudgetPlan, DcaReadiness } from "../src/budget-read.ts";
 import { renderBudget, renderBudgetCreate, renderBudgetPanel, type DcaView } from "../src/budget-view.ts";
 import { html } from "../src/html.ts";
@@ -127,6 +127,67 @@ function stubRpc(views: Views): string[] {
   return calls;
 }
 afterEach(() => mock.restoreAll());
+
+describe("budget-read: upgradeShortfallYocto", () => {
+  const CODE_1_6_0 = 372_544; // bytes of Guard 1.6.0
+  it("a Guard on global code with 0.8 NEAR free lacks the whole copy: 3.73 NEAR + 0.01 margin - 0.8, rounded up", () => {
+    assert.equal(upgradeShortfallYocto("800000000000000000000000", CODE_1_6_0, 0), "2940000000000000000000000");
+  });
+  it("is 0 once the free NEAR covers the copy and the margin", () => {
+    assert.equal(upgradeShortfallYocto("3736000000000000000000000", CODE_1_6_0, 0), "0");
+    assert.equal(upgradeShortfallYocto("3735440000000000000000000", CODE_1_6_0, 0), "0", "exactly enough is enough");
+  });
+  it("a Guard with its own copy pays only for the growth", () => {
+    // 38,544 bytes of growth: 0.38544 NEAR + 0.01 margin.
+    assert.equal(upgradeShortfallYocto("500000000000000000000000", CODE_1_6_0, 334_000), "0");
+    assert.equal(upgradeShortfallYocto("100000000000000000000000", CODE_1_6_0, 334_000), "300000000000000000000000");
+    assert.equal(upgradeShortfallYocto("0", 300_000, 334_000), "10000000000000000000000", "smaller code still needs the margin");
+  });
+  it("rounds up to 0.01 NEAR so the asked amount is always enough", () => {
+    // 1 yocto short still asks for 0.01 NEAR.
+    assert.equal(upgradeShortfallYocto("3735439999999999999999999", CODE_1_6_0, 0), "10000000000000000000000");
+  });
+});
+
+describe("budget-read: readUpgradeShortfall", () => {
+  const code = (n: number) => Buffer.alloc(n).toString("base64");
+  function stubRaw(account: Record<string, unknown> | null, newCode: number | null, ownCode: number | null): string[] {
+    const calls: string[] = [];
+    mock.method(globalThis, "fetch", async (_url: string, init: { body: string }) => {
+      const { method, params } = JSON.parse(init.body) as { method: string; params: Record<string, unknown> };
+      if (method === "block") return Response.json({ jsonrpc: "2.0", id: "kd", result: { header: { height: 99, timestamp_nanosec: "1" } } });
+      calls.push(String(params.request_type));
+      const fail = Response.json({ jsonrpc: "2.0", id: "kd", error: { name: "HANDLER_ERROR" } });
+      if (params.request_type === "view_account") return account === null ? fail : Response.json({ jsonrpc: "2.0", id: "kd", result: account });
+      if (params.request_type === "call_function" && params.method_name === "get_guard_code") return newCode === null ? fail : Response.json({ jsonrpc: "2.0", id: "kd", result: { result: [...Buffer.alloc(newCode)], logs: [] } });
+      if (params.request_type === "view_code") return ownCode === null ? fail : Response.json({ jsonrpc: "2.0", id: "kd", result: { code_base64: code(ownCode) } });
+      return fail;
+    });
+    return calls;
+  }
+  const GLOBAL = "11111111111111111111111111111111";
+  it("a Guard on global code: the whole new code, from the balance minus storage, and no view_code read", async () => {
+    // 1.3 NEAR on the account, 50,000 bytes used (0.5 NEAR locked): 0.8 NEAR free.
+    const calls = stubRaw({ amount: "1300000000000000000000000", storage_usage: 50_000, code_hash: GLOBAL }, 372_544, null);
+    assert.equal(await readUpgradeShortfall(GUARD, FACTORY, "testnet"), "2940000000000000000000000");
+    assert.ok(!calls.includes("view_code"));
+  });
+  it("a Guard with its own copy: only the growth over its current code", async () => {
+    stubRaw({ amount: "7840000000000000000000000", storage_usage: 334_175, code_hash: "4dug" }, 372_544, 330_000);
+    assert.equal(await readUpgradeShortfall(GUARD, FACTORY, "testnet"), "0");
+  });
+  it("any failed read is null (unknown), never 0 (enough)", async () => {
+    stubRaw(null, 372_544, null);
+    assert.equal(await readUpgradeShortfall(GUARD, FACTORY, "testnet"), null);
+    mock.restoreAll();
+    stubRaw({ amount: "1", storage_usage: 1, code_hash: GLOBAL }, null, null);
+    assert.equal(await readUpgradeShortfall(GUARD, FACTORY, "testnet"), null);
+    mock.restoreAll();
+    stubRaw({ amount: "1", storage_usage: 1, code_hash: "4dug" }, 10, null);
+    assert.equal(await readUpgradeShortfall(GUARD, FACTORY, "testnet"), null);
+    assert.equal(await readUpgradeShortfall(GUARD, "", "testnet"), null, "no factory in this build");
+  });
+});
 
 describe("budget-read: readDcaReadiness and readDcaQuote", () => {
   const MIN = "1250000000000000000000";
@@ -282,7 +343,7 @@ const readiness = (over: Partial<DcaReadiness> = {}): DcaReadiness => ({
   version: "1.5.0", latestHash: "HASH",
   registrations: DCA_TOKEN_CONTRACTS.map((contract) => ({ contract, registered: true, min: "1" })), ...over,
 });
-const view = (over: Partial<DcaView> = {}): DcaView => ({ network: "testnet", readiness: readiness(), quote: "896500", price: "896500", canUpdate: true, ...over });
+const view = (over: Partial<DcaView> = {}): DcaView => ({ network: "testnet", readiness: readiness(), quote: "896500", price: "896500", canUpdate: true, upgradeShort: "0", ...over });
 const values = { connected: "1", amount: "1", every: "1", unit: "days", stop: "times", runs: "5", slippage: "100", floor: "0.85" };
 const confirm = { ...values, step: "confirm" };
 const NOW = new Date("2026-11-10T00:00:00").getTime();
@@ -329,6 +390,22 @@ describe("DCA drawer: checklist and Start", () => {
     const old = readiness({ version: "1.2.0" });
     assert.match(panel(live(), view({ readiness: old, canUpdate: false })), /data-action="dca-upgrade" disabled/);
     assert.match(panel(live(), view({ readiness: { ...old, latestHash: null } })), /data-action="dca-upgrade" disabled/);
+  });
+  // A Guard on the factory's global code holds no code of its own; `upgrade` stores a copy (3.73 NEAR for 1.6.0)
+  // from the Guard's free NEAR. Short of that the update fails after two signatures, so the button waits for the top-up.
+  it("the Update button is disabled and names the NEAR to send when the Budget account lacks room for the code", () => {
+    const h = panel(live(), view({ readiness: readiness({ version: "1.4.0" }), upgradeShort: "2950000000000000000000000" }));
+    assert.match(h, /data-action="dca-upgrade" disabled/);
+    assert.match(words(h), /Send\s+2\.95 NEAR\s+to the Budget account\s+g1\.guards\.testnet\s+first/);
+  });
+  it("with enough room the Update button is enabled and no note shows; an unread check warns but does not block", () => {
+    const old = readiness({ version: "1.4.0" });
+    const ok = panel(live(), view({ readiness: old }));
+    assert.doesNotMatch(ok, /data-action="dca-upgrade" disabled/);
+    assert.doesNotMatch(ok, /Send .* to the Budget account|could not check/);
+    const unread = panel(live(), view({ readiness: old, upgradeShort: null }));
+    assert.doesNotMatch(unread, /data-action="dca-upgrade" disabled/);
+    assert.match(unread, /could not check that the Budget account/);
   });
   it("mainnet shows the testnet-only line, no form and no Start", () => {
     const h = panel(live(), view({ network: "mainnet" }), confirm);
@@ -387,6 +464,8 @@ describe("DCA in plain words", () => {
     "edit step": panel(live(), view()),
     "edit step, old Budget": panel(live({}, oldPolicy), view({ readiness: readiness({ version: "1.4.0", registrations: [{ contract: "usdt.fakes.testnet", registered: false, min: "1" }] }) })),
     "edit step, unread": panel(live(), view({ readiness: null })),
+    "edit step, old Budget short of NEAR for the update": panel(live(), view({ readiness: readiness({ version: "1.4.0" }), upgradeShort: "2950000000000000000000000" })),
+    "edit step, update room unread": panel(live(), view({ readiness: readiness({ version: "1.4.0" }), upgradeShort: null })),
     review: panel(live(), view(), confirm),
     "review, short": panel(live({ withdrawable: NEAR(1) }), view({ quote: null }), confirm),
     mainnet: panel(live(), view({ network: "mainnet" })),
