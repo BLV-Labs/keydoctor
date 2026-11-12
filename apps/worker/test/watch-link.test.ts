@@ -3,7 +3,8 @@ import { describe, it, type TestContext } from "node:test";
 import worker from "../src/index.ts";
 import type { Env } from "../src/env.ts";
 import { handleUpdate, parseCommand } from "../src/telegram/commands.ts";
-import { MAX_LIVE_PENDING, isCode, newCode } from "../src/watch-link.ts";
+import { MAX_LIVE_PENDING, MAX_LIVE_PENDING_PER_CLIENT, isCode, newCode } from "../src/watch-link.ts";
+import { WATCH_LINK_PER_MIN } from "../src/index.ts";
 import { testD1, type TestD1 } from "./support/d1.ts";
 import { DAO, installChain, type Chain } from "./support/rpc.ts";
 
@@ -18,11 +19,11 @@ function setup(t: TestContext) {
 }
 const rows = (db: TestD1, sql: string) => (db.raw.prepare(sql).all() as any[]).map((r) => ({ ...r }));
 
-function post(env: Env, body: unknown, origin: string | null = ORIGIN, method = "POST") {
+function post(env: Env, body: unknown, origin: string | null = ORIGIN, method = "POST", ip?: string) {
   return worker.fetch(
     new Request("https://kd.test/api/watch-link", {
       method,
-      headers: { "content-type": "application/json", ...(origin !== null && { origin }) },
+      headers: { "content-type": "application/json", ...(origin !== null && { origin }), ...(ip !== undefined && { "cf-connecting-ip": ip }) },
       ...(method === "POST" && { body: JSON.stringify(body) }),
     }),
     env,
@@ -69,11 +70,31 @@ describe("GĐ12 watch links", () => {
   it("refuses new codes past the live cap", async (t) => {
     const { env, db } = setup(t);
     const far = new Date(Date.now() + 3_600_000).toISOString();
-    const insert = db.raw.prepare("INSERT INTO pending_subscriptions VALUES (?, 'x.testnet', 'testnet', 'x', ?)");
+    const insert = db.raw.prepare("INSERT INTO pending_subscriptions (token, target, network, created_at, expires_at) VALUES (?, 'x.testnet', 'testnet', 'x', ?)");
     for (let i = 0; i < MAX_LIVE_PENDING; i++) insert.run(`code${i}`, far);
     const res = await post(env, { target: DAO });
     assert.equal(res.status, 429);
     assert.equal(((await res.json()) as any).code, "RATE_LIMITED");
+  });
+
+  // Red-team M5: Origin is a header curl can set, so the global cap alone let one script block every watch link for 30 min.
+  it("one client cannot fill the live cap: per-client cap, then per-minute limit; others still get links", async (t) => {
+    const { env, db } = setup(t);
+    const far = new Date(Date.now() + 3_600_000).toISOString();
+    const res0 = await post(env, { target: DAO }, ORIGIN, "POST", "2001:db8:1:2::1");
+    assert.equal(res0.status, 200);
+    const client = rows(db, "SELECT client FROM pending_subscriptions")[0].client;
+    assert.match(client, /^[0-9a-f]{16}$/, "a hash is stored, never the address");
+    const insert = db.raw.prepare("INSERT INTO pending_subscriptions (token, target, network, created_at, expires_at, client) VALUES (?, 'x.testnet', 'testnet', 'x', ?, ?)");
+    for (let i = 1; i < MAX_LIVE_PENDING_PER_CLIENT; i++) insert.run(`c${i}`, far, client);
+    // Same /64, another address: still the same client.
+    const capped = await post(env, { target: DAO }, ORIGIN, "POST", "2001:db8:1:2:ffff::9");
+    assert.equal(capped.status, 429);
+    assert.equal(((await capped.json()) as any).code, "RATE_LIMITED");
+    assert.equal((await post(env, { target: DAO }, ORIGIN, "POST", "198.51.100.7")).status, 200, "another client is not blocked");
+    let limited = 0;
+    for (let i = 0; i < WATCH_LINK_PER_MIN + 1; i++) if ((await post(env, { target: "Bad Name" }, ORIGIN, "POST", "198.51.100.8")).status === 429) limited++;
+    assert.equal(limited, 1, "past WATCH_LINK_PER_MIN calls a minute the route answers 429 before reading the body");
   });
 
   it("/start <code> in a group subscribes it like /watch, once; the code works one time", async (t) => {
@@ -91,7 +112,7 @@ describe("GĐ12 watch links", () => {
 
   it("an expired code is refused and removed", async (t) => {
     const { env, db, chain } = setup(t);
-    db.raw.prepare("INSERT INTO pending_subscriptions VALUES ('AAAAAAAAAAAAAAAA', ?, 'testnet', 'x', '2020-01-01T00:00:00Z')").run(DAO);
+    db.raw.prepare("INSERT INTO pending_subscriptions (token, target, network, created_at, expires_at) VALUES ('AAAAAAAAAAAAAAAA', ?, 'testnet', 'x', '2020-01-01T00:00:00Z')").run(DAO);
     assert.match(await start(env, chain, "AAAAAAAAAAAAAAAA"), /expired/);
     assert.equal(rows(db, "SELECT * FROM pending_subscriptions").length, 0);
     assert.equal(rows(db, "SELECT * FROM subscriptions").length, 0);

@@ -9,6 +9,8 @@ import { addPending, countLivePending } from "./store/pending.ts";
 export const DEFAULT_BOT_USERNAME = "KeyDoctorOnCallBot";
 /** Live codes allowed at once, so an anonymous caller cannot fill D1. */
 export const MAX_LIVE_PENDING = 1000;
+/** Live codes one client may hold (red-team M5): one caller alone can no longer reach MAX_LIVE_PENDING. */
+export const MAX_LIVE_PENDING_PER_CLIENT = 10;
 const CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 const CODE_LENGTH = 16;
 
@@ -26,14 +28,22 @@ export function newCode(): string {
 
 export const isCode = (s: string): boolean => /^[A-Za-z0-9]{16}$/.test(s);
 
-export async function createWatchLink(args: TargetArgs, env: Env, now = new Date()): Promise<KdWatchLink> {
+/** A short hash of the caller's rate-limit key (clientKey), so D1 never stores an address. */
+export async function clientId(key: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`kd-pending:${key}`)));
+  return Array.from(digest.subarray(0, 8), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** `client` is clientId() of the caller, or null when the request had no address (local dev). */
+export async function createWatchLink(args: TargetArgs, env: Env, client: string | null = null, now = new Date()): Promise<KdWatchLink> {
   const t = resolve(args, env);
-  if ((await countLivePending(env.DB, now)) >= MAX_LIVE_PENDING) throw new KdErrorException(
+  const live = await countLivePending(env.DB, now, client);
+  if (live.all >= MAX_LIVE_PENDING || (client !== null && live.mine >= MAX_LIVE_PENDING_PER_CLIENT)) throw new KdErrorException(
       kdErrorBody("RATE_LIMITED", { vi: "Đang có quá nhiều link chờ xác nhận. Hãy thử lại sau ít phút.", en: "Too many links are waiting to be opened. Try again in a few minutes." }, true),
     );
   const code = newCode();
   const ttl = Number(env.PENDING_SUB_TTL_MINUTES);
-  const expires = await addPending(env.DB, code, { target: t.id, network: t.network }, now, Number.isInteger(ttl) && ttl > 0 && ttl <= 1440 ? ttl : 30);
+  const expires = await addPending(env.DB, code, { target: t.id, network: t.network }, now, Number.isInteger(ttl) && ttl > 0 && ttl <= 1440 ? ttl : 30, client);
   const bot = env.BOT_USERNAME || DEFAULT_BOT_USERNAME;
   return {
     schema_version: "kd.watch_link.v1",
