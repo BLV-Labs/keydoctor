@@ -41,6 +41,8 @@ function demoProposals(chain: Chain) {
 }
 const sends = (chain: Chain) => chain.telegram.filter((x) => x.method === "sendMessage");
 const rows = (db: TestD1, sql: string) => db.raw.prepare(sql).all() as any[];
+/** A day passes for the daily key diff: every target's last attempt moves 24h back, so each is due again. */
+const dayPasses = (db: TestD1) => db.raw.prepare("UPDATE daily_checks SET checked_at = strftime('%Y-%m-%dT%H:%M:%fZ', checked_at, '-1 day')").run();
 
 describe("GĐ6 /run-check", () => {
   it("needs the Bearer token and a known job", async (t) => {
@@ -265,6 +267,7 @@ describe("GĐ9 daily key diff", () => {
 
     const original = structuredClone(chain.keys["b.kd-demo.testnet"]);
     addKey(chain, "b.kd-demo.testnet", "ed25519:DailyNewKey11111111111111111111111111111111");
+    dayPasses(db);
     const added = await runCheck(env, { job: "daily" });
     assert.equal(added.body.alerts_sent, 1);
     assert.match(added.body.alerts[0], /^testnet:b\.kd-demo\.testnet:daily_changes:\d{4}-\d{2}-\d{2}@182340111:-$/);
@@ -275,22 +278,25 @@ describe("GĐ9 daily key diff", () => {
 
     chain.keys["b.kd-demo.testnet"] = original;
     chain.head += 72_000;
+    dayPasses(db);
     const removed = await runCheck(env, { job: "daily" });
     assert.equal(removed.body.alerts_sent, 1);
     assert.match(sends(chain).at(-1)!.body.text, /A full-access key of b\.kd-demo\.testnet was removed/);
 
+    dayPasses(db);
     const none = await runCheck(env, { job: "daily" });
     assert.equal(none.body.alerts_sent, 0);
     assert.ok(rows(db, "SELECT * FROM snapshots").length <= 7);
   });
 
   it("a failed send keeps the old baseline so the change is reported again", async (t) => {
-    const { env, chain } = setup(t);
+    const { env, chain, db } = setup(t);
     await watch(env, "b.kd-demo.testnet");
     addKey(chain, "b.kd-demo.testnet", "ed25519:DailyNewKey11111111111111111111111111111111");
     chain.telegramStatus = 500;
     assert.equal((await runCheck(env, { job: "daily" })).body.alerts_sent, 0);
     chain.telegramStatus = 200;
+    dayPasses(db);
     const retry = await runCheck(env, { job: "daily" });
     assert.equal(retry.body.alerts_sent, 1);
   });
@@ -303,6 +309,50 @@ describe("GĐ9 daily key diff", () => {
     }
     await runCheck(env, { job: "daily" });
     assert.equal(rows(db, "SELECT * FROM snapshots").length, 7);
+  });
+});
+
+describe("daily key diff rotation (red-team H3)", () => {
+  const sub = (env: Env, target: string) =>
+    addSubscription(env.DB, { target, network: "testnet", target_type: "account", chat_id: String(GROUP), chat_type: "group", created_at: "2026-11-01T00:00:00Z" });
+
+  it("each run takes at most MAX_DAILY_TARGETS_PER_RUN targets, never checked first; a target checked under 23h ago waits", async (t) => {
+    const { env, db } = setup(t, { MAX_DAILY_TARGETS_PER_RUN: "2" });
+    for (const a of ["c.kd-demo.testnet", "a.kd-demo.testnet", "b.kd-demo.testnet"]) await sub(env, a);
+    assert.equal((await runCheck(env, { job: "daily" })).body.targets_checked, 2);
+    const second = await runCheck(env, { job: "daily" });
+    assert.equal(second.body.targets_checked, 1);
+    assert.deepEqual(rows(db, "SELECT target FROM daily_checks ORDER BY checked_at DESC, target LIMIT 1").map((r) => r.target), ["c.kd-demo.testnet"]);
+    assert.equal((await runCheck(env, { job: "daily" })).body.targets_checked, 0);
+    dayPasses(db);
+    assert.equal((await runCheck(env, { job: "daily" })).body.targets_checked, 2);
+  });
+
+  it("targets that sort first and always fail cannot starve a real one: its new key still alerts within a day", async (t) => {
+    // The old job scanned every target alphabetically in one invocation, so cheap junk subscriptions that sort first
+    // used up the subrequest budget and the targets after them were never scanned.
+    const { env, chain, db } = setup(t, { MAX_DAILY_TARGETS_PER_RUN: "2" });
+    for (const junk of ["aaa-1.testnet", "aaa-2.testnet", "aaa-3.testnet"]) await sub(env, junk);
+    await watch(env, "b.kd-demo.testnet");
+    dayPasses(db); // the /watch baseline is old news by the time the daily runs start
+    addKey(chain, "b.kd-demo.testnet", "ed25519:DailyNewKey11111111111111111111111111111111");
+    const runs = [];
+    for (let hour = 0; hour < 24; hour++) {
+      const r = await runCheck(env, { job: "daily" });
+      runs.push(r.body);
+      if (r.body.alerts_sent > 0) break;
+    }
+    assert.ok(runs.length <= 2, `the alert took ${runs.length} runs`);
+    assert.match(sends(chain).at(-1)!.body.text, /b\.kd-demo\.testnet has a new full-access key/);
+    assert.ok(runs[0].errors.length > 0, "the junk targets were tried and failed");
+  });
+
+  it("a target named in /run-check runs now even if it was checked minutes ago", async (t) => {
+    const { env } = setup(t);
+    await sub(env, "b.kd-demo.testnet");
+    assert.equal((await runCheck(env, { job: "daily" })).body.targets_checked, 1);
+    assert.equal((await runCheck(env, { job: "daily" })).body.targets_checked, 0);
+    assert.equal((await runCheck(env, { job: "daily", target: "B.kd-demo.testnet" })).body.targets_checked, 1);
   });
 });
 

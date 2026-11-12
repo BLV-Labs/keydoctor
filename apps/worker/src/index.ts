@@ -12,7 +12,7 @@ import { handleTelegram } from "./telegram/webhook.ts";
 import { createWatchLink } from "./watch-link.ts";
 
 export const PROPOSAL_CRON = "*/15 * * * *";
-export const DAILY_CRON = "0 2 * * *";
+export const DAILY_CRON = "2 * * * *";
 /** Its own trigger, off the proposal job's minutes: each invocation gets its own subrequest and CPU limits. */
 export const KEEPER_CRON = "7,22,37,52 * * * *";
 /** Yield push (plan Y20): its own offset again, so it shares CPU with neither the proposal job nor the keeper. */

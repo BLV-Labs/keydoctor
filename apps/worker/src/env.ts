@@ -33,6 +33,8 @@ export interface Env {
   TELEGRAM_WEBHOOK_SECRET?: string;
   NEW_KEY_WINDOW_HOURS?: string;
   MAX_DAOS_PER_RUN?: string;
+  /** Daily key diff: targets checked per hourly run (red-team H3). */
+  MAX_DAILY_TARGETS_PER_RUN?: string;
   PENDING_SUB_TTL_MINUTES?: string;
   DASHBOARD_URL?: string;
   DASHBOARD_ORIGIN?: string;

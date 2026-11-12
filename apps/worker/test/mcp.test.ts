@@ -218,7 +218,7 @@ describe("GĐ3 compare and the baseline", () => {
 
   it("an anonymous caller cannot move the baseline to hide a new key from the daily alert (red-team H1)", async (t) => {
     // /mcp has no auth. If compare could move the baseline, whoever added a key could fold it into the baseline
-    // before 02:00 UTC and the daily job would see no change and send no "key added" alert.
+    // before its next daily check and the daily job would see no change and send no "key added" alert.
     const { env, db, chain } = setup(t);
     await call(env, "compare", { target: DAO });
     addKey(chain, "b.kd-demo.testnet", "ed25519:NewKeyAddedToB1111111111111111111111111111");

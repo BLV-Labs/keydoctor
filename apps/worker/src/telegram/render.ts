@@ -342,13 +342,13 @@ export const TEXT = {
       "",
       ...(lang === "vi"
         ? [
-            "- Tin hằng ngày (02:00 UTC) khi khóa được thêm hoặc xóa.",
+            "- Tin mỗi ngày (khoảng 24 giờ một lần) khi khóa được thêm hoặc xóa.",
             ...(type === "dao"
               ? ["- Cảnh báo trước phiếu cuối khi người bỏ phiếu có khóa toàn quyền mới (kiểm mỗi 15 phút).", "- Cảnh báo đề xuất đổi thành viên, policy hoặc code."]
               : ["- Nếu account này ở trong council, hãy /watch thêm tên DAO để nhận cảnh báo đề xuất."]),
           ]
         : [
-            "- A daily message (02:00 UTC) when a key is added or removed.",
+            "- A daily message (about every 24 hours) when a key is added or removed.",
             ...(type === "dao"
               ? ["- A warning before the final vote when a voter has a new full-access key (checked every 15 minutes).", "- A warning for proposals that change members, policy or code."]
               : ["- If this account sits in a council, also /watch the DAO to get proposal warnings."]),

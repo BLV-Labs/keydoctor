@@ -12,14 +12,16 @@ database_name = "key-doctor"
 database_id = "a7ab0080-7623-4914-bab6-979e63ff8328"
 migrations_dir = "migrations"
 
-# Proposal watch every 15 minutes, daily key diff at 02:00 UTC, keeper and yield push every 15 minutes on their
+# Proposal watch every 15 minutes, daily key diff hourly (each target about once a day, oldest first), keeper and yield push every 15 minutes on their
 # own offsets (src/index.ts PROPOSAL_CRON, DAILY_CRON, KEEPER_CRON, YIELD_CRON). The free plan allows 5 triggers.
 [triggers]
-crons = ["*/15 * * * *", "0 2 * * *", "7,22,37,52 * * * *", "11,26,41,56 * * * *"]
+crons = ["*/15 * * * *", "2 * * * *", "7,22,37,52 * * * *", "11,26,41,56 * * * *"]
 
 [vars]
 NEW_KEY_WINDOW_HOURS = "48"
 MAX_DAOS_PER_RUN = "5"
+# Daily key diff: targets per hourly run, so 72 a day; watched targets take turns, oldest check first.
+MAX_DAILY_TARGETS_PER_RUN = "3"
 PENDING_SUB_TTL_MINUTES = "30"
 DASHBOARD_URL = "https://key-doctor-dashboard.pages.dev"
 DASHBOARD_ORIGIN = "https://key-doctor-dashboard.pages.dev"

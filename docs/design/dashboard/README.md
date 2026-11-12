@@ -96,7 +96,7 @@ The `?target=` route is also the deep link the bot uses for "View on dashboard".
 
 ### 5. Telegram alerts
 - One dialog for every target. Steps: open `@KeyDoctorOnCallBot`, copy `/watch <target>` (button turns into "Copied"), group hint.
-- "You will get": every target gets the daily key comparison (02:00 UTC). A DAO also gets the pre-vote warning (every 15 minutes) and governance / upgrade proposal warnings. An account gets a hint to also watch its DAO.
+- "You will get": every target gets the daily key comparison (about every 24 hours). A DAO also gets the pre-vote warning (every 15 minutes) and governance / upgrade proposal warnings. An account gets a hint to also watch its DAO.
 - The page stores nothing; `/list` and `/unwatch` live in the bot.
 
 ### 6. Confirm a full-access delete

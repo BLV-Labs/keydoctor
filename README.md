@@ -36,7 +36,7 @@ Left out: 35 DAOs (25 over a scan cap, `LIMIT_EXCEEDED`; 10 that are not DAOs) a
 | Part | What you get | Where |
 |---|---|---|
 | Check | Every key of an account or a whole council, with the reason each one matters and a fixed-rule risk score | Dashboard, Telegram `/check`, MCP `diagnose`, `list_keys` |
-| On Call | A warning before the final vote when a voter has a new full-access key. Warnings for proposals that change members, policy or contract code. A daily key-change message | Telegram bot (cron every 15 minutes and at 02:00 UTC) |
+| On Call | A warning before the final vote when a voter has a new full-access key. Warnings for proposals that change members, policy or contract code. A daily key-change message | Telegram bot (cron every 15 minutes; each watched target's key diff about every 24 hours) |
 | Clean up | A step-by-step plan in a safe order, ticked from chain data when you rescan. Revoke or Delete one key at a time | Dashboard (`view=cleanup`), each change signed by you in Meteor, Here or HOT Wallet (your pick) |
 | Compare | What changed since the last baseline | Telegram `/changes`, MCP `compare` |
 | Agent Guard | A contract the DAO adds as a member: it turns an agent's payment into a transfer proposal and approves it only within the per-payment, per-recipient and 24-hour limits the DAO set. The page builds the two proposals (create the Guard, give it its role) for an existing council | [Agent Guard](#agent-guard-contract) contract, dashboard `?page=guard&dao=<dao>`, the agent through [Guard MCP](#guard-mcp-agent-side) |
@@ -186,7 +186,7 @@ Requires Node.js 22.18+ and pnpm 10. `corepack enable` installs the pnpm version
 | GĐ6 | Proposal watch cron, `alerts_sent`, `/run-check`, demo script | Deployed; live testnet run 2026-10-30: voter-key and governance alerts reached the group, the second `run-check` repeated nothing ([`docs/demo-testnet-run-2026-10-30.md`](docs/demo-testnet-run-2026-10-30.md)). Rerun 2026-11-09 with the same two alerts and nothing else ([`docs/live-test-plan.md`](docs/live-test-plan.md) L1) |
 | GĐ7 | Dashboard: check, council, proposal list, account, key detail (what a key is approved for, the dApp), alerts dialog | Deployed to Pages |
 | GĐ8 | Cleanup plan, per-key Revoke / Delete signed in Meteor Wallet | Built; Revoke and Delete verified on testnet with a real Meteor account (2026-10-30). No bulk delete |
-| GĐ9 | Daily key diff (02:00 UTC) | Built; the cron fired live at 02:00 UTC on 2026-11-10 and wrote a new baseline for each of 6 targets (live-test W3) |
+| GĐ9 | Daily key diff | Built; the cron fired live at 02:00 UTC on 2026-11-10 and wrote a new baseline for each of 6 targets (live-test W3). Since 2026-11-12 it runs hourly and checks up to `MAX_DAILY_TARGETS_PER_RUN` (3) targets per run, oldest check first, so each target gets about one check a day; not yet seen live |
 | GĐ10 | Network stats script | Ran 2026-11-10 on mainnet at block 223,787,777 over all 2,112 factory DAOs; a second run gave a byte-identical file ([`data/network-stats-all.md`](data/network-stats-all.md)) |
 | GĐ12 | One-tap watch links: `POST /api/watch-link`, MCP `watch`, `/start <code>`, dashboard "Create links" | Deployed with the Worker; MCP `watch` is in `tools/list`; a link was opened and `/start <code>` taken live (2026-11-10, live-test B6) |
 | GĐ11, GĐ13 | History backtest, NearBlocks key dates | Not built (Roadmap) |
@@ -225,7 +225,7 @@ apps/worker           one Cloudflare Worker + D1
   POST /telegram      bot webhook, secret-token header, 200 at once + waitUntil
   POST /run-check     runs a cron job now, Bearer RUN_CHECK_TOKEN
   POST /api/watch-link  one-time /start links, CORS only for DASHBOARD_ORIGIN
-  crons               */15 proposal watch, 0 2 * * * daily key diff, 11,26,41,56 * * * * yield push,
+  crons               */15 proposal watch, 2 * * * * daily key diff (3 targets a run, oldest first), 11,26,41,56 * * * * yield push,
                       7,22,37,52 * * * * Agent Budget keeper (off unless its secrets are set)
 ```
 
@@ -378,6 +378,7 @@ V1 alerts and suggests; it never moves funds. The plan is in [`docs/stories/epic
 - A DAO that needs one vote executes a proposal at once, so Key Doctor can only warn after the fact (`after_the_fact: true`).
 - Alerts arrive up to one cron period late (15 minutes). Sputnik does not store vote times.
 - Alerts reach only chats that subscribed with `/watch`. There is no way to message a NEAR account.
+- The daily key diff checks up to 3 targets an hour (`MAX_DAILY_TARGETS_PER_RUN`), oldest check first. Past 72 watched targets, each is checked less than once a day.
 - A key added and then removed between two scans is not seen. Key age is an estimate from the nonce and a 0.6 s block time.
 - Scans read public NEAR RPC through FastNEAR (`rpc.<network>.fastnear.com`, free tier) and fall back to `rpc.<network>.near.org` on a rate limit or an outage; see [`docs/data-sources-benchmark.md`](docs/data-sources-benchmark.md) for why and the measured numbers. Public RPC rate-limits heavy use. The Cloudflare free plan limits outbound requests per run, so the proposal job handles at most `MAX_DAOS_PER_RUN` DAOs per run (default 5), at most 12 proposals and 8 voter scans per DAO.
 - Scan caps: 100 keys per account, 21 council members, 50 roles.
