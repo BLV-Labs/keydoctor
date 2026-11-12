@@ -99,9 +99,13 @@ async function clip1() {
   const g = await query({ request_type: "view_account", account_id: guard });
   const reserve = BigInt(g.storage_usage) * 10n ** 19n > BigInt(policy.min_reserve) ? BigInt(g.storage_usage) * 10n ** 19n : BigInt(policy.min_reserve);
   const bond = BigInt(config.proposal_bond);
-  BigInt(g.amount) >= reserve + bond
-    ? ok(`the Guard holds ${fmt(g.amount)}, enough for a ${fmt(bond)} bond above its ${fmt(reserve)} reserve`)
-    : fail(`the Guard holds ${fmt(g.amount)}, it needs ${fmt(reserve + bond)} to file a request`);
+  // The agent may file all four invoices at once, so four bonds can be out together. Each request record also
+  // stays in the Guard's storage (Guard 1.5.0+), which raises the reserve: 0.01 NEAR (1 KB) per request is a margin.
+  const requests = BigInt(invoices().length);
+  const need = reserve + requests * (bond + 10n ** 22n);
+  BigInt(g.amount) >= need
+    ? ok(`the Guard holds ${fmt(g.amount)}, enough for ${requests} requests (${fmt(bond)} bond each) above its ${fmt(reserve)} reserve`)
+    : fail(`the Guard holds ${fmt(g.amount)}, it needs ${fmt(need)} to file ${requests} requests at once: Top up the Guard`);
 
   const agentId = env("AGENT_ACCOUNT_ID");
   if (!agentId) return fail("AGENT_ACCOUNT_ID is not set");

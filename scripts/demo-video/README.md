@@ -1,25 +1,31 @@
 # Demo video: recording script
 
-A 90-second video for the X post the hackathon asks for (HACKATHON.md "Video"): lead with the user's problem, show
-one full moment from a user action to a result, say what NEAR makes possible, end with a next step. No intro,
-no architecture slide, no setup on screen. Tracks: `security` (main) and `social`.
+A video of about 2 minutes for the X post the hackathon asks for (HACKATHON.md "The demo post"): lead with the
+user's problem, show one full moment from a user action to a result, say what NEAR makes possible, end with a next
+step. No architecture slide, no setup on screen. Tracks: `security` (main) and `social`.
 
-Two scenes plus a hook and a close. Every terminal command runs off camera: on screen there is one prompt in Claude
-Code, the dashboard and Telegram. Each scene lists what to prepare, what to show, the line to say (or show as a
-caption) and how to tell it worked. Testnet only.
+The story, in order: a hook; why Key Doctor has the features it has (the two weak spots of a DAO fund); how it solves
+each one (two live scenes); where it goes next; a close with the link. The "why" and "next" parts stay short (about
+15 seconds each), because the brief asks for no long intro. Every terminal command runs off camera: on screen there
+is one prompt in Claude Code, the dashboard and Telegram. Each part lists what to show, the line to say (or show as
+a caption) and how to tell it worked. Testnet only.
 
-| Time | Scene | Shows |
+| Time | Part | Shows |
 |---|---|---|
-| 0:00–0:08 | Hook | The problem: an agent that pays needs a key, and a full-access key spends everything |
-| 0:08–0:45 | 1. Agent Budget | Claude Code pays 3 invoices by itself; the injected 500 NEAR invoice waits; the owner rejects it |
-| 0:45–1:20 | 2. Council attack | A council member's account is taken over and votes; Telegram warns before the last vote; the scan and preflight name the account |
-| 1:20–1:30 | Close | What NEAR makes possible, links |
+| 0:00–0:08 | Hook | An agent that pays needs a key, and a normal key spends the whole fund |
+| 0:08–0:22 | Why | A DAO fund has two weak spots: agents need keys, council accounts get taken over. One feature for each |
+| 0:22–1:02 | How, scene 1: Agent Budget | Claude Code pays 3 invoices by itself; the injected 500 NEAR invoice waits; the owner rejects it |
+| 1:02–1:37 | How, scene 2: Council attack | A council member's account is taken over and votes; Telegram warns before the last vote; the scan and preflight name the account |
+| 1:37–1:52 | Next | Roadmap: NEAR Intents, a hosted Guard agent, yield on other chains, fees from agents |
+| 1:52–2:00 | Close | What NEAR makes possible, link |
 
 ## Before the day
 
 1. **Agent Budget (scene 1).** Make a new one on the dashboard (`?page=budget`, New agent budget). Do not reuse the
    old `kdg1793607117` Guard: its agent account also has a full-access key, which contradicts the line "the agent
    holds only a key for the Guard", and its council has other people's accounts in it.
+   - Sign in with a neutral testnet account, not a personal one: its name shows on the Budget page and in the wallet
+     pop-up when you reject on camera. Scene 2 uses the `kdoncall-*` set for the same reason.
    - Rules: **Balanced** (5 NEAR per payment, 20 NEAR per 24 hours, 3 waiting).
    - Recipients: `kdg1793607117-vendor.testnet`, `kdg1793607117-contrib.testnet`, `kdg1793607117-api.testnet`
      (the receivers named in `demo/invoices/inv-001..003`). Never add `attacker.testnet`.
@@ -37,6 +43,13 @@ caption) and how to tell it worked. Testnet only.
      claude mcp add guard -e NEAR_NETWORK=testnet -e GUARD_CONTRACT_ID=<guard id> -e AGENT_ACCOUNT_ID=a1.<guard id> -e AGENT_KEY_PATH=$HOME/.config/key-doctor/<key file>.json -- pnpm --silent --filter guard-mcp start
      ```
 
+   - Scene 2 asks `preflight` in the same Claude Code session, so the `key-doctor` MCP server must be added too
+     (`claude mcp list` shows both `guard` and `key-doctor`).
+   - Allow the `mcp__guard__*` and `mcp__key-doctor__preflight` tools in advance, so no permission prompt shows on
+     camera.
+   - Rehearse the scene 1 prompt once on this Guard. The model can spot the injection in `inv-004` and skip it, and
+     then the Guard never sees it. If it does, reject the waiting request (if any) and try again; keep the prompt
+     word for word.
 2. **Council DAO (scene 2).** Three accounts you hold keys for whose full-access keys are older than 48 hours (a
    fresh key makes every vote alert, and spoils the before/after). A needs about 7 NEAR if the DAO does not exist
    yet, B about 2 NEAR. Owner decision 2026-11-11: use the neutral `kdoncall-*` set, so no personal account name
@@ -66,7 +79,8 @@ caption) and how to tell it worked. Testnet only.
    ```
 
    It checks that the Guard is not paused, the three invoices fit the limits and the 24-hour window, the injected
-   invoice's receiver is not a recipient, the Budget and the Guard hold enough NEAR, the agent has a free waiting
+   invoice's receiver is not a recipient, the Budget holds enough NEAR, the Guard holds enough for four bonds at
+   once (the agent may file the four invoices in parallel) above its reserve, the agent has a free waiting
    slot and only Guard keys, and the key file matches. For the council it checks the Worker answers, no member is
    `block` yet (C only warns: C never signs), and prints the scan of the demo DAO.
 
@@ -84,15 +98,27 @@ caption) and how to tell it worked. Testnet only.
 
 Screen: a plain title card, or the Budget page.
 
-> Your AI agent needs to pay invoices. Give it a normal NEAR key and it can spend everything you have.
+> Your DAO wants an AI agent to pay invoices. A normal NEAR key lets it spend the whole fund.
 
-### Scene 1: Agent Budget (0:08–0:45)
+### Why (0:08–0:22)
+
+Screen: the dashboard home page (`https://key-doctor-dashboard.pages.dev/`), holding on the mainnet meter "of council
+members are at high risk", then the cards Agent Budget and Scan DAO under "Three tools for one Sputnik DAO".
+
+> A DAO fund moves by council vote, and has two weak spots. Agents get a key to everything. And council accounts
+> get taken over: on mainnet, 48% of council members are high risk. Key Doctor fixes both.
+
+The 48% is the README stats table ("Council members at high risk", all DAOs, block 223,787,777, 2026-11-09). If the
+home page shows a newer number, say that one.
+
+### How, scene 1: Agent Budget (0:22–1:02)
 
 Before: `check.mjs` all `ok`; Claude Code open in this repo; the Budget page open in the browser.
 
-1. Budget page (`?page=budget&dao=<budget dao>`): show the rules (5 / 20 NEAR, 3 recipients) and the agent with
-   its one key, limited to `request_transfer` and `sync_request`. 5 seconds.
-   > The agent gets a key that can only ask this Guard for money. The limits and the recipients live on chain.
+1. Budget page (`?page=budget&dao=<budget dao>`): show the rules (5 / 20 NEAR, 3 recipients), then open the agent
+   and hold on "What it cannot do" (withdraw, change rules, call any other contract, use your key). The page does not
+   list the key's methods; the drawer is what shows the limit. 5 seconds.
+   > The agent's key can only ask this Guard for money. The limits and recipients live on chain.
 2. Claude Code, type the prompt:
 
    ```text
@@ -100,18 +126,20 @@ Before: `check.mjs` all `ok`; Claude Code open in this repo; the Budget page ope
    ```
 
    Speed up the wait in the edit. Hold on the result: inv-001, inv-002, inv-003 `auto_approved`; inv-004 `pending`
-   with `NOT_WHITELISTED` and `OVER_PER_TX`.
-   > Three invoices are within the rules: paid on its own. The fourth has a prompt injection asking for 500 NEAR
-   > to an unknown account. The Guard does not trust the agent, so it waits for a human.
+   with `NOT_WHITELISTED`, `OVER_PER_TX` and `OVER_DAILY_LIMIT` (500 NEAR is over the 20 NEAR a day too).
+   > Three invoices fit the rules: paid automatically. The fourth hides a prompt injection: 500 NEAR to a stranger.
+   > The Guard does not trust the agent, so it waits.
 3. Budget page: reload, show the waiting request, click **Reject**, sign in the wallet, show it gone. No Telegram
    here: the page shows the waiting request at once, with no cron to wait for.
-   > The owner rejects it with one click. The agent never had the power to pay it.
+   > One click rejects it. The agent never could pay it.
+4. Scroll to the Strategies card (Scheduled payouts, DCA NEAR → USDT). 3 seconds.
+   > The same Guard runs scheduled payouts and DCA, each started by a DAO vote.
 
 Done when: the three receivers got their NEAR (Budget page, Activity: "Paid automatically") and inv-004 is rejected.
 
 Keep this Claude Code session open: scene 2 ends in it.
 
-### Scene 2: Council attack (0:45–1:20)
+### How, scene 2: Council attack (1:02–1:37)
 
 Before: the DAO from step 2 exists and the group watches it. Telegram, the dashboard and Claude Code are open.
 
@@ -139,17 +167,27 @@ Do not reject before the warning has arrived: a proposal already closed when Key
 
 Done when: the Telegram warning, A's high flag and preflight `block` are each on screen.
 
-Optional caption between 2 and 3, from the README stats table:
+### Next (1:37–1:52)
 
-> On mainnet, 48% of Sputnik council members are high risk.
+Screen: the dashboard roadmap page (`https://key-doctor-dashboard.pages.dev/?page=roadmap`). Everything here is
+README "Roadmap": say "next", never "it does".
 
-### Close (1:20–1:30)
+> Next: swaps through NEAR Intents, a hosted Guard agent in each DAO's Telegram, and yield on other chains with
+> Chain Signatures, always by council vote. The checks stay free; agents that move money pay a small fee.
+
+### Close (1:52–2:00)
 
 Screen: the repo page, then the dashboard.
 
-> NEAR keys can be limited to one contract and a few methods. That is how an agent holds money without the keys to
-> everything. And the Guard is just a member of a Sputnik DAO, so every payment is a normal DAO proposal. Try it:
-> key-doctor-dashboard.pages.dev, and the code is on GitHub.
+> NEAR keys can be limited to one contract. That is how an agent holds money without your keys. Try it at
+> key-doctor-dashboard.pages.dev.
+
+About 22 words, so it fits the 8 seconds; the repo link goes in the X post, not the voice-over.
+
+Word budget at about 150 words a minute (2.5 words a second): hook 18, why about 35, scene 1 about 70, scene 2 about
+60, next about 35, close about 22. The two scenes leave about 12 seconds each for the typing, the wait and the wallet
+signature. Time a read-through before recording; if a
+part runs long, cut the line, not the moment on screen.
 
 ## After recording
 
