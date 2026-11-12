@@ -22,26 +22,27 @@ say (or show as a caption) and how to tell it worked. Testnet only.
 
 ## Before the day
 
-1. **Agent Budget (scene 1).** Make a new one on the dashboard (`?page=budget`, New agent budget). Do not reuse the
-   old `kdg1793607117` Guard: its agent account also has a full-access key, which contradicts the line "the agent
-   holds only a key for the Guard", and its council has other people's accounts in it.
-   - Sign in with a neutral testnet account, not a personal one: its name shows on the Budget page and in the wallet
-     pop-up when you reject on camera. Scene 2 uses the `kdoncall-*` set for the same reason.
-   - Rules: **Balanced** (5 NEAR per payment, 20 NEAR per 24 hours, 3 waiting).
-   - Recipients: `kdg1793607117-vendor.testnet`, `kdg1793607117-contrib.testnet`, `kdg1793607117-api.testnet`
-     (the receivers named in `demo/invoices/inv-001..003`). Never add `attacker.testnet`.
-   - Agent name: anything short, e.g. `Claude Code agent`. **Download the key file** before leaving the page and
-     save it under `~/.config/key-doctor/`.
-   - Top up the Budget with at least 8 NEAR (the three invoices are 6.5 NEAR).
-   - Point Claude Code at the new Guard (the page shows the Guard id; the agent is `a1.<guard id>`). Claude Code must
-     be opened inside this repo, because the server starts with `pnpm --filter`:
+1. **Agent Budget (scene 1).** Owner decision 2026-11-12: use the existing `demohkt` Budget (Guard 1.6.0), not a
+   new one. Guard `demohkt.keydoctor-guards-v2.testnet`, agent `a1.demohkt.keydoctor-guards-v2.testnet` (holds only a
+   function-call key for the Guard), Budget DAO `demohkt.sputnik-v2.testnet`. Do not use the old `kdg1793607117`
+   Guard: its agent account also has a full-access key, which contradicts the line "the agent holds only a key for
+   the Guard".
+   - Its owner is `test1.duonghb3.testnet`; that name shows on the Budget page and in the wallet pop-up when you
+     reject on camera. Accepted.
+   - Rules: **Balanced** (5 NEAR per payment, 20 NEAR per 24 hours, 3 waiting). Recipients:
+     `kdg1793607117-vendor.testnet`, `kdg1793607117-contrib.testnet`, `kdg1793607117-api.testnet` (the receivers
+     named in `demo/invoices/inv-001..003`); `attacker.testnet` is not one. Read 2026-11-12.
+   - Top up the Budget DAO to at least 8 NEAR (the three invoices are 6.5 NEAR). Read 2026-11-12: it can spend
+     2.74 NEAR, so send about 6 NEAR.
+   - Claude Code points at this Guard already (`guard` MCP, local scope). To set it up again, Claude Code must be
+     opened inside this repo, because the server starts with `pnpm --filter`:
 
      ```bash
      claude mcp remove guard -s local
      ```
 
      ```bash
-     claude mcp add guard -e NEAR_NETWORK=testnet -e GUARD_CONTRACT_ID=<guard id> -e AGENT_ACCOUNT_ID=a1.<guard id> -e AGENT_KEY_PATH=$HOME/.config/key-doctor/<key file>.json -- pnpm --silent --filter guard-mcp start
+     claude mcp add guard -e NEAR_NETWORK=testnet -e GUARD_CONTRACT_ID=demohkt.keydoctor-guards-v2.testnet -e AGENT_ACCOUNT_ID=a1.demohkt.keydoctor-guards-v2.testnet -e AGENT_KEY_PATH=$HOME/.config/key-doctor/a1.demohkt.keydoctor-guards-v2.testnet.json -- pnpm --silent --filter guard-mcp start
      ```
 
    - Scene 2 asks `preflight` in the same Claude Code session, so the `key-doctor` MCP server must be added too
@@ -85,7 +86,7 @@ say (or show as a caption) and how to tell it worked. Testnet only.
    plus `KD_WORKER_URL` and `RUN_CHECK_TOKEN`, and fix every `FAIL` before recording:
 
    ```bash
-   GUARD_CONTRACT_ID=<guard id> AGENT_ACCOUNT_ID=a1.<guard id> AGENT_KEY_PATH=<key file> node scripts/demo-video/check.mjs
+   GUARD_CONTRACT_ID=demohkt.keydoctor-guards-v2.testnet AGENT_ACCOUNT_ID=a1.demohkt.keydoctor-guards-v2.testnet AGENT_KEY_PATH=$HOME/.config/key-doctor/a1.demohkt.keydoctor-guards-v2.testnet.json node scripts/demo-video/check.mjs
    ```
 
    It checks that the Guard is not paused, the three invoices fit the limits and the 24-hour window, the injected
