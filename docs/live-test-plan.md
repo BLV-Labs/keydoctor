@@ -22,7 +22,7 @@ Record each result in [TEST_MATRIX.md](TEST_MATRIX.md) (Evidence Format) or the 
 |---|---|---|---|
 | A1 | `pnpm test` | 5 packages, fail 0 | 2026-11-10: 1,159 tests (key-doctor 492, dashboard 452, worker 155, guard-mcp 52, near-ai-agent 8), fail 0, skip 0 |
 | A2 | `pnpm typecheck` | no errors | 2026-11-09: exit 0 |
-| A3 | `pnpm test:guard` | Guard 130 unit + 24 sandbox, factory 18 unit + 12 sandbox, all pass | 2026-11-10: pass (Guard 153 unit + 24 sandbox + 3 DCA sandbox, factory 25 + 16) |
+| A3 | `pnpm test:guard` | Guard 130 unit + 24 sandbox, factory 18 unit + 12 sandbox, all pass | 2026-11-10: pass (Guard 153 unit + 24 sandbox + 3 DCA sandbox, factory 25 + 16). 2026-11-12: factory sandbox failed at the 215 Tgas minimum; after factory 1.1.1 (220 Tgas) pass (Guard 180 + 25 + 3, factory 25 + 16) |
 | A4 | `pnpm --filter dashboard build` | `dist/` builds with no error | 2026-11-09: builds with no error |
 
 ## 2. Hosted MCP (Claude, read only, no secret)

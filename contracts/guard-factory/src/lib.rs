@@ -29,8 +29,9 @@ const GAS_ON_PUBLISHED: Gas = Gas::from_tgas(10);
 /// What an account that uses a global contract by hash stores for it: the 32-byte hash (NEP-591).
 const GLOBAL_CODE_REF_BYTES: u128 = 32;
 /// `create` checks this so a short-gassed call fails before any money moves: GAS_VIEW, GAS_ON_DAO_CHECKED and what
-/// `create` burns itself (5 Tgas at the longest input). The dashboard attaches 220 Tgas.
-const MIN_CREATE_GAS: Gas = Gas::from_tgas(215);
+/// `create` burns itself at the longest input. 215 Tgas ran out in the sandbox on 2026-11-12 (factory 1.1.1 raised it).
+/// The dashboard attaches 220 Tgas.
+const MIN_CREATE_GAS: Gas = Gas::from_tgas(220);
 
 const MAX_GUARDS_PER_DAO: u32 = 10;
 const MAX_NAME_LEN: usize = 32;
@@ -241,7 +242,7 @@ impl Factory {
     pub fn kd_factory_metadata(&self) -> Value {
         json!({
             "standard": "kd_guard_factory",
-            "version": "1.1.0",
+            "version": "1.1.1",
             "guard_code_hash": Base58CryptoHash::from(self.guard_code_hash),
             "guard_code_global": self.guard_code_global(),
             "guards": self.guards.len(),

@@ -16,7 +16,7 @@ const FACTORY_WASM: &str = "target/near/kd_guard_factory.wasm";
 // What the dashboard puts on the proposal's FunctionCall action.
 const CREATE_GAS: Gas = Gas::from_tgas(220);
 // The least `create` accepts (MIN_CREATE_GAS in the factory).
-const LEAST_CREATE_GAS: Gas = Gas::from_tgas(215);
+const LEAST_CREATE_GAS: Gas = Gas::from_tgas(220);
 const REQUEST_GAS: Gas = Gas::from_tgas(200);
 const SIGN_2_ADD_TGAS: u64 = 15;
 const SIGN_2_ACT_CREATE_TGAS: u64 = 245;

@@ -11,7 +11,7 @@ const ROLE_VOTE = { weight_kind: "RoleWeight", quorum: "0", threshold: "1" };
 /** One vote entry per proposal kind the rights name, each decided by the role alone. */
 const votePolicyFor = (rights: readonly string[]): Record<string, unknown> =>
   Object.fromEntries(["transfer", "call"].filter((k) => rights.some((r) => r.startsWith(`${k}:`))).map((k) => [k, ROLE_VOTE]));
-/** Gas on the factory call: `create` refuses less than 215 Tgas, and the sandbox test runs on this. */
+/** Gas on the factory call: `create` refuses less than 220 Tgas (215 before 2026-11-12), and the sandbox test runs on this. */
 export const CREATE_GAS = "220000000000000";
 const GUARD_CALL_GAS = "50000000000000";
 
