@@ -321,6 +321,26 @@ describe("GĐ4 commands end to end (stub RPC, Telegram and D1)", () => {
     assert.equal(rows(db, "subscriptions").length, 0);
   });
 
+  // Red-team M7: any member of a council group could silently turn off the council's alerts.
+  it("in a group only admins can /unwatch or /yield_unwatch; the subscription stays otherwise", async (t) => {
+    const { env, chain, db } = setup(t);
+    const group = { chat: -100, type: "supergroup" };
+    await say(env, chain, `/watch ${DAO}`, group);
+    let status = "member";
+    chain.telegramReply = (method) => (method === "getChatMember" ? { status: 200, json: { ok: true, result: { status } } } : undefined);
+    assert.match((await say(env, chain, `/unwatch ${DAO}`, group))!.text, /only admins can stop watching/);
+    assert.match((await say(env, chain, `/yield_unwatch ${DAO}`, group))!.text, /only admins can stop watching/);
+    assert.equal(rows(db, "subscriptions").length, 1);
+    const asked = chain.telegram.filter((x) => x.method === "getChatMember").at(-1)!.body;
+    assert.deepEqual([asked.chat_id, asked.user_id], ["-100", 7]);
+    chain.telegramReply = () => ({ status: 400, json: { ok: false, description: "Bad Request" } });
+    assert.match((await say(env, chain, `/unwatch ${DAO}`, group))!.text, /only admins/, "a failed lookup refuses");
+    status = "administrator";
+    chain.telegramReply = (method) => (method === "getChatMember" ? { status: 200, json: { ok: true, result: { status } } } : undefined);
+    assert.match((await say(env, chain, `/unwatch ${DAO}`, group))!.text, /Stopped watching/);
+    assert.equal(rows(db, "subscriptions").length, 0);
+  });
+
   it("/changes does not move the baseline", async (t) => {
     const { env, chain, db } = setup(t);
     assert.match((await say(env, chain, `/changes ${DAO}`))!.text, /baseline saved/);

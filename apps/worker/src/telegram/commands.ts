@@ -14,7 +14,7 @@ import {
   listSubscriptions,
   removeSubscription,
 } from "../store/subscriptions.ts";
-import { sendMessage, sendTyping, TelegramError, type Outgoing } from "./api.ts";
+import { isChatAdmin, sendMessage, sendTyping, TelegramError, type Outgoing } from "./api.ts";
 import { langOf, renderChanges, renderCheck, renderHelp, renderYield, TEXT, type Lang } from "./render.ts";
 import { takePending } from "../store/pending.ts";
 import { isCode } from "../watch-link.ts";
@@ -77,6 +77,8 @@ export function parseCommand(text: string, isGroup: boolean): Command {
 export interface Incoming {
   chatId: string;
   chatType: string;
+  /** The sender's user id, or null when Telegram sent none. */
+  fromId: string | null;
   text: string;
   lang: Lang;
 }
@@ -86,12 +88,14 @@ export function incomingFrom(update: unknown): Incoming | null {
   if (typeof update !== "object" || update === null) return null;
   const msg = (update as { message?: unknown }).message;
   if (typeof msg !== "object" || msg === null) return null;
-  const m = msg as { text?: unknown; chat?: { id?: unknown; type?: unknown }; from?: { is_bot?: unknown; language_code?: unknown } };
+  const m = msg as { text?: unknown; chat?: { id?: unknown; type?: unknown }; from?: { id?: unknown; is_bot?: unknown; language_code?: unknown } };
   if (typeof m.text !== "string" || m.from?.is_bot === true) return null;
   const id = m.chat?.id;
   const type = m.chat?.type;
   if ((typeof id !== "number" && typeof id !== "string") || typeof type !== "string" || type === "channel") return null;
-  return { chatId: String(id), chatType: type, text: m.text.slice(0, 1000), lang: langOf(m.from?.language_code) };
+  const from = m.from?.id;
+  const fromId = typeof from === "number" && Number.isSafeInteger(from) ? String(from) : null;
+  return { chatId: String(id), chatType: type, fromId, text: m.text.slice(0, 1000), lang: langOf(m.from?.language_code) };
 }
 
 const kdOf = (e: unknown): KdError | null => (isKdError(e) ? e.kd : null);
@@ -114,6 +118,11 @@ async function run(cmd: Command, inc: Incoming, env: Env, typing: () => void): P
   }
   if (cmd.target === null) return cmd.name.startsWith("yield") ? TEXT.yieldUsage(lang, cmd.name) : TEXT.usage(lang, cmd.name);
   const t = resolve({ target: cmd.target }, env);
+  // Red-team M7: in a group, turning alerts off is for admins only, so one member cannot silence the council.
+  if ((cmd.name === "unwatch" || cmd.name === "yield_unwatch") && inc.chatType !== "private") {
+    const token = env.TELEGRAM_BOT_TOKEN;
+    if (inc.fromId === null || !token || !(await isChatAdmin(token, chatId, inc.fromId))) return TEXT.adminsOnly(lang);
+  }
   if (cmd.name === "yield" || cmd.name === "yield_watch") {
     const wait = checkRate(`yield:${chatId}`, YIELD_PER_CHAT_PER_MIN);
     if (wait > 0) return TEXT.rateLimited(lang, wait);

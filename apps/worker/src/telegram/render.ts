@@ -364,6 +364,12 @@ export const TEXT = {
   unwatched: (lang: Lang, target: string): Outgoing => ({
     text: lang === "vi" ? `Đã tắt theo dõi ${id(target)}.` : `Stopped watching ${id(target)}.`,
   }),
+  adminsOnly: (lang: Lang): Outgoing => ({
+    text:
+      lang === "vi"
+        ? "Trong nhóm, chỉ admin mới tắt được theo dõi. Nhờ một admin gửi lệnh này."
+        : "In a group, only admins can stop watching. Ask an admin to send this command.",
+  }),
   notWatched: (lang: Lang, target: string): Outgoing => ({
     text: lang === "vi" ? `Chat này không theo dõi ${id(target)}.` : `This chat does not watch ${id(target)}.`,
   }),

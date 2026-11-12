@@ -1,4 +1,4 @@
-// Telegram Bot API client: sendMessage and sendChatAction only.
+// Telegram Bot API client: sendMessage, sendChatAction and getChatMember only.
 
 export class TelegramError extends Error {
   readonly status: number;
@@ -35,13 +35,13 @@ export interface Outgoing {
 
 const MAX_TEXT = 4096;
 
-async function call(token: string, method: string, body: Record<string, unknown>): Promise<void> {
+async function call(token: string, method: string, body: Record<string, unknown>): Promise<unknown> {
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (res.ok) return;
+  if (res.ok) return ((await res.json().catch(() => null)) as { result?: unknown } | null)?.result;
   let description = "";
   let migrateTo: string | null = null;
   try {
@@ -78,7 +78,9 @@ export async function sendMessage(token: string, chatId: string, msg: Outgoing):
     link_preview_options: { is_disabled: true },
     ...(msg.buttons && msg.buttons.length > 0 && { reply_markup: { inline_keyboard: msg.buttons.map((b) => [b]) } }),
   };
-  const plain = () => call(token, "sendMessage", { ...base, text: cut(toPlain(msg.text)) });
+  const plain = async () => {
+    await call(token, "sendMessage", { ...base, text: cut(toPlain(msg.text)) });
+  };
   if (msg.text.length > MAX_TEXT) return plain();
   try {
     await call(token, "sendMessage", { ...base, text: msg.text, parse_mode: "HTML" });
@@ -88,6 +90,16 @@ export async function sendMessage(token: string, chatId: string, msg: Outgoing):
   }
 }
 
-export function sendTyping(token: string, chatId: string): Promise<void> {
-  return call(token, "sendChatAction", { chat_id: chatId, action: "typing" });
+export async function sendTyping(token: string, chatId: string): Promise<void> {
+  await call(token, "sendChatAction", { chat_id: chatId, action: "typing" });
+}
+
+/** True when the user is the chat's creator or an administrator. Any failure answers false (fail closed). */
+export async function isChatAdmin(token: string, chatId: string, userId: string): Promise<boolean> {
+  try {
+    const member = (await call(token, "getChatMember", { chat_id: chatId, user_id: Number(userId) })) as { status?: unknown } | undefined;
+    return member?.status === "creator" || member?.status === "administrator";
+  } catch {
+    return false;
+  }
 }
